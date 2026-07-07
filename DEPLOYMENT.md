@@ -37,7 +37,7 @@ Render/Vercel은 보통 GitHub 저장소와 연결해서 배포한다.
 | Root Directory | `services/api` |
 | Runtime | `Python 3` |
 | Build Command | `pip install -e .` |
-| Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| Start Command | `bash start.sh` |
 | Health Check Path | `/v1/health` |
 | Instance Type | 처음은 Free 가능 |
 

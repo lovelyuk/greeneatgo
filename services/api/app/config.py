@@ -23,6 +23,7 @@ class Settings:
     supabase_anon_key: str
     supabase_service_role_key: str
     supabase_jwt_secret: str | None = None
+    cors_allowed_origins: tuple[str, ...] = ("http://localhost:5173",)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -38,6 +39,11 @@ class Settings:
             supabase_anon_key=os.environ["SUPABASE_ANON_KEY"],
             supabase_service_role_key=os.environ["SUPABASE_SERVICE_ROLE_KEY"],
             supabase_jwt_secret=os.environ.get("SUPABASE_JWT_SECRET") or None,
+            cors_allowed_origins=tuple(
+                origin.strip()
+                for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+                if origin.strip()
+            ),
         )
 
 

@@ -39,4 +39,4 @@ M1 기본 가입 방식은 `초대코드 입력 → pending 가입요청 → 회
 - 직원 상태: `pending`, `active`, `paused`, `left`, `rejected`
 - 감사 로그: `employee_join_audit_logs`
 
-실제 DB 쓰기는 FastAPI service_role repository 연결 후 활성화합니다.
+FastAPI는 `services/api/.env`의 Supabase 웹 프로젝트 값으로 service_role repository에 연결합니다.

@@ -1,19 +1,49 @@
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.auth import bearer_token
+from app.repositories.join_repository import JoinRepository
+from app.repositories.supabase_http import SupabaseHttpError
+from app.services.join_flow import JoinFlowError
 
 router = APIRouter(tags=["me"])
 
+
+def _error(status: int, code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status, detail={"code": code, "message": message})
+
+
 @router.get("/me")
-def me(x_user_id: str | None = Header(default=None)):
-    # Supabase JWT 검증 연결 전 임시 계약 엔드포인트.
-    # 실제 구현은 Authorization: Bearer <jwt>에서 user_id를 검증하고 app_users.company_id를 조회한다.
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "로그인이 필요해요"})
+def me(token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        auth_user = repo.auth_user_from_token(token)
+        profile = repo.get_profile(auth_user.id, email=auth_user.email)
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "Supabase 처리 중 오류가 발생했어요") from exc
+
+    if profile is None:
+        return {
+            "ok": True,
+            "data": {
+                "user_id": auth_user.id,
+                "email": auth_user.email,
+                "status": "no_profile",
+            },
+            "error": None,
+        }
+
     return {
         "ok": True,
         "data": {
-            "user_id": x_user_id,
-            "status": "stub",
-            "message": "Supabase Auth 연결 후 company_id/status/balance를 반환합니다",
+            "user_id": profile.id,
+            "email": auth_user.email,
+            "display_name": profile.display_name,
+            "company_id": profile.company_id,
+            "group_id": profile.group_id,
+            "role": profile.role,
+            "status": profile.status,
         },
         "error": None,
     }

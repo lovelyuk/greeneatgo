@@ -6,6 +6,7 @@ import './style.css';
 const cards = [
   ['금일 사용액', '428,000원', WalletCards],
   ['직원', '10명', Users],
+  ['가입 요청', '승인 대기 0명', Users],
   ['제휴 식당', '5곳', QrCode],
   ['이번달 정산 예정', '3,920,000원', FileSpreadsheet],
 ];
@@ -26,6 +27,8 @@ function App() {
       <h2>M1 연결 예정</h2>
       <ul>
         <li>직원 CSV 등록</li>
+        <li>초대코드 생성</li>
+        <li>가입 요청 승인/거절</li>
         <li>식사창구 정책 편집</li>
         <li>식대 포인트 지급</li>
         <li>QR 스티커 PDF 생성</li>

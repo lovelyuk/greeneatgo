@@ -29,3 +29,14 @@ infra/seed         파일럿 시드 데이터
 cd /mnt/d/projects/greeneatGo/services/api
 python3 -m unittest discover -s tests -v
 ```
+
+
+## 가입승인 흐름
+
+M1 기본 가입 방식은 `초대코드 입력 → pending 가입요청 → 회사관리자 승인 → active 직원`입니다.
+
+- 초대코드 테이블: `company_invite_codes`
+- 직원 상태: `pending`, `active`, `paused`, `left`, `rejected`
+- 감사 로그: `employee_join_audit_logs`
+
+실제 DB 쓰기는 FastAPI service_role repository 연결 후 활성화합니다.

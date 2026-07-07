@@ -23,3 +23,14 @@ on conflict (id) do nothing;
 insert into company_merchants (company_id, merchant_id)
 select '00000000-0000-0000-0000-000000000001', id from merchants where qr_token like 'QR-PILOT-%'
 on conflict do nothing;
+
+
+insert into company_invite_codes (company_id, code, default_group_id, expires_at, max_uses)
+values (
+  '00000000-0000-0000-0000-000000000001',
+  'PILOT-GREEN-2026',
+  '10000000-0000-0000-0000-000000000001',
+  '2026-12-31 23:59:59+09',
+  50
+)
+on conflict (code) do nothing;

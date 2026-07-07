@@ -22,8 +22,35 @@ create table if not exists app_users (
   group_id uuid references employee_groups(id),
   display_name text not null,
   role text not null default 'employee' check (role in ('employee','company_admin','platform_admin')),
-  status text default 'active' check (status in ('active','paused','left')),
+  status text default 'active' check (status in ('pending','active','paused','left','rejected')),
   fcm_token text,
+  approved_at timestamptz,
+  rejected_at timestamptz,
+  created_at timestamptz default now()
+);
+
+
+create table if not exists company_invite_codes (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references companies(id),
+  code text unique not null,
+  default_group_id uuid references employee_groups(id),
+  expires_at timestamptz,
+  max_uses int,
+  used_count int not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz default now(),
+  check (max_uses is null or max_uses > 0),
+  check (used_count >= 0)
+);
+
+create table if not exists employee_join_audit_logs (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references app_users(id),
+  company_id uuid not null references companies(id),
+  action text not null check (action in ('requested','approved','rejected')),
+  actor_user_id uuid references app_users(id),
+  reason text,
   created_at timestamptz default now()
 );
 
@@ -96,3 +123,6 @@ create table if not exists settlements (
 create index if not exists idx_meal_transactions_user_created on meal_transactions(user_id, created_at desc);
 create index if not exists idx_meal_transactions_company_created on meal_transactions(company_id, created_at desc);
 create index if not exists idx_company_merchants_merchant on company_merchants(merchant_id);
+create index if not exists idx_app_users_company_status on app_users(company_id, status);
+create index if not exists idx_company_invite_codes_company on company_invite_codes(company_id) where is_active;
+create index if not exists idx_employee_join_audit_logs_user on employee_join_audit_logs(user_id, created_at desc);

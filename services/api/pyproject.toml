@@ -1,0 +1,17 @@
+[project]
+name = "mealledger-api"
+version = "0.1.0"
+description = "MealLedger FastAPI service"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "supabase>=2.6",
+  "apscheduler>=3.10",
+  "weasyprint>=62",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,10 +1,10 @@
 # MASTER_INDEX.md
 
-MealLedger 프로젝트 작업 인덱스입니다. 완료 시 이 파일을 갱신합니다.
+greeneatGo 프로젝트 작업 인덱스입니다. 완료 시 이 파일을 갱신합니다.
 
 ## 문서
 
-- `MEALLEDGER_AGENT_SPEC.md` — 단일 진실 공급원(SSOT)
+- `GREENEATGO_AGENT_SPEC.md` — 단일 진실 공급원(SSOT)
 - `DECISIONS.md` — 승인 필요 결정/확정 결정 로그
 - `README.md` — 프로젝트 개요와 실행 방법
 

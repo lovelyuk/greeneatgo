@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-void main() => runApp(const MealLedgerApp());
+void main() => runApp(const greeneatGoApp());
 
-class MealLedgerApp extends StatelessWidget {
-  const MealLedgerApp({super.key});
+class greeneatGoApp extends StatelessWidget {
+  const greeneatGoApp({super.key});
 
   @override
   Widget build(BuildContext context) {

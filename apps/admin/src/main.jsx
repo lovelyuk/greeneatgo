@@ -13,7 +13,7 @@ const cards = [
 function App() {
   return <main className="shell">
     <header>
-      <p className="eyebrow">MealLedger Admin</p>
+      <p className="eyebrow">greeneatGo Admin</p>
       <h1>밥장부 관리자</h1>
       <p>직원·정책·지급·정산을 한 곳에서 관리하는 초기 화면입니다.</p>
     </header>

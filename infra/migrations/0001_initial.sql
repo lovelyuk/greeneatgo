@@ -1,4 +1,4 @@
--- MealLedger initial schema (Supabase/Postgres)
+-- greeneatGo initial schema (Supabase/Postgres)
 create extension if not exists pgcrypto;
 
 create table if not exists companies (

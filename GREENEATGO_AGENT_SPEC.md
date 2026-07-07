@@ -1,8 +1,8 @@
-# MEALLEDGER_AGENT_SPEC.md (v2.0)
+# GREENEATGO_AGENT_SPEC.md (v2.0)
 
 > **모바일 식대 장부 플랫폼 — AI 에이전트 위임용 마스터 스펙**
 > 벤치마크: 식권대장(벤디스), 식신e식권 / 전신: SNACKBOX_AGENT_SPEC v1.0 (무인 쇼케이스 — 보류, 본 문서가 우선)
-> 작성일: 2026-07-07 / 코드네임: **MealLedger** (가칭 "밥장부")
+> 작성일: 2026-07-07 / 코드네임: **greeneatGo** (가칭 "밥장부")
 
 ---
 
@@ -95,7 +95,7 @@
 v1과 동일 스택. 구조:
 ```
 mealledger/
-├── MEALLEDGER_AGENT_SPEC.md
+├── GREENEATGO_AGENT_SPEC.md
 ├── DECISIONS.md
 ├── MASTER_INDEX.md
 ├── apps/
@@ -371,4 +371,4 @@ Base `https://api.<domain>/v1` — 응답 `{"ok", "data", "error": {"code","mess
 - 종이 장부의 페인포인트(영업 멘트 소재): 월말 장부 복사·수기 정산, 팀별 예산 중간집계 불가, 식권 대여·복제 부정사용
 
 ---
-*End of MEALLEDGER_AGENT_SPEC.md v2.0*
+*End of GREENEATGO_AGENT_SPEC.md v2.0*

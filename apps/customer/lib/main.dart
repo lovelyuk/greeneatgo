@@ -142,6 +142,7 @@ class _AppGateState extends State<AppGate> {
   }
 }
 
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.onLoggedIn});
   final Future<void> Function() onLoggedIn;
@@ -151,43 +152,117 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _email = TextEditingController(text: 'employee1@greeneatgo.test');
+  final _email = TextEditingController();
   final _password = TextEditingController();
+  final _passwordConfirm = TextEditingController();
+  final _displayName = TextEditingController();
   bool _busy = false;
+  bool _signupMode = false;
   String? _error;
+  String? _info;
 
   Future<void> _login() async {
-    setState(() { _busy = true; _error = null; });
+    setState(() { _busy = true; _error = null; _info = null; });
     try {
       await Supabase.instance.client.auth.signInWithPassword(email: _email.text.trim(), password: _password.text);
       await widget.onLoggedIn();
     } catch (error) {
-      setState(() => _error = error.toString());
+      setState(() => _error = _friendlyAuthError(error));
     } finally {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _signup() async {
+    setState(() { _busy = true; _error = null; _info = null; });
+    final email = _email.text.trim();
+    final password = _password.text;
+    final displayName = _displayName.text.trim();
+
+    if (displayName.isEmpty) {
+      setState(() { _busy = false; _error = '이름을 입력해 주세요.'; });
+      return;
+    }
+    if (password.length < 6) {
+      setState(() { _busy = false; _error = '비밀번호는 6자 이상으로 입력해 주세요.'; });
+      return;
+    }
+    if (password != _passwordConfirm.text) {
+      setState(() { _busy = false; _error = '비밀번호 확인이 일치하지 않아요.'; });
+      return;
+    }
+
+    try {
+      final response = await Supabase.instance.client.auth.signUp(
+        email: email,
+        password: password,
+        data: {'display_name': displayName},
+      );
+      if (response.session != null) {
+        await widget.onLoggedIn();
+      } else {
+        setState(() {
+          _signupMode = false;
+          _info = '회원가입이 완료됐어요. 이메일 인증을 켠 경우 메일 확인 후 로그인해 주세요.';
+        });
+      }
+    } catch (error) {
+      setState(() => _error = _friendlyAuthError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _friendlyAuthError(Object error) {
+    final text = error.toString();
+    if (text.contains('Invalid login credentials')) return '이메일 또는 비밀번호가 올바르지 않아요.';
+    if (text.contains('User already registered')) return '이미 가입된 이메일이에요. 로그인해 주세요.';
+    if (text.contains('Password should be')) return '비밀번호 조건을 확인해 주세요.';
+    return text.replaceFirst('AuthException(message: ', '').replaceFirst('Exception: ', '');
+  }
+
+  void _toggleMode() {
+    setState(() {
+      _signupMode = !_signupMode;
+      _error = null;
+      _info = null;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Text('밥장부', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 8),
-            const Text('회사 식대 포인트로 주변 식당에서 간편하게 결제하세요.'),
-            const SizedBox(height: 32),
-            TextField(controller: _email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: '이메일', border: OutlineInputBorder())),
-            const SizedBox(height: 12),
-            TextField(controller: _password, obscureText: true, decoration: const InputDecoration(labelText: '비밀번호', border: OutlineInputBorder())),
-            if (_error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_error!, style: const TextStyle(color: Colors.red))),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: _busy ? null : _login, child: Text(_busy ? '로그인 중...' : '로그인')),
-            const SizedBox(height: 8),
-            const Text('M1 개발용은 이메일/비밀번호 로그인입니다. 배포 전 매직링크로 교체 예정이에요.', style: TextStyle(fontSize: 12, color: Colors.grey)),
-          ]),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height - 48),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Text('밥장부', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              Text(_signupMode ? '직원 계정을 만들고 회사 초대코드로 가입 요청을 보내세요.' : '회사 식대 포인트로 주변 식당에서 간편하게 결제하세요.'),
+              const SizedBox(height: 32),
+              if (_signupMode) ...[
+                TextField(controller: _displayName, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: '이름', border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+              ],
+              TextField(controller: _email, keyboardType: TextInputType.emailAddress, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: '이메일', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(controller: _password, obscureText: true, textInputAction: _signupMode ? TextInputAction.next : TextInputAction.done, decoration: const InputDecoration(labelText: '비밀번호', border: OutlineInputBorder())),
+              if (_signupMode) ...[
+                const SizedBox(height: 12),
+                TextField(controller: _passwordConfirm, obscureText: true, textInputAction: TextInputAction.done, decoration: const InputDecoration(labelText: '비밀번호 확인', border: OutlineInputBorder())),
+              ],
+              if (_error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_error!, style: const TextStyle(color: Colors.red))),
+              if (_info != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_info!, style: const TextStyle(color: Color(0xFF047857)))),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: _busy ? null : (_signupMode ? _signup : _login), child: Text(_busy ? '처리 중...' : (_signupMode ? '회원가입' : '로그인'))),
+              const SizedBox(height: 8),
+              TextButton(onPressed: _busy ? null : _toggleMode, child: Text(_signupMode ? '이미 계정이 있어요. 로그인' : '처음 사용하는 직원이에요. 회원가입')),
+              const SizedBox(height: 8),
+              const Text('회원가입 후 회사 초대코드 입력과 관리자 승인을 거쳐야 식대 사용이 가능해요.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            ]),
+          ),
         ),
       ),
     );

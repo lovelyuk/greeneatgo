@@ -18,6 +18,22 @@ function assertEnv() {
   return missing;
 }
 
+async function publicApiFetch(path, options = {}) {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers ?? {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = payload.detail ?? payload.error ?? {};
+    throw new Error(detail.message || detail.code || `API 오류 (${response.status})`);
+  }
+  return payload.data;
+}
+
 async function apiFetch(path, token, options = {}) {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,
@@ -105,6 +121,114 @@ function LoginScreen({ missingEnv, onLogin }) {
         </label>
         {error && <div className="alert error">{error}</div>}
         <button className="primary" disabled={busy || missingEnv.length > 0}>{busy ? '로그인 중...' : '운영 시작하기'}</button>
+      </form>
+    </section>
+  </main>;
+}
+
+
+function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
+  const [invite, setInvite] = useState(null);
+  const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    async function loadInvite() {
+      setBusy(true);
+      setError('');
+      try {
+        const data = await publicApiFetch(`/invites/${token}`);
+        setInvite(data);
+        setPhone(data.phone ?? '');
+      } catch (inviteError) {
+        setError(inviteError.message);
+      } finally {
+        setBusy(false);
+      }
+    }
+    loadInvite();
+  }, [token]);
+
+  async function sendOtp(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const { error: otpError } = await supabase.auth.signInWithOtp({ phone });
+      if (otpError) throw otpError;
+      setMessage('인증번호를 보냈어요. 문자로 받은 번호를 입력해 주세요.');
+    } catch (otpError) {
+      setError(otpError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyAndClaim(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      let activeSession = session;
+      if (!activeSession) {
+        const { data, error: verifyError } = await supabase.auth.verifyOtp({ phone, token: otp, type: 'sms' });
+        if (verifyError) throw verifyError;
+        activeSession = data.session;
+      }
+      if (!activeSession?.user?.id) throw new Error('인증된 사용자 정보를 찾을 수 없어요');
+      await publicApiFetch(`/invites/${token}/claim`, {
+        method: 'POST',
+        body: JSON.stringify({ auth_user_id: activeSession.user.id, display_name: displayName.trim() || null }),
+      });
+      setMessage('초대가 연결됐어요. 이제 관리자 화면으로 이동합니다.');
+      setTimeout(onClaimed, 700);
+    } catch (claimError) {
+      setError(claimError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <main className="auth-page">
+    <section className="auth-visual">
+      <BrandMark />
+      <div className="hero-copy">
+        <span className="pill">INVITE</span>
+        <h1>그린잇<br/>운영자 초대</h1>
+        <p>전화번호 인증 후 식당관리자 또는 회사관리자 계정으로 연결합니다.</p>
+      </div>
+    </section>
+    <section className="login-card">
+      <p className="eyebrow">CLAIM INVITE</p>
+      <h2>초대 수락</h2>
+      {missingEnv.length > 0 && <div className="alert error">Vercel 환경변수 누락: {missingEnv.join(', ')}</div>}
+      {error && <div className="alert error">{error}</div>}
+      {message && <div className="alert success">{message}</div>}
+      {invite && <div className="profile-grid">
+        <span>권한</span><strong>{invite.role === 'merchant_admin' ? '식당관리자' : '회사관리자'}</strong>
+        <span>상태</span><strong>{invite.status}</strong>
+        <span>만료</span><strong>{new Date(invite.expires_at).toLocaleString('ko-KR')}</strong>
+      </div>}
+      <form className="form" onSubmit={sendOtp}>
+        <label>전화번호
+          <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="01012345678" required />
+        </label>
+        <button className="ghost" disabled={busy || missingEnv.length > 0 || !invite}>인증번호 받기</button>
+      </form>
+      <form className="form" onSubmit={verifyAndClaim}>
+        <label>인증번호
+          <input value={otp} onChange={(event) => setOtp(event.target.value)} placeholder="문자 인증번호" required={!session} />
+        </label>
+        <label>이름
+          <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="표시 이름" />
+        </label>
+        <button className="primary" disabled={busy || missingEnv.length > 0 || !invite}>{session ? '현재 로그인 계정에 초대 연결' : '인증 후 초대 수락'}</button>
       </form>
     </section>
   </main>;
@@ -579,6 +703,7 @@ function App() {
   const missingEnv = assertEnv();
   const [session, setSession] = useState(null);
   const [booting, setBooting] = useState(true);
+  const inviteToken = new URLSearchParams(window.location.search).get('invite');
 
   useEffect(() => {
     if (!supabase) {
@@ -599,6 +724,7 @@ function App() {
   }
 
   if (booting) return <main className="loading"><BrandMark /><div className="spinner"/></main>;
+  if (inviteToken) return <InviteClaimScreen token={inviteToken} missingEnv={missingEnv} session={session} onClaimed={() => { window.history.replaceState({}, '', '/'); supabase.auth.getSession().then(({ data }) => setSession(data.session)); }} />;
   if (!session) return <LoginScreen missingEnv={missingEnv} onLogin={setSession} />;
   return <Dashboard session={session} onLogout={logout} />;
 }

@@ -106,16 +106,24 @@ def list_settlements(ym: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}
 def _active_admin(repo: JoinRepository, token: str):
     actor_auth = repo.auth_user_from_token(token)
     actor = repo.get_profile(actor_auth.id, email=actor_auth.email)
-    if actor is None or actor.role != "company_admin" or actor.status != "active" or not actor.company_id:
-        raise JoinFlowError("FORBIDDEN", "회사관리자만 이용할 수 있어요")
+    if actor is None or actor.role not in ("company_admin", "merchant_admin") or actor.status != "active":
+        raise JoinFlowError("FORBIDDEN", "관리자만 이용할 수 있어요")
     return actor
 
 
-def _admin_merchant(repo: JoinRepository, company_id: str) -> dict:
-    links = repo.client.rest_get(
-        "company_merchants",
-        {"select": "merchant_id", "company_id": f"eq.{company_id}", "is_active": "eq.true", "limit": "1"},
-    )
+def _admin_merchant(repo: JoinRepository, actor) -> dict:
+    if actor.role == "merchant_admin":
+        links = repo.client.rest_get(
+            "merchant_admins",
+            {"select": "merchant_id", "user_id": f"eq.{actor.id}", "limit": "1"},
+        )
+    else:
+        if not actor.company_id:
+            raise JoinFlowError("FORBIDDEN", "회사 정보가 없어요")
+        links = repo.client.rest_get(
+            "company_merchants",
+            {"select": "merchant_id", "company_id": f"eq.{actor.company_id}", "is_active": "eq.true", "limit": "1"},
+        )
     if not links:
         raise JoinFlowError("MERCHANT_NOT_FOUND", "운영 식당이 아직 연결되지 않았어요")
     merchants = repo.client.rest_get(
@@ -142,7 +150,7 @@ def list_products(token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         actor = _active_admin(repo, token)
-        merchant = _admin_merchant(repo, actor.company_id)
+        merchant = _admin_merchant(repo, actor)
         try:
             rows = repo.client.rest_get(
                 "merchant_products",
@@ -172,7 +180,7 @@ def create_product(payload: ProductCreateRequest, token: str = Depends(bearer_to
     repo = JoinRepository()
     try:
         actor = _active_admin(repo, token)
-        merchant = _admin_merchant(repo, actor.company_id)
+        merchant = _admin_merchant(repo, actor)
         row = repo.client.rest_post("merchant_products", {
             "merchant_id": merchant["id"],
             "name": payload.name,
@@ -194,7 +202,7 @@ def update_product(product_id: str, payload: ProductUpdateRequest, token: str = 
     repo = JoinRepository()
     try:
         actor = _active_admin(repo, token)
-        merchant = _admin_merchant(repo, actor.company_id)
+        merchant = _admin_merchant(repo, actor)
         _ensure_product_belongs(repo, product_id, merchant["id"])
         values = {key: value for key, value in payload.model_dump().items() if value is not None}
         if not values:
@@ -215,7 +223,7 @@ def get_daily_menu(token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         actor = _active_admin(repo, token)
-        merchant = _admin_merchant(repo, actor.company_id)
+        merchant = _admin_merchant(repo, actor)
         try:
             rows = repo.client.rest_get(
                 "merchant_daily_menus",
@@ -247,7 +255,7 @@ def upsert_daily_menu(payload: DailyMenuUpsertRequest, token: str = Depends(bear
     repo = JoinRepository()
     try:
         actor = _active_admin(repo, token)
-        merchant = _admin_merchant(repo, actor.company_id)
+        merchant = _admin_merchant(repo, actor)
         service_date = today_kst()
         existing = repo.client.rest_get(
             "merchant_daily_menus",

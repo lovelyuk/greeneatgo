@@ -93,7 +93,7 @@ function LoginScreen({ missingEnv, onLogin }) {
     <section className="login-card">
       <p className="eyebrow">ADMIN LOGIN</p>
       <h2>관리자 로그인</h2>
-      <p className="muted">회사관리자 계정으로 직원 가입 요청을 승인/거절할 수 있어요.</p>
+      <p className="muted">회사관리자 또는 식당관리자 계정으로 운영 화면에 들어갈 수 있어요.</p>
       <AuthLinkNotice />
       {missingEnv.length > 0 && <div className="alert error">Vercel 환경변수 누락: {missingEnv.join(', ')}</div>}
       <form onSubmit={submit} className="form">
@@ -123,25 +123,35 @@ function Dashboard({ session, onLogout }) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const cards = useMemo(() => [
+  const isMerchantAdmin = me?.role === 'merchant_admin';
+  const cards = useMemo(() => isMerchantAdmin ? [
+    ['권한', '식당관리자', WalletCards, 'brown'],
+    ['상품', products ? `${products.items.filter((item) => item.is_active).length}개` : '조회 중', QrCode, 'orange'],
+  ] : [
     ['가입 요청', `${requests.length}명`, Users, 'orange'],
     ['직원 권한', me?.role === 'company_admin' ? '관리자' : '확인 필요', WalletCards, 'brown'],
     ['QR 결제', products ? `${products.items.filter((item) => item.is_active).length}개 상품` : '단일 식당', QrCode, 'orange'],
     ['정산 현황', settlements ? `${settlements.summary.settlement_count}건` : '조회 중', FileSpreadsheet, 'green'],
-  ], [requests.length, me, settlements, products]);
+  ], [isMerchantAdmin, requests.length, me, settlements, products]);
 
   async function load() {
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      const [meData, requestData, settlementData, productData, dailyMenuData] = await Promise.all([
-        apiFetch('/me', token),
-        apiFetch('/admin/join-requests', token),
-        apiFetch('/admin/settlements', token),
+      const meData = await apiFetch('/me', token);
+      const [productData, dailyMenuData] = await Promise.all([
         apiFetch('/admin/products', token),
         apiFetch('/admin/daily-menu', token),
       ]);
+      let requestData = { items: [] };
+      let settlementData = null;
+      if (meData.role === 'company_admin') {
+        [requestData, settlementData] = await Promise.all([
+          apiFetch('/admin/join-requests', token),
+          apiFetch('/admin/settlements', token),
+        ]);
+      }
       setMe(meData);
       setRequests(requestData.items ?? []);
       setSettlements(settlementData);
@@ -268,8 +278,8 @@ function Dashboard({ session, onLogout }) {
     <section className="hero-panel">
       <div>
         <span className="pill light">LUNCH WALLET</span>
-        <h2>든든한 한 끼를 빠르게 승인하세요</h2>
-        <p>대기 중인 직원 {requests.length}명 · 관리자 {me?.display_name ?? session.user.email}</p>
+        <h2>{isMerchantAdmin ? '오늘 메뉴와 상품을 관리하세요' : '든든한 한 끼를 빠르게 승인하세요'}</h2>
+        <p>{isMerchantAdmin ? `${products?.merchant?.name ?? '운영 식당'} · ${me?.display_name ?? session.user.email}` : `대기 중인 직원 ${requests.length}명 · 관리자 ${me?.display_name ?? session.user.email}`}</p>
       </div>
       <Package className="hero-icon" size={96}/>
     </section>
@@ -333,7 +343,7 @@ function Dashboard({ session, onLogout }) {
     </section>
 
 
-    <section className="panel settlement-panel">
+    {!isMerchantAdmin && <section className="panel settlement-panel">
       <div className="panel-title">
         <h2>정산 현황</h2>
         <span className="badge">{settlements?.period_ym ?? '이번 달'}</span>
@@ -347,9 +357,9 @@ function Dashboard({ session, onLogout }) {
       {(settlements?.items?.length ?? 0) === 0
         ? <p className="empty-state">아직 생성된 정산서가 없어요. 월말 정산 데이터가 생성되면 여기에서 확인합니다.</p>
         : <div className="table-wrap"><table><thead><tr><th>기간</th><th>결제건수</th><th>금액</th><th>상태</th></tr></thead><tbody>{settlements.items.map((item) => <tr key={item.id}><td>{item.period_ym}</td><td>{item.tx_count}</td><td>{Number(item.total_amount).toLocaleString('ko-KR')}원</td><td>{item.status}</td></tr>)}</tbody></table></div>}
-    </section>
+    </section>}
 
-    <section className="panel">
+    {!isMerchantAdmin && <section className="panel">
       <div className="panel-title">
         <h2>가입 요청 승인</h2>
         <span className="badge">pending {requests.length}</span>
@@ -370,7 +380,7 @@ function Dashboard({ session, onLogout }) {
           </tbody>
         </table>
       </div>}
-    </section>
+    </section>}
   </main>;
 }
 

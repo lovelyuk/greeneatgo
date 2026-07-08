@@ -251,6 +251,7 @@ function Dashboard({ session, onLogout }) {
   const [platformMerchants, setPlatformMerchants] = useState(null);
   const [platformMerchantForm, setPlatformMerchantForm] = useState({ name: '', owner_phone: '', category: '', avg_price: '' });
   const [platformInvitePhone, setPlatformInvitePhone] = useState({});
+  const [inviteModal, setInviteModal] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -258,6 +259,16 @@ function Dashboard({ session, onLogout }) {
   const isMerchantAdmin = me?.role === 'merchant_admin';
   const isPlatformAdmin = me?.role === 'platform_admin';
   const inviteLink = (invite) => invite?.token ? `${window.location.origin}/?invite=${invite.token}` : '';
+
+  async function copyInviteLink() {
+    if (!inviteModal?.link) return;
+    try {
+      await navigator.clipboard.writeText(inviteModal.link);
+      setMessage('초대링크를 복사했어요.');
+    } catch {
+      setError('자동 복사가 막혔어요. 링크 입력칸을 길게 눌러 직접 복사해 주세요.');
+    }
+  }
   const cards = useMemo(() => isPlatformAdmin ? [
     ['권한', '플랫폼 운영자', WalletCards, 'brown'],
     ['식당', platformMerchants ? `${platformMerchants.items.length}곳` : '조회 중', Coffee, 'green'],
@@ -536,6 +547,17 @@ function Dashboard({ session, onLogout }) {
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}
 
+    {inviteModal && <div className="modal-backdrop" onClick={() => setInviteModal(null)}>
+      <section className="invite-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="panel-title"><div><h2>업체관리자 초대링크</h2><p className="panel-note">{inviteModal.companyName} 담당자에게 아래 링크를 보내주세요.</p></div></div>
+        <input value={inviteModal.link} readOnly onFocus={(event) => event.target.select()} />
+        <div className="row-actions invite-modal-actions">
+          <button className="primary" onClick={copyInviteLink}>복사하기</button>
+          <button className="ghost" onClick={() => setInviteModal(null)}>닫기</button>
+        </div>
+      </section>
+    </div>}
+
     <section className="hero-panel">
       <div>
         <span className="pill light">LUNCH WALLET</span>
@@ -613,7 +635,11 @@ function Dashboard({ session, onLogout }) {
       </form>
       {(merchantCompanies?.items?.length ?? 0) === 0
         ? <p className="empty-state">아직 연결된 장부업체가 없어요.</p>
-        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>초대링크</th><th>연결일</th></tr></thead><tbody>{merchantCompanies.items.map((item) => <tr key={item.id}><td>{item.company?.name ?? item.company_id}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td>{inviteLink(item.invite) ? <a href={inviteLink(item.invite)} target="_blank" rel="noreferrer">업체관리자 초대링크</a> : '-'}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>)}</tbody></table></div>}
+        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>초대링크</th><th>연결일</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
+          const link = inviteLink(item.invite);
+          const companyName = item.company?.name ?? item.company_id;
+          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>;
+        })}</tbody></table></div>}
     </section>}
 
     {!isPlatformAdmin && isMerchantAdmin && <section className="panel">

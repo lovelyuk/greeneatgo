@@ -58,7 +58,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .hero-panel h2 { font-size: clamp(28px, 4vw, 42px); line-height: 1.04; margin: 0 0 10px; }
 .hero-panel p { color: rgba(255,255,255,.88); margin-bottom: 0; }
 .hero-icon { opacity: .88; filter: drop-shadow(0 14px 16px rgba(20,53,31,.18)); }
-.grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
 .card { display: grid; gap: 12px; padding: 22px; }
 .card.orange svg { color: #2FB865; } .card.brown svg { color: #1E5631; } .card.green svg { color: #15A05A; }
 .card span, .profile-grid span { color: #5C7A66; font-weight: 850; }
@@ -69,6 +69,13 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .panel-title { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }
 .badge { background: #DDF3E2; color: #2FB865; border-radius: 999px; padding: 7px 12px; font-weight: 950; }
 .menu-chips { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.menu-chips.single { grid-template-columns: 1fr; }
+.panel-note { margin: 14px 0 0; color: #5C7A66; font-weight: 800; }
+.settlement-panel { margin-bottom: 16px; }
+.settlement-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.settlement-grid div { background: #EAF7EC; border: 1px solid #CDEBD5; border-radius: 20px; padding: 16px; }
+.settlement-grid span { display: block; color: #5C7A66; font-weight: 850; margin-bottom: 8px; }
+.settlement-grid strong { font-size: 24px; letter-spacing: -.7px; }
 .empty-state { margin: 0; padding: 24px; border-radius: 22px; background: #EAF7EC; color: #5C7A66; font-weight: 850; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
@@ -80,7 +87,7 @@ th { color: #5C7A66; font-size: 14px; }
 @media (max-width: 980px) {
   .auth-page { grid-template-columns: 1fr; }
   .auth-visual { min-height: 520px; }
-  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid, .settlement-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .topbar, .hero-panel { flex-direction: column; }
   .two-col { grid-template-columns: 1fr; }
 }
@@ -89,6 +96,6 @@ th { color: #5C7A66; font-size: 14px; }
   .auth-visual { min-height: 500px; padding: 24px; border-radius: 30px; }
   .hero-copy { margin-top: 70px; }
   .floating-menu { grid-template-columns: 1fr; left: 24px; right: 24px; bottom: 24px; }
-  .grid { grid-template-columns: 1fr; }
+  .grid, .settlement-grid { grid-template-columns: 1fr; }
   .profile-grid { grid-template-columns: 1fr; }
 }

@@ -420,11 +420,7 @@ class HomeScreen extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _BalanceCard(name: name),
         const SizedBox(height: 16),
-        Row(children: [
-          Expanded(child: _QuickAction(icon: Icons.qr_code_scanner_rounded, label: 'QR 결제', color: kOrange, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaymentCompletePreview())))),
-          const SizedBox(width: 12),
-          Expanded(child: _QuickAction(icon: Icons.storefront_rounded, label: '매장 찾기', color: kMint, onTap: () {})),
-        ]),
+        _QuickAction(icon: Icons.qr_code_scanner_rounded, label: '그린잇 식당 QR 결제', color: kOrange, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaymentCompletePreview()))),
         const SizedBox(height: 24),
         const SectionHeader(title: '최근 이용', action: '이번 주 3회'),
         const SizedBox(height: 10),
@@ -689,7 +685,7 @@ class _SnackHero extends StatelessWidget {
         const SizedBox(height: 8),
         Text(signupMode ? '직원 계정을 만들어요' : '건강하게, 바로 결제', style: const TextStyle(fontSize: 26, height: 1.04, fontWeight: FontWeight.w900)),
         const SizedBox(height: 6),
-        Text(signupMode ? '초대코드와 승인만 끝나면 회사 식대를 사용할 수 있어요.' : '회사 식대 포인트로 주변 식당에서 그린하게 결제하세요.', style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
+        Text(signupMode ? '초대코드와 승인만 끝나면 회사 식대를 사용할 수 있어요.' : '회사 식대 포인트로 그린잇 식당에서 간편하게 결제하세요.', style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
       ])),
     ]);
   }

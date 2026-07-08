@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CheckCircle2, Coffee, FileSpreadsheet, LogOut, Package, QrCode, RefreshCw, Sprout, Store, Users, WalletCards, XCircle } from 'lucide-react';
+import { CheckCircle2, Coffee, FileSpreadsheet, LogOut, Package, QrCode, RefreshCw, Sprout, Users, WalletCards, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
 
@@ -84,7 +84,7 @@ function LoginScreen({ missingEnv, onLogin }) {
       <div className="hero-copy">
         <span className="pill">TODAY GREEN</span>
         <h1>그린하게 먹고<br/>건강하게 잇는<br/>회사 식대</h1>
-        <p>직원 가입 승인부터 식대 지갑, 제휴 매장 운영까지 한 화면에서 관리합니다.</p>
+        <p>직원 가입 승인부터 식대 지갑, 정산 현황까지 한 화면에서 관리합니다.</p>
       </div>
       <div className="floating-menu">
         <span>🥗 샐러드</span><span>🍱 점심</span><span>☕ 카페</span>
@@ -114,6 +114,7 @@ function Dashboard({ session, onLogout }) {
   const token = session.access_token;
   const [me, setMe] = useState(null);
   const [requests, setRequests] = useState([]);
+  const [settlements, setSettlements] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -121,22 +122,23 @@ function Dashboard({ session, onLogout }) {
   const cards = useMemo(() => [
     ['가입 요청', `${requests.length}명`, Users, 'orange'],
     ['직원 권한', me?.role === 'company_admin' ? '관리자' : '확인 필요', WalletCards, 'brown'],
-    ['제휴 식당', '5곳', Store, 'green'],
-    ['QR 결제', '운영중', QrCode, 'orange'],
-    ['정산 예정', 'M2 예정', FileSpreadsheet, 'brown'],
-  ], [requests.length, me]);
+    ['QR 결제', '단일 식당', QrCode, 'orange'],
+    ['정산 현황', settlements ? `${settlements.summary.settlement_count}건` : '조회 중', FileSpreadsheet, 'green'],
+  ], [requests.length, me, settlements]);
 
   async function load() {
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      const [meData, requestData] = await Promise.all([
+      const [meData, requestData, settlementData] = await Promise.all([
         apiFetch('/me', token),
         apiFetch('/admin/join-requests', token),
+        apiFetch('/admin/settlements', token),
       ]);
       setMe(meData);
       setRequests(requestData.items ?? []);
+      setSettlements(settlementData);
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -172,7 +174,7 @@ function Dashboard({ session, onLogout }) {
         <BrandMark />
         <span className="pill">OPERATIONS</span>
         <h1>오늘의 식대 운영 현황</h1>
-        <p>가입 승인, 직원 상태, 결제 준비를 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
+        <p>가입 승인, 직원 상태, 단일 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
       <div className="top-actions">
         <button className="ghost" onClick={load} disabled={busy}><RefreshCw size={16}/> 새로고침</button>
@@ -209,9 +211,27 @@ function Dashboard({ session, onLogout }) {
         </div>
       </article>
       <article className="panel menu-panel">
-        <div className="panel-title"><h2>오늘의 카테고리</h2><Coffee size={22}/></div>
-        <div className="menu-chips"><span>🥗 샐러드</span><span>🍱 점심</span><span>☕ 카페</span><span>🍜 야근식</span></div>
+        <div className="panel-title"><h2>운영 식당</h2><Coffee size={22}/></div>
+        <div className="menu-chips single"><span>🥗 그린잇 식당</span></div>
+        <p className="panel-note">현재 파일럿은 한 식당에서만 운영합니다.</p>
       </article>
+    </section>
+
+
+    <section className="panel settlement-panel">
+      <div className="panel-title">
+        <h2>정산 현황</h2>
+        <span className="badge">{settlements?.period_ym ?? '이번 달'}</span>
+      </div>
+      <div className="settlement-grid">
+        <div><span>정산 건수</span><strong>{settlements?.summary.settlement_count ?? 0}건</strong></div>
+        <div><span>결제 건수</span><strong>{settlements?.summary.tx_count ?? 0}건</strong></div>
+        <div><span>정산 금액</span><strong>{(settlements?.summary.total_amount ?? 0).toLocaleString('ko-KR')}원</strong></div>
+        <div><span>송금 완료</span><strong>{settlements?.summary.paid_count ?? 0}건</strong></div>
+      </div>
+      {(settlements?.items?.length ?? 0) === 0
+        ? <p className="empty-state">아직 생성된 정산서가 없어요. 월말 정산 데이터가 생성되면 여기에서 확인합니다.</p>
+        : <div className="table-wrap"><table><thead><tr><th>기간</th><th>결제건수</th><th>금액</th><th>상태</th></tr></thead><tbody>{settlements.items.map((item) => <tr key={item.id}><td>{item.period_ym}</td><td>{item.tx_count}</td><td>{Number(item.total_amount).toLocaleString('ko-KR')}원</td><td>{item.status}</td></tr>)}</tbody></table></div>}
     </section>
 
     <section className="panel">

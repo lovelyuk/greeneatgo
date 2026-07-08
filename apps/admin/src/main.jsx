@@ -271,17 +271,18 @@ function Dashboard({ session, onLogout }) {
         <div><h2>식당 상품 관리</h2><p className="panel-note">직원 앱은 금액 입력 없이 여기 등록된 상품 중 하나를 선택해 결제합니다.</p></div>
         <span className="badge">{products?.merchant?.name ?? '운영 식당'}</span>
       </div>
+      {products?.migration_required && <div className="alert error">상품 DB 마이그레이션이 아직 적용되지 않아 기본 상품만 표시 중이에요. 0005_merchant_products.sql 적용 후 등록/수정이 활성화됩니다.</div>}
       <form className="product-form" onSubmit={createProduct}>
         <input value={productForm.name} onChange={(event) => setProductForm((form) => ({ ...form, name: event.target.value }))} placeholder="상품명" required />
         <input value={productForm.price} onChange={(event) => setProductForm((form) => ({ ...form, price: event.target.value }))} placeholder="가격" type="number" min="1" required />
         <input value={productForm.category} onChange={(event) => setProductForm((form) => ({ ...form, category: event.target.value }))} placeholder="카테고리" />
-        <button className="primary" disabled={busy}>상품 등록</button>
+        <button className="primary" disabled={busy || products?.migration_required}>상품 등록</button>
       </form>
       {(products?.items?.length ?? 0) === 0
         ? <p className="empty-state">등록된 상품이 없어요. 첫 상품을 등록하면 직원 앱에 표시됩니다.</p>
         : <div className="product-list">{products.items.map((product) => <article className={product.is_active ? 'product-item' : 'product-item off'} key={product.id}>
           <div><strong>{product.name}</strong><span>{product.category ?? '기본'} · {Number(product.price).toLocaleString('ko-KR')}원</span></div>
-          <button className="ghost" onClick={() => toggleProduct(product)} disabled={busy}>{product.is_active ? '숨김' : '판매중'}</button>
+          <button className="ghost" onClick={() => toggleProduct(product)} disabled={busy || products?.migration_required}>{product.is_active ? '숨김' : '판매중'}</button>
         </article>)}</div>}
     </section>
 

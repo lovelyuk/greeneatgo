@@ -252,6 +252,7 @@ function Dashboard({ session, onLogout }) {
   const [platformMerchantForm, setPlatformMerchantForm] = useState({ name: '', owner_phone: '', category: '', avg_price: '' });
   const [platformInvitePhone, setPlatformInvitePhone] = useState({});
   const [inviteModal, setInviteModal] = useState(null);
+  const [txModal, setTxModal] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -530,13 +531,6 @@ function Dashboard({ session, onLogout }) {
 
   useEffect(() => { load(); }, []);
 
-  const merchantCompanyTxGroups = (merchantCompanies?.items ?? []).map((link) => {
-    const companyName = link.company?.name ?? link.company_id;
-    const txItems = (transactions?.items ?? []).filter((tx) => tx.company_id === link.company_id);
-    const totalAmount = txItems.reduce((sum, tx) => sum + Math.abs(Number(tx.amount ?? 0)), 0);
-    return { ...link, companyName, txItems, totalAmount };
-  });
-
   return <main className="shell">
     <header className="topbar">
       <div className="top-copy">
@@ -562,6 +556,15 @@ function Dashboard({ session, onLogout }) {
           <button className="primary" onClick={copyInviteLink}>복사하기</button>
           <button className="ghost" onClick={() => setInviteModal(null)}>닫기</button>
         </div>
+      </section>
+    </div>}
+
+    {txModal && <div className="modal-backdrop" onClick={() => setTxModal(null)}>
+      <section className="invite-modal tx-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="panel-title"><div><h2>{txModal.companyName} 거래내역</h2><p className="panel-note">거래 {txModal.txItems.length}건 · 합계 {txModal.totalAmount.toLocaleString('ko-KR')}원</p></div><button className="ghost" onClick={() => setTxModal(null)}>닫기</button></div>
+        {txModal.txItems.length === 0
+          ? <p className="empty-state">아직 이 업체 거래내역이 없어요.</p>
+          : <div className="table-wrap"><table><thead><tr><th>시간</th><th>상품</th><th>금액</th><th>거래번호</th></tr></thead><tbody>{txModal.txItems.map((tx) => <tr key={tx.id}><td>{tx.created_at ? new Date(tx.created_at).toLocaleString('ko-KR') : '-'}</td><td>{tx.product_name ?? tx.meal_window ?? '-'}</td><td>{Math.abs(Number(tx.amount ?? 0)).toLocaleString('ko-KR')}원</td><td>{tx.tx_code ?? '-'}</td></tr>)}</tbody></table></div>}
       </section>
     </div>}
 
@@ -642,23 +645,13 @@ function Dashboard({ session, onLogout }) {
       </form>
       {(merchantCompanies?.items?.length ?? 0) === 0
         ? <p className="empty-state">아직 연결된 장부업체가 없어요.</p>
-        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>초대링크</th><th>연결일</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
+        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>거래내역</th><th>초대링크</th><th>연결일</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
           const link = inviteLink(item.invite);
           const companyName = item.company?.name ?? item.company_id;
-          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>;
+          const txItems = (transactions?.items ?? []).filter((tx) => tx.company_id === item.company_id);
+          const totalAmount = txItems.reduce((sum, tx) => sum + Math.abs(Number(tx.amount ?? 0)), 0);
+          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyName, txItems, totalAmount })}>{txItems.length}건 보기</button></td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>;
         })}</tbody></table></div>}
-    </section>}
-
-    {!isPlatformAdmin && isMerchantAdmin && <section className="panel">
-      <div className="panel-title"><h2>업체별 거래내역</h2><span className="badge">최근 {transactions?.items?.length ?? 0}건</span></div>
-      {merchantCompanyTxGroups.length === 0
-        ? <p className="empty-state">장부업체를 먼저 연결하면 업체별 거래내역이 표시돼요.</p>
-        : <div className="company-tx-list">{merchantCompanyTxGroups.map((group) => <article className="company-tx-card" key={group.id}>
-          <div className="panel-title"><div><h3>{group.companyName}</h3><p className="panel-note">거래 {group.txItems.length}건 · 합계 {group.totalAmount.toLocaleString('ko-KR')}원</p></div><span className="badge">{group.company?.status ?? '-'}</span></div>
-          {group.txItems.length === 0
-            ? <p className="empty-state">아직 이 업체 거래내역이 없어요.</p>
-            : <div className="table-wrap"><table><thead><tr><th>시간</th><th>상품</th><th>금액</th><th>거래번호</th></tr></thead><tbody>{group.txItems.map((tx) => <tr key={tx.id}><td>{tx.created_at ? new Date(tx.created_at).toLocaleString('ko-KR') : '-'}</td><td>{tx.product_name ?? tx.meal_window ?? '-'}</td><td>{Math.abs(Number(tx.amount ?? 0)).toLocaleString('ko-KR')}원</td><td>{tx.tx_code ?? '-'}</td></tr>)}</tbody></table></div>}
-        </article>)}</div>}
     </section>}
 
 

@@ -82,12 +82,12 @@ function LoginScreen({ missingEnv, onLogin }) {
     <section className="auth-visual">
       <BrandMark />
       <div className="hero-copy">
-        <span className="pill">TODAY BOX</span>
-        <h1>회사 식대를<br/>간식박스처럼<br/>가볍게 운영해요</h1>
+        <span className="pill">TODAY GREEN</span>
+        <h1>그린하게 먹고<br/>건강하게 잇는<br/>회사 식대</h1>
         <p>직원 가입 승인부터 식대 지갑, 제휴 매장 운영까지 한 화면에서 관리합니다.</p>
       </div>
       <div className="floating-menu">
-        <span>🍱 점심</span><span>🥪 간식</span><span>☕ 카페</span>
+        <span>🥗 샐러드</span><span>🍱 점심</span><span>☕ 카페</span>
       </div>
     </section>
     <section className="login-card">
@@ -172,7 +172,7 @@ function Dashboard({ session, onLogout }) {
         <BrandMark />
         <span className="pill">OPERATIONS</span>
         <h1>오늘의 식대 운영 현황</h1>
-        <p>가입 승인, 직원 상태, 결제 준비를 출출박스 스타일의 카드 대시보드로 확인합니다.</p>
+        <p>가입 승인, 직원 상태, 결제 준비를 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
       <div className="top-actions">
         <button className="ghost" onClick={load} disabled={busy}><RefreshCw size={16}/> 새로고침</button>
@@ -210,7 +210,7 @@ function Dashboard({ session, onLogout }) {
       </article>
       <article className="panel menu-panel">
         <div className="panel-title"><h2>오늘의 카테고리</h2><Coffee size={22}/></div>
-        <div className="menu-chips"><span>🍱 점심</span><span>🥪 간식</span><span>☕ 카페</span><span>🍜 야근식</span></div>
+        <div className="menu-chips"><span>🥗 샐러드</span><span>🍱 점심</span><span>☕ 카페</span><span>🍜 야근식</span></div>
       </article>
     </section>
 
@@ -219,7 +219,7 @@ function Dashboard({ session, onLogout }) {
         <h2>가입 요청 승인</h2>
         <span className="badge">pending {requests.length}</span>
       </div>
-      {requests.length === 0 ? <p className="empty-state">승인 대기 중인 직원이 없어요. 오늘 운영은 깔끔해요 🍊</p> : <div className="table-wrap">
+      {requests.length === 0 ? <p className="empty-state">승인 대기 중인 직원이 없어요. 오늘 운영은 깔끔해요 🌱</p> : <div className="table-wrap">
         <table>
           <thead><tr><th>이름</th><th>그룹</th><th>요청일</th><th>처리</th></tr></thead>
           <tbody>

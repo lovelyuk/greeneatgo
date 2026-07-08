@@ -9,14 +9,14 @@ const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 const authEmailRedirectTo = String.fromEnvironment('AUTH_EMAIL_REDIRECT_TO', defaultValue: 'https://greeneatgo-api.onrender.com/v1/auth/confirmed');
 
-const kInk = Color(0xFF23190F);
-const kCocoa = Color(0xFF4A2A14);
-const kOrange = Color(0xFFFF7A1A);
-const kTangerine = Color(0xFFFFA629);
-const kCream = Color(0xFFFFF7E8);
-const kCard = Color(0xFFFFFCF4);
-const kMint = Color(0xFF23B26D);
-const kLine = Color(0xFFFFDEAA);
+const kInk = Color(0xFF14351F);
+const kCocoa = Color(0xFF1E5631);
+const kOrange = Color(0xFF2FB865);
+const kTangerine = Color(0xFF7BD88F);
+const kCream = Color(0xFFF3FBF4);
+const kCard = Color(0xFFFCFEFC);
+const kMint = Color(0xFF15A05A);
+const kLine = Color(0xFFCDEBD5);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,8 +42,8 @@ class GreeneatGoApp extends StatelessWidget {
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.white,
-          labelStyle: const TextStyle(color: Color(0xFF8B6544), fontWeight: FontWeight.w700),
-          hintStyle: const TextStyle(color: Color(0xFFB39678)),
+          labelStyle: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700),
+          hintStyle: const TextStyle(color: Color(0xFF9BB6A3)),
           contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: const BorderSide(color: kLine)),
           enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: const BorderSide(color: kLine)),
@@ -295,13 +295,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 if (_error != null) BrandNotice(text: _error!, kind: NoticeKind.error),
                 if (_info != null) BrandNotice(text: _info!, kind: NoticeKind.success),
                 const SizedBox(height: 18),
-                FilledButton(onPressed: _busy ? null : (_signupMode ? _signup : _login), child: Text(_busy ? '처리 중...' : (_signupMode ? '직원 계정 만들기' : '따뜻한 한 끼 시작하기'))),
+                FilledButton(onPressed: _busy ? null : (_signupMode ? _signup : _login), child: Text(_busy ? '처리 중...' : (_signupMode ? '직원 계정 만들기' : '그린한 한 끼 시작하기'))),
                 const SizedBox(height: 10),
                 TextButton(onPressed: _busy ? null : _toggleMode, child: Text(_signupMode ? '이미 계정이 있어요' : '처음 사용하는 직원이에요')),
               ]),
             ),
             const SizedBox(height: 16),
-            const Text('회원가입 후 회사 초대코드 입력과 관리자 승인을 거쳐 식대 사용이 가능해요.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF8B6544), fontWeight: FontWeight.w700)),
+            const Text('회원가입 후 회사 초대코드 입력과 관리자 승인을 거쳐 식대 사용이 가능해요.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
           ]),
         ),
       ),
@@ -413,8 +413,8 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = me['display_name'] as String? ?? '직원';
     return AppScaffold(
-      title: '오늘도 든든하게',
-      subtitle: '$name님, 출출할 땐 회사 식대로 간편하게 해결해요.',
+      title: '오늘도 그린하게',
+      subtitle: '$name님, 그린하게 챙기는 오늘 한 끼예요.',
       onSignOut: onSignOut,
       actions: [IconButton(onPressed: onRefresh, icon: const Icon(Icons.refresh_rounded))],
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -459,7 +459,7 @@ class AppScaffold extends StatelessWidget {
               Text(title, style: const TextStyle(fontSize: 31, height: 1.08, fontWeight: FontWeight.w900, color: kInk)),
               if (subtitle != null) ...[
                 const SizedBox(height: 8),
-                Text(subtitle!, style: const TextStyle(fontSize: 15, color: Color(0xFF7A5637), fontWeight: FontWeight.w700)),
+                Text(subtitle!, style: const TextStyle(fontSize: 15, color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
               ],
               const SizedBox(height: 22),
               child,
@@ -501,8 +501,8 @@ class _BalanceCard extends StatelessWidget {
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(30),
-        gradient: const LinearGradient(colors: [Color(0xFFFF8A1F), Color(0xFFFFB12A)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        boxShadow: const [BoxShadow(color: Color(0x33FF7A1A), blurRadius: 22, offset: Offset(0, 12))],
+        gradient: const LinearGradient(colors: [Color(0xFF2FB865), Color(0xFF7BD88F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        boxShadow: const [BoxShadow(color: Color(0x332FB865), blurRadius: 22, offset: Offset(0, 12))],
       ),
       child: Stack(children: [
         const Positioned(right: 0, top: 0, child: SnackMascot(size: 72, light: true)),
@@ -513,7 +513,7 @@ class _BalanceCard extends StatelessWidget {
           const SizedBox(height: 6),
           const Text('191,000원', style: TextStyle(color: Colors.white, fontSize: 38, fontWeight: FontWeight.w900)),
           const SizedBox(height: 14),
-          const Text('중식 진행중 · 1식 한도 10,000원', style: TextStyle(color: Color(0xFFFFF8E8), fontWeight: FontWeight.w800)),
+          const Text('중식 진행중 · 1식 한도 10,000원', style: TextStyle(color: Color(0xFFEAFBF0), fontWeight: FontWeight.w800)),
         ]),
       ]),
     );
@@ -539,11 +539,11 @@ class PaymentCompletePreview extends StatelessWidget {
                 SizedBox(height: 18),
                 Text('결제완료', style: TextStyle(color: kInk, fontSize: 36, fontWeight: FontWeight.w900)),
                 SizedBox(height: 10),
-                Text('든든 김치찌개', style: TextStyle(color: Color(0xFF7A5637), fontSize: 22, fontWeight: FontWeight.w800)),
+                Text('든든 김치찌개', style: TextStyle(color: Color(0xFF5C7A66), fontSize: 22, fontWeight: FontWeight.w800)),
                 SizedBox(height: 6),
                 Text('9,000원', style: TextStyle(color: kOrange, fontSize: 50, fontWeight: FontWeight.w900)),
                 SizedBox(height: 14),
-                Text('거래번호 123456 · 서버시각 표시 예정', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF8B6544), fontWeight: FontWeight.w700)),
+                Text('거래번호 123456 · 서버시각 표시 예정', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
               ]),
             ),
           ),
@@ -561,7 +561,7 @@ class BrandBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(colors: [Color(0xFFFFF4D9), Color(0xFFFFF9EE), Color(0xFFFFE5B7)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: LinearGradient(colors: [Color(0xFFEAF7EC), Color(0xFFF3FBF4), Color(0xFFD9F0DE)], begin: Alignment.topLeft, end: Alignment.bottomRight),
       ),
       child: Stack(children: [
         Positioned(top: -70, right: -45, child: _Blob(size: 180, color: kTangerine.withValues(alpha: .35))),
@@ -584,7 +584,7 @@ BoxDecoration brandCardDecoration({double radius = 26}) => BoxDecoration(
   color: kCard,
   borderRadius: BorderRadius.circular(radius),
   border: Border.all(color: kLine, width: 1.4),
-  boxShadow: const [BoxShadow(color: Color(0x1AFF8A1F), blurRadius: 24, offset: Offset(0, 14))],
+  boxShadow: const [BoxShadow(color: Color(0x1A2FB865), blurRadius: 24, offset: Offset(0, 14))],
 );
 
 class BrandLogo extends StatelessWidget {
@@ -598,7 +598,7 @@ class BrandLogo extends StatelessWidget {
       const SizedBox(width: 10),
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('그린잇', style: TextStyle(fontSize: compact ? 22 : 27, fontWeight: FontWeight.w900, color: kCocoa, letterSpacing: -.8)),
-        if (!compact) const Text('회사 식대가 맛있어지는 시간', style: TextStyle(color: Color(0xFF8B6544), fontWeight: FontWeight.w800)),
+        if (!compact) const Text('그린하게 먹다, 건강하게 잇하다', style: TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
       ]),
     ]);
   }
@@ -617,7 +617,7 @@ class SnackMascot extends StatelessWidget {
       height: size,
       child: Stack(alignment: Alignment.center, children: [
         Container(width: size, height: size * .78, decoration: BoxDecoration(color: face, borderRadius: BorderRadius.circular(size * .22), border: Border.all(color: light ? Colors.white : kCocoa, width: size * .045))),
-        Positioned(top: size * .05, child: Container(width: size * .52, height: size * .18, decoration: BoxDecoration(color: light ? const Color(0xFFFFE7B2) : kOrange, borderRadius: BorderRadius.circular(999)))),
+        Positioned(top: size * .05, child: Container(width: size * .52, height: size * .18, decoration: BoxDecoration(color: light ? const Color(0xFFCDEBD5) : kOrange, borderRadius: BorderRadius.circular(999)))),
         Positioned(left: size * .30, top: size * .38, child: _Dot(size: size * .075, color: kCocoa)),
         Positioned(right: size * .30, top: size * .38, child: _Dot(size: size * .075, color: kCocoa)),
         Positioned(bottom: size * .22, child: Container(width: size * .26, height: size * .08, decoration: BoxDecoration(color: kCocoa, borderRadius: BorderRadius.circular(999)))),
@@ -644,11 +644,11 @@ class _SnackHero extends StatelessWidget {
       const SnackMascot(size: 84),
       const SizedBox(width: 14),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFFFEDD0), borderRadius: BorderRadius.circular(999)), child: const Text('TODAY BOX', style: TextStyle(color: kOrange, fontSize: 12, fontWeight: FontWeight.w900))),
+        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFDDF3E2), borderRadius: BorderRadius.circular(999)), child: const Text('TODAY GREEN', style: TextStyle(color: kOrange, fontSize: 12, fontWeight: FontWeight.w900))),
         const SizedBox(height: 8),
-        Text(signupMode ? '직원 계정을 만들어요' : '출출할 땐 바로 결제', style: const TextStyle(fontSize: 26, height: 1.04, fontWeight: FontWeight.w900)),
+        Text(signupMode ? '직원 계정을 만들어요' : '건강하게, 바로 결제', style: const TextStyle(fontSize: 26, height: 1.04, fontWeight: FontWeight.w900)),
         const SizedBox(height: 6),
-        Text(signupMode ? '초대코드와 승인만 끝나면 회사 식대를 사용할 수 있어요.' : '회사 식대 포인트로 주변 식당에서 간편하게 결제하세요.', style: const TextStyle(color: Color(0xFF7A5637), fontWeight: FontWeight.w700)),
+        Text(signupMode ? '초대코드와 승인만 끝나면 회사 식대를 사용할 수 있어요.' : '회사 식대 포인트로 주변 식당에서 그린하게 결제하세요.', style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
       ])),
     ]);
   }
@@ -684,9 +684,9 @@ class MiniSnackRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Row(children: [
-      _EmojiChip(emoji: '🍱', label: '점심'),
+      _EmojiChip(emoji: '🥗', label: '샐러드'),
       SizedBox(width: 8),
-      _EmojiChip(emoji: '🥪', label: '간식'),
+      _EmojiChip(emoji: '🍱', label: '점심'),
       SizedBox(width: 8),
       _EmojiChip(emoji: '☕', label: '카페'),
     ]);
@@ -726,7 +726,7 @@ class _HistoryTile extends StatelessWidget {
   final String price;
   final String emoji;
   @override
-  Widget build(BuildContext context) => Container(margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(14), decoration: brandCardDecoration(radius: 22), child: Row(children: [Text(emoji, style: const TextStyle(fontSize: 30)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w900)), Text(meta, style: const TextStyle(color: Color(0xFF8B6544), fontWeight: FontWeight.w700))])), Text(price, style: const TextStyle(fontWeight: FontWeight.w900, color: kCocoa))]));
+  Widget build(BuildContext context) => Container(margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(14), decoration: brandCardDecoration(radius: 22), child: Row(children: [Text(emoji, style: const TextStyle(fontSize: 30)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w900)), Text(meta, style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700))])), Text(price, style: const TextStyle(fontWeight: FontWeight.w900, color: kCocoa))]));
 }
 
 class BrandLoadingScreen extends StatelessWidget {

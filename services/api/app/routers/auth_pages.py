@@ -14,19 +14,19 @@ def auth_confirmed() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>그린잇 이메일 인증 완료</title>
   <style>
-    :root { color: #24180f; background: #fff3d9; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    :root { color: #14351F; background: #F3FBF4; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 10% 10%, rgba(255,183,49,.38), transparent 32%), linear-gradient(135deg, #fff3d9, #fffaf0 48%, #ffe3ae); }
-    .card { width: min(100%, 520px); background: #fffaf0; border: 1.5px solid #ffdfa8; border-radius: 30px; padding: 30px; text-align: center; box-shadow: 0 24px 60px rgba(129,75,23,.13); }
-    .box { width: 90px; height: 74px; margin: 0 auto 18px; border-radius: 22px; border: 5px solid #4a2a14; background: #ffa629; position: relative; box-shadow: inset 0 14px rgba(255,255,255,.32); }
-    .box:before, .box:after { content: ''; position: absolute; top: 36px; width: 8px; height: 8px; border-radius: 50%; background: #4a2a14; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 10% 10%, rgba(123,216,143,.42), transparent 32%), linear-gradient(135deg, #EAF7EC, #F3FBF4 48%, #D9F0DE); }
+    .card { width: min(100%, 520px); background: #FCFEFC; border: 1.5px solid #CDEBD5; border-radius: 30px; padding: 30px; text-align: center; box-shadow: 0 24px 60px rgba(30,86,49,.13); }
+    .box { width: 90px; height: 74px; margin: 0 auto 18px; border-radius: 22px; border: 5px solid #1E5631; background: #7BD88F; position: relative; box-shadow: inset 0 14px rgba(255,255,255,.32); }
+    .box:before, .box:after { content: ''; position: absolute; top: 36px; width: 8px; height: 8px; border-radius: 50%; background: #1E5631; }
     .box:before { left: 25px; } .box:after { right: 25px; }
-    .mouth { position: absolute; left: 36px; bottom: 15px; width: 18px; height: 6px; border-radius: 999px; background: #4a2a14; }
-    .pill { display: inline-block; padding: 7px 12px; border-radius: 999px; background: #ffecd0; color: #ff7a1a; font-size: 12px; font-weight: 900; letter-spacing: .08em; }
+    .mouth { position: absolute; left: 36px; bottom: 15px; width: 18px; height: 6px; border-radius: 999px; background: #1E5631; }
+    .pill { display: inline-block; padding: 7px 12px; border-radius: 999px; background: #DDF3E2; color: #2FB865; font-size: 12px; font-weight: 900; letter-spacing: .08em; }
     h1 { margin: 14px 0 10px; font-size: 30px; line-height: 1.16; letter-spacing: -1px; }
-    p { margin: 0; color: #805a39; font-size: 16px; line-height: 1.65; font-weight: 750; }
-    .button { display: block; margin-top: 22px; padding: 15px 18px; border-radius: 18px; background: linear-gradient(135deg, #ff7a1a, #ffa629); color: white; font-weight: 900; text-decoration: none; }
-    .hint { margin-top: 16px; font-size: 13px; color: #9a7656; }
+    p { margin: 0; color: #5C7A66; font-size: 16px; line-height: 1.65; font-weight: 750; }
+    .button { display: block; margin-top: 22px; padding: 15px 18px; border-radius: 18px; background: linear-gradient(135deg, #2FB865, #7BD88F); color: white; font-weight: 900; text-decoration: none; }
+    .hint { margin-top: 16px; font-size: 13px; color: #5C7A66; }
   </style>
 </head>
 <body>

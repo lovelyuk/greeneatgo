@@ -30,6 +30,22 @@ def _token() -> str:
     return secrets.token_urlsafe(32)
 
 
+@router.get("/merchants")
+def list_merchants(token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _platform_admin(repo, token)
+        rows = repo.client.rest_get(
+            "merchants",
+            {"select": "id,name,owner_phone,category,avg_price,qr_token,status,created_at", "order": "created_at.desc", "limit": "100"},
+        )
+        return {"ok": True, "data": {"items": rows}, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "식당 목록을 불러오는 중 오류가 발생했어요") from exc
+
+
 @router.post("/merchants")
 def create_merchant(payload: PlatformMerchantCreateRequest, token: str = Depends(bearer_token)):
     repo = JoinRepository()

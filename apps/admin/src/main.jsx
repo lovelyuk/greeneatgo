@@ -124,12 +124,19 @@ function Dashboard({ session, onLogout }) {
   const [companySearchResults, setCompanySearchResults] = useState([]);
   const [newCompanyForm, setNewCompanyForm] = useState({ name: '', owner_phone: '' });
   const [transactions, setTransactions] = useState(null);
+  const [platformMerchants, setPlatformMerchants] = useState(null);
+  const [platformMerchantForm, setPlatformMerchantForm] = useState({ name: '', owner_phone: '', category: '', avg_price: '' });
+  const [platformInvitePhone, setPlatformInvitePhone] = useState({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   const isMerchantAdmin = me?.role === 'merchant_admin';
-  const cards = useMemo(() => isMerchantAdmin ? [
+  const isPlatformAdmin = me?.role === 'platform_admin';
+  const cards = useMemo(() => isPlatformAdmin ? [
+    ['권한', '플랫폼 운영자', WalletCards, 'brown'],
+    ['식당', platformMerchants ? `${platformMerchants.items.length}곳` : '조회 중', Coffee, 'green'],
+  ] : isMerchantAdmin ? [
     ['권한', '식당관리자', WalletCards, 'brown'],
     ['상품', products ? `${products.items.filter((item) => item.is_active).length}개` : '조회 중', QrCode, 'orange'],
     ['장부업체', merchantCompanies ? `${merchantCompanies.items.length}곳` : '조회 중', Users, 'green'],
@@ -139,7 +146,7 @@ function Dashboard({ session, onLogout }) {
     ['직원 권한', me?.role === 'company_admin' ? '관리자' : '확인 필요', WalletCards, 'brown'],
     ['QR 결제', products ? `${products.items.filter((item) => item.is_active).length}개 상품` : '단일 식당', QrCode, 'orange'],
     ['정산 현황', settlements ? `${settlements.summary.settlement_count}건` : '조회 중', FileSpreadsheet, 'green'],
-  ], [isMerchantAdmin, requests.length, me, settlements, products, merchantCompanies, transactions]);
+  ], [isPlatformAdmin, isMerchantAdmin, requests.length, me, settlements, products, merchantCompanies, transactions, platformMerchants]);
 
   async function load() {
     setBusy(true);
@@ -147,36 +154,44 @@ function Dashboard({ session, onLogout }) {
     setMessage('');
     try {
       const meData = await apiFetch('/me', token);
-      const [productData, dailyMenuData] = await Promise.all([
-        apiFetch('/admin/products', token),
-        apiFetch('/admin/daily-menu', token),
-      ]);
+      let productData = null;
+      let dailyMenuData = null;
       let requestData = { items: [] };
       let settlementData = null;
       let merchantCompanyData = null;
       let transactionData = null;
-      if (meData.role === 'company_admin') {
-        [requestData, settlementData] = await Promise.all([
-          apiFetch('/admin/join-requests', token),
-          apiFetch('/admin/settlements', token),
+      let platformMerchantData = null;
+      if (meData.role === 'platform_admin') {
+        platformMerchantData = await apiFetch('/admin/platform/merchants', token);
+      } else {
+        [productData, dailyMenuData] = await Promise.all([
+          apiFetch('/admin/products', token),
+          apiFetch('/admin/daily-menu', token),
         ]);
-      }
-      if (meData.role === 'merchant_admin') {
-        [merchantCompanyData, transactionData] = await Promise.all([
-          apiFetch('/admin/merchant/companies', token),
-          apiFetch('/admin/merchant/transactions', token),
-        ]);
+        if (meData.role === 'company_admin') {
+          [requestData, settlementData] = await Promise.all([
+            apiFetch('/admin/join-requests', token),
+            apiFetch('/admin/settlements', token),
+          ]);
+        }
+        if (meData.role === 'merchant_admin') {
+          [merchantCompanyData, transactionData] = await Promise.all([
+            apiFetch('/admin/merchant/companies', token),
+            apiFetch('/admin/merchant/transactions', token),
+          ]);
+        }
       }
       setMe(meData);
       setRequests(requestData.items ?? []);
       setSettlements(settlementData);
       setMerchantCompanies(merchantCompanyData);
       setTransactions(transactionData);
+      setPlatformMerchants(platformMerchantData);
       setProducts(productData);
       setDailyMenu(dailyMenuData);
       setDailyMenuForm({
-        title: dailyMenuData.today_menu?.title ?? '오늘의 부페 메뉴',
-        menu_text: dailyMenuData.today_menu?.menu_text ?? '',
+        title: dailyMenuData?.today_menu?.title ?? '오늘의 부페 메뉴',
+        menu_text: dailyMenuData?.today_menu?.menu_text ?? '',
       });
     } catch (loadError) {
       setError(loadError.message);
@@ -332,6 +347,51 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
+  async function createPlatformMerchant(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiFetch('/admin/platform/merchants', token, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: platformMerchantForm.name.trim(),
+          owner_phone: platformMerchantForm.owner_phone.trim() || null,
+          category: platformMerchantForm.category.trim() || null,
+          avg_price: platformMerchantForm.avg_price ? Number(platformMerchantForm.avg_price) : null,
+        }),
+      });
+      setPlatformMerchantForm({ name: '', owner_phone: '', category: '', avg_price: '' });
+      setMessage('식당을 등록했어요.');
+      await load();
+    } catch (createError) {
+      setError(createError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function invitePlatformMerchant(merchantId) {
+    const phone = (platformInvitePhone[merchantId] ?? '').trim();
+    if (!phone) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const invite = await apiFetch(`/admin/platform/merchants/${merchantId}/invite`, token, {
+        method: 'POST',
+        body: JSON.stringify({ phone }),
+      });
+      setPlatformInvitePhone((form) => ({ ...form, [merchantId]: '' }));
+      setMessage(`식당관리자 초대를 생성했어요. 초대 토큰: ${invite.token ?? '-'}`);
+    } catch (inviteError) {
+      setError(inviteError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => { load(); }, []);
 
   return <main className="shell">
@@ -354,8 +414,8 @@ function Dashboard({ session, onLogout }) {
     <section className="hero-panel">
       <div>
         <span className="pill light">LUNCH WALLET</span>
-        <h2>{isMerchantAdmin ? '오늘 메뉴와 상품을 관리하세요' : '든든한 한 끼를 빠르게 승인하세요'}</h2>
-        <p>{isMerchantAdmin ? `${products?.merchant?.name ?? '운영 식당'} · ${me?.display_name ?? session.user.email}` : `대기 중인 직원 ${requests.length}명 · 관리자 ${me?.display_name ?? session.user.email}`}</p>
+        <h2>{isPlatformAdmin ? '식당과 사장님 초대를 관리하세요' : isMerchantAdmin ? '오늘 메뉴와 상품을 관리하세요' : '든든한 한 끼를 빠르게 승인하세요'}</h2>
+        <p>{isPlatformAdmin ? `등록 식당 ${platformMerchants?.items?.length ?? 0}곳 · ${me?.display_name ?? session.user.email}` : isMerchantAdmin ? `${products?.merchant?.name ?? '운영 식당'} · ${me?.display_name ?? session.user.email}` : `대기 중인 직원 ${requests.length}명 · 관리자 ${me?.display_name ?? session.user.email}`}</p>
       </div>
       <Package className="hero-icon" size={96}/>
     </section>
@@ -365,6 +425,29 @@ function Dashboard({ session, onLogout }) {
         <Icon size={28}/><span>{label}</span><strong>{value}</strong>
       </article>)}
     </section>
+
+    {isPlatformAdmin && <section className="panel">
+      <div className="panel-title">
+        <div><h2>플랫폼 식당 온보딩</h2><p className="panel-note">식당을 등록하고 사장님에게 식당관리자 초대를 생성합니다.</p></div>
+        <span className="badge">{platformMerchants?.items?.length ?? 0}곳</span>
+      </div>
+      <form className="product-form" onSubmit={createPlatformMerchant}>
+        <input value={platformMerchantForm.name} onChange={(event) => setPlatformMerchantForm((form) => ({ ...form, name: event.target.value }))} placeholder="식당명" required />
+        <input value={platformMerchantForm.owner_phone} onChange={(event) => setPlatformMerchantForm((form) => ({ ...form, owner_phone: event.target.value }))} placeholder="사장님 연락처" />
+        <input value={platformMerchantForm.category} onChange={(event) => setPlatformMerchantForm((form) => ({ ...form, category: event.target.value }))} placeholder="카테고리" />
+        <input value={platformMerchantForm.avg_price} onChange={(event) => setPlatformMerchantForm((form) => ({ ...form, avg_price: event.target.value }))} placeholder="평균가" type="number" min="1" />
+        <button className="primary" disabled={busy}>식당 등록</button>
+      </form>
+      {(platformMerchants?.items?.length ?? 0) === 0
+        ? <p className="empty-state">등록된 식당이 없어요.</p>
+        : <div className="product-list">{platformMerchants.items.map((merchant) => <article className="product-item" key={merchant.id}>
+          <div><strong>{merchant.name}</strong><span>{merchant.category ?? '기본'} · {merchant.owner_phone ?? '연락처 없음'} · {merchant.status}</span></div>
+          <div className="row-actions">
+            <input value={platformInvitePhone[merchant.id] ?? ''} onChange={(event) => setPlatformInvitePhone((form) => ({ ...form, [merchant.id]: event.target.value }))} placeholder="초대 연락처" />
+            <button className="ghost" onClick={() => invitePlatformMerchant(merchant.id)} disabled={busy || !(platformInvitePhone[merchant.id] ?? '').trim()}>사장님 초대</button>
+          </div>
+        </article>)}</div>}
+    </section>}
 
     <section className="two-col">
       <article className="panel profile-panel">
@@ -383,7 +466,7 @@ function Dashboard({ session, onLogout }) {
       </article>
     </section>
 
-    {isMerchantAdmin && <section className="panel">
+    {!isPlatformAdmin && isMerchantAdmin && <section className="panel">
       <div className="panel-title">
         <div><h2>장부업체 관리</h2><p className="panel-note">거래를 허용할 회사를 검색해서 연결하거나, 새 회사 담당자를 초대합니다.</p></div>
         <span className="badge">{merchantCompanies?.items?.length ?? 0}곳</span>
@@ -408,7 +491,7 @@ function Dashboard({ session, onLogout }) {
         : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>연결일</th></tr></thead><tbody>{merchantCompanies.items.map((item) => <tr key={item.id}><td>{item.company?.name ?? item.company_id}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>)}</tbody></table></div>}
     </section>}
 
-    {isMerchantAdmin && <section className="panel">
+    {!isPlatformAdmin && isMerchantAdmin && <section className="panel">
       <div className="panel-title"><h2>거래내역</h2><span className="badge">최근 {transactions?.items?.length ?? 0}건</span></div>
       {(transactions?.items?.length ?? 0) === 0
         ? <p className="empty-state">아직 식당 거래내역이 없어요.</p>
@@ -416,7 +499,7 @@ function Dashboard({ session, onLogout }) {
     </section>}
 
 
-    <section className="panel daily-menu-panel">
+    {!isPlatformAdmin && <section className="panel daily-menu-panel">
       <div className="panel-title">
         <div><h2>오늘 부페 메뉴</h2><p className="panel-note">오늘 나오는 메뉴를 입력하면 직원 앱 상품 선택 화면 상단에 표시됩니다.</p></div>
         <span className="badge">{dailyMenu?.service_date ?? '오늘'}</span>
@@ -427,10 +510,10 @@ function Dashboard({ session, onLogout }) {
         <textarea value={dailyMenuForm.menu_text} onChange={(event) => setDailyMenuForm((form) => ({ ...form, menu_text: event.target.value }))} placeholder="예: 김치찌개, 제육볶음, 현미밥, 계절 샐러드, 반찬 4종" required rows={4} />
         <button className="primary" disabled={busy || dailyMenu?.migration_required}>오늘 메뉴 저장</button>
       </form>
-    </section>
+    </section>}
 
 
-    <section className="panel product-panel">
+    {!isPlatformAdmin && <section className="panel product-panel">
       <div className="panel-title">
         <div><h2>식당 상품 관리</h2><p className="panel-note">직원 앱은 금액 입력 없이 여기 등록된 상품 중 하나를 선택해 결제합니다.</p></div>
         <span className="badge">{products?.merchant?.name ?? '운영 식당'}</span>
@@ -448,10 +531,10 @@ function Dashboard({ session, onLogout }) {
           <div><strong>{product.name}</strong><span>{product.category ?? '기본'} · {Number(product.price).toLocaleString('ko-KR')}원</span></div>
           <button className="ghost" onClick={() => toggleProduct(product)} disabled={busy || products?.migration_required}>{product.is_active ? '숨김' : '판매중'}</button>
         </article>)}</div>}
-    </section>
+    </section>}
 
 
-    {!isMerchantAdmin && <section className="panel settlement-panel">
+    {!isPlatformAdmin && !isMerchantAdmin && <section className="panel settlement-panel">
       <div className="panel-title">
         <h2>정산 현황</h2>
         <span className="badge">{settlements?.period_ym ?? '이번 달'}</span>
@@ -467,7 +550,7 @@ function Dashboard({ session, onLogout }) {
         : <div className="table-wrap"><table><thead><tr><th>기간</th><th>결제건수</th><th>금액</th><th>상태</th></tr></thead><tbody>{settlements.items.map((item) => <tr key={item.id}><td>{item.period_ym}</td><td>{item.tx_count}</td><td>{Number(item.total_amount).toLocaleString('ko-KR')}원</td><td>{item.status}</td></tr>)}</tbody></table></div>}
     </section>}
 
-    {!isMerchantAdmin && <section className="panel">
+    {!isPlatformAdmin && !isMerchantAdmin && <section className="panel">
       <div className="panel-title">
         <h2>가입 요청 승인</h2>
         <span className="badge">pending {requests.length}</span>

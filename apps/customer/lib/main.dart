@@ -93,6 +93,15 @@ class ApiClient {
     return _request('/join/request', method: 'POST', body: {'invite_code': inviteCode, 'display_name': displayName});
   }
 
+  Future<Map<String, dynamic>> payProduct({required String qrToken, required MerchantProduct product}) {
+    return _request('/pay', method: 'POST', body: {
+      'qr_token': qrToken,
+      'amount': product.price,
+      'product_id': product.id,
+      'idempotency_key': '${session.user.id}-${product.id}-${DateTime.now().millisecondsSinceEpoch}',
+    });
+  }
+
   Future<Map<String, dynamic>> _request(String path, {String method = 'GET', Map<String, dynamic>? body}) async {
     final uri = Uri.parse('$apiBaseUrl$path');
     final request = http.Request(method, uri)
@@ -484,7 +493,7 @@ class HomeScreen extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _BalanceCard(name: name),
         const SizedBox(height: 16),
-        _QuickAction(icon: Icons.qr_code_scanner_rounded, label: '그린잇 식당 상품 선택', color: kOrange, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProductSelectionScreen()))),
+        _QuickAction(icon: Icons.qr_code_scanner_rounded, label: '그린잇 식당 상품 선택', color: kOrange, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductSelectionScreen(session: Supabase.instance.client.auth.currentSession!)))),
         const SizedBox(height: 24),
         const SectionHeader(title: '최근 이용', action: '이번 주 3회'),
         const SizedBox(height: 10),
@@ -581,7 +590,8 @@ class _BalanceCard extends StatelessWidget {
 }
 
 class ProductSelectionScreen extends StatefulWidget {
-  const ProductSelectionScreen({super.key});
+  const ProductSelectionScreen({super.key, required this.session});
+  final Session session;
 
   @override
   State<ProductSelectionScreen> createState() => _ProductSelectionScreenState();
@@ -626,7 +636,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
             ...menu.products.map((product) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: InkWell(
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PaymentCompletePreview(product: product, merchantName: menu.merchantName))),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PaymentCompletePreview(session: widget.session, product: product, merchantName: menu.merchantName))),
                 borderRadius: BorderRadius.circular(20),
                 child: Container(
                   padding: const EdgeInsets.all(16),
@@ -649,34 +659,55 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
   }
 }
 
-class PaymentCompletePreview extends StatelessWidget {
-  const PaymentCompletePreview({super.key, required this.product, required this.merchantName});
+class PaymentCompletePreview extends StatefulWidget {
+  const PaymentCompletePreview({super.key, required this.session, required this.product, required this.merchantName});
+  final Session session;
   final MerchantProduct product;
   final String merchantName;
 
   @override
+  State<PaymentCompletePreview> createState() => _PaymentCompletePreviewState();
+}
+
+class _PaymentCompletePreviewState extends State<PaymentCompletePreview> {
+  late final Future<Map<String, dynamic>> _payment = ApiClient(widget.session).payProduct(qrToken: defaultMerchantQrToken, product: widget.product);
+
+  @override
   Widget build(BuildContext context) {
-    final priceText = product.price.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+    final priceText = widget.product.price.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
     return Scaffold(
       backgroundColor: kOrange,
       body: SafeArea(
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Container(
-              padding: const EdgeInsets.all(28),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(34), boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 26, offset: Offset(0, 16))]),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                const SproutMark(size: 104),
-                const SizedBox(height: 18),
-                const Text('결제완료', style: TextStyle(color: kInk, fontSize: 36, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 10),
-                Text(product.name, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontSize: 22, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Text('$priceText원', style: const TextStyle(color: kOrange, fontSize: 50, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 14),
-                Text('$merchantName · 거래번호 123456', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
-              ]),
+            child: FutureBuilder<Map<String, dynamic>>(
+              future: _payment,
+              builder: (context, snapshot) {
+                final payment = snapshot.data?['payment'] as Map<String, dynamic>?;
+                final txCode = payment?['tx_code'] as String? ?? '-';
+                final hasError = snapshot.hasError;
+                final loading = snapshot.connectionState != ConnectionState.done;
+                return Container(
+                  padding: const EdgeInsets.all(28),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(34), boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 26, offset: Offset(0, 16))]),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const SproutMark(size: 104),
+                    const SizedBox(height: 18),
+                    Text(loading ? '결제중' : hasError ? '결제실패' : '결제완료', style: const TextStyle(color: kInk, fontSize: 36, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 10),
+                    if (loading) const CircularProgressIndicator() else if (hasError) Text(snapshot.error.toString().replaceFirst('Exception: ', ''), textAlign: TextAlign.center, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w800)) else ...[
+                      Text(widget.product.name, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontSize: 22, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 6),
+                      Text('$priceText원', style: const TextStyle(color: kOrange, fontSize: 50, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 14),
+                      Text('${widget.merchantName} · 거래번호 $txCode', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
+                    ],
+                    const SizedBox(height: 18),
+                    OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: Text(hasError ? '다시 선택하기' : '확인')),
+                  ]),
+                );
+              },
             ),
           ),
         ),

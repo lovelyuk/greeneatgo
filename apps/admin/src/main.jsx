@@ -261,7 +261,7 @@ function Dashboard({ session, onLogout }) {
     ['권한', '플랫폼 운영자', WalletCards, 'brown'],
     ['식당', platformMerchants ? `${platformMerchants.items.length}곳` : '조회 중', Coffee, 'green'],
   ] : isMerchantAdmin ? [
-    ['권한', '식당관리자', WalletCards, 'brown'],
+    ['권한', '돈토관리자', WalletCards, 'brown'],
     ['상품', products ? `${products.items.filter((item) => item.is_active).length}개` : '조회 중', QrCode, 'orange'],
     ['장부업체', merchantCompanies ? `${merchantCompanies.items.length}곳` : '조회 중', Users, 'green'],
     ['거래내역', transactions ? `${transactions.items.length}건` : '조회 중', FileSpreadsheet, 'orange'],
@@ -539,7 +539,7 @@ function Dashboard({ session, onLogout }) {
       <div>
         <span className="pill light">LUNCH WALLET</span>
         <h2>{isPlatformAdmin ? '식당과 사장님 초대를 관리하세요' : isMerchantAdmin ? '오늘 메뉴와 상품을 관리하세요' : '든든한 한 끼를 빠르게 승인하세요'}</h2>
-        <p>{isPlatformAdmin ? `등록 식당 ${platformMerchants?.items?.length ?? 0}곳 · ${me?.display_name ?? session.user.email}` : isMerchantAdmin ? `${products?.merchant?.name ?? '운영 식당'} · ${me?.display_name ?? session.user.email}` : `대기 중인 직원 ${requests.length}명 · 관리자 ${me?.display_name ?? session.user.email}`}</p>
+        <p>{isPlatformAdmin ? `등록 식당 ${platformMerchants?.items?.length ?? 0}곳 · ${me?.display_name ?? session.user.email}` : isMerchantAdmin ? `${products?.merchant?.name ?? '운영 식당'} · ${(me?.display_name ?? session.user.email).replace('돈토관리자', '돈토 관리자')}` : `대기 중인 직원 ${requests.length}명 · 관리자 ${me?.display_name ?? session.user.email}`}</p>
       </div>
       <Package className="hero-icon" size={96}/>
     </section>
@@ -579,15 +579,15 @@ function Dashboard({ session, onLogout }) {
         <div className="profile-grid">
           <span>이메일</span><strong>{session.user.email}</strong>
           <span>이름</span><strong>{me?.display_name ?? '-'}</strong>
-          <span>권한</span><strong>{me?.role ?? '-'}</strong>
+          <span>권한</span><strong>{me?.role === 'merchant_admin' ? '돈토관리자' : me?.role ?? '-'}</strong>
           <span>상태</span><strong>{me?.status ?? '-'}</strong>
         </div>
       </article>
-      <article className="panel menu-panel">
+      {!isMerchantAdmin && <article className="panel menu-panel">
         <div className="panel-title"><h2>운영 식당</h2><Coffee size={22}/></div>
         <div className="menu-chips single"><span>🥗 그린잇 식당</span></div>
         <p className="panel-note">현재 파일럿은 한 식당에서만 운영합니다.</p>
-      </article>
+      </article>}
     </section>
 
     {!isPlatformAdmin && isMerchantAdmin && <section className="panel">
@@ -640,7 +640,7 @@ function Dashboard({ session, onLogout }) {
     {!isPlatformAdmin && <section className="panel product-panel">
       <div className="panel-title">
         <div><h2>식당 상품 관리</h2><p className="panel-note">직원 앱은 금액 입력 없이 여기 등록된 상품 중 하나를 선택해 결제합니다.</p></div>
-        <span className="badge">{products?.merchant?.name ?? '운영 식당'}</span>
+        {isMerchantAdmin ? null : <span className="badge">{products?.merchant?.name ?? '운영 식당'}</span>}
       </div>
       {products?.migration_required && <div className="alert error">상품 DB 마이그레이션이 아직 적용되지 않아 기본 상품만 표시 중이에요. 0005_merchant_products.sql 적용 후 등록/수정이 활성화됩니다.</div>}
       <form className="product-form" onSubmit={createProduct}>

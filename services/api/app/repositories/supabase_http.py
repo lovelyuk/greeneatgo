@@ -59,6 +59,9 @@ class SupabaseHttpClient:
         query = urlencode(params, safe="*,.():")
         return self._request("PATCH", f"/rest/v1/{table}?{query}", key=self.settings.supabase_service_role_key, body=values, prefer="return=representation")
 
+    def rpc(self, function_name: str, payload: dict[str, Any]) -> Any:
+        return self._request("POST", f"/rest/v1/rpc/{function_name}", key=self.settings.supabase_service_role_key, body=payload)
+
     def auth_get_user(self, access_token: str) -> AuthUser:
         headers = {
             "apikey": self.settings.supabase_anon_key,

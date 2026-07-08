@@ -7,6 +7,7 @@ class GPSPoint(BaseModel):
 class PayRequest(BaseModel):
     qr_token: str
     amount: int = Field(gt=0)
+    product_id: str | None = Field(default=None, max_length=80)
     gps: GPSPoint | None = None
     idempotency_key: str
 

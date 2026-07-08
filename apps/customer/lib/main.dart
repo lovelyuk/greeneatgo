@@ -70,6 +70,14 @@ class GreeneatGoApp extends StatelessWidget {
         ),
         appBarTheme: const AppBarTheme(backgroundColor: Colors.transparent, elevation: 0, foregroundColor: kInk, centerTitle: false),
       ),
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        // 기기 글꼴 크기 설정으로 UI가 과도하게 커지는 것을 방지 (최대 1.2배로 제한)
+        return MediaQuery(
+          data: mq.copyWith(textScaler: mq.textScaler.clamp(maxScaleFactor: 1.2)),
+          child: child!,
+        );
+      },
       home: const AppGate(),
     );
   }
@@ -329,7 +337,7 @@ class _LoginScreenState extends State<LoginScreen> {
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             const SizedBox(height: 10),
-            const BrandLogo(),
+            const BrandTitle(height: 42),
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(22),
@@ -357,7 +365,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ]),
             ),
             const SizedBox(height: 16),
-            const Text('회원가입 후 회사 초대코드 입력과 관리자 승인을 거쳐 식대 사용이 가능해요.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
+            const Text('회원가입 후 회사 초대코드 입력과 관리자 승인을 거쳐 식대 사용이 가능해요.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF5C7A66), fontSize: 13, height: 1.5, fontWeight: FontWeight.w700)),
           ]),
         ),
       ),
@@ -506,7 +514,7 @@ class AppScaffold extends StatelessWidget {
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              const BrandLogo(compact: true),
+              const BrandTitle(height: 30),
               const SizedBox(height: 18),
               Text(title, style: const TextStyle(fontSize: 31, height: 1.08, fontWeight: FontWeight.w900, color: kInk)),
               if (subtitle != null) ...[
@@ -711,20 +719,26 @@ BoxDecoration brandCardDecoration({double radius = 26}) => BoxDecoration(
   boxShadow: const [BoxShadow(color: Color(0x1A2FB865), blurRadius: 24, offset: Offset(0, 14))],
 );
 
-class BrandLogo extends StatelessWidget {
-  const BrandLogo({super.key, this.compact = false});
-  final bool compact;
+/// 좌측 정렬 브랜드 타이틀. 여러 화면에서 공통으로 사용한다.
+/// assets/brand/greenit_title.png 가 있으면 그 이미지를, 없으면 워드마크 텍스트로 표시한다.
+class BrandTitle extends StatelessWidget {
+  const BrandTitle({super.key, this.height = 40});
+  final double height;
 
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
-      SproutMark(size: compact ? 42 : 54),
-      const SizedBox(width: 10),
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('그린잇', style: TextStyle(fontSize: compact ? 22 : 27, fontWeight: FontWeight.w900, color: kCocoa, letterSpacing: -.8)),
-        if (!compact) const Text('그린하게 먹다, 건강하게 잇하다', style: TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
-      ]),
-    ]);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Image.asset(
+        'assets/brand/greenit_title.png',
+        height: height,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => Text(
+          '그린잇',
+          style: TextStyle(fontSize: height * 0.66, fontWeight: FontWeight.w900, color: kCocoa, letterSpacing: -1),
+        ),
+      ),
+    );
   }
 }
 
@@ -811,9 +825,9 @@ class _SnackHero extends StatelessWidget {
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFDDF3E2), borderRadius: BorderRadius.circular(999)), child: const Text('TODAY GREEN', style: TextStyle(color: kOrange, fontSize: 12, fontWeight: FontWeight.w900))),
         const SizedBox(height: 8),
-        Text(signupMode ? '직원 계정을 만들어요' : '건강하게, 바로 결제', style: const TextStyle(fontSize: 26, height: 1.04, fontWeight: FontWeight.w900)),
+        Text(signupMode ? '직원 계정을 만들어요' : '건강하게, 바로 결제', style: const TextStyle(fontSize: 20, height: 1.1, fontWeight: FontWeight.w900)),
         const SizedBox(height: 6),
-        Text(signupMode ? '초대코드와 승인만 끝나면 회사 식대를 사용할 수 있어요.' : '회사 식대 포인트로 그린잇 식당에서 간편하게 결제하세요.', style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
+        Text(signupMode ? '초대코드와 승인만 끝나면 회사 식대를 사용할 수 있어요.' : '회사 식대 포인트로 그린잇 식당에서 간편하게 결제하세요.', style: const TextStyle(color: Color(0xFF5C7A66), fontSize: 13.5, height: 1.4, fontWeight: FontWeight.w700)),
       ])),
     ]);
   }

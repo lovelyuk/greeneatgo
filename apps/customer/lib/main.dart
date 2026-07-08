@@ -346,14 +346,12 @@ class _LoginScreenState extends State<LoginScreen> {
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             const SizedBox(height: 10),
-            const BrandTitle(height: 42),
+            const BrandTitle(height: 63),
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(22),
               decoration: brandCardDecoration(radius: 30),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                _SnackHero(signupMode: _signupMode),
-                const SizedBox(height: 22),
                 if (_signupMode) ...[
                   TextField(controller: _displayName, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: '이름', prefixIcon: Icon(Icons.badge_outlined))),
                   const SizedBox(height: 12),
@@ -842,26 +840,6 @@ class _SproutPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _SproutPainter old) =>
       old.leaf != leaf || old.leafDark != leafDark || old.stem != stem;
-}
-
-class _SnackHero extends StatelessWidget {
-  const _SnackHero({required this.signupMode});
-  final bool signupMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SproutMark(size: 84),
-      const SizedBox(width: 14),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFDDF3E2), borderRadius: BorderRadius.circular(999)), child: const Text('TODAY GREEN', style: TextStyle(color: kOrange, fontSize: 12, fontWeight: FontWeight.w900))),
-        const SizedBox(height: 8),
-        Text(signupMode ? '직원 계정을 만들어요' : '건강하게, 바로 결제', style: const TextStyle(fontSize: 20, height: 1.1, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 6),
-        Text(signupMode ? '초대코드와 승인만 끝나면 회사 식대를 사용할 수 있어요.' : '회사 식대 포인트로 그린잇 식당에서 간편하게 결제하세요.', style: const TextStyle(color: Color(0xFF5C7A66), fontSize: 13.5, height: 1.4, fontWeight: FontWeight.w700)),
-      ])),
-    ]);
-  }
 }
 
 class BrandPanel extends StatelessWidget {

@@ -345,9 +345,9 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            const SizedBox(height: 10),
-            const BrandTitle(height: 63),
-            const SizedBox(height: 24),
+            const SizedBox(height: 56),
+            const BrandTitle(height: 72, alignment: Alignment.center),
+            const SizedBox(height: 44),
             Container(
               padding: const EdgeInsets.all(22),
               decoration: brandCardDecoration(radius: 30),
@@ -751,13 +751,14 @@ BoxDecoration brandCardDecoration({double radius = 26}) => BoxDecoration(
 /// 좌측 정렬 브랜드 타이틀. 여러 화면에서 공통으로 사용한다.
 /// assets/brand/greenit_title.png 가 있으면 그 이미지를, 없으면 워드마크 텍스트로 표시한다.
 class BrandTitle extends StatelessWidget {
-  const BrandTitle({super.key, this.height = 40});
+  const BrandTitle({super.key, this.height = 40, this.alignment = Alignment.centerLeft});
   final double height;
+  final AlignmentGeometry alignment;
 
   @override
   Widget build(BuildContext context) {
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: alignment,
       child: Image.asset(
         'assets/brand/greenit_title.png',
         height: height,

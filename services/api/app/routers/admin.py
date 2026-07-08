@@ -113,10 +113,13 @@ def _active_admin(repo: JoinRepository, token: str):
 
 def _admin_merchant(repo: JoinRepository, actor) -> dict:
     if actor.role == "merchant_admin":
-        links = repo.client.rest_get(
-            "merchant_admins",
-            {"select": "merchant_id", "user_id": f"eq.{actor.id}", "limit": "1"},
-        )
+        merchant_id = actor.merchant_id
+        if not merchant_id:
+            links = repo.client.rest_get(
+                "merchant_admins",
+                {"select": "merchant_id", "user_id": f"eq.{actor.id}", "limit": "1"},
+            )
+            merchant_id = links[0]["merchant_id"] if links else None
     else:
         if not actor.company_id:
             raise JoinFlowError("FORBIDDEN", "회사 정보가 없어요")
@@ -124,11 +127,12 @@ def _admin_merchant(repo: JoinRepository, actor) -> dict:
             "company_merchants",
             {"select": "merchant_id", "company_id": f"eq.{actor.company_id}", "is_active": "eq.true", "limit": "1"},
         )
-    if not links:
+        merchant_id = links[0]["merchant_id"] if links else None
+    if not merchant_id:
         raise JoinFlowError("MERCHANT_NOT_FOUND", "운영 식당이 아직 연결되지 않았어요")
     merchants = repo.client.rest_get(
         "merchants",
-        {"select": "id,name,category,avg_price,qr_token", "id": f"eq.{links[0]['merchant_id']}", "limit": "1"},
+        {"select": "id,name,category,avg_price,qr_token", "id": f"eq.{merchant_id}", "limit": "1"},
     )
     if not merchants:
         raise JoinFlowError("MERCHANT_NOT_FOUND", "운영 식당을 찾을 수 없어요")

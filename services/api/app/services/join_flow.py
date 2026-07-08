@@ -36,6 +36,7 @@ class UserProfile:
     email: str
     display_name: str
     company_id: str | None = None
+    merchant_id: str | None = None
     group_id: str | None = None
     role: str = "employee"
     status: str | None = None

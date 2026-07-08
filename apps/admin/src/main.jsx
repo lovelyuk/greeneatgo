@@ -119,6 +119,11 @@ function Dashboard({ session, onLogout }) {
   const [productForm, setProductForm] = useState({ name: '', price: '', category: '' });
   const [dailyMenu, setDailyMenu] = useState(null);
   const [dailyMenuForm, setDailyMenuForm] = useState({ title: '오늘의 부페 메뉴', menu_text: '' });
+  const [merchantCompanies, setMerchantCompanies] = useState(null);
+  const [companySearch, setCompanySearch] = useState('');
+  const [companySearchResults, setCompanySearchResults] = useState([]);
+  const [newCompanyForm, setNewCompanyForm] = useState({ name: '', owner_phone: '' });
+  const [transactions, setTransactions] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -127,12 +132,14 @@ function Dashboard({ session, onLogout }) {
   const cards = useMemo(() => isMerchantAdmin ? [
     ['권한', '식당관리자', WalletCards, 'brown'],
     ['상품', products ? `${products.items.filter((item) => item.is_active).length}개` : '조회 중', QrCode, 'orange'],
+    ['장부업체', merchantCompanies ? `${merchantCompanies.items.length}곳` : '조회 중', Users, 'green'],
+    ['거래내역', transactions ? `${transactions.items.length}건` : '조회 중', FileSpreadsheet, 'orange'],
   ] : [
     ['가입 요청', `${requests.length}명`, Users, 'orange'],
     ['직원 권한', me?.role === 'company_admin' ? '관리자' : '확인 필요', WalletCards, 'brown'],
     ['QR 결제', products ? `${products.items.filter((item) => item.is_active).length}개 상품` : '단일 식당', QrCode, 'orange'],
     ['정산 현황', settlements ? `${settlements.summary.settlement_count}건` : '조회 중', FileSpreadsheet, 'green'],
-  ], [isMerchantAdmin, requests.length, me, settlements, products]);
+  ], [isMerchantAdmin, requests.length, me, settlements, products, merchantCompanies, transactions]);
 
   async function load() {
     setBusy(true);
@@ -146,15 +153,25 @@ function Dashboard({ session, onLogout }) {
       ]);
       let requestData = { items: [] };
       let settlementData = null;
+      let merchantCompanyData = null;
+      let transactionData = null;
       if (meData.role === 'company_admin') {
         [requestData, settlementData] = await Promise.all([
           apiFetch('/admin/join-requests', token),
           apiFetch('/admin/settlements', token),
         ]);
       }
+      if (meData.role === 'merchant_admin') {
+        [merchantCompanyData, transactionData] = await Promise.all([
+          apiFetch('/admin/merchant/companies', token),
+          apiFetch('/admin/merchant/transactions', token),
+        ]);
+      }
       setMe(meData);
       setRequests(requestData.items ?? []);
       setSettlements(settlementData);
+      setMerchantCompanies(merchantCompanyData);
+      setTransactions(transactionData);
       setProducts(productData);
       setDailyMenu(dailyMenuData);
       setDailyMenuForm({
@@ -256,6 +273,65 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
+  async function searchCompanies(event) {
+    event.preventDefault();
+    if (!companySearch.trim()) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const data = await apiFetch(`/admin/merchant/companies/search?q=${encodeURIComponent(companySearch.trim())}`, token);
+      setCompanySearchResults(data.items ?? []);
+    } catch (searchError) {
+      setError(searchError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function linkCompany(companyId) {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiFetch('/admin/merchant/companies/link', token, {
+        method: 'POST',
+        body: JSON.stringify({ company_id: companyId }),
+      });
+      setCompanySearchResults([]);
+      setCompanySearch('');
+      setMessage('장부업체를 연결했어요.');
+      await load();
+    } catch (linkError) {
+      setError(linkError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createAndLinkCompany(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const data = await apiFetch('/admin/merchant/companies/create-and-link', token, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newCompanyForm.name.trim(),
+          owner_phone: newCompanyForm.owner_phone.trim(),
+        }),
+      });
+      setNewCompanyForm({ name: '', owner_phone: '' });
+      setMessage(`장부업체를 만들고 초대를 생성했어요. 초대 토큰: ${data.invite?.token ?? '-'}`);
+      await load();
+    } catch (createError) {
+      setError(createError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => { load(); }, []);
 
   return <main className="shell">
@@ -306,6 +382,38 @@ function Dashboard({ session, onLogout }) {
         <p className="panel-note">현재 파일럿은 한 식당에서만 운영합니다.</p>
       </article>
     </section>
+
+    {isMerchantAdmin && <section className="panel">
+      <div className="panel-title">
+        <div><h2>장부업체 관리</h2><p className="panel-note">거래를 허용할 회사를 검색해서 연결하거나, 새 회사 담당자를 초대합니다.</p></div>
+        <span className="badge">{merchantCompanies?.items?.length ?? 0}곳</span>
+      </div>
+      <form className="product-form" onSubmit={searchCompanies}>
+        <input value={companySearch} onChange={(event) => setCompanySearch(event.target.value)} placeholder="회사명 검색" />
+        <button className="primary" disabled={busy || !companySearch.trim()}>검색</button>
+      </form>
+      {companySearchResults.length > 0 && <div className="product-list">
+        {companySearchResults.map((company) => <article className="product-item" key={company.id}>
+          <div><strong>{company.name}</strong><span>{company.status} · {company.biz_reg_no ?? '사업자번호 없음'}</span></div>
+          <button className="ghost" onClick={() => linkCompany(company.id)} disabled={busy}>연결</button>
+        </article>)}
+      </div>}
+      <form className="product-form" onSubmit={createAndLinkCompany}>
+        <input value={newCompanyForm.name} onChange={(event) => setNewCompanyForm((form) => ({ ...form, name: event.target.value }))} placeholder="신규 회사명" required />
+        <input value={newCompanyForm.owner_phone} onChange={(event) => setNewCompanyForm((form) => ({ ...form, owner_phone: event.target.value }))} placeholder="담당자 연락처" required />
+        <button className="primary" disabled={busy}>신규 생성 + 초대</button>
+      </form>
+      {(merchantCompanies?.items?.length ?? 0) === 0
+        ? <p className="empty-state">아직 연결된 장부업체가 없어요.</p>
+        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>연결일</th></tr></thead><tbody>{merchantCompanies.items.map((item) => <tr key={item.id}><td>{item.company?.name ?? item.company_id}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>)}</tbody></table></div>}
+    </section>}
+
+    {isMerchantAdmin && <section className="panel">
+      <div className="panel-title"><h2>거래내역</h2><span className="badge">최근 {transactions?.items?.length ?? 0}건</span></div>
+      {(transactions?.items?.length ?? 0) === 0
+        ? <p className="empty-state">아직 식당 거래내역이 없어요.</p>
+        : <div className="table-wrap"><table><thead><tr><th>시간</th><th>상품</th><th>금액</th><th>거래번호</th></tr></thead><tbody>{transactions.items.map((tx) => <tr key={tx.id}><td>{tx.created_at ? new Date(tx.created_at).toLocaleString('ko-KR') : '-'}</td><td>{tx.product_name ?? tx.meal_window ?? '-'}</td><td>{Math.abs(Number(tx.amount ?? 0)).toLocaleString('ko-KR')}원</td><td>{tx.tx_code ?? '-'}</td></tr>)}</tbody></table></div>}
+    </section>}
 
 
     <section className="panel daily-menu-panel">

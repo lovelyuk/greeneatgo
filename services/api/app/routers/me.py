@@ -41,6 +41,7 @@ def me(token: str = Depends(bearer_token)):
             "email": auth_user.email,
             "display_name": profile.display_name,
             "company_id": profile.company_id,
+            "merchant_id": profile.merchant_id,
             "group_id": profile.group_id,
             "role": profile.role,
             "status": profile.status,

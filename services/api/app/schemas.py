@@ -51,3 +51,28 @@ class DailyMenuUpsertRequest(BaseModel):
     title: str = Field(default='오늘의 부페 메뉴', min_length=1, max_length=80)
     menu_text: str = Field(min_length=1, max_length=1000)
     is_active: bool = True
+
+
+class PlatformMerchantCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    owner_phone: str | None = Field(default=None, max_length=40)
+    category: str | None = Field(default=None, max_length=40)
+    avg_price: int | None = Field(default=None, gt=0)
+
+
+class InviteCreateRequest(BaseModel):
+    phone: str = Field(min_length=5, max_length=40)
+
+
+class InviteClaimRequest(BaseModel):
+    auth_user_id: str = Field(min_length=8, max_length=80)
+    display_name: str | None = Field(default=None, max_length=80)
+
+
+class MerchantCompanyLinkRequest(BaseModel):
+    company_id: str = Field(min_length=8, max_length=80)
+
+
+class MerchantCompanyCreateAndLinkRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    owner_phone: str = Field(min_length=5, max_length=40)

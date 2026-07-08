@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 
-from app.routers import admin, auth_pages, health, join, me, pay, products
+from app.routers import admin, auth_pages, health, invites, join, me, merchant_admin, pay, platform, products
 
 settings = get_settings()
 
@@ -23,3 +23,6 @@ app.include_router(products.router, prefix="/v1")
 app.include_router(me.router, prefix="/v1")
 app.include_router(join.router, prefix="/v1")
 app.include_router(admin.router, prefix="/v1")
+app.include_router(platform.router, prefix="/v1")
+app.include_router(invites.router, prefix="/v1")
+app.include_router(merchant_admin.router, prefix="/v1")

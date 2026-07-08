@@ -99,14 +99,13 @@ M1 추천:
 - Confirm email 활성화
 - Magic Link 로그인 사용
 
-Redirect URL은 개발 환경 기준으로 나중에 아래를 추가한다.
+Redirect URL은 아래 운영 안내 페이지를 추가한다.
 
 ```text
-greeneatgo://login-callback
-http://localhost:5173/auth/callback
+https://greeneatgo-api.onrender.com/v1/auth/confirmed
 ```
 
-정확한 Flutter deep link는 직원앱 로그인 구현 단계에서 확정한다.
+Confirm signup 메일 한글 템플릿과 URL 설정은 `docs/SUPABASE_AUTH_EMAIL_KO.md`를 참고한다.
 
 ## 8. 오빠가 옥지에게 알려주면 되는 값
 

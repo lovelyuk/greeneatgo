@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CheckCircle2, FileSpreadsheet, LogOut, QrCode, RefreshCw, Users, WalletCards, XCircle } from 'lucide-react';
+import { CheckCircle2, Coffee, FileSpreadsheet, LogOut, Package, QrCode, RefreshCw, Store, Users, WalletCards, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
 
@@ -35,6 +35,30 @@ async function apiFetch(path, token, options = {}) {
   return payload.data;
 }
 
+function BrandMark() {
+  return <div className="brandmark" aria-label="그린잇">
+    <span className="box-face"><i/><b/><em/></span>
+    <div><strong>그린잇</strong><small>green eat benefit</small></div>
+  </div>;
+}
+
+function AuthLinkNotice() {
+  const params = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const auth = params.get('auth');
+  const error = params.get('error_description') || hashParams.get('error_description');
+  const type = params.get('type') || hashParams.get('type');
+  const hasAuthCode = params.has('code') || hashParams.has('access_token') || auth === 'confirmed' || type === 'signup';
+
+  if (error) {
+    return <div className="alert error">이메일 인증 링크 처리 중 문제가 생겼어요: {decodeURIComponent(error)}</div>;
+  }
+  if (!hasAuthCode) return null;
+  return <div className="alert success">
+    이메일 인증이 완료됐어요. 이제 그린잇 앱으로 돌아가 로그인한 뒤 회사 초대코드를 입력해 주세요.
+  </div>;
+}
+
 function LoginScreen({ missingEnv, onLogin }) {
   const [email, setEmail] = useState('admin@greeneatgo.test');
   const [password, setPassword] = useState('');
@@ -54,11 +78,23 @@ function LoginScreen({ missingEnv, onLogin }) {
     onLogin(data.session);
   }
 
-  return <main className="shell auth-shell">
+  return <main className="auth-page">
+    <section className="auth-visual">
+      <BrandMark />
+      <div className="hero-copy">
+        <span className="pill">TODAY BOX</span>
+        <h1>회사 식대를<br/>간식박스처럼<br/>가볍게 운영해요</h1>
+        <p>직원 가입 승인부터 식대 지갑, 제휴 매장 운영까지 한 화면에서 관리합니다.</p>
+      </div>
+      <div className="floating-menu">
+        <span>🍱 점심</span><span>🥪 간식</span><span>☕ 카페</span>
+      </div>
+    </section>
     <section className="login-card">
-      <p className="eyebrow">greeneatGo Admin</p>
-      <h1>관리자 로그인</h1>
-      <p className="muted">회사관리자 계정으로 로그인하면 가입 요청을 승인/거절할 수 있어요.</p>
+      <p className="eyebrow">ADMIN LOGIN</p>
+      <h2>관리자 로그인</h2>
+      <p className="muted">회사관리자 계정으로 직원 가입 요청을 승인/거절할 수 있어요.</p>
+      <AuthLinkNotice />
       {missingEnv.length > 0 && <div className="alert error">Vercel 환경변수 누락: {missingEnv.join(', ')}</div>}
       <form onSubmit={submit} className="form">
         <label>이메일
@@ -68,7 +104,7 @@ function LoginScreen({ missingEnv, onLogin }) {
           <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="비밀번호" required />
         </label>
         {error && <div className="alert error">{error}</div>}
-        <button className="primary" disabled={busy || missingEnv.length > 0}>{busy ? '로그인 중...' : '로그인'}</button>
+        <button className="primary" disabled={busy || missingEnv.length > 0}>{busy ? '로그인 중...' : '운영 시작하기'}</button>
       </form>
     </section>
   </main>;
@@ -83,11 +119,11 @@ function Dashboard({ session, onLogout }) {
   const [error, setError] = useState('');
 
   const cards = useMemo(() => [
-    ['가입 요청', `${requests.length}명`, Users],
-    ['직원 관리', me?.role === 'company_admin' ? '관리자' : '권한 확인', Users],
-    ['제휴 식당', '5곳', QrCode],
-    ['정산 예정', 'M2 예정', FileSpreadsheet],
-    ['식대 지급', 'M1 예정', WalletCards],
+    ['가입 요청', `${requests.length}명`, Users, 'orange'],
+    ['직원 권한', me?.role === 'company_admin' ? '관리자' : '확인 필요', WalletCards, 'brown'],
+    ['제휴 식당', '5곳', Store, 'green'],
+    ['QR 결제', '운영중', QrCode, 'orange'],
+    ['정산 예정', 'M2 예정', FileSpreadsheet, 'brown'],
   ], [requests.length, me]);
 
   async function load() {
@@ -132,10 +168,11 @@ function Dashboard({ session, onLogout }) {
 
   return <main className="shell">
     <header className="topbar">
-      <div>
-        <p className="eyebrow">greeneatGo Admin</p>
-        <h1>밥장부 관리자</h1>
-        <p>가입 요청 승인과 운영 기능을 관리합니다.</p>
+      <div className="top-copy">
+        <BrandMark />
+        <span className="pill">OPERATIONS</span>
+        <h1>오늘의 식대 운영 현황</h1>
+        <p>가입 승인, 직원 상태, 결제 준비를 출출박스 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
       <div className="top-actions">
         <button className="ghost" onClick={load} disabled={busy}><RefreshCw size={16}/> 새로고침</button>
@@ -146,20 +183,35 @@ function Dashboard({ session, onLogout }) {
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}
 
+    <section className="hero-panel">
+      <div>
+        <span className="pill light">LUNCH WALLET</span>
+        <h2>든든한 한 끼를 빠르게 승인하세요</h2>
+        <p>대기 중인 직원 {requests.length}명 · 관리자 {me?.display_name ?? session.user.email}</p>
+      </div>
+      <Package className="hero-icon" size={96}/>
+    </section>
+
     <section className="grid">
-      {cards.map(([label, value, Icon]) => <article className="card" key={label}>
+      {cards.map(([label, value, Icon, tone]) => <article className={`card ${tone}`} key={label}>
         <Icon size={28}/><span>{label}</span><strong>{value}</strong>
       </article>)}
     </section>
 
-    <section className="panel profile-panel">
-      <h2>로그인 정보</h2>
-      <div className="profile-grid">
-        <span>이메일</span><strong>{session.user.email}</strong>
-        <span>이름</span><strong>{me?.display_name ?? '-'}</strong>
-        <span>권한</span><strong>{me?.role ?? '-'}</strong>
-        <span>상태</span><strong>{me?.status ?? '-'}</strong>
-      </div>
+    <section className="two-col">
+      <article className="panel profile-panel">
+        <div className="panel-title"><h2>로그인 정보</h2><span className="badge">secure</span></div>
+        <div className="profile-grid">
+          <span>이메일</span><strong>{session.user.email}</strong>
+          <span>이름</span><strong>{me?.display_name ?? '-'}</strong>
+          <span>권한</span><strong>{me?.role ?? '-'}</strong>
+          <span>상태</span><strong>{me?.status ?? '-'}</strong>
+        </div>
+      </article>
+      <article className="panel menu-panel">
+        <div className="panel-title"><h2>오늘의 카테고리</h2><Coffee size={22}/></div>
+        <div className="menu-chips"><span>🍱 점심</span><span>🥪 간식</span><span>☕ 카페</span><span>🍜 야근식</span></div>
+      </article>
     </section>
 
     <section className="panel">
@@ -167,12 +219,12 @@ function Dashboard({ session, onLogout }) {
         <h2>가입 요청 승인</h2>
         <span className="badge">pending {requests.length}</span>
       </div>
-      {requests.length === 0 ? <p className="muted">승인 대기 중인 직원이 없어요.</p> : <div className="table-wrap">
+      {requests.length === 0 ? <p className="empty-state">승인 대기 중인 직원이 없어요. 오늘 운영은 깔끔해요 🍊</p> : <div className="table-wrap">
         <table>
           <thead><tr><th>이름</th><th>그룹</th><th>요청일</th><th>처리</th></tr></thead>
           <tbody>
             {requests.map((request) => <tr key={request.id}>
-              <td>{request.display_name}</td>
+              <td><strong>{request.display_name}</strong></td>
               <td>{request.group_id?.slice(0, 8) ?? '-'}</td>
               <td>{request.created_at ? new Date(request.created_at).toLocaleString('ko-KR') : '-'}</td>
               <td className="row-actions">
@@ -210,7 +262,7 @@ function App() {
     setSession(null);
   }
 
-  if (booting) return <main className="shell"><div className="panel">로딩 중...</div></main>;
+  if (booting) return <main className="loading"><BrandMark /><div className="spinner"/></main>;
   if (!session) return <LoginScreen missingEnv={missingEnv} onLogin={setSession} />;
   return <Dashboard session={session} onLogout={logout} />;
 }

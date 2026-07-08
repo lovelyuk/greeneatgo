@@ -143,23 +143,30 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173,https://greeneatgo-admin.vercel.app
 
 ---
 
-## 4. Supabase Auth Redirect URL
+## 4. Supabase Auth Redirect URL / 이메일 인증 완료 페이지
 
 Supabase Dashboard:
 
 ```text
-Authentication → URL Configuration → Redirect URLs
+Authentication → URL Configuration
 ```
 
-아래를 추가한다.
+Site URL:
 
 ```text
-http://localhost:5173/auth/callback
-https://greeneatgo-admin.vercel.app/auth/callback
-greeneatgo://login-callback
+https://greeneatgo-api.onrender.com
 ```
 
-Vercel 실제 도메인으로 바꿔 넣는다.
+Redirect URLs / Additional Redirect URLs에 추가:
+
+```text
+https://greeneatgo-api.onrender.com/v1/auth/confirmed
+```
+
+직원 앱 회원가입은 `AUTH_EMAIL_REDIRECT_TO` 기본값으로 위 주소를 사용한다. 인증 후 브라우저에는 한국어 완료 안내 페이지가 뜨고, 사용자는 앱으로 돌아가 로그인하면 된다.
+
+메일 한글 템플릿은 `docs/SUPABASE_AUTH_EMAIL_KO.md`를 참고한다.
+
 
 ---
 

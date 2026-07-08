@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.routers.products import FALLBACK_PRODUCTS
-from app.schemas import JoinDecisionRequest, ProductCreateRequest, ProductUpdateRequest
+from app.routers.products import FALLBACK_DAILY_MENU, FALLBACK_PRODUCTS, today_kst
+from app.schemas import DailyMenuUpsertRequest, JoinDecisionRequest, ProductCreateRequest, ProductUpdateRequest
 from app.services.join_flow import JoinFlowError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -208,3 +208,67 @@ def update_product(product_id: str, payload: ProductUpdateRequest, token: str = 
         raise _handle_join_error(exc) from exc
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "상품을 수정하는 중 오류가 발생했어요") from exc
+
+
+@router.get("/daily-menu")
+def get_daily_menu(token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _active_admin(repo, token)
+        merchant = _admin_merchant(repo, actor.company_id)
+        try:
+            rows = repo.client.rest_get(
+                "merchant_daily_menus",
+                {
+                    "select": "id,merchant_id,service_date,title,menu_text,is_active,updated_at",
+                    "merchant_id": f"eq.{merchant['id']}",
+                    "service_date": f"eq.{today_kst()}",
+                    "limit": "1",
+                },
+            )
+            menu = rows[0] if rows else None
+            migration_required = False
+        except SupabaseHttpError as exc:
+            if "PGRST205" not in exc.body:
+                raise
+            menu = FALLBACK_DAILY_MENU
+            migration_required = True
+        return {"ok": True, "data": {"merchant": merchant, "today_menu": menu, "service_date": today_kst(), "migration_required": migration_required}, "error": None}
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "오늘 메뉴를 불러오는 중 오류가 발생했어요") from exc
+
+
+@router.put("/daily-menu")
+def upsert_daily_menu(payload: DailyMenuUpsertRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _active_admin(repo, token)
+        merchant = _admin_merchant(repo, actor.company_id)
+        service_date = today_kst()
+        existing = repo.client.rest_get(
+            "merchant_daily_menus",
+            {"select": "id", "merchant_id": f"eq.{merchant['id']}", "service_date": f"eq.{service_date}", "limit": "1"},
+        )
+        values = {
+            "merchant_id": merchant["id"],
+            "service_date": service_date,
+            "title": payload.title,
+            "menu_text": payload.menu_text,
+            "is_active": payload.is_active,
+            "updated_at": datetime.now().isoformat(),
+        }
+        if existing:
+            row = repo.client.rest_patch("merchant_daily_menus", {"id": f"eq.{existing[0]['id']}"}, values)[0]
+        else:
+            row = repo.client.rest_post("merchant_daily_menus", values)[0]
+        return {"ok": True, "data": row, "error": None}
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        if "PGRST205" in exc.body:
+            raise _error(400, "MIGRATION_REQUIRED", "0006_merchant_daily_menus.sql 적용 후 오늘 메뉴를 저장할 수 있어요") from exc
+        raise _error(502, "SUPABASE_ERROR", "오늘 메뉴를 저장하는 중 오류가 발생했어요") from exc

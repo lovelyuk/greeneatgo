@@ -117,6 +117,8 @@ function Dashboard({ session, onLogout }) {
   const [settlements, setSettlements] = useState(null);
   const [products, setProducts] = useState(null);
   const [productForm, setProductForm] = useState({ name: '', price: '', category: '' });
+  const [dailyMenu, setDailyMenu] = useState(null);
+  const [dailyMenuForm, setDailyMenuForm] = useState({ title: '오늘의 부페 메뉴', menu_text: '' });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -133,16 +135,22 @@ function Dashboard({ session, onLogout }) {
     setError('');
     setMessage('');
     try {
-      const [meData, requestData, settlementData, productData] = await Promise.all([
+      const [meData, requestData, settlementData, productData, dailyMenuData] = await Promise.all([
         apiFetch('/me', token),
         apiFetch('/admin/join-requests', token),
         apiFetch('/admin/settlements', token),
         apiFetch('/admin/products', token),
+        apiFetch('/admin/daily-menu', token),
       ]);
       setMe(meData);
       setRequests(requestData.items ?? []);
       setSettlements(settlementData);
       setProducts(productData);
+      setDailyMenu(dailyMenuData);
+      setDailyMenuForm({
+        title: dailyMenuData.today_menu?.title ?? '오늘의 부페 메뉴',
+        menu_text: dailyMenuData.today_menu?.menu_text ?? '',
+      });
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -214,6 +222,30 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
+
+  async function saveDailyMenu(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiFetch('/admin/daily-menu', token, {
+        method: 'PUT',
+        body: JSON.stringify({
+          title: dailyMenuForm.title.trim() || '오늘의 부페 메뉴',
+          menu_text: dailyMenuForm.menu_text.trim(),
+          is_active: true,
+        }),
+      });
+      setMessage('오늘 메뉴를 저장했어요. 직원 앱에 바로 표시됩니다.');
+      await load();
+    } catch (menuError) {
+      setError(menuError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => { load(); }, []);
 
   return <main className="shell">
@@ -263,6 +295,20 @@ function Dashboard({ session, onLogout }) {
         <div className="menu-chips single"><span>🥗 그린잇 식당</span></div>
         <p className="panel-note">현재 파일럿은 한 식당에서만 운영합니다.</p>
       </article>
+    </section>
+
+
+    <section className="panel daily-menu-panel">
+      <div className="panel-title">
+        <div><h2>오늘 부페 메뉴</h2><p className="panel-note">오늘 나오는 메뉴를 입력하면 직원 앱 상품 선택 화면 상단에 표시됩니다.</p></div>
+        <span className="badge">{dailyMenu?.service_date ?? '오늘'}</span>
+      </div>
+      {dailyMenu?.migration_required && <div className="alert error">오늘 메뉴 DB 마이그레이션이 아직 적용되지 않아 기본 메뉴만 표시 중이에요. 0006_merchant_daily_menus.sql 적용 후 저장이 활성화됩니다.</div>}
+      <form className="daily-menu-form" onSubmit={saveDailyMenu}>
+        <input value={dailyMenuForm.title} onChange={(event) => setDailyMenuForm((form) => ({ ...form, title: event.target.value }))} placeholder="제목" required />
+        <textarea value={dailyMenuForm.menu_text} onChange={(event) => setDailyMenuForm((form) => ({ ...form, menu_text: event.target.value }))} placeholder="예: 김치찌개, 제육볶음, 현미밥, 계절 샐러드, 반찬 4종" required rows={4} />
+        <button className="primary" disabled={busy || dailyMenu?.migration_required}>오늘 메뉴 저장</button>
+      </form>
     </section>
 
 

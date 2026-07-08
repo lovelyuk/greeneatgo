@@ -31,6 +31,10 @@ insert into merchant_products (id, merchant_id, name, price, category, sort_orde
 ('30000000-0000-0000-0000-000000000004', '20000000-0000-0000-0000-000000000001', '샌드위치 세트', 7500, '간편식', 4)
 on conflict (id) do nothing;
 
+insert into merchant_daily_menus (merchant_id, service_date, title, menu_text) values
+('20000000-0000-0000-0000-000000000001', current_date, '오늘의 부페 메뉴', '김치찌개, 제육볶음, 현미밥, 계절 샐러드, 반찬 4종')
+on conflict (merchant_id, service_date) do nothing;
+
 
 insert into company_invite_codes (company_id, code, default_group_id, expires_at, max_uses)
 values (

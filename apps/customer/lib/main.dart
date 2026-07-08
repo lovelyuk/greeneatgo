@@ -118,10 +118,22 @@ class MerchantProduct {
   );
 }
 
+class TodayMenu {
+  TodayMenu({required this.title, required this.menuText});
+  final String title;
+  final String menuText;
+
+  factory TodayMenu.fromJson(Map<String, dynamic> json) => TodayMenu(
+    title: json['title'] as String? ?? '오늘의 부페 메뉴',
+    menuText: json['menu_text'] as String? ?? '',
+  );
+}
+
 class MerchantMenu {
-  MerchantMenu({required this.merchantName, required this.products});
+  MerchantMenu({required this.merchantName, required this.products, this.todayMenu});
   final String merchantName;
   final List<MerchantProduct> products;
+  final TodayMenu? todayMenu;
 }
 
 class MenuClient {
@@ -136,9 +148,11 @@ class MenuClient {
     final data = decoded['data'] as Map<String, dynamic>;
     final merchant = data['merchant'] as Map<String, dynamic>;
     final items = (data['items'] as List<dynamic>).cast<Map<String, dynamic>>();
+    final todayMenuJson = data['today_menu'] as Map<String, dynamic>?;
     return MerchantMenu(
       merchantName: merchant['name'] as String? ?? '그린잇 식당',
       products: items.map(MerchantProduct.fromJson).toList(),
+      todayMenu: todayMenuJson == null ? null : TodayMenu.fromJson(todayMenuJson),
     );
   }
 }
@@ -588,6 +602,18 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
           }
           return BrandPanel(children: [
             Text(menu.merchantName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+            if (menu.todayMenu != null && menu.todayMenu!.menuText.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: const Color(0xFFEAF7EC), borderRadius: BorderRadius.circular(20), border: Border.all(color: kLine)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(menu.todayMenu!.title, style: const TextStyle(color: kCocoa, fontSize: 17, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 8),
+                  Text(menu.todayMenu!.menuText, style: const TextStyle(color: Color(0xFF5C7A66), fontSize: 15, height: 1.45, fontWeight: FontWeight.w800)),
+                ]),
+              ),
+            ],
             const SizedBox(height: 14),
             ...menu.products.map((product) => Padding(
               padding: const EdgeInsets.only(bottom: 10),

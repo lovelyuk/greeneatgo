@@ -45,3 +45,9 @@ class ProductUpdateRequest(BaseModel):
     image_url: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
     sort_order: int | None = None
+
+
+class DailyMenuUpsertRequest(BaseModel):
+    title: str = Field(default='오늘의 부페 메뉴', min_length=1, max_length=80)
+    menu_text: str = Field(min_length=1, max_length=1000)
+    is_active: bool = True

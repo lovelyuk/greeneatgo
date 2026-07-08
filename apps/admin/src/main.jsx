@@ -115,6 +115,8 @@ function Dashboard({ session, onLogout }) {
   const [me, setMe] = useState(null);
   const [requests, setRequests] = useState([]);
   const [settlements, setSettlements] = useState(null);
+  const [products, setProducts] = useState(null);
+  const [productForm, setProductForm] = useState({ name: '', price: '', category: '' });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -122,23 +124,25 @@ function Dashboard({ session, onLogout }) {
   const cards = useMemo(() => [
     ['가입 요청', `${requests.length}명`, Users, 'orange'],
     ['직원 권한', me?.role === 'company_admin' ? '관리자' : '확인 필요', WalletCards, 'brown'],
-    ['QR 결제', '단일 식당', QrCode, 'orange'],
+    ['QR 결제', products ? `${products.items.filter((item) => item.is_active).length}개 상품` : '단일 식당', QrCode, 'orange'],
     ['정산 현황', settlements ? `${settlements.summary.settlement_count}건` : '조회 중', FileSpreadsheet, 'green'],
-  ], [requests.length, me, settlements]);
+  ], [requests.length, me, settlements, products]);
 
   async function load() {
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      const [meData, requestData, settlementData] = await Promise.all([
+      const [meData, requestData, settlementData, productData] = await Promise.all([
         apiFetch('/me', token),
         apiFetch('/admin/join-requests', token),
         apiFetch('/admin/settlements', token),
+        apiFetch('/admin/products', token),
       ]);
       setMe(meData);
       setRequests(requestData.items ?? []);
       setSettlements(settlementData);
+      setProducts(productData);
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -161,6 +165,50 @@ function Dashboard({ session, onLogout }) {
       await load();
     } catch (decisionError) {
       setError(decisionError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+
+  async function createProduct(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiFetch('/admin/products', token, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: productForm.name.trim(),
+          price: Number(productForm.price),
+          category: productForm.category.trim() || null,
+          sort_order: (products?.items?.length ?? 0) + 1,
+        }),
+      });
+      setProductForm({ name: '', price: '', category: '' });
+      setMessage('상품을 등록했어요. 직원 앱 상품 선택 화면에 바로 반영됩니다.');
+      await load();
+    } catch (productError) {
+      setError(productError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleProduct(product) {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiFetch(`/admin/products/${product.id}`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: !product.is_active }),
+      });
+      setMessage(product.is_active ? '상품을 숨겼어요.' : '상품을 다시 판매중으로 바꿨어요.');
+      await load();
+    } catch (productError) {
+      setError(productError.message);
     } finally {
       setBusy(false);
     }
@@ -215,6 +263,26 @@ function Dashboard({ session, onLogout }) {
         <div className="menu-chips single"><span>🥗 그린잇 식당</span></div>
         <p className="panel-note">현재 파일럿은 한 식당에서만 운영합니다.</p>
       </article>
+    </section>
+
+
+    <section className="panel product-panel">
+      <div className="panel-title">
+        <div><h2>식당 상품 관리</h2><p className="panel-note">직원 앱은 금액 입력 없이 여기 등록된 상품 중 하나를 선택해 결제합니다.</p></div>
+        <span className="badge">{products?.merchant?.name ?? '운영 식당'}</span>
+      </div>
+      <form className="product-form" onSubmit={createProduct}>
+        <input value={productForm.name} onChange={(event) => setProductForm((form) => ({ ...form, name: event.target.value }))} placeholder="상품명" required />
+        <input value={productForm.price} onChange={(event) => setProductForm((form) => ({ ...form, price: event.target.value }))} placeholder="가격" type="number" min="1" required />
+        <input value={productForm.category} onChange={(event) => setProductForm((form) => ({ ...form, category: event.target.value }))} placeholder="카테고리" />
+        <button className="primary" disabled={busy}>상품 등록</button>
+      </form>
+      {(products?.items?.length ?? 0) === 0
+        ? <p className="empty-state">등록된 상품이 없어요. 첫 상품을 등록하면 직원 앱에 표시됩니다.</p>
+        : <div className="product-list">{products.items.map((product) => <article className={product.is_active ? 'product-item' : 'product-item off'} key={product.id}>
+          <div><strong>{product.name}</strong><span>{product.category ?? '기본'} · {Number(product.price).toLocaleString('ko-KR')}원</span></div>
+          <button className="ghost" onClick={() => toggleProduct(product)} disabled={busy}>{product.is_active ? '숨김' : '판매중'}</button>
+        </article>)}</div>}
     </section>
 
 

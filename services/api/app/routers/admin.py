@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import JoinDecisionRequest
+from app.routers.products import FALLBACK_PRODUCTS
+from app.schemas import JoinDecisionRequest, ProductCreateRequest, ProductUpdateRequest
 from app.services.join_flow import JoinFlowError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -100,3 +101,110 @@ def list_settlements(ym: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}
         if exc.status in (401, 403):
             raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
         raise _error(502, "SUPABASE_ERROR", "정산 데이터를 불러오는 중 오류가 발생했어요") from exc
+
+
+def _active_admin(repo: JoinRepository, token: str):
+    actor_auth = repo.auth_user_from_token(token)
+    actor = repo.get_profile(actor_auth.id, email=actor_auth.email)
+    if actor is None or actor.role != "company_admin" or actor.status != "active" or not actor.company_id:
+        raise JoinFlowError("FORBIDDEN", "회사관리자만 이용할 수 있어요")
+    return actor
+
+
+def _admin_merchant(repo: JoinRepository, company_id: str) -> dict:
+    links = repo.client.rest_get(
+        "company_merchants",
+        {"select": "merchant_id", "company_id": f"eq.{company_id}", "is_active": "eq.true", "limit": "1"},
+    )
+    if not links:
+        raise JoinFlowError("MERCHANT_NOT_FOUND", "운영 식당이 아직 연결되지 않았어요")
+    merchants = repo.client.rest_get(
+        "merchants",
+        {"select": "id,name,category,avg_price,qr_token", "id": f"eq.{links[0]['merchant_id']}", "limit": "1"},
+    )
+    if not merchants:
+        raise JoinFlowError("MERCHANT_NOT_FOUND", "운영 식당을 찾을 수 없어요")
+    return merchants[0]
+
+
+def _ensure_product_belongs(repo: JoinRepository, product_id: str, merchant_id: str) -> dict:
+    rows = repo.client.rest_get(
+        "merchant_products",
+        {"select": "*", "id": f"eq.{product_id}", "merchant_id": f"eq.{merchant_id}", "limit": "1"},
+    )
+    if not rows:
+        raise JoinFlowError("PRODUCT_NOT_FOUND", "상품을 찾을 수 없어요")
+    return rows[0]
+
+
+@router.get("/products")
+def list_products(token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _active_admin(repo, token)
+        merchant = _admin_merchant(repo, actor.company_id)
+        try:
+            rows = repo.client.rest_get(
+                "merchant_products",
+                {
+                    "select": "id,merchant_id,name,price,category,image_url,is_active,sort_order,created_at,updated_at",
+                    "merchant_id": f"eq.{merchant['id']}",
+                    "order": "sort_order.asc,created_at.asc",
+                },
+            )
+            migration_required = False
+        except SupabaseHttpError as exc:
+            if "PGRST205" not in exc.body:
+                raise
+            rows = [{**item, "merchant_id": merchant["id"]} for item in FALLBACK_PRODUCTS]
+            migration_required = True
+        return {"ok": True, "data": {"merchant": merchant, "items": rows, "migration_required": migration_required}, "error": None}
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "상품 데이터를 불러오는 중 오류가 발생했어요") from exc
+
+
+@router.post("/products")
+def create_product(payload: ProductCreateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _active_admin(repo, token)
+        merchant = _admin_merchant(repo, actor.company_id)
+        row = repo.client.rest_post("merchant_products", {
+            "merchant_id": merchant["id"],
+            "name": payload.name,
+            "price": payload.price,
+            "category": payload.category,
+            "image_url": payload.image_url,
+            "is_active": payload.is_active,
+            "sort_order": payload.sort_order,
+        })[0]
+        return {"ok": True, "data": row, "error": None}
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "상품을 저장하는 중 오류가 발생했어요") from exc
+
+
+@router.patch("/products/{product_id}")
+def update_product(product_id: str, payload: ProductUpdateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _active_admin(repo, token)
+        merchant = _admin_merchant(repo, actor.company_id)
+        _ensure_product_belongs(repo, product_id, merchant["id"])
+        values = {key: value for key, value in payload.model_dump().items() if value is not None}
+        if not values:
+            raise _error(400, "NO_CHANGES", "수정할 값을 입력해 주세요")
+        values["updated_at"] = datetime.now().isoformat()
+        row = repo.client.rest_patch("merchant_products", {"id": f"eq.{product_id}"}, values)[0]
+        return {"ok": True, "data": row, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "상품을 수정하는 중 오류가 발생했어요") from exc

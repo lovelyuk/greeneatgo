@@ -8,6 +8,7 @@ const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 const authEmailRedirectTo = String.fromEnvironment('AUTH_EMAIL_REDIRECT_TO', defaultValue: 'https://greeneatgo-api.onrender.com/v1/auth/confirmed');
+const defaultMerchantQrToken = String.fromEnvironment('MERCHANT_QR_TOKEN', defaultValue: 'QR-PILOT-KIMCHI');
 
 const kInk = Color(0xFF14351F);
 const kCocoa = Color(0xFF1E5631);
@@ -98,6 +99,47 @@ class ApiClient {
       throw Exception(detail?['message'] ?? 'API 오류가 발생했어요');
     }
     return decoded['data'] as Map<String, dynamic>;
+  }
+}
+
+
+class MerchantProduct {
+  MerchantProduct({required this.id, required this.name, required this.price, this.category});
+  final String id;
+  final String name;
+  final int price;
+  final String? category;
+
+  factory MerchantProduct.fromJson(Map<String, dynamic> json) => MerchantProduct(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    price: json['price'] as int,
+    category: json['category'] as String?,
+  );
+}
+
+class MerchantMenu {
+  MerchantMenu({required this.merchantName, required this.products});
+  final String merchantName;
+  final List<MerchantProduct> products;
+}
+
+class MenuClient {
+  Future<MerchantMenu> getProducts(String qrToken) async {
+    final uri = Uri.parse('$apiBaseUrl/merchants/$qrToken/products');
+    final response = await http.get(uri);
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = decoded['detail'] as Map<String, dynamic>?;
+      throw Exception(detail?['message'] ?? '상품 목록을 불러오지 못했어요');
+    }
+    final data = decoded['data'] as Map<String, dynamic>;
+    final merchant = data['merchant'] as Map<String, dynamic>;
+    final items = (data['items'] as List<dynamic>).cast<Map<String, dynamic>>();
+    return MerchantMenu(
+      merchantName: merchant['name'] as String? ?? '그린잇 식당',
+      products: items.map(MerchantProduct.fromJson).toList(),
+    );
   }
 }
 
@@ -420,7 +462,7 @@ class HomeScreen extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _BalanceCard(name: name),
         const SizedBox(height: 16),
-        _QuickAction(icon: Icons.qr_code_scanner_rounded, label: '그린잇 식당 QR 결제', color: kOrange, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaymentCompletePreview()))),
+        _QuickAction(icon: Icons.qr_code_scanner_rounded, label: '그린잇 식당 상품 선택', color: kOrange, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProductSelectionScreen()))),
         const SizedBox(height: 24),
         const SectionHeader(title: '최근 이용', action: '이번 주 3회'),
         const SizedBox(height: 10),
@@ -516,11 +558,71 @@ class _BalanceCard extends StatelessWidget {
   }
 }
 
-class PaymentCompletePreview extends StatelessWidget {
-  const PaymentCompletePreview({super.key});
+class ProductSelectionScreen extends StatefulWidget {
+  const ProductSelectionScreen({super.key});
+
+  @override
+  State<ProductSelectionScreen> createState() => _ProductSelectionScreenState();
+}
+
+class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
+  late final Future<MerchantMenu> _menu = MenuClient().getProducts(defaultMerchantQrToken);
 
   @override
   Widget build(BuildContext context) {
+    return AppScaffold(
+      title: '상품을 선택해요',
+      subtitle: '금액 입력 없이 식당에서 등록한 상품 중 하나를 골라 결제합니다.',
+      child: FutureBuilder<MerchantMenu>(
+        future: _menu,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const BrandPanel(children: [Center(child: CircularProgressIndicator())]);
+          }
+          if (snapshot.hasError) {
+            return BrandPanel(children: [BrandNotice(text: snapshot.error.toString().replaceFirst('Exception: ', ''), kind: NoticeKind.error)]);
+          }
+          final menu = snapshot.data!;
+          if (menu.products.isEmpty) {
+            return const BrandPanel(children: [BrandNotice(text: '등록된 상품이 없어요. 관리자에게 문의해 주세요.', kind: NoticeKind.error)]);
+          }
+          return BrandPanel(children: [
+            Text(menu.merchantName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 14),
+            ...menu.products.map((product) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: InkWell(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PaymentCompletePreview(product: product, merchantName: menu.merchantName))),
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: kLine)),
+                  child: Row(children: [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(product.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 4),
+                      Text(product.category ?? '그린잇 메뉴', style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
+                    ])),
+                    Text('${product.price.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}원', style: const TextStyle(color: kOrange, fontSize: 20, fontWeight: FontWeight.w900)),
+                  ]),
+                ),
+              ),
+            )),
+          ]);
+        },
+      ),
+    );
+  }
+}
+
+class PaymentCompletePreview extends StatelessWidget {
+  const PaymentCompletePreview({super.key, required this.product, required this.merchantName});
+  final MerchantProduct product;
+  final String merchantName;
+
+  @override
+  Widget build(BuildContext context) {
+    final priceText = product.price.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
     return Scaffold(
       backgroundColor: kOrange,
       body: SafeArea(
@@ -530,16 +632,16 @@ class PaymentCompletePreview extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(28),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(34), boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 26, offset: Offset(0, 16))]),
-              child: const Column(mainAxisSize: MainAxisSize.min, children: [
-                SproutMark(size: 104),
-                SizedBox(height: 18),
-                Text('결제완료', style: TextStyle(color: kInk, fontSize: 36, fontWeight: FontWeight.w900)),
-                SizedBox(height: 10),
-                Text('든든 김치찌개', style: TextStyle(color: Color(0xFF5C7A66), fontSize: 22, fontWeight: FontWeight.w800)),
-                SizedBox(height: 6),
-                Text('9,000원', style: TextStyle(color: kOrange, fontSize: 50, fontWeight: FontWeight.w900)),
-                SizedBox(height: 14),
-                Text('거래번호 123456 · 서버시각 표시 예정', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const SproutMark(size: 104),
+                const SizedBox(height: 18),
+                const Text('결제완료', style: TextStyle(color: kInk, fontSize: 36, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 10),
+                Text(product.name, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontSize: 22, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text('$priceText원', style: const TextStyle(color: kOrange, fontSize: 50, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 14),
+                Text('$merchantName · 거래번호 123456', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
               ]),
             ),
           ),

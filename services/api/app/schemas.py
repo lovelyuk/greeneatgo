@@ -27,3 +27,21 @@ class JoinRequest(BaseModel):
 
 class JoinDecisionRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
+
+
+class ProductCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    price: int = Field(gt=0)
+    category: str | None = Field(default=None, max_length=40)
+    image_url: str | None = Field(default=None, max_length=500)
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class ProductUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    price: int | None = Field(default=None, gt=0)
+    category: str | None = Field(default=None, max_length=40)
+    image_url: str | None = Field(default=None, max_length=500)
+    is_active: bool | None = None
+    sort_order: int | None = None

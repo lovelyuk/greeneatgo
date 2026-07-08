@@ -24,6 +24,13 @@ insert into company_merchants (company_id, merchant_id)
 select '00000000-0000-0000-0000-000000000001', id from merchants where qr_token like 'QR-PILOT-%'
 on conflict do nothing;
 
+insert into merchant_products (id, merchant_id, name, price, category, sort_order) values
+('30000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '든든 김치찌개', 9000, '한식', 1),
+('30000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '제육 도시락', 9500, '도시락', 2),
+('30000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', '닭가슴살 샐러드', 8900, '샐러드', 3),
+('30000000-0000-0000-0000-000000000004', '20000000-0000-0000-0000-000000000001', '샌드위치 세트', 7500, '간편식', 4)
+on conflict (id) do nothing;
+
 
 insert into company_invite_codes (company_id, code, default_group_id, expires_at, max_uses)
 values (

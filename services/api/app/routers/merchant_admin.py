@@ -90,8 +90,23 @@ def list_companies(token: str = Depends(bearer_token)):
             "merchant_companies",
             {"select": "id,merchant_id,company_id,status,created_at", "merchant_id": f"eq.{merchant_id}", "order": "created_at.desc"},
         )
-        companies = {row["id"]: row for row in _company_rows(repo, [link["company_id"] for link in links])}
-        items = [{**link, "company": companies.get(link["company_id"])} for link in links]
+        company_ids = [link["company_id"] for link in links]
+        companies = {row["id"]: row for row in _company_rows(repo, company_ids)}
+        invites_by_company = {}
+        if company_ids:
+            invite_rows = repo.client.rest_get(
+                "invites",
+                {
+                    "select": "token,company_id,phone,status,expires_at,created_at",
+                    "company_id": f"in.({','.join(company_ids)})",
+                    "role": "eq.company_admin",
+                    "status": "eq.pending",
+                    "order": "created_at.desc",
+                },
+            )
+            for invite in invite_rows:
+                invites_by_company.setdefault(invite["company_id"], invite)
+        items = [{**link, "company": companies.get(link["company_id"]), "invite": invites_by_company.get(link["company_id"])} for link in links]
         return {"ok": True, "data": {"items": items}, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc

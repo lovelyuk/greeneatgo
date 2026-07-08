@@ -257,6 +257,7 @@ function Dashboard({ session, onLogout }) {
 
   const isMerchantAdmin = me?.role === 'merchant_admin';
   const isPlatformAdmin = me?.role === 'platform_admin';
+  const inviteLink = (invite) => invite?.token ? `${window.location.origin}/?invite=${invite.token}` : '';
   const cards = useMemo(() => isPlatformAdmin ? [
     ['권한', '플랫폼 운영자', WalletCards, 'brown'],
     ['식당', platformMerchants ? `${platformMerchants.items.length}곳` : '조회 중', Coffee, 'green'],
@@ -462,7 +463,7 @@ function Dashboard({ session, onLogout }) {
         }),
       });
       setNewCompanyForm({ name: '', owner_phone: '' });
-      setMessage(`장부업체를 만들고 초대를 생성했어요. 초대 토큰: ${data.invite?.token ?? '-'}`);
+      setMessage(`장부업체를 만들고 초대를 생성했어요. 업체관리자 초대링크: ${inviteLink(data.invite) || '-'}`);
       await load();
     } catch (createError) {
       setError(createError.message);
@@ -612,7 +613,7 @@ function Dashboard({ session, onLogout }) {
       </form>
       {(merchantCompanies?.items?.length ?? 0) === 0
         ? <p className="empty-state">아직 연결된 장부업체가 없어요.</p>
-        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>연결일</th></tr></thead><tbody>{merchantCompanies.items.map((item) => <tr key={item.id}><td>{item.company?.name ?? item.company_id}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>)}</tbody></table></div>}
+        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>초대링크</th><th>연결일</th></tr></thead><tbody>{merchantCompanies.items.map((item) => <tr key={item.id}><td>{item.company?.name ?? item.company_id}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td>{inviteLink(item.invite) ? <a href={inviteLink(item.invite)} target="_blank" rel="noreferrer">업체관리자 초대링크</a> : '-'}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>)}</tbody></table></div>}
     </section>}
 
     {!isPlatformAdmin && isMerchantAdmin && <section className="panel">

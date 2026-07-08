@@ -261,7 +261,7 @@ function Dashboard({ session, onLogout }) {
     ['권한', '플랫폼 운영자', WalletCards, 'brown'],
     ['식당', platformMerchants ? `${platformMerchants.items.length}곳` : '조회 중', Coffee, 'green'],
   ] : isMerchantAdmin ? [
-    ['권한', '돈토관리자', WalletCards, 'brown'],
+    ['권한', '관리자', WalletCards, 'brown'],
     ['상품', products ? `${products.items.filter((item) => item.is_active).length}개` : '조회 중', QrCode, 'orange'],
     ['장부업체', merchantCompanies ? `${merchantCompanies.items.length}곳` : '조회 중', Users, 'green'],
     ['거래내역', transactions ? `${transactions.items.length}건` : '조회 중', FileSpreadsheet, 'orange'],
@@ -539,7 +539,7 @@ function Dashboard({ session, onLogout }) {
       <div>
         <span className="pill light">LUNCH WALLET</span>
         <h2>{isPlatformAdmin ? '식당과 사장님 초대를 관리하세요' : isMerchantAdmin ? '오늘 메뉴와 상품을 관리하세요' : '든든한 한 끼를 빠르게 승인하세요'}</h2>
-        <p>{isPlatformAdmin ? `등록 식당 ${platformMerchants?.items?.length ?? 0}곳 · ${me?.display_name ?? session.user.email}` : isMerchantAdmin ? `${products?.merchant?.name ?? '운영 식당'} · ${(me?.display_name ?? session.user.email).replace('돈토관리자', '돈토 관리자')}` : `대기 중인 직원 ${requests.length}명 · 관리자 ${me?.display_name ?? session.user.email}`}</p>
+        <p>{isPlatformAdmin ? `등록 식당 ${platformMerchants?.items?.length ?? 0}곳 · ${me?.display_name ?? session.user.email}` : isMerchantAdmin ? (me?.display_name ?? session.user.email).replace('돈토관리자', '돈토 관리자') : `대기 중인 직원 ${requests.length}명 · 관리자 ${me?.display_name ?? session.user.email}`}</p>
       </div>
       <Package className="hero-icon" size={96}/>
     </section>
@@ -579,7 +579,7 @@ function Dashboard({ session, onLogout }) {
         <div className="profile-grid">
           <span>이메일</span><strong>{session.user.email}</strong>
           <span>이름</span><strong>{me?.display_name ?? '-'}</strong>
-          <span>권한</span><strong>{me?.role === 'merchant_admin' ? '돈토관리자' : me?.role ?? '-'}</strong>
+          <span>권한</span><strong>{me?.role === 'merchant_admin' ? '관리자' : me?.role ?? '-'}</strong>
           <span>상태</span><strong>{me?.status ?? '-'}</strong>
         </div>
       </article>

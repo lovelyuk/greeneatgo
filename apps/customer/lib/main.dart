@@ -372,7 +372,7 @@ class PendingScreen extends StatelessWidget {
       subtitle: '관리자가 확인하면 바로 한 끼를 시작할 수 있어요.',
       onSignOut: onSignOut,
       child: BrandPanel(children: [
-        const Center(child: SnackMascot(size: 96)),
+        const Center(child: SproutMark(size: 96)),
         const SizedBox(height: 16),
         Text('${me['display_name']}님의 가입 요청을 회사 관리자에게 보냈어요.', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
         const SizedBox(height: 16),
@@ -505,7 +505,7 @@ class _BalanceCard extends StatelessWidget {
         boxShadow: const [BoxShadow(color: Color(0x332FB865), blurRadius: 22, offset: Offset(0, 12))],
       ),
       child: Stack(children: [
-        const Positioned(right: 0, top: 0, child: SnackMascot(size: 72, light: true)),
+        const Positioned(right: 0, top: 0, child: SproutMark(size: 72, light: true)),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(999)), child: const Text('LUNCH WALLET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12))),
           const SizedBox(height: 18),
@@ -535,7 +535,7 @@ class PaymentCompletePreview extends StatelessWidget {
               padding: const EdgeInsets.all(28),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(34), boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 26, offset: Offset(0, 16))]),
               child: const Column(mainAxisSize: MainAxisSize.min, children: [
-                SnackMascot(size: 104),
+                SproutMark(size: 104),
                 SizedBox(height: 18),
                 Text('결제완료', style: TextStyle(color: kInk, fontSize: 36, fontWeight: FontWeight.w900)),
                 SizedBox(height: 10),
@@ -594,7 +594,7 @@ class BrandLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(children: [
-      SnackMascot(size: compact ? 42 : 54),
+      SproutMark(size: compact ? 42 : 54),
       const SizedBox(width: 10),
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('그린잇', style: TextStyle(fontSize: compact ? 22 : 27, fontWeight: FontWeight.w900, color: kCocoa, letterSpacing: -.8)),
@@ -604,34 +604,75 @@ class BrandLogo extends StatelessWidget {
   }
 }
 
-class SnackMascot extends StatelessWidget {
-  const SnackMascot({super.key, this.size = 72, this.light = false});
+class SproutMark extends StatelessWidget {
+  const SproutMark({super.key, this.size = 72, this.light = false});
   final double size;
   final bool light;
 
   @override
   Widget build(BuildContext context) {
-    final face = light ? Colors.white : kTangerine;
     return SizedBox(
       width: size,
       height: size,
-      child: Stack(alignment: Alignment.center, children: [
-        Container(width: size, height: size * .78, decoration: BoxDecoration(color: face, borderRadius: BorderRadius.circular(size * .22), border: Border.all(color: light ? Colors.white : kCocoa, width: size * .045))),
-        Positioned(top: size * .05, child: Container(width: size * .52, height: size * .18, decoration: BoxDecoration(color: light ? const Color(0xFFCDEBD5) : kOrange, borderRadius: BorderRadius.circular(999)))),
-        Positioned(left: size * .30, top: size * .38, child: _Dot(size: size * .075, color: kCocoa)),
-        Positioned(right: size * .30, top: size * .38, child: _Dot(size: size * .075, color: kCocoa)),
-        Positioned(bottom: size * .22, child: Container(width: size * .26, height: size * .08, decoration: BoxDecoration(color: kCocoa, borderRadius: BorderRadius.circular(999)))),
-      ]),
+      child: CustomPaint(
+        painter: _SproutPainter(
+          leaf: light ? Colors.white : kTangerine,
+          leafDark: light ? const Color(0xFFEAFBF0) : kMint,
+          stem: light ? Colors.white : kCocoa,
+        ),
+      ),
     );
   }
 }
 
-class _Dot extends StatelessWidget {
-  const _Dot({required this.size, required this.color});
-  final double size;
-  final Color color;
+class _SproutPainter extends CustomPainter {
+  _SproutPainter({required this.leaf, required this.leafDark, required this.stem});
+  final Color leaf;
+  final Color leafDark;
+  final Color stem;
+
   @override
-  Widget build(BuildContext context) => Container(width: size, height: size, decoration: BoxDecoration(color: color, shape: BoxShape.circle));
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    // 줄기: 아래에서 위로 살짝 뻗는 새싹 대
+    final stemPaint = Paint()
+      ..color = stem
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * .085
+      ..strokeCap = StrokeCap.round;
+    final stemPath = Path()
+      ..moveTo(w * .5, h * .93)
+      ..quadraticBezierTo(w * .5, h * .62, w * .5, h * .40);
+    canvas.drawPath(stemPath, stemPaint);
+
+    // 오른쪽 잎 (짙은 톤)
+    final rightLeaf = Paint()
+      ..color = leafDark
+      ..style = PaintingStyle.fill;
+    final right = Path()
+      ..moveTo(w * .5, h * .52)
+      ..cubicTo(w * .75, h * .52, w * .97, h * .30, w * .90, h * .06)
+      ..cubicTo(w * .66, h * .06, w * .50, h * .27, w * .5, h * .52)
+      ..close();
+    canvas.drawPath(right, rightLeaf);
+
+    // 왼쪽 잎 (밝은 톤, 위에)
+    final leftLeaf = Paint()
+      ..color = leaf
+      ..style = PaintingStyle.fill;
+    final left = Path()
+      ..moveTo(w * .5, h * .54)
+      ..cubicTo(w * .25, h * .54, w * .03, h * .32, w * .10, h * .08)
+      ..cubicTo(w * .34, h * .08, w * .50, h * .29, w * .5, h * .54)
+      ..close();
+    canvas.drawPath(left, leftLeaf);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SproutPainter old) =>
+      old.leaf != leaf || old.leafDark != leafDark || old.stem != stem;
 }
 
 class _SnackHero extends StatelessWidget {
@@ -641,7 +682,7 @@ class _SnackHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SnackMascot(size: 84),
+      const SproutMark(size: 84),
       const SizedBox(width: 14),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFDDF3E2), borderRadius: BorderRadius.circular(999)), child: const Text('TODAY GREEN', style: TextStyle(color: kOrange, fontSize: 12, fontWeight: FontWeight.w900))),
@@ -732,5 +773,5 @@ class _HistoryTile extends StatelessWidget {
 class BrandLoadingScreen extends StatelessWidget {
   const BrandLoadingScreen({super.key});
   @override
-  Widget build(BuildContext context) => const BrandBackground(child: Scaffold(backgroundColor: Colors.transparent, body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [SnackMascot(size: 90), SizedBox(height: 18), CircularProgressIndicator(color: kOrange)]))));
+  Widget build(BuildContext context) => const BrandBackground(child: Scaffold(backgroundColor: Colors.transparent, body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [SproutMark(size: 90), SizedBox(height: 18), CircularProgressIndicator(color: kOrange)]))));
 }

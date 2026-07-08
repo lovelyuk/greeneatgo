@@ -18,10 +18,8 @@ def auth_confirmed() -> str:
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 10% 10%, rgba(123,216,143,.42), transparent 32%), linear-gradient(135deg, #EAF7EC, #F3FBF4 48%, #D9F0DE); }
     .card { width: min(100%, 520px); background: #FCFEFC; border: 1.5px solid #CDEBD5; border-radius: 30px; padding: 30px; text-align: center; box-shadow: 0 24px 60px rgba(30,86,49,.13); }
-    .box { width: 90px; height: 74px; margin: 0 auto 18px; border-radius: 22px; border: 5px solid #1E5631; background: #7BD88F; position: relative; box-shadow: inset 0 14px rgba(255,255,255,.32); }
-    .box:before, .box:after { content: ''; position: absolute; top: 36px; width: 8px; height: 8px; border-radius: 50%; background: #1E5631; }
-    .box:before { left: 25px; } .box:after { right: 25px; }
-    .mouth { position: absolute; left: 36px; bottom: 15px; width: 18px; height: 6px; border-radius: 999px; background: #1E5631; }
+    .sprout { width: 96px; height: 96px; margin: 0 auto 14px; display: grid; place-items: center; color: #2FB865; }
+    .sprout svg { width: 100%; height: 100%; }
     .pill { display: inline-block; padding: 7px 12px; border-radius: 999px; background: #DDF3E2; color: #2FB865; font-size: 12px; font-weight: 900; letter-spacing: .08em; }
     h1 { margin: 14px 0 10px; font-size: 30px; line-height: 1.16; letter-spacing: -1px; }
     p { margin: 0; color: #5C7A66; font-size: 16px; line-height: 1.65; font-weight: 750; }
@@ -31,7 +29,14 @@ def auth_confirmed() -> str:
 </head>
 <body>
   <main class="card">
-    <div class="box"><span class="mouth"></span></div>
+    <div class="sprout">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M7 20h10"/>
+        <path d="M10 20c5.5-2.5.8-6.4 3-10"/>
+        <path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/>
+        <path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/>
+      </svg>
+    </div>
     <span class="pill">EMAIL VERIFIED</span>
     <h1>이메일 인증 완료!</h1>
     <p>이제 앱으로 돌아가 로그인해 주세요.</p>

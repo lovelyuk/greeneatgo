@@ -49,10 +49,8 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .auth-visual .brandmark { color: white; }
 .brandmark strong { display: block; font-size: 24px; letter-spacing: -1px; }
 .brandmark small { display: block; color: currentColor; opacity: .72; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
-.box-face { width: 50px; height: 42px; border-radius: 14px; background: #7BD88F; border: 3px solid currentColor; display: inline-block; position: relative; box-shadow: inset 0 8px rgba(255,255,255,.32); }
-.box-face i, .box-face b { position: absolute; top: 20px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
-.box-face i { left: 14px; } .box-face b { right: 14px; }
-.box-face em { position: absolute; left: 19px; bottom: 9px; width: 12px; height: 4px; border-radius: 999px; background: currentColor; }
+.sprout-badge { width: 48px; height: 48px; border-radius: 16px; display: inline-grid; place-items: center; background: rgba(47, 184, 101, .14); color: #2FB865; flex: none; }
+.auth-visual .sprout-badge { background: rgba(255,255,255,.22); color: white; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
 .top-copy .brandmark { margin-bottom: 22px; }
 .top-actions, .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }

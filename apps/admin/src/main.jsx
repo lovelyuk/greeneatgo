@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CheckCircle2, Coffee, FileSpreadsheet, LogOut, Package, QrCode, RefreshCw, Store, Users, WalletCards, XCircle } from 'lucide-react';
+import { CheckCircle2, Coffee, FileSpreadsheet, LogOut, Package, QrCode, RefreshCw, Sprout, Store, Users, WalletCards, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
 
@@ -37,7 +37,7 @@ async function apiFetch(path, token, options = {}) {
 
 function BrandMark() {
   return <div className="brandmark" aria-label="그린잇">
-    <span className="box-face"><i/><b/><em/></span>
+    <span className="sprout-badge"><Sprout size={26} strokeWidth={2.4} /></span>
     <div><strong>그린잇</strong><small>green eat benefit</small></div>
   </div>;
 }

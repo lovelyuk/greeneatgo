@@ -749,7 +749,6 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
-
   async function createProduct(event) {
     event.preventDefault();
     setBusy(true);

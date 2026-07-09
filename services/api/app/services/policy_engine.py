@@ -40,7 +40,6 @@ ERROR_MESSAGES = {
     "MEAL_LIMIT": "1식 한도를 초과했어요. 초과분은 개인 결제해 주세요",
     "DAILY_LIMIT": "오늘 식대 한도를 초과했어요",
     "WEEKEND_BLOCKED": "주말에는 식대 사용이 제한되어 있어요",
-    "INSUFFICIENT": "잔액이 부족해요",
 }
 
 def _parse_hhmm(value: str) -> time:
@@ -54,7 +53,7 @@ def _in_window(now_t: time, start: str, end: str) -> bool:
         return start_t <= now_t <= end_t
     return now_t >= start_t or now_t <= end_t
 
-def evaluate_payment_policy(*, amount: int, balance: int, spent_today: int, policy: MealPolicy, now: datetime) -> PolicyResult:
+def evaluate_payment_policy(*, amount: int, spent_today: int, policy: MealPolicy, now: datetime) -> PolicyResult:
     """Pure policy judgment for payment. DB/API layers must call this before writing ledger rows."""
     local_now = now.astimezone(KST) if now.tzinfo else now.replace(tzinfo=KST)
 
@@ -71,9 +70,5 @@ def evaluate_payment_policy(*, amount: int, balance: int, spent_today: int, poli
 
     if policy.daily_limit is not None and spent_today + amount > policy.daily_limit:
         return PolicyResult(False, "DAILY_LIMIT", ERROR_MESSAGES["DAILY_LIMIT"], matched.name)
-
-    if balance < amount:
-        shortage = amount - balance
-        return PolicyResult(False, "INSUFFICIENT", f"잔액이 부족해요. 현재 잔액 {balance:,}원, 부족액 {shortage:,}원", matched.name)
 
     return PolicyResult(True, meal_window=matched.name)

@@ -518,6 +518,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = me['display_name'] as String? ?? '직원';
     final monthUsed = (me['month_used'] as num?) ?? 0;
+    final remainingLimit = (me['remaining_limit'] as num?) ?? 0;
     final recentTransactions = mapList(me['recent_transactions']);
     return AppScaffold(
       title: '오늘도 그린하게',
@@ -530,6 +531,7 @@ class HomeScreen extends StatelessWidget {
           builder: (context, snapshot) => _TodayMenuCard(
             todayMenu: snapshot.data?.todayMenu,
             monthUsed: monthUsed,
+            remainingLimit: remainingLimit,
             loading: snapshot.connectionState != ConnectionState.done,
             error: snapshot.hasError ? snapshot.error.toString().replaceFirst('Exception: ', '') : null,
           ),
@@ -610,9 +612,10 @@ class ErrorScreen extends StatelessWidget {
 }
 
 class _TodayMenuCard extends StatelessWidget {
-  const _TodayMenuCard({required this.todayMenu, required this.monthUsed, this.loading = false, this.error});
+  const _TodayMenuCard({required this.todayMenu, required this.monthUsed, required this.remainingLimit, this.loading = false, this.error});
   final TodayMenu? todayMenu;
   final num monthUsed;
+  final num remainingLimit;
   final bool loading;
   final String? error;
 
@@ -647,8 +650,11 @@ class _TodayMenuCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(18)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              const Text('이번달 사용량', style: TextStyle(color: Color(0xFFEAFBF0), fontSize: 11, fontWeight: FontWeight.w900)),
+              const Text('이번달 사용', style: TextStyle(color: Color(0xFFEAFBF0), fontSize: 11, fontWeight: FontWeight.w900)),
               Text(won(monthUsed), style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 3),
+              const Text('남은 한도', style: TextStyle(color: Color(0xFFEAFBF0), fontSize: 11, fontWeight: FontWeight.w900)),
+              Text(won(remainingLimit), style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
             ]),
           ),
         ),

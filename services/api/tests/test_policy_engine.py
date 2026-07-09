@@ -14,48 +14,50 @@ class PolicyEngineTests(unittest.TestCase):
     def setUp(self):
         self.policy = MealPolicy(DEFAULT_WINDOWS, daily_limit=20_000, weekend_allowed=False)
 
-    def assertCode(self, when, amount, balance, spent_today, code):
-        result = evaluate_payment_policy(amount=amount, balance=balance, spent_today=spent_today, policy=self.policy, now=when)
+    def assertCode(self, when, amount, spent_today, code):
+        result = evaluate_payment_policy(amount=amount, spent_today=spent_today, policy=self.policy, now=when)
         self.assertFalse(result.ok)
         self.assertEqual(result.code, code)
 
     def test_lunch_boundaries_inclusive(self):
         for hhmm in ["11:00", "12:30", "14:00"]:
             with self.subTest(hhmm=hhmm):
-                result = evaluate_payment_policy(amount=9000, balance=50000, spent_today=0, policy=self.policy, now=dt(7, hhmm))
+                result = evaluate_payment_policy(amount=9000, spent_today=0, policy=self.policy, now=dt(7, hhmm))
                 self.assertTrue(result.ok)
                 self.assertEqual(result.meal_window, "중식")
 
     def test_dinner_boundaries_inclusive(self):
         for hhmm in ["17:30", "18:45", "20:30"]:
             with self.subTest(hhmm=hhmm):
-                result = evaluate_payment_policy(amount=11000, balance=50000, spent_today=0, policy=self.policy, now=dt(7, hhmm))
+                result = evaluate_payment_policy(amount=11000, spent_today=0, policy=self.policy, now=dt(7, hhmm))
                 self.assertTrue(result.ok)
                 self.assertEqual(result.meal_window, "석식")
 
     def test_out_of_window_cases(self):
         for hhmm in ["10:59", "14:01", "17:29", "20:31", "23:59"]:
             with self.subTest(hhmm=hhmm):
-                self.assertCode(dt(7, hhmm), 9000, 50000, 0, "OUT_OF_WINDOW")
+                self.assertCode(dt(7, hhmm), 9000, 0, "OUT_OF_WINDOW")
 
     def test_lunch_meal_limit(self):
-        self.assertCode(dt(7, "12:00"), 10001, 50000, 0, "MEAL_LIMIT")
+        self.assertCode(dt(7, "12:00"), 10001, 0, "MEAL_LIMIT")
 
     def test_dinner_meal_limit(self):
-        self.assertCode(dt(7, "18:00"), 12001, 50000, 0, "MEAL_LIMIT")
+        self.assertCode(dt(7, "18:00"), 12001, 0, "MEAL_LIMIT")
 
     def test_daily_limit(self):
-        self.assertCode(dt(7, "12:00"), 9000, 50000, 12000, "DAILY_LIMIT")
+        self.assertCode(dt(7, "12:00"), 9000, 12000, "DAILY_LIMIT")
 
-    def test_insufficient_balance(self):
-        self.assertCode(dt(7, "12:00"), 9000, 8000, 0, "INSUFFICIENT")
+    def test_no_prepaid_balance_required(self):
+        result = evaluate_payment_policy(amount=9000, spent_today=0, policy=self.policy, now=dt(7, "12:00"))
+        self.assertTrue(result.ok)
+        self.assertEqual(result.meal_window, "중식")
 
     def test_weekend_blocked(self):
-        self.assertCode(dt(11, "12:00"), 9000, 50000, 0, "WEEKEND_BLOCKED")
+        self.assertCode(dt(11, "12:00"), 9000, 0, "WEEKEND_BLOCKED")
 
     def test_weekend_allowed(self):
         policy = MealPolicy(DEFAULT_WINDOWS, daily_limit=None, weekend_allowed=True)
-        result = evaluate_payment_policy(amount=9000, balance=50000, spent_today=0, policy=policy, now=dt(11, "12:00"))
+        result = evaluate_payment_policy(amount=9000, spent_today=0, policy=policy, now=dt(11, "12:00"))
         self.assertTrue(result.ok)
 
 if __name__ == "__main__":

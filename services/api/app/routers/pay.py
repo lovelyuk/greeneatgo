@@ -64,7 +64,6 @@ def _map_rpc_error(exc: SupabaseHttpError) -> HTTPException:
     mapping = {
         "COMPANY_NOT_ACTIVE": (403, "COMPANY_NOT_ACTIVE", "회사 담당자 활성화 전이라 결제할 수 없어요"),
         "NOT_AFFILIATED": (403, "NOT_AFFILIATED", "이 식당은 우리 회사 제휴 식당이 아니에요"),
-        "INSUFFICIENT": (400, "INSUFFICIENT", "잔액이 부족해요"),
         "INVALID_AMOUNT": (400, "INVALID_AMOUNT", "결제 금액이 올바르지 않아요"),
     }
     for key, value in mapping.items():
@@ -115,7 +114,6 @@ def pay(payload: PayRequest, token: str = Depends(bearer_token)):
             {"select": "amount,kind,created_at", "user_id": f"eq.{user.id}"},
         )
         now = datetime.now(timezone.utc)
-        balance = sum(int(row.get("amount") or 0) for row in tx_rows)
         today_start = _today_start_utc(now)
         month_start = _month_start_utc(now)
         spent_today = sum(
@@ -137,7 +135,6 @@ def pay(payload: PayRequest, token: str = Depends(bearer_token)):
             company_id=user.company_id,
             merchant=MerchantSnapshot(id=merchant["id"], name=merchant["name"], lat=merchant.get("lat"), lng=merchant.get("lng")),
             amount=amount,
-            balance=balance,
             spent_today=spent_today,
             policy=policy,
             now=datetime.now(timezone.utc),

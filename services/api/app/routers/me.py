@@ -49,6 +49,8 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
         "meal_transactions",
         {"select": "id,amount,kind,tx_code,meal_window,product_name,merchant_id,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc"},
     )
+    limit_rows = repo.client.rest_get("app_users", {"select": "monthly_limit", "id": f"eq.{user_id}", "limit": "1"})
+    monthly_limit = int((limit_rows[0].get("monthly_limit") if limit_rows else None) or 200000)
     month_start = _month_start_utc()
     balance = sum(int(row.get("amount") or 0) for row in rows)
     month_used = 0
@@ -79,7 +81,13 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
         }
         for row in recent_spends
     ]
-    return {"balance": balance, "month_used": month_used, "recent_transactions": recent_transactions}
+    return {
+        "balance": balance,
+        "monthly_limit": monthly_limit,
+        "remaining_limit": max(monthly_limit - month_used, 0),
+        "month_used": month_used,
+        "recent_transactions": recent_transactions,
+    }
 
 
 @router.get("/me")
@@ -105,7 +113,7 @@ def me(token: str = Depends(bearer_token)):
         }
 
     invite_code = None
-    usage = {"balance": None, "month_used": None, "recent_transactions": []}
+    usage = {"balance": None, "monthly_limit": None, "remaining_limit": None, "month_used": None, "recent_transactions": []}
     try:
         if profile.role == "company_admin" and profile.company_id:
             invite_code = _ensure_invite_code(repo, profile.company_id)
@@ -127,6 +135,8 @@ def me(token: str = Depends(bearer_token)):
             "status": profile.status,
             "invite_code": invite_code,
             "balance": usage["balance"],
+            "monthly_limit": usage["monthly_limit"],
+            "remaining_limit": usage["remaining_limit"],
             "month_used": usage["month_used"],
             "recent_transactions": usage["recent_transactions"],
         },

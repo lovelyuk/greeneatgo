@@ -20,7 +20,6 @@ class PaymentContext:
     company_id: str
     merchant: MerchantSnapshot
     amount: int
-    balance: int
     spent_today: int
     policy: MealPolicy
     now: datetime
@@ -45,7 +44,6 @@ def generate_tx_code() -> str:
 def prepare_payment_draft(ctx: PaymentContext) -> PaymentDraft:
     result = evaluate_payment_policy(
         amount=ctx.amount,
-        balance=ctx.balance,
         spent_today=ctx.spent_today,
         policy=ctx.policy,
         now=ctx.now,

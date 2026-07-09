@@ -1,6 +1,6 @@
--- Real atomic payment function.
--- Enforces active company, active merchant relationship, and idempotency.
--- Monthly spending limits are enforced by the API before calling this function.
+-- Switch payment from prepaid balance to monthly-limit ledger mode.
+-- greeneatGo/MealLedger does not hold company funds; companies settle directly with restaurants.
+-- The API enforces app_users.monthly_limit before calling this atomic insert function.
 
 create or replace function process_meal_pay(
   p_user_id uuid,

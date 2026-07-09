@@ -34,6 +34,14 @@ def me(token: str = Depends(bearer_token)):
             "error": None,
         }
 
+    invite_code = None
+    if profile.role == "company_admin" and profile.company_id:
+        codes = repo.client.rest_get(
+            "company_invite_codes",
+            {"select": "code", "company_id": f"eq.{profile.company_id}", "is_active": "eq.true", "order": "created_at.desc", "limit": "1"},
+        )
+        invite_code = codes[0]["code"] if codes else None
+
     return {
         "ok": True,
         "data": {
@@ -45,6 +53,7 @@ def me(token: str = Depends(bearer_token)):
             "group_id": profile.group_id,
             "role": profile.role,
             "status": profile.status,
+            "invite_code": invite_code,
         },
         "error": None,
     }

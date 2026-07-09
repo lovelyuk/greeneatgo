@@ -558,6 +558,16 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
+  async function copyCompanyInviteCode() {
+    if (!me?.invite_code) return;
+    try {
+      await navigator.clipboard.writeText(me.invite_code);
+      setMessage('초대코드를 복사했어요.');
+    } catch {
+      setError('자동 복사가 막혔어요. 초대코드를 직접 복사해 주세요.');
+    }
+  }
+
   function escapeHtml(value) {
     return String(value).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   }
@@ -993,9 +1003,13 @@ function Dashboard({ session, onLogout }) {
           </div>
         </div> : <p className="empty-state">매장 QR 정보를 불러오고 있어요.</p>}
       </article>}
-      {!isMerchantAdmin && <article className="panel menu-panel">
-        <div className="panel-title"><h2>운영 식당</h2><Coffee size={22}/></div>
-        <div className="menu-chips single"><span>🥗 돈토 식당</span></div>
+      {!isMerchantAdmin && <article className="panel menu-panel restaurant-card">
+        <div className="restaurant-card-head"><Coffee size={24}/><strong>돈토 식당</strong></div>
+        <div className="invite-code-box">
+          <span>초대코드</span>
+          <strong>{me?.invite_code ?? '-'}</strong>
+          <button className="ghost" onClick={copyCompanyInviteCode} disabled={!me?.invite_code}>복사</button>
+        </div>
       </article>}
     </section>
 

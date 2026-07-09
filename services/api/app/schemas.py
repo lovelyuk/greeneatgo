@@ -77,3 +77,7 @@ class MerchantCompanyLinkRequest(BaseModel):
 class MerchantCompanyCreateAndLinkRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     owner_phone: str = Field(min_length=5, max_length=40)
+
+
+class SettlementPaymentConfirmRequest(BaseModel):
+    paid_at: str = Field(min_length=8, max_length=40)

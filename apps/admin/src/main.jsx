@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CheckCircle2, Coffee, FileSpreadsheet, LogOut, Package, QrCode, RefreshCw, Sprout, Users, WalletCards, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, Package, QrCode, RefreshCw, Search, Sprout, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
+import { mockSettlementRows } from './vendorTransactionMocks.js';
 import './style.css';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -232,6 +233,289 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
       </form>
     </section>
   </main>;
+}
+
+const krw = (value) => `₩${Number(value ?? 0).toLocaleString('ko-KR')}`;
+const dateKey = (value) => value ? new Date(value).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+const dayLabel = (key) => new Date(`${key}T00:00:00`).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+const todayInput = () => new Date().toISOString().slice(0, 10);
+
+function buildTransactionRows(rawItems, range, q) {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const presets = {
+    current: [new Date(y, m, 1), new Date(y, m + 1, 0, 23, 59, 59)],
+    previous: [new Date(y, m - 1, 1), new Date(y, m, 0, 23, 59, 59)],
+    quarter: [new Date(y, m - 2, 1), new Date(y, m + 1, 0, 23, 59, 59)],
+  };
+  const [from, to] = range.type === 'custom'
+    ? [new Date(`${range.from || todayInput()}T00:00:00`), new Date(`${range.to || todayInput()}T23:59:59`)]
+    : presets[range.type] ?? presets.current;
+  const query = q.trim().toLowerCase();
+  const normalized = rawItems.map((tx, index) => {
+    const rawAmount = Number(tx.amount ?? tx.product_price ?? 0);
+    const cancelled = tx.status === 'cancelled' || tx.status === 'refund' || tx.kind === 'refund' || tx.kind === 'cancel';
+    const amount = cancelled ? -Math.abs(rawAmount) : Math.abs(rawAmount);
+    return {
+      id: tx.id ?? `mock-${index}`,
+      created_at: tx.created_at ?? new Date(y, m, Math.max(1, now.getDate() - index), 12, 10 + index).toISOString(),
+      time: tx.created_at ? new Date(tx.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '12:00',
+      employee_name: tx.employee_name ?? tx.user_name ?? ['김민준', '이지은', '박서준', '최유나'][index % 4],
+      employee_no: tx.employee_no ?? tx.user_id?.slice(0, 6) ?? `E${String(index + 1).padStart(3, '0')}`,
+      menu: tx.product_name ?? tx.meal_window ?? '구내식당 식권',
+      pay_type: tx.kind === 'wallet' ? '식권' : '장부',
+      amount,
+      status: cancelled ? 'refund' : 'paid',
+      tx_code: tx.tx_code ?? '-',
+    };
+  }).filter((tx) => {
+    const created = new Date(tx.created_at);
+    const matchesDate = created >= from && created <= to;
+    const matchesQuery = !query || `${tx.employee_name} ${tx.employee_no}`.toLowerCase().includes(query);
+    return matchesDate && matchesQuery;
+  });
+  return normalized;
+}
+
+function VendorTransactionModal({ txModal, token, onClose }) {
+  const dialogRef = useRef(null);
+  const returnFocusRef = useRef(document.activeElement);
+  const [activeTab, setActiveTab] = useState('transactions');
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [range, setRange] = useState({ type: 'current', from: todayInput().slice(0, 8) + '01', to: todayInput() });
+  const [query, setQuery] = useState('');
+  const [collapsed, setCollapsed] = useState({});
+  const [apiError, setApiError] = useState('');
+  const [serverSummary, setServerSummary] = useState(null);
+  const [serverDays, setServerDays] = useState(null);
+  const [settlements, setSettlements] = useState(() => mockSettlementRows(txModal.companyName, txModal.totalAmount));
+
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 350);
+    dialogRef.current?.focus();
+    function onKeyDown(event) {
+      if (event.key === 'Escape' && !exporting) onClose();
+      if (event.key === 'Tab' && dialogRef.current) {
+        const focusable = [...dialogRef.current.querySelectorAll('button, input, [href], [tabindex]:not([tabindex="-1"])')].filter((el) => !el.disabled);
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('keydown', onKeyDown);
+      returnFocusRef.current?.focus?.();
+    };
+  }, [exporting, onClose]);
+
+  useEffect(() => { setLoading(true); const timer = setTimeout(() => setLoading(false), 260); return () => clearTimeout(timer); }, [range, query, activeTab]);
+
+  function rangeParams() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const pad = (value) => String(value).padStart(2, '0');
+    if (range.type === 'previous') {
+      const start = new Date(y, m - 1, 1);
+      const end = new Date(y, m, 0);
+      return { from: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-01`, to: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}` };
+    }
+    if (range.type === 'quarter') {
+      const start = new Date(y, m - 2, 1);
+      const end = new Date(y, m + 1, 0);
+      return { from: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-01`, to: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}` };
+    }
+    if (range.type === 'custom') return { from: range.from, to: range.to };
+    const end = new Date(y, m + 1, 0);
+    return { from: `${y}-${pad(m + 1)}-01`, to: `${y}-${pad(m + 1)}-${pad(end.getDate())}` };
+  }
+
+  useEffect(() => {
+    if (!txModal.companyId) return;
+    let cancelled = false;
+    async function loadVendorDetail() {
+      setLoading(true);
+      setApiError('');
+      const { from, to } = rangeParams();
+      const params = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+      try {
+        const [summaryData, txData, settlementData] = await Promise.all([
+          apiFetch(`/admin/merchant/companies/${txModal.companyId}/summary?${params}`, token),
+          apiFetch(`/admin/merchant/companies/${txModal.companyId}/transactions?${params}&q=${encodeURIComponent(query)}`, token),
+          apiFetch(`/admin/merchant/companies/${txModal.companyId}/settlements`, token),
+        ]);
+        if (cancelled) return;
+        setServerSummary(summaryData);
+        setServerDays(txData.days ?? []);
+        setSettlements(settlementData.items ?? []);
+      } catch (detailError) {
+        if (!cancelled) {
+          setApiError(detailError.message);
+          setServerSummary(null);
+          setServerDays(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    loadVendorDetail();
+    return () => { cancelled = true; };
+  }, [txModal.companyId, range, query, token]);
+
+  const serverRows = useMemo(() => serverDays ? serverDays.flatMap((day) => (day.items ?? []).map((item) => ({
+    ...item,
+    time: item.created_at ? new Date(item.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : item.time,
+    menu: item.menu ?? item.product_name ?? item.meal_window ?? '식대 사용',
+    pay_type: item.pay_type ?? (item.kind === 'spend' ? '식권' : '장부'),
+  }))) : null, [serverDays]);
+
+  const rows = useMemo(() => serverRows ?? buildTransactionRows(txModal.txItems, range, query), [serverRows, txModal.txItems, range, query]);
+  const summary = useMemo(() => {
+    if (serverSummary) {
+      const next = serverSummary.next_settlement_date ? new Date(`${serverSummary.next_settlement_date}T00:00:00`) : new Date();
+      const dday = Math.ceil((new Date(next.toDateString()) - new Date(new Date().toDateString())) / 86400000);
+      return {
+        total: serverSummary.total_amount ?? 0,
+        count: serverSummary.total_count ?? 0,
+        cancelCount: serverSummary.cancel_count ?? 0,
+        unsettled: serverSummary.unsettled_amount ?? 0,
+        nextSettlement: `${next.getMonth() + 1}/${next.getDate()} (D-${dday})`,
+      };
+    }
+    const total = rows.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+    const cancelCount = rows.filter((row) => row.status === 'refund').length;
+    const next = new Date();
+    next.setMonth(next.getMonth() + 1, 0);
+    const dday = Math.ceil((new Date(next.toDateString()) - new Date(new Date().toDateString())) / 86400000);
+    return { total, count: rows.length, cancelCount, unsettled: Math.max(0, total), nextSettlement: `${next.getMonth() + 1}/${next.getDate()} (D-${dday})` };
+  }, [rows, serverSummary]);
+  const unpaid = settlements.filter((item) => item.status !== '입금완료');
+  const unpaidAmount = unpaid.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const contract = txModal.contract ?? { cycle: '월말정산', unit_price: 8000 };
+  const groups = useMemo(() => {
+    const byDay = new Map();
+    rows.forEach((row) => {
+      const key = dateKey(row.created_at);
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key).push(row);
+    });
+    return [...byDay.entries()].map(([key, items]) => ({ key, items, subtotal: items.reduce((sum, item) => sum + Number(item.amount ?? 0), 0) })).sort((a, b) => b.key.localeCompare(a.key));
+  }, [rows]);
+
+  async function download(format) {
+    setExporting(true);
+    const { from } = rangeParams();
+    const ym = from.slice(0, 7).replace('-', '');
+    const fileName = `${txModal.companyName}_${format === 'xlsx' ? '거래내역' : '청구서'}_${ym}.${format}`;
+    try {
+      if (txModal.companyId) {
+        const { from, to } = rangeParams();
+        const response = await fetch(`${apiBaseUrl}/admin/merchant/companies/${txModal.companyId}/export?format=${format}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error(`다운로드 API 오류 (${response.status})`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fileName; a.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+      const lines = [
+        `${txModal.companyName} ${format === 'xlsx' ? '거래내역' : '청구서'}`,
+        `총액,${summary.total},건수,${summary.count},미정산,${summary.unsettled}`,
+        '일자,시간,직원,사번,메뉴,결제구분,금액,상태',
+        ...rows.map((row) => `${dateKey(row.created_at)},${row.time},${row.employee_name},${row.employee_no},${row.menu},${row.pay_type},${row.amount},${row.status}`),
+      ];
+      const blob = new Blob([lines.join('\n')], { type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fileName; a.click();
+      URL.revokeObjectURL(url);
+    } catch (downloadError) {
+      setApiError(downloadError.message);
+    } finally {
+      setTimeout(() => setExporting(false), 300);
+    }
+  }
+
+  async function confirmPayment(item) {
+    const paidAt = window.prompt('입금일을 입력해 주세요', todayInput());
+    if (!paidAt) return;
+    try {
+      if (txModal.companyId && item.id) {
+        await apiFetch(`/admin/merchant/companies/${txModal.companyId}/settlements/${item.id}/confirm-payment`, token, {
+          method: 'POST',
+          body: JSON.stringify({ paid_at: paidAt }),
+        });
+      }
+      setSettlements((list) => list.map((row) => row.id === item.id ? { ...row, status: '입금완료', paid_at: paidAt } : row));
+      setServerSummary((prev) => prev ? { ...prev, unsettled_amount: Math.max(0, Number(prev.unsettled_amount ?? 0) - Number(item.amount ?? 0)) } : prev);
+    } catch (paymentError) {
+      setApiError(paymentError.message);
+    }
+  }
+
+  return <div className="vendor-modal-backdrop" onClick={() => !exporting && onClose()}>
+    <section className="vendor-modal" role="dialog" aria-modal="true" aria-labelledby="vendor-modal-title" tabIndex={-1} ref={dialogRef} onClick={(event) => event.stopPropagation()}>
+      <header className="vendor-modal-header">
+        <div className="vendor-title-row">
+          <div>
+            <h2 id="vendor-modal-title">🏢 {txModal.companyName}</h2>
+            <span className="contract-badge">계약: {contract.cycle} · 단가 {Number(contract.unit_price).toLocaleString('ko-KR')}원</span>
+          </div>
+          <button className="ghost icon-button" onClick={onClose} disabled={exporting} aria-label="닫기"><X size={20}/></button>
+        </div>
+        {unpaidAmount > 0 && <button className="overdue-badge" onClick={() => setActiveTab('settlements')}><AlertTriangle size={16}/> 미수금 {krw(unpaidAmount)} (지난 정산 미입금)</button>}
+        <nav className="vendor-tabs" aria-label="업체 거래 모달 탭">
+          <button className={activeTab === 'transactions' ? 'active' : ''} onClick={() => setActiveTab('transactions')}>거래내역</button>
+          <button className={activeTab === 'settlements' ? 'active' : ''} onClick={() => setActiveTab('settlements')}>정산이력</button>
+        </nav>
+      </header>
+
+      {activeTab === 'transactions' ? <>
+        <div className="vendor-filterbar">
+          <div className="range-chips">
+            {[['current', '이번 달'], ['previous', '지난 달'], ['quarter', '최근 3개월'], ['custom', '직접 선택']].map(([type, label]) => <button key={type} className={range.type === type ? 'active' : ''} onClick={() => setRange((prev) => ({ ...prev, type }))}>{label}</button>)}
+          </div>
+          {range.type === 'custom' && <div className="date-range"><input type="date" value={range.from} onChange={(e) => setRange((prev) => ({ ...prev, from: e.target.value }))}/><span>~</span><input type="date" value={range.to} onChange={(e) => setRange((prev) => ({ ...prev, to: e.target.value }))}/></div>}
+          <label className="tx-search"><Search size={16}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="직원명/사번 검색" /></label>
+        </div>
+        <div className="vendor-modal-body">
+          {apiError && <div className="alert error">상세 API 확인 필요: {apiError}</div>}
+          {loading ? <TransactionSkeleton /> : <>
+            <section className="vendor-summary-grid">
+              <article><span>총 이용금액</span><strong>{krw(summary.total)}</strong></article>
+              <article><span>총 이용건수</span><strong>{summary.count}건 {summary.cancelCount ? `(취소 ${summary.cancelCount})` : ''}</strong></article>
+              <article className="main-amount"><span>미정산 잔액</span><strong>{krw(summary.unsettled)}</strong></article>
+              <article><span>다음 정산일</span><strong><CalendarDays size={18}/>{summary.nextSettlement}</strong></article>
+            </section>
+            {groups.length === 0 ? <p className="vendor-empty">📒 선택한 기간에 거래가 없습니다</p> : <section className="day-ledger-list">
+              {groups.map((group) => <article className="day-ledger" key={group.key}>
+                <button className="day-ledger-header" onClick={() => setCollapsed((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}><span>{dayLabel(group.key)} — {group.items.length}건 · {krw(group.subtotal)}</span><ChevronDown className={collapsed[group.key] ? 'closed' : ''} size={18}/></button>
+                {!collapsed[group.key] && <div className="table-wrap"><table><thead><tr><th>시각</th><th>직원명(사번)</th><th>메뉴/내역</th><th>결제구분</th><th>금액</th></tr></thead><tbody>{group.items.map((row) => <tr key={row.id} className={row.status === 'refund' ? 'refund-row' : ''}><td>{row.time}</td><td><strong>{row.employee_name}</strong> ({row.employee_no})</td><td>{row.menu} {row.status === 'refund' && <span className="refund-tag">환불</span>}</td><td>{row.pay_type}</td><td className="money">{krw(row.amount)}</td></tr>)}</tbody></table></div>}
+              </article>)}
+            </section>}
+          </>}
+        </div>
+        <footer className="vendor-modal-footer"><button className="primary export-button" onClick={() => download('xlsx')} disabled={exporting}><Download size={17}/> 엑셀 다운로드</button><button className="primary export-button" onClick={() => download('pdf')} disabled={exporting}><FileText size={17}/> PDF 청구서</button><button className="ghost" onClick={onClose} disabled={exporting}>닫기</button></footer>
+      </> : <div className="vendor-modal-body settlement-tab">
+        {apiError && <div className="alert error">상세 API 확인 필요: {apiError}</div>}
+        {unpaidAmount > 0 && <div className="unpaid-banner">총 미수금 {krw(unpaidAmount)} — {unpaid.length}회차 미입금</div>}
+        <div className="table-wrap"><table><thead><tr><th>정산 기간</th><th>청구액</th><th>상태</th><th>입금일</th><th>액션</th></tr></thead><tbody>{settlements.map((item) => <tr key={item.id} className={item.status === '연체' ? 'overdue-row' : ''}><td>{item.period_from} ~ {item.period_to.slice(5)}</td><td className="money">{krw(item.amount)}</td><td><span className={`settlement-status ${item.status}`}>{item.status}</span></td><td>{item.paid_at || '-'}</td><td className="row-actions">{item.status !== '입금완료' && <button className="ghost" onClick={() => confirmPayment(item)}>입금확인</button>}<button className="ghost" onClick={() => download('pdf')}>청구서 다시받기</button></td></tr>)}</tbody></table></div>
+      </div>}
+    </section>
+  </div>;
+}
+
+function TransactionSkeleton() {
+  return <div className="vendor-skeleton"><div className="vendor-summary-grid">{[0, 1, 2, 3].map((n) => <article key={n} className="skeleton-card" />)}</div><div className="skeleton-lines">{[0, 1, 2, 3, 4, 5].map((n) => <span key={n}/>)}</div></div>;
 }
 
 function Dashboard({ session, onLogout }) {
@@ -559,14 +843,7 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
 
-    {txModal && <div className="modal-backdrop" onClick={() => setTxModal(null)}>
-      <section className="invite-modal tx-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="panel-title"><div><h2>{txModal.companyName} 거래내역</h2><p className="panel-note">거래 {txModal.txItems.length}건 · 합계 {txModal.totalAmount.toLocaleString('ko-KR')}원</p></div><button className="ghost" onClick={() => setTxModal(null)}>닫기</button></div>
-        {txModal.txItems.length === 0
-          ? <p className="empty-state">아직 이 업체 거래내역이 없어요.</p>
-          : <div className="table-wrap"><table><thead><tr><th>시간</th><th>상품</th><th>금액</th><th>거래번호</th></tr></thead><tbody>{txModal.txItems.map((tx) => <tr key={tx.id}><td>{tx.created_at ? new Date(tx.created_at).toLocaleString('ko-KR') : '-'}</td><td>{tx.product_name ?? tx.meal_window ?? '-'}</td><td>{Math.abs(Number(tx.amount ?? 0)).toLocaleString('ko-KR')}원</td><td>{tx.tx_code ?? '-'}</td></tr>)}</tbody></table></div>}
-      </section>
-    </div>}
+    {txModal && <VendorTransactionModal txModal={txModal} token={token} onClose={() => setTxModal(null)} />}
 
     <section className="hero-panel">
       <div>
@@ -650,7 +927,7 @@ function Dashboard({ session, onLogout }) {
           const companyName = item.company?.name ?? item.company_id;
           const txItems = (transactions?.items ?? []).filter((tx) => tx.company_id === item.company_id);
           const totalAmount = txItems.reduce((sum, tx) => sum + Math.abs(Number(tx.amount ?? 0)), 0);
-          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyName, txItems, totalAmount })}>{txItems.length}건 보기</button></td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>;
+          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyId: item.company_id, companyName, txItems, totalAmount })}>{txItems.length}건 보기</button></td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>;
         })}</tbody></table></div>}
     </section>}
 

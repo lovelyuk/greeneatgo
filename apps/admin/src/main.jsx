@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, Package, QrCode, RefreshCw, Search, Sprout, Users, WalletCards, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Sprout, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
 
@@ -894,7 +894,6 @@ function Dashboard({ session, onLogout }) {
       <div className="top-copy">
         <BrandMark />
         <span className="pill">OPERATIONS</span>
-        <h1>오늘의 식대 운영 현황</h1>
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
       <div className="top-actions">
@@ -923,7 +922,7 @@ function Dashboard({ session, onLogout }) {
       <section className="invite-modal contract-modal" onClick={(event) => event.stopPropagation()}>
         <div className="panel-title">
           <div>
-            <h2>업체 상세보기</h2>
+            <h2>계약 설정</h2>
             <p className="panel-note">{contractModal.company?.name ?? contractModal.company_id} 계약 정보를 관리합니다.</p>
           </div>
           <button className="ghost icon-button" onClick={() => setContractModal(null)} aria-label="닫기"><X size={20}/></button>
@@ -952,15 +951,6 @@ function Dashboard({ session, onLogout }) {
         </form>
       </section>
     </div>}
-
-    <section className="hero-panel">
-      <div>
-        <span className="pill light">LUNCH WALLET</span>
-        <h2>{isPlatformAdmin ? '식당과 사장님 초대를 관리하세요' : isMerchantAdmin ? '오늘 메뉴와 상품을 관리하세요' : '든든한 한 끼를 빠르게 승인하세요'}</h2>
-        <p>{isPlatformAdmin ? `등록 식당 ${platformMerchants?.items?.length ?? 0}곳 · ${me?.display_name ?? session.user.email}` : isMerchantAdmin ? (me?.display_name ?? session.user.email).replace('돈토관리자', '돈토 관리자') : `대기 중인 직원 ${requests.length}명 · 관리자 ${me?.display_name ?? session.user.email}`}</p>
-      </div>
-      <Package className="hero-icon" size={96}/>
-    </section>
 
     <section className="grid">
       {cards.map(([label, value, Icon, tone]) => <article className={`card ${tone}`} key={label}>
@@ -1045,12 +1035,12 @@ function Dashboard({ session, onLogout }) {
       </form>
       {(merchantCompanies?.items?.length ?? 0) === 0
         ? <p className="empty-state">아직 연결된 장부업체가 없어요.</p>
-        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>거래내역</th><th>계약</th><th>상세</th><th>초대링크</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
+        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>거래내역</th><th>계약</th><th>초대링크</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
           const link = inviteLink(item.invite);
           const companyName = item.company?.name ?? item.company_id;
           const txItems = (transactions?.items ?? []).filter((tx) => tx.company_id === item.company_id);
           const totalAmount = txItems.reduce((sum, tx) => sum + Math.abs(Number(tx.amount ?? 0)), 0);
-          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyId: item.company_id, companyName, txItems, totalAmount, contract: item.contract })}>{txItems.length}건 보기</button></td><td>{item.contract_label ?? '미설정'}</td><td><button className="ghost" onClick={() => openContractModal(item)}>상세보기</button></td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td></tr>;
+          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyId: item.company_id, companyName, txItems, totalAmount, contract: item.contract })}>{txItems.length}건 보기</button></td><td><button className="ghost" onClick={() => openContractModal(item)}>계약</button></td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td></tr>;
         })}</tbody></table></div>}
     </section>}
 

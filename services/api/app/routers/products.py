@@ -68,6 +68,6 @@ def list_public_products(qr_token: str):
         raise
     except SupabaseHttpError as exc:
         if "PGRST205" in exc.body:
-            merchant = {"id": "fallback", "name": "그린잇 식당", "category": "", "avg_price": None, "qr_token": qr_token}
+            merchant = {"id": "fallback", "name": "돈토", "category": "", "avg_price": None, "qr_token": qr_token}
             return {"ok": True, "data": {"merchant": merchant, "items": [], "today_menu": None, "migration_required": True, "menu_migration_required": True}, "error": None}
         raise _error(502, "SUPABASE_ERROR", "상품 목록을 불러오는 중 오류가 발생했어요") from exc

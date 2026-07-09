@@ -171,7 +171,7 @@ class MenuClient {
     final items = (data['items'] as List<dynamic>).cast<Map<String, dynamic>>();
     final todayMenuJson = data['today_menu'] as Map<String, dynamic>?;
     return MerchantMenu(
-      merchantName: merchant['name'] as String? ?? '그린잇 식당',
+      merchantName: displayMerchantName(merchant['name'] as String?),
       products: items.map(MerchantProduct.fromJson).toList(),
       todayMenu: todayMenuJson == null ? null : TodayMenu.fromJson(todayMenuJson),
     );
@@ -188,9 +188,15 @@ String shortKoreanDate(String? iso) {
 }
 
 String recentMeta(Map<String, dynamic> tx) {
-  final merchant = tx['merchant_name'] as String? ?? '';
+  final merchant = displayMerchantName(tx['merchant_name'] as String?);
   final date = shortKoreanDate(tx['created_at'] as String?);
-  return merchant.isEmpty ? date : '$merchant · $date';
+  return '$merchant · $date';
+}
+
+String displayMerchantName(String? name) {
+  final value = (name ?? '').trim();
+  if (value.isEmpty || value == '밥장부 김치찌개' || value == '그린잇 식당') return '돈토';
+  return value;
 }
 
 String? qrTokenFromScan(String raw) {
@@ -537,7 +543,10 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _QuickAction(icon: Icons.qr_code_scanner_rounded, label: '그린잇 식당 상품 선택', color: kOrange, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductSelectionScreen(session: Supabase.instance.client.auth.currentSession!)))),
+        _QuickAction(icon: Icons.qr_code_scanner_rounded, label: '돈토 상품 선택', color: kOrange, onTap: () async {
+          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductSelectionScreen(session: Supabase.instance.client.auth.currentSession!)));
+          await onRefresh();
+        }),
         const SizedBox(height: 24),
         const SectionHeader(title: '최근 이용', action: ''),
         const SizedBox(height: 10),
@@ -719,7 +728,11 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
             ...menu.products.map((product) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: InkWell(
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => QrScanPaymentScreen(session: widget.session, product: product))),
+                onTap: () async {
+                  final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => QrScanPaymentScreen(session: widget.session, product: product)));
+                  if (!context.mounted) return;
+                  if (paid == true) Navigator.of(context).pop(true);
+                },
                 borderRadius: BorderRadius.circular(20),
                 child: Container(
                   padding: const EdgeInsets.all(16),
@@ -858,7 +871,7 @@ class _PaymentCompletePreviewState extends State<PaymentCompletePreview> {
                 final payment = snapshot.data?['payment'] as Map<String, dynamic>?;
                 final merchant = snapshot.data?['merchant'] as Map<String, dynamic>?;
                 final txCode = payment?['tx_code'] as String? ?? '-';
-                final merchantName = merchant?['name'] as String? ?? '그린잇 식당';
+                final merchantName = displayMerchantName(merchant?['name'] as String?);
                 final hasError = snapshot.hasError;
                 final loading = snapshot.connectionState != ConnectionState.done;
                 return Container(
@@ -877,7 +890,7 @@ class _PaymentCompletePreviewState extends State<PaymentCompletePreview> {
                       Text('$merchantName · 거래번호 $txCode', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
                     ],
                     const SizedBox(height: 18),
-                    OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: Text(hasError ? '다시 스캔하기' : '확인')),
+                    OutlinedButton(onPressed: loading ? null : () => Navigator.of(context).pop(!hasError), child: Text(hasError ? '다시 스캔하기' : '확인')),
                   ]),
                 );
               },

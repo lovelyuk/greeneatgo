@@ -129,8 +129,8 @@ function LoginScreen({ missingEnv, onLogin }) {
 
 function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
   const [invite, setInvite] = useState(null);
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
+  const [email, setEmail] = useState(session?.user?.email ?? '');
+  const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -143,7 +143,6 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
       try {
         const data = await publicApiFetch(`/invites/${token}`);
         setInvite(data);
-        setPhone(data.phone ?? '');
       } catch (inviteError) {
         setError(inviteError.message);
       } finally {
@@ -153,41 +152,32 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
     loadInvite();
   }, [token]);
 
-  async function sendOtp(event) {
+  async function signUpAndClaim(event) {
     event.preventDefault();
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      const { error: otpError } = await supabase.auth.signInWithOtp({ phone });
-      if (otpError) throw otpError;
-      setMessage('인증번호를 보냈어요. 문자로 받은 번호를 입력해 주세요.');
-    } catch (otpError) {
-      setError(otpError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function verifyAndClaim(event) {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      let activeSession = session;
-      if (!activeSession) {
-        const { data, error: verifyError } = await supabase.auth.verifyOtp({ phone, token: otp, type: 'sms' });
-        if (verifyError) throw verifyError;
-        activeSession = data.session;
+      let authUser = session?.user;
+      if (!authUser) {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: { display_name: displayName.trim() || undefined },
+            emailRedirectTo: `${window.location.origin}/invite/${token}`,
+          },
+        });
+        if (signUpError) throw signUpError;
+        authUser = data.user;
       }
-      if (!activeSession?.user?.id) throw new Error('인증된 사용자 정보를 찾을 수 없어요');
+      if (!authUser?.id) throw new Error('가입된 사용자 정보를 찾을 수 없어요');
       await publicApiFetch(`/invites/${token}/claim`, {
         method: 'POST',
-        body: JSON.stringify({ auth_user_id: activeSession.user.id, display_name: displayName.trim() || null }),
+        body: JSON.stringify({ auth_user_id: authUser.id, display_name: displayName.trim() || null }),
       });
-      setMessage('초대가 연결됐어요. 이제 관리자 화면으로 이동합니다.');
-      setTimeout(onClaimed, 700);
+      setMessage('초대가 연결됐어요. 이메일 확인이 필요한 경우 메일함을 확인한 뒤 로그인해 주세요.');
+      setTimeout(onClaimed, 900);
     } catch (claimError) {
       setError(claimError.message);
     } finally {
@@ -201,7 +191,7 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
       <div className="hero-copy">
         <span className="pill">INVITE</span>
         <h1>그린잇<br/>운영자 초대</h1>
-        <p>전화번호 인증 후 식당관리자 또는 회사관리자 계정으로 연결합니다.</p>
+        <p>이메일과 비밀번호로 가입한 뒤 식당관리자 또는 회사관리자 계정으로 연결합니다.</p>
       </div>
     </section>
     <section className="login-card">
@@ -215,20 +205,17 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
         <span>상태</span><strong>{invite.status}</strong>
         <span>만료</span><strong>{new Date(invite.expires_at).toLocaleString('ko-KR')}</strong>
       </div>}
-      <form className="form" onSubmit={sendOtp}>
-        <label>전화번호
-          <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="01012345678" required />
+      <form className="form" onSubmit={signUpAndClaim}>
+        <label>이메일
+          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="owner@example.com" required={!session} disabled={!!session} />
         </label>
-        <button className="ghost" disabled={busy || missingEnv.length > 0 || !invite}>인증번호 받기</button>
-      </form>
-      <form className="form" onSubmit={verifyAndClaim}>
-        <label>인증번호
-          <input value={otp} onChange={(event) => setOtp(event.target.value)} placeholder="문자 인증번호" required={!session} />
-        </label>
+        {!session && <label>비밀번호
+          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="6자리 이상 비밀번호" minLength="6" required />
+        </label>}
         <label>이름
           <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="표시 이름" />
         </label>
-        <button className="primary" disabled={busy || missingEnv.length > 0 || !invite}>{session ? '현재 로그인 계정에 초대 연결' : '인증 후 초대 수락'}</button>
+        <button className="primary" disabled={busy || missingEnv.length > 0 || !invite}>{session ? '현재 로그인 계정에 초대 연결' : '가입하고 초대 수락'}</button>
       </form>
     </section>
   </main>;

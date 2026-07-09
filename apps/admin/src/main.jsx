@@ -76,7 +76,7 @@ function AuthLinkNotice() {
 }
 
 function LoginScreen({ missingEnv, onLogin }) {
-  const [email, setEmail] = useState('admin@greeneatgo.test');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');

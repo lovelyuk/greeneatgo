@@ -26,6 +26,28 @@ def _token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def _invite_code() -> str:
+    return f"GE-{secrets.token_hex(3).upper()}"
+
+
+def _ensure_company_invite_code(repo: JoinRepository, company_id: str) -> str:
+    rows = repo.client.rest_get(
+        "company_invite_codes",
+        {"select": "code", "company_id": f"eq.{company_id}", "is_active": "eq.true", "order": "created_at.desc", "limit": "1"},
+    )
+    if rows:
+        return rows[0]["code"]
+    for _ in range(5):
+        code = _invite_code()
+        try:
+            repo.client.rest_post("company_invite_codes", {"company_id": company_id, "code": code, "is_active": True})
+            return code
+        except SupabaseHttpError as exc:
+            if "duplicate" not in exc.body.lower() and "unique" not in exc.body.lower():
+                raise
+    raise _error(502, "INVITE_CODE_CREATE_FAILED", "초대코드를 생성하지 못했어요")
+
+
 def _merchant_admin(repo: JoinRepository, token: str):
     auth = repo.auth_user_from_token(token)
     actor = repo.get_profile(auth.id, email=auth.email)
@@ -418,6 +440,7 @@ def create_and_link_company(payload: MerchantCompanyCreateAndLinkRequest, token:
     try:
         actor, merchant_id = _merchant_admin(repo, token)
         company = repo.client.rest_post("companies", {"name": payload.name, "status": "invited"})[0]
+        invite_code = _ensure_company_invite_code(repo, company["id"])
         link = _upsert_link(repo, merchant_id, company["id"], actor.id)
         invite = repo.client.rest_post("invites", {
             "token": _token(),
@@ -427,7 +450,7 @@ def create_and_link_company(payload: MerchantCompanyCreateAndLinkRequest, token:
             "invited_by": actor.id,
             "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
         })[0]
-        return {"ok": True, "data": {"company": company, "link": link, "invite": {**invite, "delivery": "manual"}}, "error": None}
+        return {"ok": True, "data": {"company": {**company, "invite_code": invite_code}, "link": link, "invite": {**invite, "delivery": "manual"}}, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:

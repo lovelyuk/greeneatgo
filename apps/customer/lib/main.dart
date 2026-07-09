@@ -392,8 +392,8 @@ class InviteCodeScreen extends StatefulWidget {
 }
 
 class _InviteCodeScreenState extends State<InviteCodeScreen> {
-  final _name = TextEditingController(text: '테스트 직원');
-  final _code = TextEditingController(text: 'PILOT-GREEN-2026');
+  final _name = TextEditingController();
+  final _code = TextEditingController();
   bool _busy = false;
   String? _error;
 

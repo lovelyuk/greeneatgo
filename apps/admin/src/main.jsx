@@ -128,7 +128,7 @@ function LoginScreen({ missingEnv, onLogin }) {
 
 function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
   const [invite, setInvite] = useState(null);
-  const [email, setEmail] = useState(session?.user?.email ?? '');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -157,19 +157,17 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
     setError('');
     setMessage('');
     try {
-      let authUser = session?.user;
-      if (!authUser) {
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            data: { display_name: displayName.trim() || undefined },
-          },
-        });
-        if (signUpError) throw signUpError;
-        if (!data.session) throw new Error('Supabase Email Confirm이 켜져 있어 즉시 로그인이 막혔어요. Authentication > Providers > Email에서 Confirm email을 꺼주세요.');
-        authUser = data.user;
-      }
+      if (session) await supabase.auth.signOut();
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: { display_name: displayName.trim() || undefined },
+        },
+      });
+      if (signUpError) throw signUpError;
+      if (!data.session) throw new Error('Supabase Email Confirm이 켜져 있어 즉시 로그인이 막혔어요. Authentication > Providers > Email에서 Confirm email을 꺼주세요.');
+      const authUser = data.user;
       if (!authUser?.id) throw new Error('가입된 사용자 정보를 찾을 수 없어요');
       await publicApiFetch(`/invites/${token}/claim`, {
         method: 'POST',
@@ -197,6 +195,7 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
       <p className="eyebrow">CLAIM INVITE</p>
       <h2>초대 수락</h2>
       {missingEnv.length > 0 && <div className="alert error">Vercel 환경변수 누락: {missingEnv.join(', ')}</div>}
+      {session && <div className="alert warning">현재 {session.user.email} 계정으로 로그인되어 있어요. 초대 수락 시 기존 계정 덮어쓰기를 막기 위해 자동 로그아웃 후 아래 새 이메일로 가입합니다.</div>}
       {error && <div className="alert error">{error}</div>}
       {message && <div className="alert success">{message}</div>}
       {invite && <div className="profile-grid">
@@ -206,15 +205,15 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
       </div>}
       <form className="form" onSubmit={signUpAndClaim}>
         <label>이메일
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="owner@example.com" required={!session} disabled={!!session} />
+          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="owner@example.com" required />
         </label>
-        {!session && <label>비밀번호
+        <label>비밀번호
           <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="6자리 이상 비밀번호" minLength="6" required />
-        </label>}
+        </label>
         <label>이름
           <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="표시 이름" />
         </label>
-        <button className="primary" disabled={busy || missingEnv.length > 0 || !invite}>{session ? '현재 로그인 계정에 초대 연결' : '가입하고 초대 수락'}</button>
+        <button className="primary" disabled={busy || missingEnv.length > 0 || !invite}>새 계정으로 가입하고 초대 수락</button>
       </form>
     </section>
   </main>;

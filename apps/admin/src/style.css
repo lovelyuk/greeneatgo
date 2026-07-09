@@ -47,6 +47,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .alert { border-radius: 18px; padding: 14px 16px; margin: 16px 0; font-weight: 850; }
 .alert.error { background: #ffe8e0; color: #b42318; border: 1px solid #ffb49a; }
 .alert.success { background: #e7f8ee; color: #047857; border: 1px solid #b9e9cc; }
+.alert.warning { background: #fff4d6; color: #92400e; border: 1px solid #f8d477; }
 .brandmark { display: inline-flex; align-items: center; color: #1E5631; }
 .brandmark img { display: block; width: min(220px, 52vw); height: auto; object-fit: contain; }
 .auth-visual .brandmark { color: white; }

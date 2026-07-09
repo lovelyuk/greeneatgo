@@ -64,9 +64,8 @@ def claim_invite(token: str, payload: InviteClaimRequest):
         }
         existing = repo.get_profile(payload.auth_user_id)
         if existing:
-            user = repo.client.rest_patch("app_users", {"id": f"eq.{payload.auth_user_id}"}, values)[0]
-        else:
-            user = repo.client.rest_post("app_users", values)[0]
+            raise _error(409, "USER_PROFILE_EXISTS", "이미 운영자/직원 프로필이 있는 계정이에요. 초대 수락은 새 이메일 계정으로 진행해 주세요")
+        user = repo.client.rest_post("app_users", values)[0]
         repo.client.rest_patch("invites", {"id": f"eq.{invite['id']}"}, {"status": "claimed"})
         if role == "company_admin" and invite.get("company_id"):
             repo.client.rest_patch("companies", {"id": f"eq.{invite['company_id']}"}, {"status": "active"})

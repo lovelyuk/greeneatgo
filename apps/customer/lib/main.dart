@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
@@ -187,6 +188,16 @@ String recentMeta(Map<String, dynamic> tx) {
   final merchant = tx['merchant_name'] as String? ?? '';
   final date = shortKoreanDate(tx['created_at'] as String?);
   return merchant.isEmpty ? date : '$merchant · $date';
+}
+
+String? qrTokenFromScan(String raw) {
+  final value = raw.trim();
+  if (value.isEmpty) return null;
+  final uri = Uri.tryParse(value);
+  final qr = uri?.queryParameters['qr'];
+  if (qr != null && qr.trim().isNotEmpty) return qr.trim();
+  if (value.length <= 120 && !value.contains(' ')) return value;
+  return null;
 }
 
 List<Map<String, dynamic>> mapList(dynamic value) {
@@ -683,7 +694,6 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
             return const BrandPanel(children: [BrandNotice(text: '식당관리자 페이지에 등록된 메뉴가 없어요.', kind: NoticeKind.error)]);
           }
           return BrandPanel(children: [
-            Text(menu.merchantName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
             if (menu.todayMenu != null && menu.todayMenu!.menuText.isNotEmpty) ...[
               const SizedBox(height: 12),
               Container(
@@ -700,7 +710,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
             ...menu.products.map((product) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: InkWell(
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PaymentCompletePreview(session: widget.session, product: product, merchantName: menu.merchantName))),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => QrScanPaymentScreen(session: widget.session, product: product))),
                 borderRadius: BorderRadius.circular(20),
                 child: Container(
                   padding: const EdgeInsets.all(16),
@@ -723,18 +733,100 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
   }
 }
 
-class PaymentCompletePreview extends StatefulWidget {
-  const PaymentCompletePreview({super.key, required this.session, required this.product, required this.merchantName});
+class QrScanPaymentScreen extends StatefulWidget {
+  const QrScanPaymentScreen({super.key, required this.session, required this.product});
   final Session session;
   final MerchantProduct product;
-  final String merchantName;
+
+  @override
+  State<QrScanPaymentScreen> createState() => _QrScanPaymentScreenState();
+}
+
+class _QrScanPaymentScreenState extends State<QrScanPaymentScreen> {
+  final MobileScannerController _scanner = MobileScannerController();
+  bool _handled = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _scanner.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_handled) return;
+    String? raw;
+    for (final barcode in capture.barcodes) {
+      if (barcode.rawValue != null) {
+        raw = barcode.rawValue;
+        break;
+      }
+    }
+    if (raw == null) return;
+    final token = qrTokenFromScan(raw);
+    if (token == null) {
+      setState(() => _error = '그린잇 결제 QR이 아니에요. 매장 QR을 다시 스캔해 주세요.');
+      return;
+    }
+    _handled = true;
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => PaymentCompletePreview(session: widget.session, product: widget.product, qrToken: token)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      title: '매장 QR을 스캔해요',
+      subtitle: '${widget.product.name} · ${won(widget.product.price)}',
+      child: BrandPanel(children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: SizedBox(
+            height: 320,
+            child: MobileScanner(
+              controller: _scanner,
+              onDetect: _onDetect,
+              placeholderBuilder: (context, child) => const ColoredBox(
+                color: Colors.black,
+                child: Center(child: CircularProgressIndicator(color: Colors.white)),
+              ),
+              errorBuilder: (context, error, child) => Container(
+                color: Colors.black,
+                padding: const EdgeInsets.all(18),
+                child: Center(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.no_photography_outlined, color: Colors.white, size: 44),
+                    const SizedBox(height: 12),
+                    const Text('카메라를 시작하지 못했어요', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17)),
+                    const SizedBox(height: 8),
+                    Text(error.toString(), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFEAFBF0), fontSize: 12, height: 1.35)),
+                    const SizedBox(height: 14),
+                    OutlinedButton(onPressed: () => _scanner.start(), child: const Text('카메라 다시 켜기')),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        const Text('상품 선택 후 매장에 비치된 결제 QR을 스캔하면 결제가 진행됩니다.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w800, height: 1.45)),
+        if (_error != null) BrandNotice(text: _error!, kind: NoticeKind.error),
+      ]),
+    );
+  }
+}
+
+class PaymentCompletePreview extends StatefulWidget {
+  const PaymentCompletePreview({super.key, required this.session, required this.product, required this.qrToken});
+  final Session session;
+  final MerchantProduct product;
+  final String qrToken;
 
   @override
   State<PaymentCompletePreview> createState() => _PaymentCompletePreviewState();
 }
 
 class _PaymentCompletePreviewState extends State<PaymentCompletePreview> {
-  late final Future<Map<String, dynamic>> _payment = ApiClient(widget.session).payProduct(qrToken: defaultMerchantQrToken, product: widget.product);
+  late final Future<Map<String, dynamic>> _payment = ApiClient(widget.session).payProduct(qrToken: widget.qrToken, product: widget.product);
 
   @override
   Widget build(BuildContext context) {
@@ -749,7 +841,9 @@ class _PaymentCompletePreviewState extends State<PaymentCompletePreview> {
               future: _payment,
               builder: (context, snapshot) {
                 final payment = snapshot.data?['payment'] as Map<String, dynamic>?;
+                final merchant = snapshot.data?['merchant'] as Map<String, dynamic>?;
                 final txCode = payment?['tx_code'] as String? ?? '-';
+                final merchantName = merchant?['name'] as String? ?? '그린잇 식당';
                 final hasError = snapshot.hasError;
                 final loading = snapshot.connectionState != ConnectionState.done;
                 return Container(
@@ -765,10 +859,10 @@ class _PaymentCompletePreviewState extends State<PaymentCompletePreview> {
                       const SizedBox(height: 6),
                       Text(priceText, style: const TextStyle(color: kOrange, fontSize: 50, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 14),
-                      Text('${widget.merchantName} · 거래번호 $txCode', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
+                      Text('$merchantName · 거래번호 $txCode', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
                     ],
                     const SizedBox(height: 18),
-                    OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: Text(hasError ? '다시 선택하기' : '확인')),
+                    OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: Text(hasError ? '다시 스캔하기' : '확인')),
                   ]),
                 );
               },

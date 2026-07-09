@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Sprout, Users, WalletCards, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
 
@@ -53,8 +53,7 @@ async function apiFetch(path, token, options = {}) {
 
 function BrandMark() {
   return <div className="brandmark" aria-label="그린잇">
-    <span className="sprout-badge"><Sprout size={26} strokeWidth={2.4} /></span>
-    <div><strong>그린잇</strong><small>green eat benefit</small></div>
+    <img src="/brand/title.png" alt="그린잇" />
   </div>;
 }
 
@@ -1154,22 +1153,6 @@ function Dashboard({ session, onLogout }) {
         </article>)}</div>}
     </section>}
 
-
-    {!isPlatformAdmin && !isMerchantAdmin && <section className="panel settlement-panel">
-      <div className="panel-title">
-        <h2>정산 현황</h2>
-        <span className="badge">{settlements?.period_ym ?? '이번 달'}</span>
-      </div>
-      <div className="settlement-grid">
-        <div><span>정산 건수</span><strong>{settlements?.summary.settlement_count ?? 0}건</strong></div>
-        <div><span>결제 건수</span><strong>{settlements?.summary.tx_count ?? 0}건</strong></div>
-        <div><span>정산 금액</span><strong>{(settlements?.summary.total_amount ?? 0).toLocaleString('ko-KR')}원</strong></div>
-        <div><span>송금 완료</span><strong>{settlements?.summary.paid_count ?? 0}건</strong></div>
-      </div>
-      {(settlements?.items?.length ?? 0) === 0
-        ? <p className="empty-state">아직 생성된 정산서가 없어요. 월말 정산 데이터가 생성되면 여기에서 확인합니다.</p>
-        : <div className="table-wrap"><table><thead><tr><th>기간</th><th>결제건수</th><th>금액</th><th>상태</th></tr></thead><tbody>{settlements.items.map((item) => <tr key={item.id}><td>{item.period_ym}</td><td>{item.tx_count}</td><td>{Number(item.total_amount).toLocaleString('ko-KR')}원</td><td>{item.status}</td></tr>)}</tbody></table></div>}
-    </section>}
 
     {!isPlatformAdmin && !isMerchantAdmin && <section className="panel">
       <div className="panel-title">

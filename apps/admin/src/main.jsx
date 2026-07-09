@@ -995,8 +995,7 @@ function Dashboard({ session, onLogout }) {
       </article>}
       {!isMerchantAdmin && <article className="panel menu-panel">
         <div className="panel-title"><h2>운영 식당</h2><Coffee size={22}/></div>
-        <div className="menu-chips single"><span>🥗 그린잇 식당</span></div>
-        <p className="panel-note">현재 파일럿은 한 식당에서만 운영합니다.</p>
+        <div className="menu-chips single"><span>🥗 돈토 식당</span></div>
       </article>}
     </section>
 
@@ -1032,7 +1031,7 @@ function Dashboard({ session, onLogout }) {
     </section>}
 
 
-    {!isPlatformAdmin && <section className="panel daily-menu-panel">
+    {isMerchantAdmin && <section className="panel daily-menu-panel">
       <div className="panel-title">
         <div><h2>오늘 부페 메뉴</h2><p className="panel-note">오늘 나오는 메뉴를 입력하면 직원 앱 상품 선택 화면 상단에 표시됩니다.</p></div>
         <span className="badge">{dailyMenu?.service_date ?? '오늘'}</span>
@@ -1046,10 +1045,9 @@ function Dashboard({ session, onLogout }) {
     </section>}
 
 
-    {!isPlatformAdmin && <section className="panel product-panel">
+    {isMerchantAdmin && <section className="panel product-panel">
       <div className="panel-title">
         <div><h2>식당 상품 관리</h2><p className="panel-note">직원 앱은 금액 입력 없이 여기 등록된 상품 중 하나를 선택해 결제합니다.</p></div>
-        {isMerchantAdmin ? null : <span className="badge">{products?.merchant?.name ?? '운영 식당'}</span>}
       </div>
       {products?.migration_required && <div className="alert error">상품 DB 마이그레이션이 아직 적용되지 않아 기본 상품만 표시 중이에요. 0005_merchant_products.sql 적용 후 등록/수정이 활성화됩니다.</div>}
       <form className="product-form" onSubmit={createProduct}>

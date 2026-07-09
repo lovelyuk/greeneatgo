@@ -30,6 +30,10 @@ class JoinDecisionRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
+class EmployeeLimitUpdateRequest(BaseModel):
+    monthly_limit: int = Field(ge=0, le=10000000)
+
+
 class ProductCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     price: int = Field(gt=0)

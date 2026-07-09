@@ -518,6 +518,10 @@ function Dashboard({ session, onLogout }) {
   const [companySearchResults, setCompanySearchResults] = useState([]);
   const [newCompanyForm, setNewCompanyForm] = useState({ name: '', owner_phone: '' });
   const [transactions, setTransactions] = useState(null);
+  const [employees, setEmployees] = useState(null);
+  const [employeeTxModal, setEmployeeTxModal] = useState(null);
+  const [limitModal, setLimitModal] = useState(null);
+  const [limitForm, setLimitForm] = useState('200000');
   const [merchantQr, setMerchantQr] = useState(null);
   const [platformMerchants, setPlatformMerchants] = useState(null);
   const [platformMerchantForm, setPlatformMerchantForm] = useState({ name: '', owner_phone: '', category: '', avg_price: '' });
@@ -593,10 +597,9 @@ function Dashboard({ session, onLogout }) {
     ['거래내역', transactions ? `${transactions.items.length}건` : '조회 중', FileSpreadsheet, 'orange'],
   ] : [
     ['가입 요청', `${requests.length}명`, Users, 'orange'],
-    ['직원 권한', me?.role === 'company_admin' ? '관리자' : '확인 필요', WalletCards, 'brown'],
+    ['직원', employees ? `${employees.items.length}명` : '조회 중', WalletCards, 'brown'],
     ['QR 결제', products ? `${products.items.filter((item) => item.is_active).length}개 상품` : '단일 식당', QrCode, 'orange'],
-    ['정산 현황', settlements ? `${settlements.summary.settlement_count}건` : '조회 중', FileSpreadsheet, 'green'],
-  ], [isPlatformAdmin, isMerchantAdmin, requests.length, me, settlements, products, merchantCompanies, transactions, platformMerchants]);
+  ], [isPlatformAdmin, isMerchantAdmin, requests.length, me, products, merchantCompanies, transactions, platformMerchants, employees]);
 
   async function load() {
     setBusy(true);
@@ -607,6 +610,7 @@ function Dashboard({ session, onLogout }) {
       let productData = null;
       let dailyMenuData = null;
       let requestData = { items: [] };
+      let employeeData = null;
       let settlementData = null;
       let merchantCompanyData = null;
       let transactionData = null;
@@ -620,9 +624,10 @@ function Dashboard({ session, onLogout }) {
           apiFetch('/admin/daily-menu', token),
         ]);
         if (meData.role === 'company_admin') {
-          [requestData, settlementData] = await Promise.all([
+          [requestData, settlementData, employeeData] = await Promise.all([
             apiFetch('/admin/join-requests', token),
             apiFetch('/admin/settlements', token),
+            apiFetch('/admin/employees', token),
           ]);
         }
         if (meData.role === 'merchant_admin') {
@@ -635,6 +640,7 @@ function Dashboard({ session, onLogout }) {
       }
       setMe(meData);
       setRequests(requestData.items ?? []);
+      setEmployees(employeeData);
       setSettlements(settlementData);
       setMerchantCompanies(merchantCompanyData);
       setTransactions(transactionData);
@@ -669,6 +675,45 @@ function Dashboard({ session, onLogout }) {
       await load();
     } catch (decisionError) {
       setError(decisionError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openEmployeeTransactions(employee) {
+    setBusy(true);
+    setError('');
+    try {
+      const data = await apiFetch(`/admin/employees/${employee.id}/transactions`, token);
+      setEmployeeTxModal({ employee, items: data.items ?? [] });
+    } catch (txError) {
+      setError(txError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openLimitModal(employee) {
+    setLimitModal(employee);
+    setLimitForm(String(employee.monthly_limit ?? 200000));
+  }
+
+  async function saveEmployeeLimit(event) {
+    event.preventDefault();
+    if (!limitModal) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiFetch(`/admin/employees/${limitModal.id}/limit`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ monthly_limit: Number(limitForm) }),
+      });
+      setLimitModal(null);
+      setMessage('직원 월 한도를 저장했어요.');
+      await load();
+    } catch (limitError) {
+      setError(limitError.message);
     } finally {
       setBusy(false);
     }
@@ -949,6 +994,28 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
 
+    {limitModal && <div className="modal-backdrop" onClick={() => setLimitModal(null)}>
+      <section className="invite-modal contract-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="panel-title"><div><h2>직원 월 한도 수정</h2><p className="panel-note">{limitModal.display_name ?? '직원'}님의 이번 달 식대 한도를 설정합니다.</p></div><button className="ghost icon-button" onClick={() => setLimitModal(null)} aria-label="닫기"><X size={20}/></button></div>
+        <form className="contract-form" onSubmit={saveEmployeeLimit}>
+          <label>월 한도
+            <input type="number" min="0" step="1000" value={limitForm} onChange={(event) => setLimitForm(event.target.value)} required />
+          </label>
+          <div className="row-actions invite-modal-actions">
+            <button className="primary" disabled={busy}>저장</button>
+            <button className="ghost" type="button" onClick={() => setLimitModal(null)}>닫기</button>
+          </div>
+        </form>
+      </section>
+    </div>}
+
+    {employeeTxModal && <div className="modal-backdrop" onClick={() => setEmployeeTxModal(null)}>
+      <section className="invite-modal employee-history-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="panel-title"><div><h2>직원 이용내역</h2><p className="panel-note">{employeeTxModal.employee.display_name ?? '직원'}님의 최근 이용내역입니다.</p></div><button className="ghost icon-button" onClick={() => setEmployeeTxModal(null)} aria-label="닫기"><X size={20}/></button></div>
+        {(employeeTxModal.items?.length ?? 0) === 0 ? <p className="empty-state">아직 이용내역이 없어요.</p> : <div className="table-wrap"><table><thead><tr><th>일시</th><th>식당</th><th>내역</th><th>구분</th><th>금액</th></tr></thead><tbody>{employeeTxModal.items.map((item) => <tr key={item.id}><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td><td>{item.merchant_name ?? '-'}</td><td>{item.product_name ?? item.tx_code ?? '-'}</td><td>{item.kind}</td><td>{krw(Math.abs(Number(item.amount ?? 0)))}</td></tr>)}</tbody></table></div>}
+      </section>
+    </div>}
+
     <section className="grid">
       {cards.map(([label, value, Icon, tone]) => <article className={`card ${tone}`} key={label}>
         <Icon size={28}/><span>{label}</span><strong>{value}</strong>
@@ -1012,6 +1079,15 @@ function Dashboard({ session, onLogout }) {
         </div>
       </article>}
     </section>
+
+    {!isPlatformAdmin && !isMerchantAdmin && <section className="panel employee-panel">
+      <div className="panel-title">
+        <div><h2>등록된 직원목록</h2><p className="panel-note">직원별 월 한도와 이번 달 이용 현황을 확인합니다.</p></div>
+        <span className="badge">{employees?.items?.length ?? 0}명</span>
+      </div>
+      {employees?.migration_required && <div className="alert error">월 한도 저장 컬럼이 아직 적용되지 않아 기본값 200,000원으로 표시 중이에요. 0011_employee_monthly_limit.sql 적용 후 한도 수정이 저장됩니다.</div>}
+      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>이름</th><th>월 한도</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>한도수정</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{krw(employee.monthly_limit ?? 200000)}</td><td>{krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td><button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button></td><td><button className="ghost" onClick={() => openLimitModal(employee)}>한도수정</button></td></tr>)}</tbody></table></div>}
+    </section>}
 
     {!isPlatformAdmin && isMerchantAdmin && <section className="panel">
       <div className="panel-title">

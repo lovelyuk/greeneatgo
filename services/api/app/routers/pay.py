@@ -42,6 +42,23 @@ def _today_start_utc(now: datetime) -> datetime:
     return start_local.astimezone(timezone.utc)
 
 
+def _month_start_utc(now: datetime) -> datetime:
+    local = now.astimezone(KST)
+    start_local = datetime(local.year, local.month, 1, tzinfo=KST)
+    return start_local.astimezone(timezone.utc)
+
+
+def _employee_monthly_limit(repo: JoinRepository, user_id: str) -> int:
+    try:
+        rows = repo.client.rest_get("app_users", {"select": "monthly_limit", "id": f"eq.{user_id}", "limit": "1"})
+        if rows and rows[0].get("monthly_limit") is not None:
+            return int(rows[0]["monthly_limit"])
+    except SupabaseHttpError as exc:
+        if "monthly_limit" not in exc.body and "PGRST204" not in exc.body:
+            raise
+    return 200000
+
+
 def _map_rpc_error(exc: SupabaseHttpError) -> HTTPException:
     body = exc.body or ""
     mapping = {
@@ -97,13 +114,23 @@ def pay(payload: PayRequest, token: str = Depends(bearer_token)):
             "meal_transactions",
             {"select": "amount,kind,created_at", "user_id": f"eq.{user.id}"},
         )
+        now = datetime.now(timezone.utc)
         balance = sum(int(row.get("amount") or 0) for row in tx_rows)
-        today_start = _today_start_utc(datetime.now(timezone.utc))
+        today_start = _today_start_utc(now)
+        month_start = _month_start_utc(now)
         spent_today = sum(
             abs(int(row.get("amount") or 0))
             for row in tx_rows
             if row.get("kind") == "spend" and datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")) >= today_start
         )
+        spent_month = sum(
+            abs(int(row.get("amount") or 0))
+            for row in tx_rows
+            if row.get("kind") == "spend" and datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")) >= month_start
+        )
+        monthly_limit = _employee_monthly_limit(repo, user.id)
+        if spent_month + amount > monthly_limit:
+            raise _error(400, "MONTHLY_LIMIT", f"월 한도 {monthly_limit:,}원을 초과해요")
 
         draft = prepare_payment_draft(PaymentContext(
             user_id=user.id,

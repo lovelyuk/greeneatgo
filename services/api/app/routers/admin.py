@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -6,7 +6,7 @@ from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.products import FALLBACK_DAILY_MENU, FALLBACK_PRODUCTS, today_kst
-from app.schemas import DailyMenuUpsertRequest, JoinDecisionRequest, ProductCreateRequest, ProductUpdateRequest
+from app.schemas import DailyMenuUpsertRequest, EmployeeLimitUpdateRequest, JoinDecisionRequest, ProductCreateRequest, ProductUpdateRequest
 from app.services.join_flow import JoinFlowError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -56,6 +56,136 @@ def reject_join_request(user_id: str, payload: JoinDecisionRequest, token: str =
         raise _handle_join_error(exc) from exc
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "Supabase 처리 중 오류가 발생했어요") from exc
+
+
+def _company_admin(repo: JoinRepository, token: str):
+    actor_auth = repo.auth_user_from_token(token)
+    actor = repo.get_profile(actor_auth.id, email=actor_auth.email)
+    if actor is None or actor.role != "company_admin" or actor.status != "active" or not actor.company_id:
+        raise JoinFlowError("FORBIDDEN", "회사관리자만 조회할 수 있어요")
+    return actor
+
+
+def _month_bounds() -> tuple[str, str]:
+    now = datetime.now(timezone.utc)
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start.month == 12:
+        next_month = start.replace(year=start.year + 1, month=1)
+    else:
+        next_month = start.replace(month=start.month + 1)
+    return start.isoformat(), next_month.isoformat()
+
+
+@router.get("/employees")
+def list_employees(token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        migration_required = False
+        try:
+            employees = repo.client.rest_get(
+                "app_users",
+                {"select": "id,display_name,status,monthly_limit,approved_at,created_at", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "order": "created_at.desc"},
+            )
+        except SupabaseHttpError as exc:
+            if "monthly_limit" not in exc.body and "PGRST204" not in exc.body:
+                raise
+            migration_required = True
+            employees = repo.client.rest_get(
+                "app_users",
+                {"select": "id,display_name,status,approved_at,created_at", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "order": "created_at.desc"},
+            )
+        user_ids = [row["id"] for row in employees]
+        start_iso, end_iso = _month_bounds()
+        month_start = datetime.fromisoformat(start_iso)
+        month_end = datetime.fromisoformat(end_iso)
+        tx_rows = []
+        if user_ids:
+            tx_rows = repo.client.rest_get(
+                "meal_transactions",
+                {
+                    "select": "user_id,amount,kind,created_at",
+                    "user_id": f"in.({','.join(user_ids)})",
+                    "created_at": f"gte.{start_iso}",
+                },
+            )
+        stats = {user_id: {"used": 0, "recent": None} for user_id in user_ids}
+        for tx in tx_rows:
+            user_id = tx.get("user_id")
+            if user_id not in stats or tx.get("kind") != "spend":
+                continue
+            created = tx.get("created_at")
+            if not created:
+                continue
+            created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            if not (month_start <= created_dt < month_end):
+                continue
+            stats[user_id]["used"] += abs(int(tx.get("amount") or 0))
+            if stats[user_id]["recent"] is None or created > stats[user_id]["recent"]:
+                stats[user_id]["recent"] = created
+        items = []
+        for employee in employees:
+            employee_stats = stats.get(employee["id"], {"used": 0, "recent": None})
+            items.append({
+                **employee,
+                "monthly_limit": employee.get("monthly_limit") if employee.get("monthly_limit") is not None else 200000,
+                "month_used": employee_stats["used"],
+                "recent_used_at": employee_stats["recent"],
+            })
+        return {"ok": True, "data": {"items": items, "migration_required": migration_required}, "error": None}
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "직원 목록을 불러오는 중 오류가 발생했어요") from exc
+
+
+@router.patch("/employees/{user_id}/limit")
+def update_employee_limit(user_id: str, payload: EmployeeLimitUpdateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        rows = repo.client.rest_get("app_users", {"select": "id,company_id,role", "id": f"eq.{user_id}", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "limit": "1"})
+        if not rows:
+            raise _error(404, "EMPLOYEE_NOT_FOUND", "직원을 찾을 수 없어요")
+        updated = repo.client.rest_patch("app_users", {"id": f"eq.{user_id}"}, {"monthly_limit": payload.monthly_limit})[0]
+        return {"ok": True, "data": {"employee": updated}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        if "monthly_limit" in exc.body or "PGRST204" in exc.body:
+            raise _error(400, "MIGRATION_REQUIRED", "0011_employee_monthly_limit.sql 적용 후 한도를 저장할 수 있어요") from exc
+        raise _error(502, "SUPABASE_ERROR", "직원 한도를 저장하는 중 오류가 발생했어요") from exc
+
+
+@router.get("/employees/{user_id}/transactions")
+def employee_transactions(user_id: str, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        rows = repo.client.rest_get("app_users", {"select": "id,display_name,company_id,role", "id": f"eq.{user_id}", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "limit": "1"})
+        if not rows:
+            raise _error(404, "EMPLOYEE_NOT_FOUND", "직원을 찾을 수 없어요")
+        tx_rows = repo.client.rest_get(
+            "meal_transactions",
+            {"select": "id,amount,kind,tx_code,meal_window,product_name,product_price,merchant_id,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "100"},
+        )
+        merchant_ids = sorted({str(row.get("merchant_id")) for row in tx_rows if row.get("merchant_id")})
+        merchants = {}
+        if merchant_ids:
+            merchant_rows = repo.client.rest_get("merchants", {"select": "id,name", "id": f"in.({','.join(merchant_ids)})"})
+            merchants = {row["id"]: row["name"] for row in merchant_rows}
+        items = [{**row, "merchant_name": merchants.get(row.get("merchant_id"), "-")} for row in tx_rows]
+        return {"ok": True, "data": {"employee": rows[0], "items": items}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "직원 이용내역을 불러오는 중 오류가 발생했어요") from exc
 
 
 @router.get("/settlements")

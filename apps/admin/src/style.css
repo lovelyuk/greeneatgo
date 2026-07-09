@@ -194,3 +194,6 @@ select:focus { border-color: #2FB865; box-shadow: 0 0 0 5px rgba(47, 184, 101, .
 .invite-code-box span { grid-column: 1 / -1; color: #5C7A66; font-size: 13px; font-weight: 900; }
 .invite-code-box strong { font-size: 22px; font-weight: 1000; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
 .invite-code-box .ghost { min-height: 42px; padding: 0 18px; }
+.employee-panel .table-wrap td, .employee-panel .table-wrap th { white-space: nowrap; }
+.employee-history-modal { width: min(900px, 100%); max-height: 85vh; overflow: auto; }
+.employee-history-modal .table-wrap { max-height: 58vh; overflow: auto; }

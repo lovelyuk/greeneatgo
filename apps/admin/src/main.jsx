@@ -88,7 +88,7 @@ function LoginScreen({ missingEnv, onLogin }) {
     const { data, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (loginError) {
-      setError(loginError.message);
+      setError(loginError.message === 'Email not confirmed' ? '이메일 인증 설정이 켜져 있어 로그인할 수 없어요. Supabase에서 Confirm email을 꺼주세요.' : loginError.message);
       return;
     }
     onLogin(data.session);
@@ -165,10 +165,10 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
           password,
           options: {
             data: { display_name: displayName.trim() || undefined },
-            emailRedirectTo: `${window.location.origin}/invite/${token}`,
           },
         });
         if (signUpError) throw signUpError;
+        if (!data.session) throw new Error('Supabase Email Confirm이 켜져 있어 즉시 로그인이 막혔어요. Authentication > Providers > Email에서 Confirm email을 꺼주세요.');
         authUser = data.user;
       }
       if (!authUser?.id) throw new Error('가입된 사용자 정보를 찾을 수 없어요');
@@ -176,8 +176,8 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
         method: 'POST',
         body: JSON.stringify({ auth_user_id: authUser.id, display_name: displayName.trim() || null }),
       });
-      setMessage('초대가 연결됐어요. 이메일 확인이 필요한 경우 메일함을 확인한 뒤 로그인해 주세요.');
-      setTimeout(onClaimed, 900);
+      setMessage('가입과 초대 연결이 완료됐어요. 바로 관리자 화면으로 이동합니다.');
+      setTimeout(onClaimed, 500);
     } catch (claimError) {
       setError(claimError.message);
     } finally {

@@ -12,7 +12,7 @@ from fastapi.responses import Response
 from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, SettlementPaymentConfirmRequest
+from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, SettlementPaymentConfirmRequest
 from app.services.join_flow import JoinErrorCode, JoinFlowError
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
@@ -92,7 +92,7 @@ def _iso_bounds(from_: str | None, to: str | None) -> tuple[str, str, date, date
 def _require_company_link(repo: JoinRepository, merchant_id: str, company_id: str) -> dict:
     links = repo.client.rest_get(
         "merchant_companies",
-        {"select": "id,merchant_id,company_id,status", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "limit": "1"},
+        {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,created_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "limit": "1"},
     )
     if not links:
         raise JoinFlowError(JoinErrorCode.FORBIDDEN, "연결된 장부업체가 아니에요")
@@ -104,6 +104,47 @@ def _require_company_link(repo: JoinRepository, merchant_id: str, company_id: st
 def _company_name(repo: JoinRepository, company_id: str) -> str:
     rows = repo.client.rest_get("companies", {"select": "name", "id": f"eq.{company_id}", "limit": "1"})
     return rows[0]["name"] if rows else company_id
+
+
+def _contract_from_link(link: dict | None) -> dict | None:
+    if not link:
+        return None
+    cycle = link.get("settlement_cycle")
+    day = link.get("settlement_day")
+    unit_price = link.get("unit_price")
+    if not cycle and unit_price is None:
+        return None
+    return {
+        "settlement_cycle": cycle or "month_end",
+        "settlement_day": day,
+        "unit_price": unit_price,
+        "cycle_label": "월말" if (cycle or "month_end") == "month_end" else f"매월 {day}일",
+    }
+
+
+def _contract_label(link: dict | None) -> str:
+    contract = _contract_from_link(link)
+    if not contract:
+        return "미설정"
+    price = contract.get("unit_price")
+    price_text = f" · 단가 {int(price):,}원" if price is not None else ""
+    return f"{contract['cycle_label']}{price_text}"
+
+
+def _next_settlement_date_for_contract(link: dict | None) -> str:
+    today = date.today()
+    contract = _contract_from_link(link)
+    if not contract or contract["settlement_cycle"] == "month_end":
+        _, last = _month_range(today)
+        return last.isoformat()
+    day = min(int(contract.get("settlement_day") or 1), 31)
+    last_this_month = _month_range(today)[1].day
+    candidate = date(today.year, today.month, min(day, last_this_month))
+    if candidate < today:
+        next_month = date(today.year + (1 if today.month == 12 else 0), 1 if today.month == 12 else today.month + 1, 1)
+        last_next_month = _month_range(next_month)[1].day
+        candidate = date(next_month.year, next_month.month, min(day, last_next_month))
+    return candidate.isoformat()
 
 
 def _tx_amount(row: dict) -> int:
@@ -303,7 +344,7 @@ def list_companies(token: str = Depends(bearer_token)):
         _, merchant_id = _merchant_admin(repo, token)
         links = repo.client.rest_get(
             "merchant_companies",
-            {"select": "id,merchant_id,company_id,status,created_at", "merchant_id": f"eq.{merchant_id}", "order": "created_at.desc"},
+            {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,created_at", "merchant_id": f"eq.{merchant_id}", "order": "created_at.desc"},
         )
         company_ids = [link["company_id"] for link in links]
         companies = {row["id"]: row for row in _company_rows(repo, company_ids)}
@@ -321,13 +362,13 @@ def list_companies(token: str = Depends(bearer_token)):
             )
             for invite in invite_rows:
                 invites_by_company.setdefault(invite["company_id"], invite)
-        items = [{**link, "company": companies.get(link["company_id"]), "invite": invites_by_company.get(link["company_id"])} for link in links]
+        items = [{**link, "company": companies.get(link["company_id"]), "invite": invites_by_company.get(link["company_id"]), "contract": _contract_from_link(link), "contract_label": _contract_label(link)} for link in links]
         return {"ok": True, "data": {"items": items}, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
-        if "PGRST205" in exc.body:
-            raise _error(400, "MIGRATION_REQUIRED", "0008_mealledger_v23.sql 적용 후 장부업체를 관리할 수 있어요") from exc
+        if "PGRST205" in exc.body or "settlement_cycle" in exc.body or "unit_price" in exc.body or "PGRST204" in exc.body:
+            raise _error(400, "MIGRATION_REQUIRED", "0008_mealledger_v23.sql, 0010_merchant_company_contract.sql 적용 후 장부업체를 관리할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "장부업체 목록을 불러오는 중 오류가 발생했어요") from exc
 
 
@@ -374,12 +415,33 @@ def create_and_link_company(payload: MerchantCompanyCreateAndLinkRequest, token:
         raise _error(502, "SUPABASE_ERROR", "장부업체 생성 중 오류가 발생했어요") from exc
 
 
+@router.patch("/companies/{company_id}/contract")
+def update_company_contract(company_id: str, payload: MerchantCompanyContractUpdateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        link = _require_company_link(repo, merchant_id, company_id)
+        values = {
+            "settlement_cycle": payload.settlement_cycle,
+            "settlement_day": payload.settlement_day if payload.settlement_cycle == "day" else None,
+            "unit_price": payload.unit_price,
+        }
+        updated = repo.client.rest_patch("merchant_companies", {"id": f"eq.{link['id']}"}, values)[0]
+        return {"ok": True, "data": {"link": updated, "contract": _contract_from_link(updated), "contract_label": _contract_label(updated)}, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        if "settlement_cycle" in exc.body or "unit_price" in exc.body or "PGRST204" in exc.body or "PGRST205" in exc.body:
+            raise _error(400, "MIGRATION_REQUIRED", "0010_merchant_company_contract.sql 적용 후 계약 정보를 저장할 수 있어요") from exc
+        raise _error(502, "SUPABASE_ERROR", "계약 정보를 저장하는 중 오류가 발생했어요") from exc
+
+
 @router.get("/companies/{company_id}/summary")
 def vendor_summary(company_id: str, from_: str | None = Query(default=None, alias="from"), to: str | None = None, token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         _, merchant_id = _merchant_admin(repo, token)
-        _require_company_link(repo, merchant_id, company_id)
+        link = _require_company_link(repo, merchant_id, company_id)
         items, from_date, to_date = _load_vendor_transactions(repo, merchant_id, company_id, from_, to)
         settlements = _ensure_settlements(repo, merchant_id, company_id)
         total_amount = sum(int(item.get("amount") or 0) for item in items)
@@ -391,8 +453,8 @@ def vendor_summary(company_id: str, from_: str | None = Query(default=None, alia
             "total_count": len(items),
             "cancel_count": cancel_count,
             "unsettled_amount": unsettled_amount,
-            "next_settlement_date": _next_settlement_date(),
-            "contract": {"cycle": "월말정산", "unit_price": 8000},
+            "next_settlement_date": _next_settlement_date_for_contract(link),
+            "contract": _contract_from_link(link),
         }, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc

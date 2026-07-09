@@ -81,3 +81,9 @@ class MerchantCompanyCreateAndLinkRequest(BaseModel):
 
 class SettlementPaymentConfirmRequest(BaseModel):
     paid_at: str = Field(min_length=8, max_length=40)
+
+
+class MerchantCompanyContractUpdateRequest(BaseModel):
+    settlement_cycle: str = Field(pattern='^(month_end|day)$')
+    settlement_day: int | None = Field(default=None, ge=1, le=31)
+    unit_price: int | None = Field(default=None, ge=0)

@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, Package, QrCode, RefreshCw, Search, Sprout, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
-import { mockSettlementRows } from './vendorTransactionMocks.js';
 import './style.css';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -290,7 +289,7 @@ function VendorTransactionModal({ txModal, token, onClose }) {
   const [apiError, setApiError] = useState('');
   const [serverSummary, setServerSummary] = useState(null);
   const [serverDays, setServerDays] = useState(null);
-  const [settlements, setSettlements] = useState(() => mockSettlementRows(txModal.companyName, txModal.totalAmount));
+  const [settlements, setSettlements] = useState([]);
 
   useEffect(() => {
     const timer = setTimeout(() => setLoading(false), 350);
@@ -397,7 +396,7 @@ function VendorTransactionModal({ txModal, token, onClose }) {
   }, [rows, serverSummary]);
   const unpaid = settlements.filter((item) => item.status !== '입금완료');
   const unpaidAmount = unpaid.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
-  const contract = txModal.contract ?? { cycle: '월말정산', unit_price: 8000 };
+  const contract = serverSummary?.contract ?? txModal.contract ?? null;
   const groups = useMemo(() => {
     const byDay = new Map();
     rows.forEach((row) => {
@@ -468,7 +467,7 @@ function VendorTransactionModal({ txModal, token, onClose }) {
         <div className="vendor-title-row">
           <div>
             <h2 id="vendor-modal-title">🏢 {txModal.companyName}</h2>
-            <span className="contract-badge">계약: {contract.cycle} · 단가 {Number(contract.unit_price).toLocaleString('ko-KR')}원</span>
+            {contract && <span className="contract-badge">계약: {contract.cycle_label ?? contract.cycle}{contract.unit_price != null ? ` · 단가 ${Number(contract.unit_price).toLocaleString('ko-KR')}원` : ''}</span>}
           </div>
           <button className="ghost icon-button" onClick={onClose} disabled={exporting} aria-label="닫기"><X size={20}/></button>
         </div>
@@ -537,7 +536,10 @@ function Dashboard({ session, onLogout }) {
   const [platformInvitePhone, setPlatformInvitePhone] = useState({});
   const [inviteModal, setInviteModal] = useState(null);
   const [txModal, setTxModal] = useState(null);
+  const [contractModal, setContractModal] = useState(null);
+  const [contractForm, setContractForm] = useState({ settlement_cycle: 'month_end', settlement_day: '25', unit_price: '' });
   const [busy, setBusy] = useState(false);
+  const [dashboardBooting, setDashboardBooting] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -618,6 +620,7 @@ function Dashboard({ session, onLogout }) {
       setError(loadError.message);
     } finally {
       setBusy(false);
+      setDashboardBooting(false);
     }
   }
 
@@ -768,6 +771,40 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
+  function openContractModal(item) {
+    setContractModal(item);
+    setContractForm({
+      settlement_cycle: item.settlement_cycle ?? item.contract?.settlement_cycle ?? 'month_end',
+      settlement_day: String(item.settlement_day ?? item.contract?.settlement_day ?? 25),
+      unit_price: item.unit_price == null ? '' : String(item.unit_price),
+    });
+  }
+
+  async function saveContract(event) {
+    event.preventDefault();
+    if (!contractModal) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiFetch(`/admin/merchant/companies/${contractModal.company_id}/contract`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          settlement_cycle: contractForm.settlement_cycle,
+          settlement_day: contractForm.settlement_cycle === 'day' ? Number(contractForm.settlement_day) : null,
+          unit_price: contractForm.unit_price === '' ? null : Number(contractForm.unit_price),
+        }),
+      });
+      setContractModal(null);
+      setMessage('업체 계약 정보를 저장했어요.');
+      await load();
+    } catch (contractError) {
+      setError(contractError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createPlatformMerchant(event) {
     event.preventDefault();
     setBusy(true);
@@ -815,6 +852,10 @@ function Dashboard({ session, onLogout }) {
 
   useEffect(() => { load(); }, []);
 
+  if (dashboardBooting) return <main className="loading"><BrandMark /><div className="spinner"/><p className="loading-copy">운영자 권한을 확인하고 있어요...</p></main>;
+
+  if (!me) return <main className="loading"><BrandMark /><div className="alert error">권한 정보를 불러오지 못했어요. {error}</div><button className="ghost" onClick={onLogout}>로그아웃</button></main>;
+
   return <main className="shell">
     <header className="topbar">
       <div className="top-copy">
@@ -844,6 +885,40 @@ function Dashboard({ session, onLogout }) {
     </div>}
 
     {txModal && <VendorTransactionModal txModal={txModal} token={token} onClose={() => setTxModal(null)} />}
+
+    {contractModal && <div className="modal-backdrop" onClick={() => setContractModal(null)}>
+      <section className="invite-modal contract-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="panel-title">
+          <div>
+            <h2>업체 상세보기</h2>
+            <p className="panel-note">{contractModal.company?.name ?? contractModal.company_id} 계약 정보를 관리합니다.</p>
+          </div>
+          <button className="ghost icon-button" onClick={() => setContractModal(null)} aria-label="닫기"><X size={20}/></button>
+        </div>
+        <div className="profile-grid contract-summary">
+          <span>업체명</span><strong>{contractModal.company?.name ?? '-'}</strong>
+          <span>연결일</span><strong>{contractModal.created_at ? new Date(contractModal.created_at).toLocaleString('ko-KR') : '-'}</strong>
+        </div>
+        <form className="contract-form" onSubmit={saveContract}>
+          <label>정산일자
+            <select value={contractForm.settlement_cycle} onChange={(event) => setContractForm((form) => ({ ...form, settlement_cycle: event.target.value }))}>
+              <option value="month_end">월말</option>
+              <option value="day">매월 특정일</option>
+            </select>
+          </label>
+          {contractForm.settlement_cycle === 'day' && <label>특정 날짜
+            <input type="number" min="1" max="31" value={contractForm.settlement_day} onChange={(event) => setContractForm((form) => ({ ...form, settlement_day: event.target.value }))} placeholder="예: 25" required />
+          </label>}
+          <label>단가
+            <input type="number" min="0" value={contractForm.unit_price} onChange={(event) => setContractForm((form) => ({ ...form, unit_price: event.target.value }))} placeholder="예: 8000" />
+          </label>
+          <div className="row-actions invite-modal-actions">
+            <button className="primary" disabled={busy}>저장</button>
+            <button className="ghost" type="button" onClick={() => setContractModal(null)}>닫기</button>
+          </div>
+        </form>
+      </section>
+    </div>}
 
     <section className="hero-panel">
       <div>
@@ -922,12 +997,12 @@ function Dashboard({ session, onLogout }) {
       </form>
       {(merchantCompanies?.items?.length ?? 0) === 0
         ? <p className="empty-state">아직 연결된 장부업체가 없어요.</p>
-        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>거래내역</th><th>초대링크</th><th>연결일</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
+        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>거래내역</th><th>계약</th><th>상세</th><th>초대링크</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
           const link = inviteLink(item.invite);
           const companyName = item.company?.name ?? item.company_id;
           const txItems = (transactions?.items ?? []).filter((tx) => tx.company_id === item.company_id);
           const totalAmount = txItems.reduce((sum, tx) => sum + Math.abs(Number(tx.amount ?? 0)), 0);
-          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyId: item.company_id, companyName, txItems, totalAmount })}>{txItems.length}건 보기</button></td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td></tr>;
+          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyId: item.company_id, companyName, txItems, totalAmount, contract: item.contract })}>{txItems.length}건 보기</button></td><td>{item.contract_label ?? '미설정'}</td><td><button className="ghost" onClick={() => openContractModal(item)}>상세보기</button></td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td></tr>;
         })}</tbody></table></div>}
     </section>}
 

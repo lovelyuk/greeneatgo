@@ -6,7 +6,7 @@ from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.products import FALLBACK_DAILY_MENU, FALLBACK_PRODUCTS, today_kst
-from app.schemas import DailyMenuUpsertRequest, EmployeeLimitUpdateRequest, JoinDecisionRequest, ProductCreateRequest, ProductUpdateRequest
+from app.schemas import DailyMenuUpsertRequest, EmployeeLimitUpdateRequest, JoinDecisionRequest, MealPolicyUpdateRequest, ProductCreateRequest, ProductUpdateRequest
 from app.services.join_flow import JoinFlowError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -159,6 +159,78 @@ def update_employee_limit(user_id: str, payload: EmployeeLimitUpdateRequest, tok
         if "monthly_limit" in exc.body or "PGRST204" in exc.body:
             raise _error(400, "MIGRATION_REQUIRED", "0011_employee_monthly_limit.sql 적용 후 한도를 저장할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "직원 한도를 저장하는 중 오류가 발생했어요") from exc
+
+
+def _meal_policy_data(row: dict | None) -> dict:
+    windows = row.get("meal_windows") if row else None
+    if not windows:
+        return {
+            "enabled": False,
+            "lunch_start": "11:00",
+            "lunch_end": "14:00",
+            "dinner_start": "17:30",
+            "dinner_end": "20:30",
+        }
+    by_name = {item.get("name"): item for item in windows if isinstance(item, dict)}
+    lunch = by_name.get("중식")
+    dinner = by_name.get("석식")
+    enabled = bool(lunch and dinner)
+    return {
+        "enabled": enabled,
+        "lunch_start": (lunch or {}).get("start", "11:00"),
+        "lunch_end": (lunch or {}).get("end", "14:00"),
+        "dinner_start": (dinner or {}).get("start", "17:30"),
+        "dinner_end": (dinner or {}).get("end", "20:30"),
+    }
+
+
+def _policy_windows(payload: MealPolicyUpdateRequest) -> list[dict]:
+    if not payload.enabled:
+        return [{"name": "상시", "start": "00:00", "end": "23:59", "per_meal_limit": 10000000}]
+    return [
+        {"name": "중식", "start": payload.lunch_start, "end": payload.lunch_end, "per_meal_limit": 10000000},
+        {"name": "석식", "start": payload.dinner_start, "end": payload.dinner_end, "per_meal_limit": 10000000},
+    ]
+
+
+@router.get("/meal-policy")
+def get_meal_policy(token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        rows = repo.client.rest_get(
+            "meal_policies",
+            {"select": "id,meal_windows,daily_limit,weekend_allowed", "company_id": f"eq.{actor.company_id}", "group_id": "is.null", "limit": "1"},
+        )
+        return {"ok": True, "data": _meal_policy_data(rows[0] if rows else None), "error": None}
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "식대 사용시간 설정을 불러오는 중 오류가 발생했어요") from exc
+
+
+@router.put("/meal-policy")
+def update_meal_policy(payload: MealPolicyUpdateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        rows = repo.client.rest_get("meal_policies", {"select": "id", "company_id": f"eq.{actor.company_id}", "group_id": "is.null", "limit": "1"})
+        body = {
+            "company_id": actor.company_id,
+            "group_id": None,
+            "meal_windows": _policy_windows(payload),
+            "daily_limit": None,
+            "weekend_allowed": True,
+        }
+        if rows:
+            row = repo.client.rest_patch("meal_policies", {"id": f"eq.{rows[0]['id']}"}, body)[0]
+        else:
+            row = repo.client.rest_post("meal_policies", body)[0]
+        return {"ok": True, "data": _meal_policy_data(row), "error": None}
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "식대 사용시간 설정을 저장하는 중 오류가 발생했어요") from exc
 
 
 @router.get("/employees/{user_id}/transactions")

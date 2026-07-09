@@ -34,6 +34,14 @@ class EmployeeLimitUpdateRequest(BaseModel):
     monthly_limit: int = Field(ge=0, le=10000000)
 
 
+class MealPolicyUpdateRequest(BaseModel):
+    enabled: bool = False
+    lunch_start: str = Field(default='11:00', pattern=r'^\d{2}:\d{2}$')
+    lunch_end: str = Field(default='14:00', pattern=r'^\d{2}:\d{2}$')
+    dinner_start: str = Field(default='17:30', pattern=r'^\d{2}:\d{2}$')
+    dinner_end: str = Field(default='20:30', pattern=r'^\d{2}:\d{2}$')
+
+
 class ProductCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     price: int = Field(gt=0)

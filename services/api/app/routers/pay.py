@@ -9,7 +9,7 @@ from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.schemas import PayRequest
 from app.services.payment import MerchantSnapshot, PaymentContext, prepare_payment_draft
-from app.services.policy_engine import DEFAULT_WINDOWS, KST, MealPolicy, MealWindow
+from app.services.policy_engine import KST, MealPolicy, MealWindow, UNRESTRICTED_WINDOWS
 
 router = APIRouter(tags=["pay"])
 
@@ -20,17 +20,17 @@ def _error(status: int, code: str, message: str) -> HTTPException:
 
 def _policy_from_row(row: dict | None) -> MealPolicy:
     if not row:
-        return MealPolicy(meal_windows=DEFAULT_WINDOWS)
+        return MealPolicy(meal_windows=UNRESTRICTED_WINDOWS)
     windows = []
     for item in row.get("meal_windows") or []:
         windows.append(MealWindow(
             name=item.get("name") or "식대",
             start=item.get("start") or "00:00",
             end=item.get("end") or "23:59",
-            per_meal_limit=int(item.get("per_meal_limit") or 0),
+            per_meal_limit=int(item.get("per_meal_limit") or 10_000_000),
         ))
     return MealPolicy(
-        meal_windows=tuple(windows) or DEFAULT_WINDOWS,
+        meal_windows=tuple(windows) or UNRESTRICTED_WINDOWS,
         daily_limit=row.get("daily_limit"),
         weekend_allowed=bool(row.get("weekend_allowed")),
     )

@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
@@ -22,6 +24,7 @@ const kLine = Color(0xFFCDEBD5);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
     await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseAnonKey);
   }
@@ -743,32 +746,42 @@ class QrScanPaymentScreen extends StatefulWidget {
 }
 
 class _QrScanPaymentScreenState extends State<QrScanPaymentScreen> {
-  final MobileScannerController _scanner = MobileScannerController();
+  final GlobalKey _qrKey = GlobalKey(debugLabel: 'GREENEAT_QR');
+  QRViewController? _controller;
+  StreamSubscription<Barcode>? _scanSubscription;
   bool _handled = false;
   String? _error;
 
   @override
   void dispose() {
-    _scanner.dispose();
+    _scanSubscription?.cancel();
     super.dispose();
   }
 
-  void _onDetect(BarcodeCapture capture) {
-    if (_handled) return;
-    String? raw;
-    for (final barcode in capture.barcodes) {
-      if (barcode.rawValue != null) {
-        raw = barcode.rawValue;
-        break;
-      }
-    }
-    if (raw == null) return;
+  void _onQRViewCreated(QRViewController controller) {
+    _controller = controller;
+    _scanSubscription = controller.scannedDataStream.listen((scanData) {
+      _handleRawScan(scanData.code);
+    }, onError: (error) {
+      if (!mounted) return;
+      setState(() => _error = '카메라를 시작하지 못했어요: $error');
+    });
+  }
+
+  void _onPermissionSet(QRViewController controller, bool granted) {
+    if (!mounted || granted) return;
+    setState(() => _error = '카메라 권한이 꺼져 있어요. 앱 설정에서 카메라 권한을 허용해 주세요.');
+  }
+
+  void _handleRawScan(String? raw) {
+    if (_handled || raw == null) return;
     final token = qrTokenFromScan(raw);
     if (token == null) {
       setState(() => _error = '그린잇 결제 QR이 아니에요. 매장 QR을 다시 스캔해 주세요.');
       return;
     }
     _handled = true;
+    _controller?.pauseCamera();
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => PaymentCompletePreview(session: widget.session, product: widget.product, qrToken: token)));
   }
 
@@ -782,34 +795,30 @@ class _QrScanPaymentScreenState extends State<QrScanPaymentScreen> {
           borderRadius: BorderRadius.circular(24),
           child: SizedBox(
             height: 320,
-            child: MobileScanner(
-              controller: _scanner,
-              onDetect: _onDetect,
-              placeholderBuilder: (context) => const ColoredBox(
-                color: Colors.black,
-                child: Center(child: CircularProgressIndicator(color: Colors.white)),
-              ),
-              errorBuilder: (context, error) => Container(
-                color: Colors.black,
-                padding: const EdgeInsets.all(18),
-                child: Center(
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.no_photography_outlined, color: Colors.white, size: 44),
-                    const SizedBox(height: 12),
-                    const Text('카메라를 시작하지 못했어요', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17)),
-                    const SizedBox(height: 8),
-                    Text(error.toString(), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFEAFBF0), fontSize: 12, height: 1.35)),
-                    const SizedBox(height: 14),
-                    OutlinedButton(onPressed: () => _scanner.start(), child: const Text('카메라 다시 켜기')),
-                  ]),
-                ),
+            child: QRView(
+              key: _qrKey,
+              onQRViewCreated: _onQRViewCreated,
+              onPermissionSet: _onPermissionSet,
+              formatsAllowed: const [BarcodeFormat.qrcode],
+              overlay: QrScannerOverlayShape(
+                borderColor: kOrange,
+                borderRadius: 18,
+                borderLength: 28,
+                borderWidth: 8,
+                cutOutSize: 230,
               ),
             ),
           ),
         ),
         const SizedBox(height: 14),
         const Text('상품 선택 후 매장에 비치된 결제 QR을 스캔하면 결제가 진행됩니다.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w800, height: 1.45)),
-        if (_error != null) BrandNotice(text: _error!, kind: NoticeKind.error),
+        if (_error != null) ...[
+          BrandNotice(text: _error!, kind: NoticeKind.error),
+          OutlinedButton(onPressed: () {
+            setState(() => _error = null);
+            _controller?.resumeCamera();
+          }, child: const Text('카메라 다시 켜기')),
+        ],
       ]),
     );
   }
@@ -1100,5 +1109,16 @@ class _HistoryTile extends StatelessWidget {
 class BrandLoadingScreen extends StatelessWidget {
   const BrandLoadingScreen({super.key});
   @override
-  Widget build(BuildContext context) => const BrandBackground(child: Scaffold(backgroundColor: Colors.transparent, body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [SproutMark(size: 90), SizedBox(height: 18), CircularProgressIndicator(color: kOrange)]))));
+  Widget build(BuildContext context) => BrandBackground(
+    child: Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Image.asset('assets/brand/title.png', width: 240, fit: BoxFit.contain),
+          const SizedBox(height: 18),
+          const CircularProgressIndicator(color: kOrange),
+        ]),
+      ),
+    ),
+  );
 }

@@ -518,6 +518,8 @@ function Dashboard({ session, onLogout }) {
   const [newCompanyForm, setNewCompanyForm] = useState({ name: '', owner_phone: '' });
   const [transactions, setTransactions] = useState(null);
   const [employees, setEmployees] = useState(null);
+  const [mealPolicy, setMealPolicy] = useState(null);
+  const [mealPolicyForm, setMealPolicyForm] = useState({ enabled: false, lunch_start: '11:00', lunch_end: '14:00', dinner_start: '17:30', dinner_end: '20:30' });
   const [employeeTxModal, setEmployeeTxModal] = useState(null);
   const [limitModal, setLimitModal] = useState(null);
   const [limitForm, setLimitForm] = useState('200000');
@@ -610,6 +612,7 @@ function Dashboard({ session, onLogout }) {
       let dailyMenuData = null;
       let requestData = { items: [] };
       let employeeData = null;
+      let mealPolicyData = null;
       let settlementData = null;
       let merchantCompanyData = null;
       let transactionData = null;
@@ -623,10 +626,11 @@ function Dashboard({ session, onLogout }) {
           apiFetch('/admin/daily-menu', token),
         ]);
         if (meData.role === 'company_admin') {
-          [requestData, settlementData, employeeData] = await Promise.all([
+          [requestData, settlementData, employeeData, mealPolicyData] = await Promise.all([
             apiFetch('/admin/join-requests', token),
             apiFetch('/admin/settlements', token),
             apiFetch('/admin/employees', token),
+            apiFetch('/admin/meal-policy', token),
           ]);
         }
         if (meData.role === 'merchant_admin') {
@@ -640,6 +644,14 @@ function Dashboard({ session, onLogout }) {
       setMe(meData);
       setRequests(requestData.items ?? []);
       setEmployees(employeeData);
+      setMealPolicy(mealPolicyData);
+      if (mealPolicyData) setMealPolicyForm({
+        enabled: !!mealPolicyData.enabled,
+        lunch_start: mealPolicyData.lunch_start ?? '11:00',
+        lunch_end: mealPolicyData.lunch_end ?? '14:00',
+        dinner_start: mealPolicyData.dinner_start ?? '17:30',
+        dinner_end: mealPolicyData.dinner_end ?? '20:30',
+      });
       setSettlements(settlementData);
       setMerchantCompanies(merchantCompanyData);
       setTransactions(transactionData);
@@ -713,6 +725,25 @@ function Dashboard({ session, onLogout }) {
       await load();
     } catch (limitError) {
       setError(limitError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveMealPolicy(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiFetch('/admin/meal-policy', token, {
+        method: 'PUT',
+        body: JSON.stringify(mealPolicyForm),
+      });
+      setMessage(mealPolicyForm.enabled ? '식대 사용시간 제한을 저장했어요.' : '식대 사용시간 제한을 해제했어요.');
+      await load();
+    } catch (policyError) {
+      setError(policyError.message);
     } finally {
       setBusy(false);
     }
@@ -1081,6 +1112,23 @@ function Dashboard({ session, onLogout }) {
       </article>}
     </section>
 
+    {!isPlatformAdmin && !isMerchantAdmin && <section className="panel meal-policy-panel">
+      <div className="panel-title">
+        <div><h2>식대 사용시간 설정</h2><p className="panel-note">기본은 사용제한없음입니다. 제한을 켜면 중식/석식 시간에만 결제됩니다.</p></div>
+        <span className="badge">{mealPolicyForm.enabled ? '제한 사용' : '제한없음'}</span>
+      </div>
+      <form className="meal-policy-form" onSubmit={saveMealPolicy}>
+        <label className="policy-toggle"><input type="checkbox" checked={mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, enabled: event.target.checked }))} /> 사용시간 제한 켜기</label>
+        <div className="time-window-grid">
+          <label>중식 시작<input type="time" value={mealPolicyForm.lunch_start} disabled={!mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, lunch_start: event.target.value }))} /></label>
+          <label>중식 종료<input type="time" value={mealPolicyForm.lunch_end} disabled={!mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, lunch_end: event.target.value }))} /></label>
+          <label>석식 시작<input type="time" value={mealPolicyForm.dinner_start} disabled={!mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, dinner_start: event.target.value }))} /></label>
+          <label>석식 종료<input type="time" value={mealPolicyForm.dinner_end} disabled={!mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, dinner_end: event.target.value }))} /></label>
+        </div>
+        <button className="primary" disabled={busy}>식대 사용시간 저장</button>
+      </form>
+    </section>}
+
     {!isPlatformAdmin && !isMerchantAdmin && <section className="panel employee-panel">
       <div className="panel-title">
         <div><h2>등록된 직원목록</h2><p className="panel-note">직원별 월 한도와 이번 달 이용 현황을 확인합니다.</p></div>
@@ -1117,7 +1165,7 @@ function Dashboard({ session, onLogout }) {
           const companyName = item.company?.name ?? item.company_id;
           const txItems = (transactions?.items ?? []).filter((tx) => tx.company_id === item.company_id);
           const totalAmount = txItems.reduce((sum, tx) => sum + Math.abs(Number(tx.amount ?? 0)), 0);
-          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyId: item.company_id, companyName, txItems, totalAmount, contract: item.contract })}>{txItems.length}건 보기</button></td><td><button className="ghost" onClick={() => openContractModal(item)}>계약</button></td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td></tr>;
+          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyId: item.company_id, companyName, txItems, totalAmount, contract: item.contract })}>{txItems.length}건 보기</button></td><td><button className="ghost" onClick={() => openContractModal(item)}>상세보기</button></td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td></tr>;
         })}</tbody></table></div>}
     </section>}
 

@@ -31,6 +31,10 @@ DEFAULT_WINDOWS = (
     MealWindow("석식", "17:30", "20:30", 12_000),
 )
 
+UNRESTRICTED_WINDOWS = (
+    MealWindow("상시", "00:00", "23:59", 10_000_000),
+)
+
 ERROR_MESSAGES = {
     "OUT_OF_WINDOW": "지금은 식대 사용 시간이 아니에요",
     "MEAL_LIMIT": "1식 한도를 초과했어요. 초과분은 개인 결제해 주세요",

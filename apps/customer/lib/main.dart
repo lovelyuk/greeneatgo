@@ -174,6 +174,26 @@ class MenuClient {
   }
 }
 
+String won(num? value) => '${(value ?? 0).round().toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}원';
+
+String shortKoreanDate(String? iso) {
+  if (iso == null || iso.isEmpty) return '-';
+  final date = DateTime.tryParse(iso)?.toLocal();
+  if (date == null) return '-';
+  return '${date.month}/${date.day} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+}
+
+String recentMeta(Map<String, dynamic> tx) {
+  final merchant = tx['merchant_name'] as String? ?? '';
+  final date = shortKoreanDate(tx['created_at'] as String?);
+  return merchant.isEmpty ? date : '$merchant · $date';
+}
+
+List<Map<String, dynamic>> mapList(dynamic value) {
+  if (value is! List) return <Map<String, dynamic>>[];
+  return value.whereType<Map>().map((item) => item.cast<String, dynamic>()).toList();
+}
+
 class AppGate extends StatefulWidget {
   const AppGate({super.key});
 
@@ -483,20 +503,37 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = me['display_name'] as String? ?? '직원';
+    final monthUsed = (me['month_used'] as num?) ?? 0;
+    final recentTransactions = mapList(me['recent_transactions']);
     return AppScaffold(
       title: '오늘도 그린하게',
       subtitle: '$name님, 그린하게 챙기는 오늘 한 끼예요.',
       onSignOut: onSignOut,
       actions: [IconButton(onPressed: onRefresh, icon: const Icon(Icons.refresh_rounded))],
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _BalanceCard(name: name),
+        FutureBuilder<MerchantMenu>(
+          future: MenuClient().getProducts(defaultMerchantQrToken),
+          builder: (context, snapshot) => _TodayMenuCard(
+            todayMenu: snapshot.data?.todayMenu,
+            monthUsed: monthUsed,
+            loading: snapshot.connectionState != ConnectionState.done,
+            error: snapshot.hasError ? snapshot.error.toString().replaceFirst('Exception: ', '') : null,
+          ),
+        ),
         const SizedBox(height: 16),
         _QuickAction(icon: Icons.qr_code_scanner_rounded, label: '그린잇 식당 상품 선택', color: kOrange, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductSelectionScreen(session: Supabase.instance.client.auth.currentSession!)))),
         const SizedBox(height: 24),
-        const SectionHeader(title: '최근 이용', action: '이번 주 3회'),
+        const SectionHeader(title: '최근 이용', action: ''),
         const SizedBox(height: 10),
-        const _HistoryTile(title: '든든 김치찌개', meta: '오늘 중식 · 12:21', price: '-9,000원', emoji: '🍲'),
-        const _HistoryTile(title: '샌드위치 박스', meta: '어제 간식 · 16:08', price: '-6,500원', emoji: '🥪'),
+        if (recentTransactions.isEmpty)
+          const _EmptyHistoryCard()
+        else
+          ...recentTransactions.map((tx) => _HistoryTile(
+            title: tx['title'] as String? ?? '식대 사용',
+            meta: recentMeta(tx),
+            price: '-${won(tx['amount'] as num?)}',
+            emoji: '🍽️',
+          )),
       ]),
     );
   }
@@ -558,12 +595,28 @@ class ErrorScreen extends StatelessWidget {
   }
 }
 
-class _BalanceCard extends StatelessWidget {
-  const _BalanceCard({required this.name});
-  final String name;
+class _TodayMenuCard extends StatelessWidget {
+  const _TodayMenuCard({required this.todayMenu, required this.monthUsed, this.loading = false, this.error});
+  final TodayMenu? todayMenu;
+  final num monthUsed;
+  final bool loading;
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
+    final hasMenu = todayMenu != null && todayMenu!.menuText.trim().isNotEmpty;
+    final title = loading
+        ? '오늘 부페 메뉴 불러오는 중'
+        : hasMenu
+            ? todayMenu!.title
+            : '오늘 등록된 부페 메뉴가 없어요';
+    final body = error != null
+        ? '메뉴 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
+        : loading
+            ? '식당관리자가 입력한 오늘 메뉴를 확인하고 있어요.'
+            : hasMenu
+                ? todayMenu!.menuText
+                : '식당관리자가 오늘 메뉴를 등록하면 여기에 표시돼요.';
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -572,16 +625,29 @@ class _BalanceCard extends StatelessWidget {
         boxShadow: const [BoxShadow(color: Color(0x332FB865), blurRadius: 22, offset: Offset(0, 12))],
       ),
       child: Stack(children: [
-        const Positioned(right: 0, top: 0, child: SproutMark(size: 72, light: true)),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(999)), child: const Text('LUNCH WALLET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12))),
-          const SizedBox(height: 18),
-          Text('$name님 남은 식대', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 6),
-          const Text('191,000원', style: TextStyle(color: Colors.white, fontSize: 38, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 14),
-          const Text('중식 진행중 · 1식 한도 10,000원', style: TextStyle(color: Color(0xFFEAFBF0), fontWeight: FontWeight.w800)),
-        ]),
+        const Positioned(right: 0, bottom: 0, child: SproutMark(size: 72, light: true)),
+        Positioned(
+          right: 0,
+          top: 0,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(18)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              const Text('이번달 사용량', style: TextStyle(color: Color(0xFFEAFBF0), fontSize: 11, fontWeight: FontWeight.w900)),
+              Text(won(monthUsed), style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+            ]),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(right: 118),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(999)), child: const Text('TODAY BUFFET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12))),
+            const SizedBox(height: 18),
+            Text(title, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            Text(body, style: const TextStyle(color: Color(0xFFEAFBF0), fontSize: 15, height: 1.45, fontWeight: FontWeight.w800)),
+          ]),
+        ),
       ]),
     );
   }
@@ -614,7 +680,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
           }
           final menu = snapshot.data!;
           if (menu.products.isEmpty) {
-            return const BrandPanel(children: [BrandNotice(text: '등록된 상품이 없어요. 관리자에게 문의해 주세요.', kind: NoticeKind.error)]);
+            return const BrandPanel(children: [BrandNotice(text: '식당관리자 페이지에 등록된 메뉴가 없어요.', kind: NoticeKind.error)]);
           }
           return BrandPanel(children: [
             Text(menu.merchantName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
@@ -645,7 +711,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                       const SizedBox(height: 4),
                       Text(product.category ?? '그린잇 메뉴', style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
                     ])),
-                    Text('${product.price.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}원', style: const TextStyle(color: kOrange, fontSize: 20, fontWeight: FontWeight.w900)),
+                    Text(won(product.price), style: const TextStyle(color: kOrange, fontSize: 20, fontWeight: FontWeight.w900)),
                   ]),
                 ),
               ),
@@ -672,7 +738,7 @@ class _PaymentCompletePreviewState extends State<PaymentCompletePreview> {
 
   @override
   Widget build(BuildContext context) {
-    final priceText = widget.product.price.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+    final priceText = won(widget.product.price);
     return Scaffold(
       backgroundColor: kOrange,
       body: SafeArea(
@@ -697,7 +763,7 @@ class _PaymentCompletePreviewState extends State<PaymentCompletePreview> {
                     if (loading) const CircularProgressIndicator() else if (hasError) Text(snapshot.error.toString().replaceFirst('Exception: ', ''), textAlign: TextAlign.center, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w800)) else ...[
                       Text(widget.product.name, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontSize: 22, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 6),
-                      Text('$priceText원', style: const TextStyle(color: kOrange, fontSize: 50, fontWeight: FontWeight.w900)),
+                      Text(priceText, style: const TextStyle(color: kOrange, fontSize: 50, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 14),
                       Text('${widget.merchantName} · 거래번호 $txCode', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
                     ],
@@ -905,7 +971,26 @@ class SectionHeader extends StatelessWidget {
   final String title;
   final String action;
   @override
-  Widget build(BuildContext context) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)), Text(action, style: const TextStyle(color: kOrange, fontWeight: FontWeight.w900))]);
+  Widget build(BuildContext context) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+    Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+    if (action.isNotEmpty) Text(action, style: const TextStyle(color: kOrange, fontWeight: FontWeight.w900)),
+  ]);
+}
+
+class _EmptyHistoryCard extends StatelessWidget {
+  const _EmptyHistoryCard();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.all(18),
+    decoration: brandCardDecoration(radius: 22),
+    child: const Row(children: [
+      Icon(Icons.receipt_long_outlined, color: kOrange, size: 30),
+      SizedBox(width: 12),
+      Expanded(child: Text('이용내역이 없어요.', style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF5C7A66)))),
+    ]),
+  );
 }
 
 class _HistoryTile extends StatelessWidget {

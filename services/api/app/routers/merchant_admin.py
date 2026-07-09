@@ -321,6 +321,27 @@ def _safe_filename(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in value).strip("_") or "vendor"
 
 
+@router.get("/qr")
+def merchant_qr(token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        rows = repo.client.rest_get(
+            "merchants",
+            {"select": "id,name,category,avg_price,qr_token,status", "id": f"eq.{merchant_id}", "limit": "1"},
+        )
+        if not rows:
+            raise _error(404, "MERCHANT_NOT_FOUND", "식당 정보를 찾을 수 없어요")
+        merchant = rows[0]
+        return {"ok": True, "data": {"merchant": merchant, "qr_token": merchant.get("qr_token")}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "매장 QR 정보를 불러오는 중 오류가 발생했어요") from exc
+
+
 @router.get("/companies/search")
 def search_companies(q: str = Query(min_length=1, max_length=80), token: str = Depends(bearer_token)):
     repo = JoinRepository()

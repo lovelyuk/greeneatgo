@@ -531,6 +531,7 @@ function Dashboard({ session, onLogout }) {
   const [companySearchResults, setCompanySearchResults] = useState([]);
   const [newCompanyForm, setNewCompanyForm] = useState({ name: '', owner_phone: '' });
   const [transactions, setTransactions] = useState(null);
+  const [merchantQr, setMerchantQr] = useState(null);
   const [platformMerchants, setPlatformMerchants] = useState(null);
   const [platformMerchantForm, setPlatformMerchantForm] = useState({ name: '', owner_phone: '', category: '', avg_price: '' });
   const [platformInvitePhone, setPlatformInvitePhone] = useState({});
@@ -555,6 +556,35 @@ function Dashboard({ session, onLogout }) {
     } catch {
       setError('자동 복사가 막혔어요. 링크 입력칸을 길게 눌러 직접 복사해 주세요.');
     }
+  }
+
+  const merchantPayUrl = merchantQr?.qr_token ? `${window.location.origin}/pay?qr=${encodeURIComponent(merchantQr.qr_token)}` : '';
+  const merchantQrImageUrl = merchantPayUrl ? `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=14&data=${encodeURIComponent(merchantPayUrl)}` : '';
+
+  async function copyMerchantPayUrl() {
+    if (!merchantPayUrl) return;
+    try {
+      await navigator.clipboard.writeText(merchantPayUrl);
+      setMessage('결제 QR 링크를 복사했어요.');
+    } catch {
+      setError('자동 복사가 막혔어요. QR 링크를 직접 복사해 주세요.');
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  }
+
+  function downloadMerchantQrPdf() {
+    if (!merchantPayUrl || !merchantQrImageUrl) return;
+    const merchantName = escapeHtml(merchantQr?.merchant?.name ?? '그린잇 식당');
+    const win = window.open('', '_blank', 'width=720,height=900');
+    if (!win) {
+      setError('팝업이 차단됐어요. 브라우저 팝업 허용 후 다시 눌러 주세요.');
+      return;
+    }
+    win.document.write(`<!doctype html><html><head><title>${merchantName} 결제 QR</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:34px;background:#f3fbf4;color:#14351f}.sheet{max-width:520px;margin:0 auto;background:white;border:2px solid #cdebd5;border-radius:28px;padding:34px;text-align:center}.brand{font-size:18px;font-weight:900;color:#2fb865;letter-spacing:.08em}.title{font-size:32px;font-weight:1000;margin:14px 0 6px}.merchant{font-size:22px;font-weight:900;margin-bottom:22px}.qr{width:300px;height:300px;border:12px solid #eaf7ec;border-radius:24px}.help{font-size:17px;font-weight:800;line-height:1.55;color:#5c7a66}.url{word-break:break-all;font-size:12px;color:#5c7a66;margin-top:18px}@media print{body{background:white}.sheet{box-shadow:none;border-color:#14351f}}</style></head><body><section class="sheet"><div class="brand">GREENEATGO PAYMENT</div><div class="title">직원 결제 QR</div><div class="merchant">${merchantName}</div><img class="qr" src="${merchantQrImageUrl}"/><p class="help">직원 앱 또는 휴대폰 카메라로 스캔해<br/>식대 상품을 선택하고 결제하세요.</p><p class="url">${merchantPayUrl}</p></section><script>window.onload=()=>setTimeout(()=>window.print(),500)</script></body></html>`);
+    win.document.close();
   }
   const cards = useMemo(() => isPlatformAdmin ? [
     ['권한', '플랫폼 운영자', WalletCards, 'brown'],
@@ -583,6 +613,7 @@ function Dashboard({ session, onLogout }) {
       let settlementData = null;
       let merchantCompanyData = null;
       let transactionData = null;
+      let merchantQrData = null;
       let platformMerchantData = null;
       if (meData.role === 'platform_admin') {
         platformMerchantData = await apiFetch('/admin/platform/merchants', token);
@@ -598,9 +629,10 @@ function Dashboard({ session, onLogout }) {
           ]);
         }
         if (meData.role === 'merchant_admin') {
-          [merchantCompanyData, transactionData] = await Promise.all([
+          [merchantCompanyData, transactionData, merchantQrData] = await Promise.all([
             apiFetch('/admin/merchant/companies', token),
             apiFetch('/admin/merchant/transactions', token),
+            apiFetch('/admin/merchant/qr', token),
           ]);
         }
       }
@@ -609,6 +641,7 @@ function Dashboard({ session, onLogout }) {
       setSettlements(settlementData);
       setMerchantCompanies(merchantCompanyData);
       setTransactions(transactionData);
+      setMerchantQr(merchantQrData);
       setPlatformMerchants(platformMerchantData);
       setProducts(productData);
       setDailyMenu(dailyMenuData);
@@ -862,7 +895,7 @@ function Dashboard({ session, onLogout }) {
         <BrandMark />
         <span className="pill">OPERATIONS</span>
         <h1>오늘의 식대 운영 현황</h1>
-        <p>가입 승인, 직원 상태, 단일 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
+        <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
       <div className="top-actions">
         <button className="ghost" onClick={load} disabled={busy}><RefreshCw size={16}/> 새로고침</button>
@@ -968,6 +1001,21 @@ function Dashboard({ session, onLogout }) {
           <span>상태</span><strong>{me?.status ?? '-'}</strong>
         </div>
       </article>
+      {isMerchantAdmin && <article className="panel merchant-qr-panel">
+        <div className="panel-title"><div><h2>내 매장 결제 QR</h2><p className="panel-note">카운터에 비치할 직원 결제용 QR입니다.</p></div><QrCode size={24}/></div>
+        {merchantQrImageUrl ? <div className="qr-card-body">
+          <img className="merchant-qr-image" src={merchantQrImageUrl} alt="매장 결제 QR 코드" />
+          <div className="qr-card-copy">
+            <strong>{merchantQr?.merchant?.name ?? '내 매장'}</strong>
+            <span>직원 앱 또는 휴대폰 카메라로 스캔</span>
+            <input value={merchantPayUrl} readOnly onFocus={(event) => event.target.select()} />
+          </div>
+          <div className="row-actions qr-actions">
+            <button className="primary" onClick={downloadMerchantQrPdf}>PDF 다운로드</button>
+            <button className="ghost" onClick={copyMerchantPayUrl}>링크 복사</button>
+          </div>
+        </div> : <p className="empty-state">매장 QR 정보를 불러오고 있어요.</p>}
+      </article>}
       {!isMerchantAdmin && <article className="panel menu-panel">
         <div className="panel-title"><h2>운영 식당</h2><Coffee size={22}/></div>
         <div className="menu-chips single"><span>🥗 그린잇 식당</span></div>

@@ -176,3 +176,13 @@ select:focus { border-color: #2FB865; box-shadow: 0 0 0 5px rgba(47, 184, 101, .
 .contract-summary { margin-bottom: 18px; padding: 16px; border-radius: 20px; background: #EAF7EC; }
 .contract-form { display: grid; gap: 14px; }
 .contract-form .primary { width: auto; min-width: 120px; }
+.merchant-qr-panel { min-height: 100%; }
+.qr-card-body { display: grid; grid-template-columns: 154px 1fr; gap: 16px; align-items: center; }
+.merchant-qr-image { width: 154px; height: 154px; padding: 10px; border-radius: 24px; background: #fff; border: 1.5px solid #CDEBD5; }
+.qr-card-copy { display: grid; gap: 8px; min-width: 0; }
+.qr-card-copy strong { font-size: 20px; }
+.qr-card-copy span { color: #5C7A66; font-weight: 850; }
+.qr-card-copy input { width: 100%; font-size: 12px; padding: 10px 12px; border-radius: 14px; }
+.qr-actions { grid-column: 1 / -1; }
+.qr-actions .primary { width: auto; min-width: 150px; }
+@media (max-width: 560px) { .qr-card-body { grid-template-columns: 1fr; justify-items: center; } .qr-card-copy { width: 100%; } .qr-actions { width: 100%; } .qr-actions .primary, .qr-actions .ghost { width: 100%; } }

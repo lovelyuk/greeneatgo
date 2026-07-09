@@ -785,11 +785,11 @@ class _QrScanPaymentScreenState extends State<QrScanPaymentScreen> {
             child: MobileScanner(
               controller: _scanner,
               onDetect: _onDetect,
-              placeholderBuilder: (context, child) => const ColoredBox(
+              placeholderBuilder: (context) => const ColoredBox(
                 color: Colors.black,
                 child: Center(child: CircularProgressIndicator(color: Colors.white)),
               ),
-              errorBuilder: (context, error, child) => Container(
+              errorBuilder: (context, error) => Container(
                 color: Colors.black,
                 padding: const EdgeInsets.all(18),
                 child: Center(

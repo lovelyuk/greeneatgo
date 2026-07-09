@@ -933,8 +933,10 @@ function Dashboard({ session, onLogout }) {
   return <main className="shell">
     <header className="topbar">
       <div className="top-copy">
-        <BrandMark />
-        <span className="pill">OPERATIONS</span>
+        <div className="brand-row">
+          <BrandMark />
+          <span className="pill">OPERATIONS</span>
+        </div>
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
       <div className="top-actions">

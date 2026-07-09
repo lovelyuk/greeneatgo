@@ -55,7 +55,8 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .sprout-badge { width: 48px; height: 48px; border-radius: 16px; display: inline-grid; place-items: center; background: rgba(47, 184, 101, .14); color: #2FB865; flex: none; }
 .auth-visual .sprout-badge { background: rgba(255,255,255,.22); color: white; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
-.top-copy .brandmark { margin-bottom: 22px; }
+.brand-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.brand-row .pill { margin-bottom: 0; }
 .top-actions, .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .hero-panel { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 28px; border-radius: 34px; background: linear-gradient(135deg, #2FB865, #7BD88F); color: white; box-shadow: 0 22px 48px rgba(47,184,101,.22); overflow: hidden; }
 .hero-panel h2 { font-size: clamp(28px, 4vw, 42px); line-height: 1.04; margin: 0 0 10px; }

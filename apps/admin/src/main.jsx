@@ -246,8 +246,8 @@ function buildTransactionRows(rawItems, range, q) {
       id: tx.id ?? `mock-${index}`,
       created_at: tx.created_at ?? new Date(y, m, Math.max(1, now.getDate() - index), 12, 10 + index).toISOString(),
       time: tx.created_at ? new Date(tx.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '12:00',
-      employee_name: tx.employee_name ?? tx.user_name ?? ['김민준', '이지은', '박서준', '최유나'][index % 4],
-      employee_no: tx.employee_no ?? tx.user_id?.slice(0, 6) ?? `E${String(index + 1).padStart(3, '0')}`,
+      employee_name: tx.employee_name ?? tx.user_name ?? tx.display_name ?? '직원',
+      employee_no: tx.employee_no ?? tx.user_id?.slice(0, 8) ?? '-',
       menu: tx.product_name ?? tx.meal_window ?? '구내식당 식권',
       pay_type: tx.kind === 'wallet' ? '식권' : '장부',
       amount,
@@ -278,7 +278,6 @@ function VendorTransactionModal({ txModal, token, onClose }) {
   const [settlements, setSettlements] = useState([]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 350);
     dialogRef.current?.focus();
     function onKeyDown(event) {
       if (event.key === 'Escape' && !exporting) onClose();
@@ -293,13 +292,19 @@ function VendorTransactionModal({ txModal, token, onClose }) {
     }
     document.addEventListener('keydown', onKeyDown);
     return () => {
-      clearTimeout(timer);
       document.removeEventListener('keydown', onKeyDown);
       returnFocusRef.current?.focus?.();
     };
   }, [exporting, onClose]);
 
-  useEffect(() => { setLoading(true); const timer = setTimeout(() => setLoading(false), 260); return () => clearTimeout(timer); }, [range, query, activeTab]);
+  useEffect(() => {
+    if (!txModal.companyId) {
+      setLoading(true);
+      const timer = setTimeout(() => setLoading(false), 260);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [range, query, activeTab, txModal.companyId]);
 
   function rangeParams() {
     const now = new Date();

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
@@ -89,6 +90,38 @@ class SupabaseHttpClient:
         except HTTPError as exc:
             raise SupabaseHttpError(exc.code, exc.read().decode("utf-8")) from exc
         return f"{self.settings.supabase_url}/storage/v1/object/public/{encoded_bucket}/{encoded_path}"
+
+    def delete_public_objects(self, bucket: str, object_paths: list[str]) -> None:
+        if not object_paths:
+            return
+        key = self.settings.supabase_service_role_key
+        encoded_bucket = quote(bucket, safe="")
+        data = json.dumps({"prefixes": object_paths}).encode("utf-8")
+        req = Request(
+            f"{self.settings.supabase_url}/storage/v1/object/{encoded_bucket}",
+            data=data,
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            method="DELETE",
+        )
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                with urlopen(req, timeout=30) as response:
+                    response.read()
+                return
+            except HTTPError as exc:
+                if exc.code == 404:
+                    return
+                raise SupabaseHttpError(exc.code, exc.read().decode("utf-8")) from exc
+            except (URLError, TimeoutError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(0.25 * (2**attempt))
+        raise SupabaseHttpError(0, f"Storage delete transport failure: {last_error}") from last_error
 
     def auth_get_user(self, access_token: str) -> AuthUser:
         headers = {

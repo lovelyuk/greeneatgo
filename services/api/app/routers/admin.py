@@ -1,5 +1,6 @@
 import base64
 import binascii
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -10,9 +11,10 @@ from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.products import FALLBACK_DAILY_MENU, FALLBACK_PRODUCTS, today_kst
-from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeLimitUpdateRequest, EmployeeProfileUpdateRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest, ProductCreateRequest, ProductUpdateRequest
+from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeLimitUpdateRequest, EmployeeProfileUpdateRequest, ImageDeleteRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest, ProductCreateRequest, ProductUpdateRequest
 from app.services.employee_bulk import BulkFileError, RawEmployeeRow, build_template, read_employee_file, validate_rows
 from app.services.join_flow import JoinFlowError
+from app.services.product_images import ProductImageError, managed_image_path, normalize_product_image
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -22,6 +24,7 @@ IMAGE_TYPES = {
     "image/webp": ("webp", (b"RIFF",)),
     "image/gif": ("gif", (b"GIF87a", b"GIF89a")),
 }
+logger = logging.getLogger(__name__)
 
 
 def _error(status: int, code: str, message: str) -> HTTPException:
@@ -539,6 +542,80 @@ def upload_merchant_image(payload: ImageUploadRequest, token: str = Depends(bear
         raise _error(502, "IMAGE_UPLOAD_FAILED", "이미지 저장소 업로드에 실패했어요") from exc
 
 
+@router.post("/product-images")
+def upload_product_image(payload: ImageUploadRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _active_admin(repo, token)
+        merchant = _admin_merchant(repo, actor)
+        image_type = payload.content_type.lower().split(";", 1)[0].strip()
+        if image_type not in {"image/jpeg", "image/png", "image/webp"}:
+            raise _error(400, "INVALID_IMAGE_TYPE", "JPG, PNG, WEBP 이미지만 업로드할 수 있어요")
+        try:
+            content = base64.b64decode(payload.data_base64.split(",", 1)[-1], validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise _error(400, "INVALID_IMAGE_DATA", "올바른 base64 이미지가 아니에요") from exc
+        if not content or len(content) > MAX_IMAGE_BYTES:
+            raise _error(400, "IMAGE_TOO_LARGE", "크롭된 이미지는 5MB 이하여야 해요")
+        try:
+            encoded = normalize_product_image(content)
+        except ProductImageError as exc:
+            raise _error(400, "INVALID_PRODUCT_IMAGE", str(exc)) from exc
+        object_path = f"{merchant['id']}/products/{uuid.uuid4().hex}.webp"
+        image_url = repo.client.upload_public_object("merchant-images", object_path, encoded, "image/webp")
+        return {"ok": True, "data": {"image_url": image_url, "filename": payload.filename, "content_type": "image/webp", "size": len(encoded), "width": 800, "height": 800}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "IMAGE_UPLOAD_FAILED", "상품 이미지 저장소 업로드에 실패했어요") from exc
+
+
+@router.delete("/product-images")
+def delete_product_image(payload: ImageDeleteRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _active_admin(repo, token)
+        merchant = _admin_merchant(repo, actor)
+        object_path = managed_image_path(
+            payload.image_url,
+            repo.client.settings.supabase_url,
+            "merchant-images",
+            merchant["id"],
+        )
+        if object_path is None:
+            raise _error(400, "INVALID_IMAGE_URL", "이 식당이 업로드한 이미지가 아니에요")
+        reference_filters = {
+            "select": "id",
+            "merchant_id": f"eq.{merchant['id']}",
+            "image_url": f"eq.{payload.image_url}",
+            "limit": "1",
+        }
+        if repo.client.rest_get("merchant_products", reference_filters) or repo.client.rest_get("voucher_products", reference_filters):
+            raise _error(409, "IMAGE_STILL_IN_USE", "현재 상품에서 사용 중인 이미지는 삭제할 수 없어요")
+        repo.client.delete_public_objects("merchant-images", [object_path])
+        return {"ok": True, "data": {"deleted": True}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "IMAGE_DELETE_FAILED", "상품 이미지 삭제에 실패했어요") from exc
+
+
+def _delete_replaced_product_image(repo: JoinRepository, merchant_id: str, old_url: str | None, new_url: str | None) -> None:
+    if not old_url or old_url == new_url:
+        return
+    object_path = managed_image_path(old_url, repo.client.settings.supabase_url, "merchant-images", merchant_id)
+    if object_path is None:
+        return
+    try:
+        repo.client.delete_public_objects("merchant-images", [object_path])
+    except Exception:  # DB update already committed; never make the client delete the live new image.
+        logger.exception("Failed to delete replaced merchant product image: %s", object_path)
+
+
 @router.get("/products")
 def list_products(token: str = Depends(bearer_token)):
     repo = JoinRepository()
@@ -597,12 +674,14 @@ def update_product(product_id: str, payload: ProductUpdateRequest, token: str = 
     try:
         actor = _active_admin(repo, token)
         merchant = _admin_merchant(repo, actor)
-        _ensure_product_belongs(repo, product_id, merchant["id"])
+        current = _ensure_product_belongs(repo, product_id, merchant["id"])
         values = {key: value for key, value in payload.model_dump().items() if value is not None}
         if not values:
             raise _error(400, "NO_CHANGES", "수정할 값을 입력해 주세요")
         values["updated_at"] = datetime.now().isoformat()
         row = repo.client.rest_patch("merchant_products", {"id": f"eq.{product_id}"}, values)[0]
+        if "image_url" in values:
+            _delete_replaced_product_image(repo, merchant["id"], current.get("image_url"), values.get("image_url"))
         return {"ok": True, "data": row, "error": None}
     except HTTPException:
         raise

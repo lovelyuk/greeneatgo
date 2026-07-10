@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
+from app.schemas import ProfileNameUpdateRequest
 from app.services.join_flow import JoinFlowError
 
 router = APIRouter(tags=["me"])
@@ -140,6 +141,32 @@ def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
         "recent_transactions": combined[:3], "voucher_balance": voucher_balance,
         "voucher_use_history": voucher_history,
     }
+
+
+@router.patch("/me")
+def update_admin_name(payload: ProfileNameUpdateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        auth_user = repo.auth_user_from_token(token)
+        profile = repo.get_profile(auth_user.id, email=auth_user.email)
+        if profile is None:
+            raise _error(404, "PROFILE_NOT_FOUND", "관리자 프로필을 찾을 수 없어요")
+        if profile.role not in {"company_admin", "merchant_admin"}:
+            raise _error(403, "FORBIDDEN", "업체관리자 또는 식당관리자만 이름을 수정할 수 있어요")
+        rows = repo.client.rest_patch(
+            "app_users",
+            {"id": f"eq.{profile.id}"},
+            {"display_name": payload.display_name},
+        )
+        if not rows:
+            raise _error(404, "PROFILE_NOT_FOUND", "관리자 프로필을 찾을 수 없어요")
+        return {"ok": True, "data": {"display_name": rows[0].get("display_name") or payload.display_name}, "error": None}
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "관리자 이름을 저장하는 중 오류가 발생했어요") from exc
 
 
 @router.get("/me")

@@ -19,6 +19,17 @@ class ConsumerRegisterRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=80)
 
 
+class ProfileNameUpdateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def trim_display_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
 class TossOrderCreateRequest(BaseModel):
     qr_token: str = Field(min_length=1, max_length=120)
     product_id: str = Field(min_length=8, max_length=80)
@@ -190,6 +201,10 @@ class ImageUploadRequest(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     content_type: str = Field(min_length=1, max_length=100)
     data_base64: str = Field(min_length=1, max_length=7_100_000)
+
+
+class ImageDeleteRequest(BaseModel):
+    image_url: str = Field(min_length=1, max_length=1000)
 
 
 class PlatformMerchantCreateRequest(BaseModel):

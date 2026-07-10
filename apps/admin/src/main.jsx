@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
+import Cropper from 'react-easy-crop';
 import './style.css';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -234,6 +235,67 @@ async function fileToBase64(file) {
     reader.onerror = () => reject(new Error('이미지를 읽지 못했어요.'));
     reader.readAsDataURL(file);
   });
+}
+
+function validateCropSource(file) {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (!['jpg', 'jpeg', 'png', 'webp'].includes(extension) || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    throw new Error('JPG, JPEG, PNG, WEBP 이미지만 선택해 주세요.');
+  }
+  if (file.size > 20 * 1024 * 1024) throw new Error('원본 이미지는 20MB 이하여야 해요.');
+}
+
+function cropToWebp(sourceUrl, area, filename) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 800;
+      const context = canvas.getContext('2d');
+      if (!context) { reject(new Error('이미지 크롭을 처리하지 못했어요.')); return; }
+      context.drawImage(image, area.x, area.y, area.width, area.height, 0, 0, 800, 800);
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error('WebP 이미지로 변환하지 못했어요.')); return; }
+        resolve(new File([blob], `${filename.replace(/\.[^.]+$/, '') || 'product'}-800.webp`, { type: 'image/webp' }));
+      }, 'image/webp', 0.92);
+    };
+    image.onerror = () => reject(new Error('선택한 이미지를 불러오지 못했어요.'));
+    image.src = sourceUrl;
+  });
+}
+
+function ImageCropModal({ request, onCancel, onApply }) {
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [area, setArea] = useState(null);
+  const [applying, setApplying] = useState(false);
+
+  useEffect(() => {
+    setCrop({ x: 0, y: 0 }); setZoom(1); setArea(null); setApplying(false);
+  }, [request?.sourceUrl]);
+  useEffect(() => {
+    if (!request) return undefined;
+    const closeOnEscape = (event) => { if (event.key === 'Escape' && !applying) onCancel(); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [request, applying, onCancel]);
+
+  if (!request) return null;
+  async function apply() {
+    if (!area) return;
+    setApplying(true);
+    try { onApply(await cropToWebp(request.sourceUrl, area, request.filename)); }
+    catch (cropError) { setApplying(false); request.onError(cropError.message); }
+  }
+  return <div className="modal-backdrop crop-backdrop" onClick={() => !applying && onCancel()}>
+    <section className="image-crop-modal" role="dialog" aria-modal="true" aria-labelledby="crop-title" onClick={(event) => event.stopPropagation()}>
+      <header className="crop-header"><div><h2 id="crop-title">상품 이미지 자르기</h2><p>정사각형 안에 보일 영역을 맞춰 주세요.</p></div><button type="button" className="ghost icon-button" onClick={onCancel} disabled={applying} aria-label="닫기"><X size={20}/></button></header>
+      <div className="crop-stage"><Cropper image={request.sourceUrl} crop={crop} zoom={zoom} aspect={1} minZoom={1} maxZoom={3} cropShape="rect" showGrid onCropChange={setCrop} onZoomChange={setZoom} onCropComplete={(_, pixels) => setArea(pixels)} /></div>
+      <div className="crop-controls"><label>확대·축소<input type="range" min="1" max="3" step="0.01" value={zoom} onChange={(event) => setZoom(Number(event.target.value))}/></label><p>드래그·핀치·마우스 휠로 위치와 확대만 조정할 수 있어요. 최종 파일은 800×800 WebP로 저장됩니다.</p></div>
+      <footer className="crop-footer"><button type="button" className="ghost" onClick={onCancel} disabled={applying}>취소</button><button type="button" className="primary" onClick={apply} disabled={!area || applying}>{applying ? '적용 중...' : '적용'}</button></footer>
+    </section>
+  </div>;
 }
 
 function buildTransactionRows(rawItems, range, q) {
@@ -511,10 +573,12 @@ function TransactionSkeleton() {
   return <div className="vendor-skeleton"><div className="vendor-summary-grid">{[0, 1, 2, 3].map((n) => <article key={n} className="skeleton-card" />)}</div><div className="skeleton-lines">{[0, 1, 2, 3, 4, 5].map((n) => <span key={n}/>)}</div></div>;
 }
 
-function VoucherProductsPanel({ items, migrationRequired, token, busy, uploadImage, onChanged, setBusy, setError, setMessage }) {
-  const blank = { name: '', voucher_count: '10', bonus_count: '0', unit_price: '', discount_rate: '0', status: 'active', display_order: '0', image_url: '', is_event: false, event_start_at: '', event_end_at: '' };
+function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage, uploadImage, deleteImage, onChanged, setBusy, setError, setMessage }) {
+  const blank = { name: '', voucher_count: '0', bonus_count: '0', unit_price: '', discount_rate: '0', status: 'active', display_order: '0', image_url: '', is_event: false, event_start_at: '', event_end_at: '' };
   const [form, setForm] = useState(blank);
   const [editingId, setEditingId] = useState(null);
+  const [pendingImage, setPendingImage] = useState(null);
+  const [pendingPreview, setPendingPreview] = useState('');
   const count = Number(form.voucher_count || 0);
   const bonus = Number(form.bonus_count || 0);
   const discount = Number(form.discount_rate || 0);
@@ -532,7 +596,12 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, uploadIma
     const end = new Date(item.event_end_at).toLocaleString('ko-KR');
     return `${start} ~ ${end}`;
   }
+  function resetPendingImage() {
+    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+    setPendingImage(null); setPendingPreview('');
+  }
   function edit(item) {
+    resetPendingImage();
     setEditingId(item.id);
     setForm({
       ...blank,
@@ -544,26 +613,28 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, uploadIma
   }
   async function chooseImage(event) {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
-    setBusy(true); setError('');
-    try {
-      const imageUrl = await uploadImage(file);
-      setForm((prev) => ({ ...prev, image_url: imageUrl }));
-    }
-    catch (uploadError) { setError(uploadError.message); }
-    finally { setBusy(false); event.target.value = ''; }
+    const cropped = await cropImage(file);
+    if (!cropped) return;
+    resetPendingImage();
+    setPendingImage(cropped);
+    setPendingPreview(URL.createObjectURL(cropped));
   }
   async function save(event) {
     event.preventDefault();
     if (bonus > 0 && discount > 0 && !window.confirm('보너스와 할인을 동시에 적용하시겠어요?')) return;
     if (form.is_event && (!form.event_start_at || !form.event_end_at)) { setError('이벤트 시작일시와 종료일시를 모두 입력해 주세요.'); return; }
     if (form.is_event && new Date(form.event_end_at) <= new Date(form.event_start_at)) { setError('이벤트 종료일시는 시작일시보다 늦어야 해요.'); return; }
+    let uploadedImageUrl = '';
+    let persisted = false;
     setBusy(true); setError('');
     try {
+      if (pendingImage) uploadedImageUrl = await uploadImage(pendingImage);
       const body = {
         name: form.name.trim(), voucher_count: count, bonus_count: bonus,
         unit_price: Number(form.unit_price), discount_rate: discount, status: form.status,
-        display_order: Number(form.display_order || 0), image_url: form.image_url || null,
+        display_order: Number(form.display_order || 0), image_url: uploadedImageUrl || form.image_url || null,
         ...(!migrationRequired ? {
           is_event: !!form.is_event,
           event_start_at: form.is_event ? new Date(form.event_start_at).toISOString() : null,
@@ -571,10 +642,13 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, uploadIma
         } : {}),
       };
       await apiFetch(`/admin/voucher-products${editingId ? `/${editingId}` : ''}`, token, { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify(body) });
+      persisted = true;
       setMessage(editingId ? '식권 패키지를 수정했어요.' : '식권 패키지를 등록했어요.');
-      setEditingId(null); setForm(blank); await onChanged();
-    } catch (saveError) { setError(saveError.message); }
-    finally { setBusy(false); }
+      setEditingId(null); setForm(blank); resetPendingImage(); await onChanged();
+    } catch (saveError) {
+      if (uploadedImageUrl && !persisted) await deleteImage(uploadedImageUrl);
+      setError(saveError.message);
+    } finally { setBusy(false); }
   }
   async function toggle(item) {
     setBusy(true); setError('');
@@ -589,7 +663,7 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, uploadIma
     <form className="voucher-form" onSubmit={save}>
       <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="패키지명" required />
       <label>기본 장수<input type="number" min="1" max="1000" value={form.voucher_count} onChange={(e) => setForm((p) => ({ ...p, voucher_count: e.target.value }))} required /></label>
-      <div className="quick-buttons">{[1, 5, 10].map((n) => <button type="button" className="ghost" key={n} onClick={() => setForm((p) => ({ ...p, voucher_count: String(n) }))}>{n}장</button>)}</div>
+      <div className="quick-buttons">{[1, 5, 10].map((n) => <button type="button" className="ghost" key={n} onClick={() => setForm((p) => ({ ...p, voucher_count: String(Math.min(1000, Math.max(0, Number(p.voucher_count) || 0) + n)) }))}>+{n}장</button>)}</div>
       <label>보너스 장수<input type="number" min="0" max="1000" value={form.bonus_count} onChange={(e) => setForm((p) => ({ ...p, bonus_count: e.target.value }))} /></label>
       <label>장당 정가<input type="number" min="1" step="0.01" value={form.unit_price} onChange={(e) => setForm((p) => ({ ...p, unit_price: e.target.value }))} required /></label>
       <label>할인율(%)<input type="number" min="0" max="99.99" step="0.01" value={form.discount_rate} onChange={(e) => setForm((p) => ({ ...p, discount_rate: e.target.value }))} /></label>
@@ -600,10 +674,10 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, uploadIma
         <label>이벤트 시작일시<input type="datetime-local" value={form.event_start_at} onChange={(e) => setForm((p) => ({ ...p, event_start_at: e.target.value }))} required /></label>
         <label>이벤트 종료일시<input type="datetime-local" min={form.event_start_at} value={form.event_end_at} onChange={(e) => setForm((p) => ({ ...p, event_end_at: e.target.value }))} required /></label>
       </>}
-      <label className="image-picker compact">패키지 이미지<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={chooseImage} disabled={busy}/></label>
-      <div className="voucher-preview">미리보기 <strong>{count + bonus}장 · {krw(salePrice)}</strong><span>장당 {krw((count + bonus) ? salePrice / (count + bonus) : 0)}</span>{form.is_event && <span>🎉 노출 기간: {form.event_start_at || '시작일시'} ~ {form.event_end_at || '종료일시'} · 종료 후 자동 숨김</span>}{form.image_url && <img src={form.image_url} alt="식권 패키지 미리보기"/>}</div>
+      <label className="image-picker compact">패키지 이미지<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={chooseImage} disabled={busy}/></label>
+      <div className="voucher-preview">미리보기 <strong>{count + bonus}장 · {krw(salePrice)}</strong><span>장당 {krw((count + bonus) ? salePrice / (count + bonus) : 0)}</span>{form.is_event && <span>🎉 노출 기간: {form.event_start_at || '시작일시'} ~ {form.event_end_at || '종료일시'} · 종료 후 자동 숨김</span>}{(pendingPreview || form.image_url) && <img src={pendingPreview || form.image_url} alt="식권 패키지 미리보기"/>}</div>
       {bonus > 0 && discount > 0 && <div className="alert warning">보너스와 할인율이 동시에 적용됩니다. 판매가와 총 장수를 다시 확인하세요.</div>}
-      <div className="row-actions"><button className="primary" disabled={busy}>{editingId ? '수정 저장' : '패키지 등록'}</button>{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(blank); }}>취소</button>}</div>
+      <div className="row-actions"><button className="primary" disabled={busy}>{editingId ? '수정 저장' : '패키지 등록'}</button>{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(blank); resetPendingImage(); }}>취소</button>}</div>
     </form>
     <div className="product-list">{items.map((item) => <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}+{item.bonus_count}장 · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span><span className={`exposure-status ${item.exposure_status}`}>{item.exposure_label}</span>{item.is_event && <span className="event-period">{displayEventPeriod(item)}</span>}</div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button className="ghost" onClick={() => toggle(item)}>{item.status === 'active' ? '숨김' : '판매 재개'}</button></div></article>)}</div>
   </section>;
@@ -689,13 +763,18 @@ function EmployeeBulkModal({ token, onClose, onConfirmed }) {
 function Dashboard({ session, onLogout }) {
   const token = session.access_token;
   const [me, setMe] = useState(null);
+  const [adminNameForm, setAdminNameForm] = useState('');
+  const [adminNameEditing, setAdminNameEditing] = useState(false);
   const [requests, setRequests] = useState([]);
   const [settlements, setSettlements] = useState(null);
   const [products, setProducts] = useState(null);
   const [voucherProducts, setVoucherProducts] = useState([]);
   const [voucherProductsMigrationRequired, setVoucherProductsMigrationRequired] = useState(false);
   const [paymentNotices, setPaymentNotices] = useState([]);
-  const [productForm, setProductForm] = useState({ name: '', price: '', category: '', image_url: '' });
+  const [productForm, setProductForm] = useState({ name: '', price: '', category: '' });
+  const [productImageFile, setProductImageFile] = useState(null);
+  const [productImagePreview, setProductImagePreview] = useState('');
+  const [cropRequest, setCropRequest] = useState(null);
   const [dailyMenu, setDailyMenu] = useState(null);
   const [dailyMenuForm, setDailyMenuForm] = useState({ service_date: todayInput(), title: '오늘 뷔페 메뉴', menu_text: '', image_url: '' });
   const [merchantCompanies, setMerchantCompanies] = useState(null);
@@ -748,6 +827,23 @@ function Dashboard({ session, onLogout }) {
     } catch {
       setError('자동 복사가 막혔어요. QR 링크를 직접 복사해 주세요.');
     }
+  }
+
+  async function saveAdminName(event) {
+    event.preventDefault();
+    const displayName = adminNameForm.trim();
+    if (!displayName) { setError('관리자 이름을 입력해 주세요.'); return; }
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const updated = await apiFetch('/me', token, {
+        method: 'PATCH', body: JSON.stringify({ display_name: displayName }),
+      });
+      setMe((current) => ({ ...current, display_name: updated.display_name }));
+      setAdminNameForm(updated.display_name);
+      setAdminNameEditing(false);
+      setMessage('관리자 이름을 수정했어요.');
+    } catch (nameError) { setError(nameError.message); }
+    finally { setBusy(false); }
   }
 
   async function copyCompanyInviteCode() {
@@ -833,6 +929,7 @@ function Dashboard({ session, onLogout }) {
         }
       }
       setMe(meData);
+      setAdminNameForm(meData.display_name ?? '');
       setRequests(requestData.items ?? []);
       setEmployees(employeeData);
       setMealPolicy(mealPolicyData);
@@ -952,6 +1049,31 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
+  function requestImageCrop(file) {
+    try { validateCropSource(file); }
+    catch (validationError) { setError(validationError.message); return Promise.resolve(null); }
+    setError('');
+    return new Promise((resolve) => {
+      setCropRequest({
+        sourceUrl: URL.createObjectURL(file), filename: file.name, resolve,
+        onError: (message) => setError(message),
+      });
+    });
+  }
+
+  function finishImageCrop(file) {
+    if (!cropRequest) return;
+    URL.revokeObjectURL(cropRequest.sourceUrl);
+    cropRequest.resolve(file);
+    setCropRequest(null);
+  }
+
+  function setPendingProductImage(file) {
+    if (productImagePreview) URL.revokeObjectURL(productImagePreview);
+    setProductImageFile(file);
+    setProductImagePreview(file ? URL.createObjectURL(file) : '');
+  }
+
   async function uploadImage(file) {
     const dataBase64 = await fileToBase64(file);
     const data = await apiFetch('/admin/images', token, {
@@ -961,15 +1083,29 @@ function Dashboard({ session, onLogout }) {
     return data.image_url;
   }
 
+  async function uploadProductImage(file) {
+    const dataBase64 = await fileToBase64(file);
+    return (await apiFetch('/admin/product-images', token, {
+      method: 'POST',
+      body: JSON.stringify({ filename: file.name, content_type: file.type, data_base64: dataBase64 }),
+    })).image_url;
+  }
+
+  async function deleteProductImage(imageUrl) {
+    if (!imageUrl) return;
+    try {
+      await apiFetch('/admin/product-images', token, {
+        method: 'DELETE', body: JSON.stringify({ image_url: imageUrl }),
+      });
+    } catch { /* best-effort cleanup after a failed product save */ }
+  }
+
   async function selectNewProductImage(event) {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
-    setBusy(true); setError('');
-    try {
-      const imageUrl = await uploadImage(file);
-      setProductForm((form) => ({ ...form, image_url: imageUrl }));
-    } catch (uploadError) { setError(uploadError.message); }
-    finally { setBusy(false); event.target.value = ''; }
+    const cropped = await requestImageCrop(file);
+    if (cropped) setPendingProductImage(cropped);
   }
 
   async function selectDailyMenuImage(event) {
@@ -985,37 +1121,47 @@ function Dashboard({ session, onLogout }) {
 
   async function updateProductImage(product, event) {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
+    const cropped = await requestImageCrop(file);
+    if (!cropped) return;
+    let imageUrl = '';
     setBusy(true); setError('');
     try {
-      const imageUrl = await uploadImage(file);
+      imageUrl = await uploadProductImage(cropped);
       await apiFetch(`/admin/products/${product.id}`, token, { method: 'PATCH', body: JSON.stringify({ image_url: imageUrl }) });
-      setMessage(`${product.name} 이미지를 저장했어요.`);
+      setMessage(`${product.name} 이미지를 800×800 WebP로 교체했어요.`);
       await load();
-    } catch (uploadError) { setError(uploadError.message); }
-    finally { setBusy(false); event.target.value = ''; }
+    } catch (uploadError) {
+      if (imageUrl) await deleteProductImage(imageUrl);
+      setError(uploadError.message);
+    } finally { setBusy(false); }
   }
 
   async function createProduct(event) {
     event.preventDefault();
+    let uploadedImageUrl = '';
     setBusy(true);
     setError('');
     setMessage('');
     try {
+      if (productImageFile) uploadedImageUrl = await uploadProductImage(productImageFile);
       await apiFetch('/admin/products', token, {
         method: 'POST',
         body: JSON.stringify({
           name: productForm.name.trim(),
           price: Number(productForm.price),
           category: productForm.category.trim() || null,
-          image_url: productForm.image_url || null,
+          image_url: uploadedImageUrl || null,
           sort_order: (products?.items?.length ?? 0) + 1,
         }),
       });
-      setProductForm({ name: '', price: '', category: '', image_url: '' });
+      setProductForm({ name: '', price: '', category: '' });
+      setPendingProductImage(null);
       setMessage('상품을 등록했어요. 직원 앱 상품 선택 화면에 바로 반영됩니다.');
       await load();
     } catch (productError) {
+      if (uploadedImageUrl) await deleteProductImage(uploadedImageUrl);
       setError(productError.message);
     } finally {
       setBusy(false);
@@ -1245,6 +1391,7 @@ function Dashboard({ session, onLogout }) {
   if (!me) return <main className="loading"><BrandMark /><div className="alert error">권한 정보를 불러오지 못했어요. {error}</div><button className="ghost" onClick={onLogout}>로그아웃</button></main>;
 
   return <main className="shell">
+    <ImageCropModal request={cropRequest} onCancel={() => finishImageCrop(null)} onApply={finishImageCrop} />
     <header className="topbar">
       <div className="top-copy">
         <div className="brand-row">
@@ -1381,7 +1528,11 @@ function Dashboard({ session, onLogout }) {
         <div className="panel-title"><h2>로그인 정보</h2><span className="badge">secure</span></div>
         <div className="profile-grid">
           <span>이메일</span><strong>{session.user.email}</strong>
-          <span>이름</span><strong>{me?.display_name ?? '-'}</strong>
+          <span>{['company_admin', 'merchant_admin'].includes(me?.role) ? '관리자 이름' : '이름'}</span>
+          {['company_admin', 'merchant_admin'].includes(me?.role) ? (adminNameEditing
+            ? <form className="profile-name-form" onSubmit={saveAdminName}><input value={adminNameForm} onChange={(event) => setAdminNameForm(event.target.value)} maxLength="80" autoFocus required/><button className="primary" disabled={busy}>저장</button><button type="button" className="ghost" disabled={busy} onClick={() => { setAdminNameEditing(false); setAdminNameForm(me?.display_name ?? ''); setError(''); }}>취소</button></form>
+            : <div className="profile-name-value"><strong>{me?.display_name ?? '-'}</strong><button type="button" className="ghost" onClick={() => { setAdminNameForm(me?.display_name ?? ''); setAdminNameEditing(true); }}>이름 수정</button></div>)
+            : <strong>{me?.display_name ?? '-'}</strong>}
           <span>권한</span><strong>{me?.role === 'merchant_admin' ? '관리자' : me?.role ?? '-'}</strong>
           <span>상태</span><strong>{me?.status ?? '-'}</strong>
         </div>
@@ -1470,7 +1621,7 @@ function Dashboard({ session, onLogout }) {
     </section>}
 
 
-    {isMerchantAdmin && <VoucherProductsPanel items={voucherProducts} migrationRequired={voucherProductsMigrationRequired} token={token} busy={busy} uploadImage={uploadImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
+    {isMerchantAdmin && <VoucherProductsPanel items={voucherProducts} migrationRequired={voucherProductsMigrationRequired} token={token} busy={busy} cropImage={requestImageCrop} uploadImage={uploadProductImage} deleteImage={deleteProductImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
 
     {isMerchantAdmin && <section className="panel daily-menu-panel">
       <div className="panel-title">
@@ -1508,8 +1659,8 @@ function Dashboard({ session, onLogout }) {
         <input value={productForm.name} onChange={(event) => setProductForm((form) => ({ ...form, name: event.target.value }))} placeholder="상품명" required />
         <input value={productForm.price} onChange={(event) => setProductForm((form) => ({ ...form, price: event.target.value }))} placeholder="가격" type="number" min="1" required />
         <input value={productForm.category} onChange={(event) => setProductForm((form) => ({ ...form, category: event.target.value }))} placeholder="카테고리" />
-        <label className="image-picker compact">상품 이미지<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={selectNewProductImage} disabled={busy}/></label>
-        {productForm.image_url && <img className="product-image-preview" src={productForm.image_url} alt="새 상품 미리보기" />}
+        <label className="image-picker compact">상품 이미지<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={selectNewProductImage} disabled={busy}/></label>
+        {productImagePreview && <img className="product-image-preview" src={productImagePreview} alt="새 상품 미리보기" />}
         <button className="primary" disabled={busy || products?.migration_required}>상품 등록</button>
       </form>
       {(products?.items?.length ?? 0) === 0
@@ -1517,7 +1668,7 @@ function Dashboard({ session, onLogout }) {
         : <div className="product-list">{products.items.map((product) => <article className={product.is_active ? 'product-item' : 'product-item off'} key={product.id}>
           {product.image_url ? <img className="product-image-preview" src={product.image_url} alt={`${product.name} 이미지`} /> : <div className="product-image-placeholder">이미지 없음</div>}
           <div className="product-copy"><strong>{product.name}</strong><span>{product.category ?? '기본'} · {Number(product.price).toLocaleString('ko-KR')}원</span></div>
-          <div className="row-actions"><label className="ghost image-change">이미지 변경<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => updateProductImage(product, event)} disabled={busy || products?.migration_required}/></label><button className="ghost" onClick={() => toggleProduct(product)} disabled={busy || products?.migration_required}>{product.is_active ? '숨김' : '판매중'}</button></div>
+          <div className="row-actions"><label className="ghost image-change">이미지 변경<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={(event) => updateProductImage(product, event)} disabled={busy || products?.migration_required}/></label><button className="ghost" onClick={() => toggleProduct(product)} disabled={busy || products?.migration_required}>{product.is_active ? '숨김' : '판매중'}</button></div>
         </article>)}</div>}
     </section>}
 

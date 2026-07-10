@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -13,9 +14,11 @@ from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.merchant_admin import _merchant_admin
 from app.schemas import VoucherProductCreateRequest, VoucherProductUpdateRequest, VoucherPurchaseRequest
 from app.services.join_flow import JoinFlowError
+from app.services.product_images import managed_image_path
 from app.services.vouchers import calculate_sale_price, krw_amount, per_voucher_price, resolve_voucher_merchant
 
 router = APIRouter(tags=["voucher-products"])
+logger = logging.getLogger(__name__)
 _PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,image_url,is_event,event_start_at,event_end_at,created_at,updated_at"
 _LEGACY_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,image_url,created_at,updated_at"
 
@@ -96,6 +99,18 @@ def _load_products(repo: JoinRepository, params: dict[str, str], *, allow_legacy
         return [{**row, "is_event": False, "event_start_at": None, "event_end_at": None} for row in rows], True
 
 
+def _delete_replaced_image(repo: JoinRepository, merchant_id: str, old_url: str | None, new_url: str | None) -> None:
+    if not old_url or old_url == new_url:
+        return
+    object_path = managed_image_path(old_url, repo.client.settings.supabase_url, "merchant-images", merchant_id)
+    if object_path is None:
+        return
+    try:
+        repo.client.delete_public_objects("merchant-images", [object_path])
+    except Exception:  # DB update already committed; never make the client delete the live new image.
+        logger.exception("Failed to delete replaced voucher product image: %s", object_path)
+
+
 def _values(payload: VoucherProductCreateRequest | VoucherProductUpdateRequest, *, partial: bool) -> dict:
     values = payload.model_dump(exclude_unset=partial, mode="json")
     if "name" in values:
@@ -161,6 +176,8 @@ def admin_update_product(product_id: str, payload: VoucherProductUpdateRequest, 
         row = repo.client.rest_patch("voucher_products", {
             "id": f"eq.{product_id}", "merchant_id": f"eq.{merchant_id}"
         }, values)[0]
+        if "image_url" in values:
+            _delete_replaced_image(repo, merchant_id, current[0].get("image_url"), values.get("image_url"))
         return {"ok": True, "data": _present(row), "error": None}
     except HTTPException:
         raise

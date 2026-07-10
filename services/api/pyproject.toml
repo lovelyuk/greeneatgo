@@ -12,6 +12,7 @@ dependencies = [
   "weasyprint>=62",
   "openpyxl>=3.1",
   "python-multipart>=0.0.9",
+  "pillow>=11.0",
 ]
 
 [tool.pytest.ini_options]

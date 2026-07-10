@@ -11,7 +11,7 @@ from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.me import _customer_usage
 from app.routers.toss_payments import confirm
 from app.routers.transactions import scan
-from app.routers.voucher_products import _event_status, _is_exposed, _values, active_products
+from app.routers.voucher_products import _delete_replaced_image, _event_status, _is_exposed, _values, active_products
 from app.schemas import (
     TossPaymentConfirmRequest,
     TransactionScanRequest,
@@ -79,6 +79,18 @@ class VoucherCoreTests(unittest.TestCase):
         self.assertFalse(_is_exposed(ended, now))
         self.assertTrue(_is_exposed({"status": "active", "is_event": False}, now))
         self.assertFalse(_is_exposed({"status": "inactive", "is_event": False}, now))
+
+    def test_voucher_image_replacement_deletes_previous_managed_object(self):
+        repo = MagicMock()
+        repo.client.settings.supabase_url = "https://sample.supabase.co"
+        old_url = "https://sample.supabase.co/storage/v1/object/public/merchant-images/merchant-1/products/old.webp"
+        new_url = "https://sample.supabase.co/storage/v1/object/public/merchant-images/merchant-1/products/new.webp"
+
+        _delete_replaced_image(repo, "merchant-1", old_url, new_url)
+
+        repo.client.delete_public_objects.assert_called_once_with(
+            "merchant-images", ["merchant-1/products/old.webp"]
+        )
 
     def test_qr_parser_keeps_supported_formats(self):
         self.assertEqual(parse_qr_data("restaurant:abc-123"), ("id", "abc-123"))

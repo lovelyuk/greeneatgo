@@ -1529,6 +1529,20 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
       );
 }
 
+Widget _productImage(String? imageUrl, IconData fallbackIcon) {
+  Widget placeholder() => Container(
+        color: const Color(0xFFEAF7EC),
+        alignment: Alignment.center,
+        child: Icon(fallbackIcon, color: kOrange, size: 38),
+      );
+  if (imageUrl?.trim().isEmpty ?? true) return placeholder();
+  return Image.network(
+    imageUrl!,
+    fit: BoxFit.cover,
+    errorBuilder: (_, __, ___) => placeholder(),
+  );
+}
+
 class _VoucherProductCard extends StatelessWidget {
   const _VoucherProductCard({required this.product, required this.onBuy});
   final VoucherProduct product;
@@ -1542,19 +1556,15 @@ class _VoucherProductCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: brandCardDecoration(radius: 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (product.imageUrl?.trim().isNotEmpty ?? false) ...[
-          ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: Image.network(product.imageUrl!,
-                  height: 150,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                      height: 72,
-                      color: const Color(0xFFEAF7EC),
-                      child: const Icon(Icons.confirmation_number_outlined,
-                          color: kOrange, size: 38)))),
-          const SizedBox(height: 14),
-        ],
+        ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: _productImage(
+                product.imageUrl, Icons.confirmation_number_outlined),
+          ),
+        ),
+        const SizedBox(height: 14),
         Text(product.name,
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
         const SizedBox(height: 8),
@@ -1899,18 +1909,15 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: kLine)),
                       child: Row(children: [
-                        if (product.imageUrl?.trim().isNotEmpty ?? false) ...[
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: Image.network(product.imageUrl!,
-                                width: 62,
-                                height: 62,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const SizedBox.shrink()),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: SizedBox.square(
+                            dimension: 62,
+                            child: _productImage(
+                                product.imageUrl, Icons.restaurant_menu_rounded),
                           ),
-                          const SizedBox(width: 12),
-                        ],
+                        ),
+                        const SizedBox(width: 12),
                         Expanded(
                             child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,

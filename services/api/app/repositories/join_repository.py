@@ -4,13 +4,16 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.repositories.supabase_http import AuthUser, SupabaseHttpClient, SupabaseHttpError
+from app.services.employee_bulk import PHONE_RE, normalize_phone
 from app.services.join_flow import (
     InviteCode,
+    JoinErrorCode,
     JoinFlowError,
     UserProfile,
     approve_pending_user,
     build_pending_join_request,
     reject_pending_user,
+    validate_invite,
 )
 
 
@@ -62,6 +65,27 @@ class JoinRepository:
         existing = self.get_profile(auth_user.id, email=auth_user.email)
         user = existing or UserProfile(id=auth_user.id, email=auth_user.email or "", display_name=display_name)
         invite = self.get_invite(invite_code)
+        validated_invite = validate_invite(invite, now=datetime.now(timezone.utc))
+
+        # The phone comes from the authenticated user's signup metadata, never
+        # from this request body. It is a pilot matching key (not SMS-verified),
+        # so the RPC also requires a valid company code and no existing profile.
+        metadata_phone = normalize_phone(auth_user.metadata.get("phone") or auth_user.metadata.get("phone_number"))
+        if PHONE_RE.fullmatch(metadata_phone):
+            try:
+                activated = self.client.rpc("activate_employee_bulk_invite", {
+                    "p_user_id": auth_user.id,
+                    "p_company_id": validated_invite.company_id,
+                    "p_phone": metadata_phone,
+                    "p_invite_code": invite_code,
+                })
+            except SupabaseHttpError as exc:
+                if "PROFILE_CONFLICT" in exc.body:
+                    raise JoinFlowError(JoinErrorCode.COMPANY_MISMATCH, "기존 고객/관리자 또는 다른 회사 프로필은 직원으로 변경할 수 없어요") from exc
+                raise
+            if activated:
+                return activated
+
         result = build_pending_join_request(user=user, invite=invite, now=datetime.now(timezone.utc))
 
         payload = {
@@ -69,6 +93,7 @@ class JoinRepository:
             "company_id": result.company_id,
             "group_id": result.group_id,
             "display_name": display_name,
+            "phone": metadata_phone if PHONE_RE.fullmatch(metadata_phone) else None,
             "role": "employee",
             "status": "pending",
             "rejected_at": None,

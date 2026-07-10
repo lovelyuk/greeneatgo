@@ -35,13 +35,14 @@ async function publicApiFetch(path, options = {}) {
 }
 
 async function apiFetch(path, token, options = {}) {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    ...(options.headers ?? {}),
+  };
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...(options.headers ?? {}),
-    },
+    headers,
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -575,6 +576,83 @@ function VoucherProductsPanel({ items, token, busy, uploadImage, onChanged, setB
   </section>;
 }
 
+function EmployeeBulkModal({ token, onClose, onConfirmed }) {
+  const inputRef = useRef(null);
+  const [preview, setPreview] = useState(null);
+  const [fileName, setFileName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function downloadTemplate() {
+    setError('');
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/employees/template`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error('양식을 다운로드하지 못했어요.');
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url; link.download = '직원_일괄등록_양식.xlsx'; link.click();
+      URL.revokeObjectURL(url);
+    } catch (downloadError) { setError(downloadError.message); }
+  }
+
+  async function parseFile(file) {
+    if (!file) return;
+    if (!/\.(xlsx|csv)$/i.test(file.name)) { setError('.xlsx 또는 .csv 파일만 선택해 주세요.'); return; }
+    setBusy(true); setError(''); setPreview(null); setFileName(file.name);
+    const formData = new FormData(); formData.append('file', file);
+    try {
+      setPreview(await apiFetch('/admin/employees/bulk-upload/parse', token, { method: 'POST', body: formData }));
+    } catch (parseError) { setError(parseError.message); }
+    finally { setBusy(false); }
+  }
+
+  function downloadErrors() {
+    const safeCell = (value) => {
+      const text = String(value ?? '');
+      return /^[=+\-@]/.test(text) ? `'${text}` : text;
+    };
+    const escape = (value) => `"${safeCell(value).replaceAll('"', '""')}"`;
+    const lines = ['행,부서,이름,사번,전화번호,오류', ...(preview?.errors ?? []).map((row) =>
+      [row.row, row.department, row.name, row.employee_no, row.phone, row.reason].map(escape).join(','))];
+    const url = URL.createObjectURL(new Blob(['\ufeff', lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = '직원_일괄등록_오류.csv'; link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function confirm() {
+    if (!preview?.valid?.length) return;
+    setBusy(true); setError('');
+    try {
+      const data = await apiFetch('/admin/employees/bulk-upload/confirm', token, {
+        method: 'POST', body: JSON.stringify({ valid_rows: preview.valid }),
+      });
+      await onConfirmed(data.created_count);
+    } catch (confirmError) { setError(confirmError.message); }
+    finally { setBusy(false); }
+  }
+
+  return <div className="modal-backdrop bulk-backdrop" onClick={() => !busy && onClose()}>
+    <section className={`employee-bulk-modal ${preview ? 'preview' : ''}`} role="dialog" aria-modal="true" aria-labelledby="bulk-title" onClick={(event) => event.stopPropagation()}>
+      <header className="bulk-header"><div><h2 id="bulk-title">{preview ? '업로드 결과 확인' : '직원 일괄등록'}</h2>{fileName && <p>{fileName}</p>}</div><button className="ghost icon-button" onClick={onClose} disabled={busy} aria-label="닫기"><X size={20}/></button></header>
+      {!preview ? <div className="bulk-body">
+        <section className="bulk-step"><strong>Step 1. 양식 다운로드</strong><p>헤더 순서를 바꾸지 말고 최대 500명까지 작성해 주세요.</p><button className="ghost" onClick={downloadTemplate}><Download size={17}/> 엑셀 양식 다운로드</button></section>
+        <section className="bulk-step"><strong>Step 2. 작성한 파일 업로드</strong>
+          <div className="bulk-dropzone" role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click(); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); parseFile(event.dataTransfer.files?.[0]); }}>
+            <FileSpreadsheet size={38}/><b>{busy ? '파일 확인 중...' : '파일을 드래그하거나 클릭해서 선택'}</b><span>.xlsx, .csv 지원 · 최대 500행</span>
+            <input ref={inputRef} hidden type="file" accept=".xlsx,.csv" onChange={(event) => parseFile(event.target.files?.[0])}/>
+          </div>
+        </section>
+      </div> : <div className="bulk-body preview-body">
+        <div className="bulk-counts"><strong className="valid-count">✅ 정상 {preview.valid.length}건</strong><strong className="error-count">⚠️ 에러 {preview.errors.length}건</strong></div>
+        <section><h3>정상 {preview.valid.length}건</h3>{preview.valid.length === 0 ? <p className="empty-state">등록 가능한 행이 없어요.</p> : <div className="table-wrap bulk-valid-table"><table><thead><tr><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th></tr></thead><tbody>{preview.valid.map((row) => <tr key={row.row}><td>{row.department || '-'}</td><td>{row.name}</td><td>{row.employee_no}{row.auto_generated && <small> 자동</small>}</td><td>{row.phone}</td></tr>)}</tbody></table></div>}</section>
+        {preview.errors.length > 0 && <section className="bulk-errors"><div className="bulk-error-title"><h3>에러 {preview.errors.length}건</h3><button className="ghost" onClick={downloadErrors}><Download size={16}/> 에러 목록 다운로드</button></div>{preview.errors.map((row) => <div className="bulk-error-row" key={`${row.row}-${row.reason}`}><strong>{row.row}행: {row.reason}</strong><span>{row.name || '이름 없음'} · {row.phone || '전화번호 없음'}</span></div>)}</section>}
+      </div>}
+      {error && <div className="alert error bulk-alert">{error}</div>}
+      <footer className="bulk-footer">{preview ? <button className="ghost" onClick={() => { setPreview(null); setError(''); }} disabled={busy}>이전</button> : <button className="ghost" onClick={onClose} disabled={busy}>닫기</button>}<button className="primary" onClick={confirm} disabled={!preview?.valid?.length || busy}>{busy && preview ? '등록 중...' : `정상 ${preview?.valid?.length ?? 0}건만 등록 확정`}</button></footer>
+    </section>
+  </div>;
+}
+
 function Dashboard({ session, onLogout }) {
   const token = session.access_token;
   const [me, setMe] = useState(null);
@@ -595,6 +673,7 @@ function Dashboard({ session, onLogout }) {
   const [mealPolicy, setMealPolicy] = useState(null);
   const [mealPolicyForm, setMealPolicyForm] = useState({ enabled: false, lunch_start: '11:00', lunch_end: '14:00', dinner_start: '17:30', dinner_end: '20:30' });
   const [employeeTxModal, setEmployeeTxModal] = useState(null);
+  const [employeeBulkOpen, setEmployeeBulkOpen] = useState(false);
   const [limitModal, setLimitModal] = useState(null);
   const [limitForm, setLimitForm] = useState('200000');
   const [merchantQr, setMerchantQr] = useState(null);
@@ -1156,6 +1235,8 @@ function Dashboard({ session, onLogout }) {
 
     {txModal && <VendorTransactionModal txModal={txModal} token={token} onClose={() => setTxModal(null)} />}
 
+    {employeeBulkOpen && <EmployeeBulkModal token={token} onClose={() => setEmployeeBulkOpen(false)} onConfirmed={async (count) => { setEmployeeBulkOpen(false); setMessage(`직원 ${count}명의 초대를 등록했어요.`); await load(); }} />}
+
     {contractModal && <div className="modal-backdrop" onClick={() => setContractModal(null)}>
       <section className="invite-modal contract-modal" onClick={(event) => event.stopPropagation()}>
         <div className="panel-title">
@@ -1296,10 +1377,11 @@ function Dashboard({ session, onLogout }) {
     {!isPlatformAdmin && !isMerchantAdmin && <section className="panel employee-panel">
       <div className="panel-title">
         <div><h2>등록된 직원목록</h2><p className="panel-note">직원별 월 한도와 이번 달 이용 현황을 확인합니다.</p></div>
-        <span className="badge">{employees?.items?.length ?? 0}명</span>
+        <div className="employee-panel-actions"><button className="primary bulk-open-button" onClick={() => setEmployeeBulkOpen(true)} disabled={employees?.bulk_migration_required}>+ 직원 일괄등록</button><span className="badge">{employees?.items?.length ?? 0}명</span></div>
       </div>
       {employees?.migration_required && <div className="alert error">월 한도 저장 컬럼이 아직 적용되지 않아 기본값 200,000원으로 표시 중이에요. 0011_employee_monthly_limit.sql 적용 후 한도 수정이 저장됩니다.</div>}
-      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>이름</th><th>사번</th><th>월 한도</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{krw(employee.monthly_limit ?? 200000)}</td><td>{krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td><button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button></td><td className="row-actions"><button className="ghost" onClick={() => saveEmployeeNo(employee)}>사번수정</button><button className="ghost" onClick={() => openLimitModal(employee)}>한도수정</button></td></tr>)}</tbody></table></div>}
+      {employees?.bulk_migration_required && <div className="alert error">0017_employee_bulk_invites.sql 적용 후 직원 일괄등록을 사용할 수 있어요.</div>}
+      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하거나 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>월 한도</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className="badge">{employee.is_staged ? '초대대기' : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : krw(employee.monthly_limit ?? 200000)}</td><td>{employee.is_staged ? '-' : krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td>{employee.is_staged ? '-' : <button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button>}</td><td className="row-actions">{employee.is_staged ? <span className="muted">최초 가입 대기</span> : <><button className="ghost" onClick={() => saveEmployeeNo(employee)}>사번수정</button><button className="ghost" onClick={() => openLimitModal(employee)}>한도수정</button></>}</td></tr>)}</tbody></table></div>}
     </section>}
 
     {!isPlatformAdmin && isMerchantAdmin && <section className="panel">

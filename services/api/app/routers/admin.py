@@ -3,13 +3,15 @@ import binascii
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 
 from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.products import FALLBACK_DAILY_MENU, FALLBACK_PRODUCTS, today_kst
-from app.schemas import DailyMenuUpsertRequest, EmployeeLimitUpdateRequest, EmployeeProfileUpdateRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest, ProductCreateRequest, ProductUpdateRequest
+from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeLimitUpdateRequest, EmployeeProfileUpdateRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest, ProductCreateRequest, ProductUpdateRequest
+from app.services.employee_bulk import BulkFileError, RawEmployeeRow, build_template, read_employee_file, validate_rows
 from app.services.join_flow import JoinFlowError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -86,6 +88,99 @@ def _month_bounds() -> tuple[str, str]:
     return start.isoformat(), next_month.isoformat()
 
 
+def _paged_rest_get(repo: JoinRepository, table: str, params: dict[str, str]) -> list[dict]:
+    rows: list[dict] = []
+    page_size = 500
+    while True:
+        page_params = {**params, "limit": str(page_size), "offset": str(len(rows))}
+        page = repo.client.rest_get(table, page_params)
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+
+
+def _bulk_existing(repo: JoinRepository, company_id: str) -> tuple[set[str], set[str]]:
+    params = {"select": "phone,employee_no", "company_id": f"eq.{company_id}", "order": "id.asc"}
+    users = _paged_rest_get(repo, "app_users", params)
+    invites = _paged_rest_get(repo, "employee_bulk_invites", params)
+    phones = {str(row["phone"]) for row in users + invites if row.get("phone")}
+    employee_nos = {str(row["employee_no"]) for row in users + invites if row.get("employee_no")}
+    return phones, employee_nos
+
+
+@router.get("/employees/template")
+def employee_bulk_template(token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _company_admin(repo, token)
+        return Response(
+            content=build_template(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=employee_bulk_template.xlsx"},
+        )
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+
+
+@router.post("/employees/bulk-upload/parse")
+async def parse_employee_bulk(file: UploadFile = File(...), token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        assert actor.company_id is not None
+        content = await file.read(10 * 1024 * 1024 + 1)
+        if len(content) > 10 * 1024 * 1024:
+            raise BulkFileError("파일은 10MB 이하여야 해요")
+        rows = read_employee_file(file.filename or "", content)
+        phones, employee_nos = _bulk_existing(repo, actor.company_id)
+        result = validate_rows(rows, company_id=actor.company_id, existing_phones=phones, existing_employee_nos=employee_nos)
+        return {"ok": True, "data": result, "error": None}
+    except BulkFileError as exc:
+        raise _error(400, "INVALID_BULK_FILE", str(exc)) from exc
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "직원 중복 정보를 확인하지 못했어요") from exc
+
+
+@router.post("/employees/bulk-upload/confirm")
+def confirm_employee_bulk(payload: EmployeeBulkConfirmRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        assert actor.company_id is not None
+        submitted = [RawEmployeeRow(
+            row=row.row, department=row.department, name=row.name,
+            employee_no=row.employee_no, phone=row.phone, auto_generated=row.auto_generated,
+        ) for row in payload.valid_rows]
+        phones, employee_nos = _bulk_existing(repo, actor.company_id)
+        checked = validate_rows(submitted, company_id=actor.company_id, existing_phones=phones, existing_employee_nos=employee_nos)
+        if checked["errors"] or len(checked["valid"]) != len(submitted):
+            raise HTTPException(status_code=422, detail={
+                "code": "BULK_ROWS_INVALID",
+                "message": "미리보기 이후 데이터가 변경되었어요. 파일을 다시 확인해 주세요",
+                "errors": checked["errors"],
+            })
+        rpc_rows = [{
+            "department": row["department"], "display_name": row["name"],
+            "employee_no": row["employee_no"], "phone": row["phone"],
+        } for row in checked["valid"]]
+        created_count = repo.client.rpc("confirm_employee_bulk_invites", {
+            "p_company_id": actor.company_id, "p_rows": rpc_rows,
+        })
+        return {"ok": True, "data": {"created_count": int(created_count)}, "error": None}
+    except HTTPException:
+        raise
+    except BulkFileError as exc:
+        raise _error(422, "BULK_ROWS_INVALID", str(exc)) from exc
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        if any(code in exc.body for code in ("DUPLICATE_", "INVALID_BULK")) or exc.status == 409:
+            raise _error(422, "BULK_ROWS_CHANGED", "다른 등록과 중복됐어요. 파일을 다시 업로드해 주세요") from exc
+        raise _error(502, "SUPABASE_ERROR", "직원 초대를 저장하지 못했어요") from exc
+
+
 @router.get("/employees")
 def list_employees(token: str = Depends(bearer_token)):
     repo = JoinRepository()
@@ -93,30 +188,43 @@ def list_employees(token: str = Depends(bearer_token)):
         actor = _company_admin(repo, token)
         migration_required = False
         try:
-            employees = repo.client.rest_get(
+            employees = _paged_rest_get(repo,
                 "app_users",
-                {"select": "id,display_name,employee_no,status,monthly_limit,approved_at,created_at", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "order": "created_at.desc"},
+                {"select": "id,display_name,employee_no,phone,department,status,monthly_limit,approved_at,created_at", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "order": "created_at.desc"},
             )
         except SupabaseHttpError as exc:
             if "monthly_limit" not in exc.body and "PGRST204" not in exc.body:
                 raise
             migration_required = True
-            employees = repo.client.rest_get(
+            employees = _paged_rest_get(repo,
                 "app_users",
                 {"select": "id,display_name,status,approved_at,created_at", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "order": "created_at.desc"},
             )
+        bulk_migration_required = migration_required
+        staged_invites = []
+        if not migration_required:
+            try:
+                staged_invites = _paged_rest_get(repo,
+                    "employee_bulk_invites",
+                    {"select": "id,display_name,employee_no,phone,department,status,created_at", "company_id": f"eq.{actor.company_id}", "status": "eq.invited", "order": "created_at.desc"},
+                )
+            except SupabaseHttpError as exc:
+                if "employee_bulk_invites" not in exc.body and "PGRST205" not in exc.body:
+                    raise
+                bulk_migration_required = True
         user_ids = [row["id"] for row in employees]
         start_iso, end_iso = _month_bounds()
         month_start = datetime.fromisoformat(start_iso)
         month_end = datetime.fromisoformat(end_iso)
         tx_rows = []
         if user_ids:
-            tx_rows = repo.client.rest_get(
+            tx_rows = _paged_rest_get(repo,
                 "meal_transactions",
                 {
                     "select": "user_id,amount,kind,created_at",
-                    "user_id": f"in.({','.join(user_ids)})",
+                    "company_id": f"eq.{actor.company_id}",
                     "created_at": f"gte.{start_iso}",
+                    "order": "id.asc",
                 },
             )
         stats = {user_id: {"used": 0, "recent": None} for user_id in user_ids}
@@ -142,7 +250,19 @@ def list_employees(token: str = Depends(bearer_token)):
                 "month_used": employee_stats["used"],
                 "recent_used_at": employee_stats["recent"],
             })
-        return {"ok": True, "data": {"items": items, "migration_required": migration_required}, "error": None}
+        items.extend({
+            **invite,
+            "id": f"bulk:{invite['id']}",
+            "is_staged": True,
+            "monthly_limit": 200000,
+            "month_used": 0,
+            "recent_used_at": None,
+        } for invite in staged_invites)
+        return {"ok": True, "data": {
+            "items": items,
+            "migration_required": migration_required,
+            "bulk_migration_required": bulk_migration_required,
+        }, "error": None}
     except JoinFlowError as exc:
         raise _handle_join_error(exc) from exc
     except SupabaseHttpError as exc:
@@ -179,15 +299,21 @@ def update_employee_profile(user_id: str, payload: EmployeeProfileUpdateRequest,
         rows = repo.client.rest_get("app_users", {"select": "id,company_id,role", "id": f"eq.{user_id}", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "limit": "1"})
         if not rows:
             raise _error(404, "EMPLOYEE_NOT_FOUND", "직원을 찾을 수 없어요")
-        updated = repo.client.rest_patch("app_users", {"id": f"eq.{user_id}"}, {"employee_no": payload.employee_no})[0]
+        updated = repo.client.rpc("update_company_employee_no", {
+            "p_company_id": actor.company_id,
+            "p_user_id": user_id,
+            "p_employee_no": payload.employee_no,
+        })
         return {"ok": True, "data": {"employee": updated}, "error": None}
     except HTTPException:
         raise
     except JoinFlowError as exc:
         raise _handle_join_error(exc) from exc
     except SupabaseHttpError as exc:
-        if "employee_no" in exc.body or "PGRST204" in exc.body:
-            raise _error(400, "MIGRATION_REQUIRED", "0016 마이그레이션 적용 후 사번을 저장할 수 있어요") from exc
+        if "DUPLICATE_EMPLOYEE_NO" in exc.body:
+            raise _error(409, "DUPLICATE_EMPLOYEE_NO", "이미 사용 중이거나 초대 대기 중인 사번이에요") from exc
+        if "update_company_employee_no" in exc.body or "PGRST202" in exc.body or "PGRST204" in exc.body:
+            raise _error(400, "MIGRATION_REQUIRED", "0017 마이그레이션 적용 후 사번을 저장할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "직원 사번을 저장하는 중 오류가 발생했어요") from exc
 
 
@@ -268,7 +394,7 @@ def employee_transactions(user_id: str, token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         actor = _company_admin(repo, token)
-        rows = repo.client.rest_get("app_users", {"select": "id,display_name,company_id,role", "id": f"eq.{user_id}", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "limit": "1"})
+        rows = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no,phone,department,company_id,role", "id": f"eq.{user_id}", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "limit": "1"})
         if not rows:
             raise _error(404, "EMPLOYEE_NOT_FOUND", "직원을 찾을 수 없어요")
         tx_rows = repo.client.rest_get(

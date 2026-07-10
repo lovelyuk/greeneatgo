@@ -227,7 +227,7 @@ def _load_vendor_transactions(repo: JoinRepository, merchant_id: str, company_id
     user_ids = sorted({row["user_id"] for row in rows if row.get("user_id")})
     users = {}
     if user_ids:
-        user_rows = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no,group_id", "id": f"in.({','.join(user_ids)})"})
+        user_rows = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no,department,group_id", "id": f"in.({','.join(user_ids)})"})
         users = {row["id"]: row for row in user_rows}
     group_ids = sorted({str(row["group_id"]) for row in users.values() if row.get("group_id")})
     groups = {}
@@ -240,7 +240,7 @@ def _load_vendor_transactions(repo: JoinRepository, merchant_id: str, company_id
         user = users.get(row.get("user_id"), {})
         employee_name = user.get("display_name") or "직원"
         employee_no = user.get("employee_no") or str(row.get("user_id") or "")[:8]
-        department = groups.get(user.get("group_id")) or "-"
+        department = user.get("department") or groups.get(user.get("group_id")) or "-"
         if query and query not in f"{department} {employee_name} {employee_no}".lower():
             continue
         amount = _tx_amount(row)
@@ -736,12 +736,13 @@ def list_transactions(token: str = Depends(bearer_token)):
         user_ids = sorted({str(item["user_id"]) for item in rows if item.get("user_id")})
         users = {}
         if user_ids:
-            user_rows = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no", "id": f"in.({','.join(user_ids)})"})
+            user_rows = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no,department", "id": f"in.({','.join(user_ids)})"})
             users = {item["id"]: item for item in user_rows}
         for item in rows:
             user = users.get(item.get("user_id"), {})
             item["employee_name"] = user.get("display_name") or "직원"
             item["employee_no"] = user.get("employee_no") or str(item.get("user_id") or "")[:8] or "-"
+            item["department"] = user.get("department") or "-"
         total_count = repo.client.rpc("merchant_transaction_count", {"p_merchant_id": merchant_id})
         return {"ok": True, "data": {"items": rows[:50], "total_count": int(total_count or 0)}, "error": None}
     except JoinFlowError as exc:
@@ -762,10 +763,11 @@ def transaction_detail(transaction_id: str, token: str = Depends(bearer_token)):
         if not rows:
             raise _error(404, "TRANSACTION_NOT_FOUND", "거래를 찾을 수 없어요")
         item = rows[0]
-        users = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no", "id": f"eq.{item['user_id']}", "limit": "1"})
+        users = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no,department", "id": f"eq.{item['user_id']}", "limit": "1"})
         user = users[0] if users else {}
         item["employee_name"] = user.get("display_name") or "직원"
         item["employee_no"] = user.get("employee_no") or str(item.get("user_id") or "")[:8] or "-"
+        item["department"] = user.get("department") or "-"
         item["amount"] = abs(int(item.get("amount") or item.get("product_price") or 0))
         if item.get("pay_type") == "voucher":
             item["remaining"] = int(repo.client.rpc("voucher_balance", {"p_user_id": item["user_id"]}) or 0)

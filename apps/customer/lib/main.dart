@@ -469,6 +469,9 @@ class _AppGateState extends State<AppGate> {
   }
 }
 
+String normalizeEmployeePhone(String value) =>
+    value.trim().replaceAll(RegExp(r'[\s-]'), '');
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.onLoggedIn});
   final Future<void> Function() onLoggedIn;
@@ -482,6 +485,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   final _passwordConfirm = TextEditingController();
   final _displayName = TextEditingController();
+  final _phone = TextEditingController();
   bool _busy = false;
   bool _signupMode = false;
   String? _error;
@@ -513,11 +517,19 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = _email.text.trim();
     final password = _password.text;
     final displayName = _displayName.text.trim();
+    final phone = normalizeEmployeePhone(_phone.text);
 
     if (displayName.isEmpty) {
       setState(() {
         _busy = false;
         _error = '이름을 입력해 주세요.';
+      });
+      return;
+    }
+    if (!RegExp(r'^010\d{8}$').hasMatch(phone)) {
+      setState(() {
+        _busy = false;
+        _error = '전화번호는 010-XXXX-XXXX 형식으로 입력해 주세요.';
       });
       return;
     }
@@ -541,7 +553,7 @@ class _LoginScreenState extends State<LoginScreen> {
         email: email,
         password: password,
         emailRedirectTo: authEmailRedirectTo,
-        data: {'display_name': displayName},
+        data: {'display_name': displayName, 'phone': phone},
       );
       if (response.session != null) {
         await widget.onLoggedIn();
@@ -604,6 +616,15 @@ class _LoginScreenState extends State<LoginScreen> {
                           decoration: const InputDecoration(
                               labelText: '이름',
                               prefixIcon: Icon(Icons.badge_outlined))),
+                      const SizedBox(height: 12),
+                      TextField(
+                          controller: _phone,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                              labelText: '전화번호',
+                              hintText: '010-1234-5678',
+                              prefixIcon: Icon(Icons.phone_outlined))),
                       const SizedBox(height: 12),
                     ],
                     TextField(

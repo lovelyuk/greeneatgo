@@ -116,6 +116,23 @@ class EmployeeProfileUpdateRequest(BaseModel):
         return value
 
 
+class EmployeeBulkRow(BaseModel):
+    row: int = Field(ge=2, le=1000000)
+    department: str | None = Field(default=None, max_length=120)
+    name: str = Field(max_length=80)
+    employee_no: str | None = Field(default=None, max_length=40)
+    phone: str = Field(max_length=40)
+    auto_generated: bool = False
+
+    model_config = {"extra": "forbid"}
+
+
+class EmployeeBulkConfirmRequest(BaseModel):
+    valid_rows: list[EmployeeBulkRow] = Field(min_length=1, max_length=500)
+
+    model_config = {"extra": "forbid"}
+
+
 class MealPolicyUpdateRequest(BaseModel):
     enabled: bool = False
     lunch_start: str = Field(default='11:00', pattern=r'^\d{2}:\d{2}$')

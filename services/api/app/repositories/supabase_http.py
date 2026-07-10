@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
@@ -21,6 +21,7 @@ class SupabaseHttpError(Exception):
 class AuthUser:
     id: str
     email: str | None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class SupabaseHttpClient:
@@ -97,4 +98,4 @@ class SupabaseHttpClient:
                 data = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             raise SupabaseHttpError(exc.code, exc.read().decode("utf-8")) from exc
-        return AuthUser(id=data["id"], email=data.get("email"))
+        return AuthUser(id=data["id"], email=data.get("email"), metadata=data.get("user_metadata") or {})

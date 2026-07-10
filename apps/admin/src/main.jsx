@@ -410,8 +410,8 @@ function VendorTransactionModal({ txModal, token, onClose }) {
       const lines = [
         `${txModal.companyName} ${format === 'xlsx' ? '거래내역' : '청구서'}`,
         `총액,${summary.total},건수,${summary.count},미정산,${summary.unsettled}`,
-        '날짜,시간,부서,이름,사번,메뉴/내역,결제구분,금액',
-        ...rows.map((row) => `${String(row.created_at ?? '').slice(0, 10)},${row.time},${row.department ?? '-'},${row.employee_name},${row.employee_no},${row.menu},${row.pay_type},${row.amount}`),
+        '날짜,시간,부서,이름,사번,메뉴/내역,금액',
+        ...rows.map((row) => `${String(row.created_at ?? '').slice(0, 10)},${row.time},${row.department ?? '-'},${row.employee_name},${row.employee_no},${row.menu},${row.amount}`),
       ];
       const blob = new Blob([lines.join('\n')], { type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
@@ -494,7 +494,7 @@ function VendorTransactionModal({ txModal, token, onClose }) {
               <article className="main-amount"><span>미정산 잔액</span><strong>{krw(summary.unsettled)}</strong></article>
               <article><span>선택 정산 기간</span><strong><CalendarDays size={18}/>{summary.selectedPeriod}</strong></article>
             </section>
-            {rows.length === 0 ? <p className="vendor-empty">📒 선택한 기간에 거래가 없습니다</p> : <div className="table-wrap"><table><thead><tr><th>날짜</th><th>시간</th><th>부서</th><th>이름</th><th>사번</th><th>메뉴/내역</th><th>결제구분</th><th>금액</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={row.status === 'refund' ? 'refund-row' : ''}><td>{String(row.created_at ?? '').slice(0, 10)}</td><td>{row.time}</td><td>{row.department ?? '-'}</td><td>{row.employee_name}</td><td>{row.employee_no}</td><td>{row.menu} {row.status === 'refund' && <span className="refund-tag">환불</span>}</td><td>{row.pay_type}</td><td className="money">{krw(row.amount)}</td></tr>)}</tbody></table></div>}
+            {rows.length === 0 ? <p className="vendor-empty">📒 선택한 기간에 거래가 없습니다</p> : <div className="table-wrap"><table><thead><tr><th>날짜</th><th>시간</th><th>부서</th><th>이름</th><th>사번</th><th>메뉴/내역</th><th>금액</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={row.status === 'refund' ? 'refund-row' : ''}><td>{String(row.created_at ?? '').slice(0, 10)}</td><td>{row.time}</td><td>{row.department ?? '-'}</td><td>{row.employee_name}</td><td>{row.employee_no}</td><td>{row.menu} {row.status === 'refund' && <span className="refund-tag">환불</span>}</td><td className="money">{krw(row.amount)}</td></tr>)}</tbody></table></div>}
           </>}
         </div>
         <footer className="vendor-modal-footer"><button className="primary export-button" onClick={createSettlement} disabled={exporting || invalidRange}>선택 기간 정산 생성</button><button className="primary export-button" onClick={() => download('xlsx')} disabled={exporting || invalidRange}><Download size={17}/> 엑셀 다운로드</button><button className="primary export-button" onClick={() => download('pdf')} disabled={exporting || invalidRange}><FileText size={17}/> PDF 청구서</button><button className="ghost" onClick={onClose} disabled={exporting}>닫기</button></footer>
@@ -663,7 +663,7 @@ function Dashboard({ session, onLogout }) {
   const [paymentNotices, setPaymentNotices] = useState([]);
   const [productForm, setProductForm] = useState({ name: '', price: '', category: '', image_url: '' });
   const [dailyMenu, setDailyMenu] = useState(null);
-  const [dailyMenuForm, setDailyMenuForm] = useState({ title: '오늘의 부페 메뉴', menu_text: '', image_url: '' });
+  const [dailyMenuForm, setDailyMenuForm] = useState({ service_date: todayInput(), title: '오늘 뷔페 메뉴', menu_text: '', image_url: '' });
   const [merchantCompanies, setMerchantCompanies] = useState(null);
   const [companySearch, setCompanySearch] = useState('');
   const [companySearchResults, setCompanySearchResults] = useState([]);
@@ -816,7 +816,8 @@ function Dashboard({ session, onLogout }) {
       setProducts(productData);
       setDailyMenu(dailyMenuData);
       setDailyMenuForm({
-        title: dailyMenuData?.today_menu?.title ?? '오늘의 부페 메뉴',
+        service_date: dailyMenuData?.service_date ?? todayInput(),
+        title: dailyMenuData?.today_menu?.title ?? '오늘 뷔페 메뉴',
         menu_text: dailyMenuData?.today_menu?.menu_text ?? '',
         image_url: dailyMenuData?.today_menu?.image_url ?? '',
       });
@@ -1011,22 +1012,40 @@ function Dashboard({ session, onLogout }) {
     setError('');
     setMessage('');
     try {
-      await apiFetch('/admin/daily-menu', token, {
+      const saved = await apiFetch('/admin/daily-menu', token, {
         method: 'PUT',
         body: JSON.stringify({
-          title: dailyMenuForm.title.trim() || '오늘의 부페 메뉴',
+          service_date: dailyMenuForm.service_date,
+          title: dailyMenuForm.title.trim() || '오늘 뷔페 메뉴',
           menu_text: dailyMenuForm.menu_text.trim(),
           image_url: dailyMenuForm.image_url || null,
           is_active: true,
         }),
       });
-      setMessage('오늘 메뉴를 저장했어요. 직원 앱에 바로 표시됩니다.');
-      await load();
+      const refreshed = await apiFetch('/admin/daily-menu', token);
+      setDailyMenu(refreshed);
+      setDailyMenuForm({
+        service_date: saved.service_date,
+        title: saved.title,
+        menu_text: saved.menu_text,
+        image_url: saved.image_url ?? '',
+      });
+      setMessage(`${saved.service_date} 뷔페 메뉴를 저장했어요.`);
     } catch (menuError) {
       setError(menuError.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  function selectDailyMenuDate(serviceDate) {
+    const saved = (dailyMenu?.menus ?? []).find((item) => item.service_date === serviceDate);
+    setDailyMenuForm({
+      service_date: serviceDate,
+      title: saved?.title ?? '오늘 뷔페 메뉴',
+      menu_text: saved?.menu_text ?? '',
+      image_url: saved?.image_url ?? '',
+    });
   }
 
   async function searchCompanies(event) {
@@ -1420,17 +1439,28 @@ function Dashboard({ session, onLogout }) {
 
     {isMerchantAdmin && <section className="panel daily-menu-panel">
       <div className="panel-title">
-        <div><h2>오늘 부페 메뉴</h2><p className="panel-note">오늘 나오는 메뉴를 입력하면 직원 앱 상품 선택 화면 상단에 표시됩니다.</p></div>
-        <span className="badge">{dailyMenu?.service_date ?? '오늘'}</span>
+        <div><h2>오늘 뷔페 메뉴</h2><p className="panel-note">날짜를 선택해 오늘과 이후의 뷔페 메뉴를 미리 저장할 수 있어요.</p></div>
+        <span className="badge">{dailyMenuForm.service_date}</span>
       </div>
       {dailyMenu?.migration_required && <div className="alert error">오늘 메뉴 DB 마이그레이션이 아직 적용되지 않아 기본 메뉴만 표시 중이에요. 0006_merchant_daily_menus.sql 적용 후 저장이 활성화됩니다.</div>}
       <form className="daily-menu-form" onSubmit={saveDailyMenu}>
+        <label>메뉴 날짜<input type="date" min={todayInput()} value={dailyMenuForm.service_date} onChange={(event) => selectDailyMenuDate(event.target.value)} required /></label>
         <input value={dailyMenuForm.title} onChange={(event) => setDailyMenuForm((form) => ({ ...form, title: event.target.value }))} placeholder="제목" required />
         <textarea value={dailyMenuForm.menu_text} onChange={(event) => setDailyMenuForm((form) => ({ ...form, menu_text: event.target.value }))} placeholder="예: 김치찌개, 제육볶음, 현미밥, 계절 샐러드, 반찬 4종" required rows={4} />
         <label className="image-picker">오늘 메뉴 이미지 (최대 5MB)<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={selectDailyMenuImage} disabled={busy}/></label>
         {dailyMenuForm.image_url && <img className="menu-image-preview" src={dailyMenuForm.image_url} alt="오늘 메뉴 미리보기" />}
-        <button className="primary" disabled={busy || dailyMenu?.migration_required}>오늘 메뉴 저장</button>
+        <button className="primary" disabled={busy || dailyMenu?.migration_required}>선택 날짜 메뉴 저장</button>
       </form>
+      <div className="daily-menu-schedule">
+        <h3>저장된 메뉴 일정</h3>
+        {(dailyMenu?.menus?.length ?? 0) === 0
+          ? <p className="empty-state">오늘 이후에 저장된 메뉴가 없어요.</p>
+          : <div className="product-list">{dailyMenu.menus.map((menu) => <article className="product-item" key={menu.id}>
+              {menu.image_url ? <img className="product-image-preview" src={menu.image_url} alt="" /> : <div className="product-image-placeholder">이미지 없음</div>}
+              <div className="product-copy"><strong>{menu.service_date} · {menu.title}</strong><span>{menu.menu_text}</span></div>
+              <button type="button" className="ghost" onClick={() => selectDailyMenuDate(menu.service_date)}>수정</button>
+            </article>)}</div>}
+      </div>
     </section>}
 
 

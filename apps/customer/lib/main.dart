@@ -261,7 +261,7 @@ class TodayMenu {
   final String? imageUrl;
 
   factory TodayMenu.fromJson(Map<String, dynamic> json) => TodayMenu(
-        title: json['title'] as String? ?? '오늘의 부페 메뉴',
+        title: json['title'] as String? ?? '오늘 뷔페 메뉴',
         menuText: json['menu_text'] as String? ?? '',
         imageUrl: json['image_url'] as String?,
       );
@@ -865,7 +865,7 @@ class HomeScreen extends StatelessWidget {
     final voucherBalance = (me['voucher_balance'] as num?)?.round() ?? 0;
     final recentTransactions = mapList(me['recent_transactions']);
     return AppScaffold(
-      title: '오늘도 그린하게',
+      title: '',
       subtitle: '$name님, 그린하게 챙기는 오늘 한 끼예요.',
       onSignOut: onSignOut,
       actions: [
@@ -992,15 +992,17 @@ class AppScaffold extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const BrandTitle(height: 30),
-                  const SizedBox(height: 18),
-                  Text(title,
-                      style: const TextStyle(
-                          fontSize: 31,
-                          height: 1.08,
-                          fontWeight: FontWeight.w900,
-                          color: kInk)),
+                  if (title.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    Text(title,
+                        style: const TextStyle(
+                            fontSize: 31,
+                            height: 1.08,
+                            fontWeight: FontWeight.w900,
+                            color: kInk)),
+                  ],
                   if (subtitle != null) ...[
-                    const SizedBox(height: 8),
+                    SizedBox(height: title.isNotEmpty ? 8 : 18),
                     Text(subtitle!,
                         style: const TextStyle(
                             fontSize: 15,
@@ -1061,10 +1063,10 @@ class _TodayMenuCard extends StatelessWidget {
         (todayMenu!.menuText.trim().isNotEmpty ||
             (todayMenu!.imageUrl?.trim().isNotEmpty ?? false));
     final title = loading
-        ? '오늘 부페 메뉴 불러오는 중'
+        ? '오늘 뷔페 메뉴 불러오는 중'
         : hasMenu
             ? todayMenu!.title
-            : '오늘 등록된 부페 메뉴가 없어요';
+            : '오늘 등록된 뷔페 메뉴가 없어요';
     final body = error != null
         ? '메뉴 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
         : loading

@@ -60,6 +60,10 @@ class SupabaseHttpClient:
         query = urlencode(params, safe="*,.():")
         return self._request("PATCH", f"/rest/v1/{table}?{query}", key=self.settings.supabase_service_role_key, body=values, prefer="return=representation")
 
+    def rest_delete(self, table: str, params: dict[str, str]) -> Any:
+        query = urlencode(params, safe="*,.():")
+        return self._request("DELETE", f"/rest/v1/{table}?{query}", key=self.settings.supabase_service_role_key, prefer="return=representation")
+
     def rpc(self, function_name: str, payload: dict[str, Any]) -> Any:
         return self._request("POST", f"/rest/v1/rpc/{function_name}", key=self.settings.supabase_service_role_key, body=payload)
 

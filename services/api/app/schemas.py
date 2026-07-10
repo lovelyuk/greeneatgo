@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
@@ -160,7 +161,8 @@ class ProductUpdateRequest(BaseModel):
 
 
 class DailyMenuUpsertRequest(BaseModel):
-    title: str = Field(default='오늘의 부페 메뉴', min_length=1, max_length=80)
+    service_date: date
+    title: str = Field(default='오늘 뷔페 메뉴', min_length=1, max_length=80)
     menu_text: str = Field(min_length=1, max_length=1000)
     image_url: str | None = Field(default=None, max_length=500)
     is_active: bool = True

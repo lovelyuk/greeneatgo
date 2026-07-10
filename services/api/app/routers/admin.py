@@ -619,31 +619,38 @@ def get_daily_menu(token: str = Depends(bearer_token)):
         actor = _active_admin(repo, token)
         merchant = _admin_merchant(repo, actor)
         try:
+            repo.client.rest_delete(
+                "merchant_daily_menus",
+                {"merchant_id": f"eq.{merchant['id']}", "service_date": f"lt.{today_kst()}"},
+            )
             rows = repo.client.rest_get(
                 "merchant_daily_menus",
                 {
                     "select": "id,merchant_id,service_date,title,menu_text,image_url,is_active,updated_at",
                     "merchant_id": f"eq.{merchant['id']}",
-                    "service_date": f"eq.{today_kst()}",
-                    "limit": "1",
+                    "service_date": f"gte.{today_kst()}",
+                    "order": "service_date.asc",
                 },
             )
-            menu = rows[0] if rows else None
+            menus = rows
+            menu = next((item for item in menus if item["service_date"] == today_kst()), None)
             migration_required = False
         except SupabaseHttpError as exc:
             if "image_url" in exc.body or "PGRST204" in exc.body:
                 legacy_rows = repo.client.rest_get(
                     "merchant_daily_menus",
-                    {"select": "id,merchant_id,service_date,title,menu_text,is_active,updated_at", "merchant_id": f"eq.{merchant['id']}", "service_date": f"eq.{today_kst()}", "limit": "1"},
+                    {"select": "id,merchant_id,service_date,title,menu_text,is_active,updated_at", "merchant_id": f"eq.{merchant['id']}", "service_date": f"gte.{today_kst()}", "order": "service_date.asc"},
                 )
-                menu = {**legacy_rows[0], "image_url": None} if legacy_rows else None
+                menus = [{**item, "image_url": None} for item in legacy_rows]
+                menu = next((item for item in menus if item["service_date"] == today_kst()), None)
                 migration_required = True
             elif "PGRST205" in exc.body:
                 menu = FALLBACK_DAILY_MENU
+                menus = []
                 migration_required = True
             else:
                 raise
-        return {"ok": True, "data": {"merchant": merchant, "today_menu": menu, "service_date": today_kst(), "migration_required": migration_required}, "error": None}
+        return {"ok": True, "data": {"merchant": merchant, "today_menu": menu, "menus": menus, "service_date": today_kst(), "migration_required": migration_required}, "error": None}
     except JoinFlowError as exc:
         raise _handle_join_error(exc) from exc
     except SupabaseHttpError as exc:
@@ -658,7 +665,13 @@ def upsert_daily_menu(payload: DailyMenuUpsertRequest, token: str = Depends(bear
     try:
         actor = _active_admin(repo, token)
         merchant = _admin_merchant(repo, actor)
-        service_date = today_kst()
+        service_date = payload.service_date.isoformat()
+        if service_date < today_kst():
+            raise _error(400, "PAST_DATE", "지난 날짜의 메뉴는 저장할 수 없어요")
+        repo.client.rest_delete(
+            "merchant_daily_menus",
+            {"merchant_id": f"eq.{merchant['id']}", "service_date": f"lt.{today_kst()}"},
+        )
         existing = repo.client.rest_get(
             "merchant_daily_menus",
             {"select": "id", "merchant_id": f"eq.{merchant['id']}", "service_date": f"eq.{service_date}", "limit": "1"},

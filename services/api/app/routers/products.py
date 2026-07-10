@@ -8,7 +8,7 @@ router = APIRouter(tags=["products"])
 
 FALLBACK_PRODUCTS: list[dict] = []
 FALLBACK_DAILY_MENU = {
-    "title": "오늘의 부페 메뉴",
+    "title": "오늘 뷔페 메뉴",
     "menu_text": "",
     "image_url": None,
     "is_active": False,

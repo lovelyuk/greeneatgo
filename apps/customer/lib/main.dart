@@ -355,7 +355,7 @@ String recentMeta(Map<String, dynamic> tx) {
 
 String displayMerchantName(String? name) {
   final value = (name ?? '').trim();
-  if (value.isEmpty || value == '밥장부 김치찌개' || value == '그린잇 식당') return '돈토';
+  if (value.isEmpty || value.startsWith('밥장부') || value == '그린잇 식당') return '돈토';
   return value;
 }
 

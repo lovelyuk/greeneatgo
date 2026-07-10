@@ -128,6 +128,7 @@ def checkout(checkout_token: str):
     fail = _json_for_script(fail_url)
     merchant_name = escape(str(order["merchant_name"]))
     product_name = escape(str(order["product_name"]))
+    auto_start = "true" if order.get("pay_type") == "voucher" else "false"
     return HTMLResponse(f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>그린잇 상품 결제</title><script src="https://js.tosspayments.com/v2/standard"></script>
@@ -135,7 +136,7 @@ def checkout(checkout_token: str):
 <body><main><section class="summary"><h1>{merchant_name}</h1><p>{product_name}</p><strong>{amount:,}원</strong></section><div id="payment-method"></div><div id="agreement"></div><div id="error"></div><button id="pay" disabled>결제하기</button></main>
 <script>
 (async()=>{{
- const button=document.getElementById('pay'), error=document.getElementById('error');
+ const button=document.getElementById('pay'), error=document.getElementById('error'), autoStart={auto_start};
  try {{
   const tossPayments=TossPayments({client_key});
   const isWidgetKey=String({client_key}).includes('_gck_');
@@ -148,8 +149,9 @@ def checkout(checkout_token: str):
   }} else {{
    document.getElementById('payment-method').innerHTML='<section class="summary"><b>카드·간편결제</b><p>토스페이먼츠 결제창에서 결제수단을 선택합니다.</p></section>';
    const payment=tossPayments.payment({{customerKey:{customer_key}}});
-   button.disabled=false;
-   button.addEventListener('click',async()=>{{button.disabled=true;try{{await payment.requestPayment({{method:'CARD',amount:{{currency:'KRW',value:{amount}}},orderId:{order_id},orderName:{order_name},successUrl:{success},failUrl:{fail}}});}}catch(e){{error.style.display='block';error.textContent=e.message||'결제창을 열지 못했어요';button.disabled=false;}}}});
+   const startPayment=async()=>{{button.disabled=true;try{{await payment.requestPayment({{method:'CARD',amount:{{currency:'KRW',value:{amount}}},orderId:{order_id},orderName:{order_name},successUrl:{success},failUrl:{fail}}});}}catch(e){{error.style.display='block';error.textContent=e.message||'결제창을 열지 못했어요';button.style.display='block';button.disabled=false;}}}};
+   button.addEventListener('click',startPayment);
+   if(autoStart){{button.style.display='none';await startPayment();}}else{{button.disabled=false;}}
   }}
  }} catch(e) {{error.style.display='block';error.textContent=e.message||'결제화면을 불러오지 못했어요';}}
 }})();

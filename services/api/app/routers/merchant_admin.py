@@ -685,7 +685,7 @@ def export_vendor_transactions(company_id: str, format: str = Query(pattern="^(x
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 headers={"Content-Disposition": disposition},
             )
-        pdf_lines = [f"MEALLEDGER 청구서 - {company_name}", f"정산 기간: {from_date.isoformat()} ~ {to_date.isoformat()}", f"총 청구금액: {total_amount:,}원", f"거래 건수: {len(items)}건", "날짜 | 시간 | 부서 | 이름 | 사번 | 메뉴/내역 | 결제구분 | 금액"]
+        pdf_lines = ["Greeneat 청구서 - 돈토식당", f"정산 기간: {from_date.isoformat()} ~ {to_date.isoformat()}", f"총 청구금액: {total_amount:,}원", f"거래 건수: {len(items)}건", "날짜 | 시간 | 부서 | 이름 | 사번 | 메뉴/내역 | 결제구분 | 금액"]
         pdf_lines.extend([" | ".join(str(value) for value in row) for row in rows[3:]])
         return Response(_pdf_bytes(pdf_lines), media_type="application/pdf", headers={"Content-Disposition": disposition})
     except JoinFlowError as exc:

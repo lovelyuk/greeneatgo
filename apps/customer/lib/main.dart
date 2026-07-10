@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -8,6 +9,8 @@ import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+
+import 'push_notifications.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
@@ -29,6 +32,7 @@ const kLine = Color(0xFFCDEBD5);
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  await PushNotifications.instance.initialize(apiBaseUrl: apiBaseUrl);
   if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
     await Supabase.initialize(
         url: supabaseUrl, publishableKey: supabaseAnonKey);
@@ -407,6 +411,9 @@ class _AppGateState extends State<AppGate> {
   Map<String, dynamic>? _me;
   bool _loading = true;
   String? _error;
+  StreamSubscription<AuthState>? _authSubscription;
+  StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
+  StreamSubscription<RemoteMessage>? _openedMessageSubscription;
 
   @override
   void initState() {
@@ -418,11 +425,39 @@ class _AppGateState extends State<AppGate> {
       return;
     }
     _session = Supabase.instance.client.auth.currentSession;
-    Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+    _authSubscription =
+        Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+      if (!mounted) return;
       setState(() => _session = event.session);
       _loadMe();
     });
+    _foregroundMessageSubscription =
+        PushNotifications.instance.foregroundMessages.listen(_handleForegroundPush);
+    _openedMessageSubscription =
+        PushNotifications.instance.openedMessages.listen((_) => _loadMe());
+    unawaited(PushNotifications.instance.initialMessage().then((message) {
+      if (message != null && mounted) _loadMe();
+    }));
     _loadMe();
+  }
+
+  void _handleForegroundPush(RemoteMessage message) {
+    if (!mounted || _session == null || _me?['status'] != 'active') return;
+    final title = message.notification?.title ?? '새 공지가 도착했어요';
+    final body = message.notification?.body ?? '';
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+      content: Text(body.isEmpty ? title : '$title\n$body'),
+      duration: const Duration(seconds: 5),
+    ));
+    unawaited(_loadMe());
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    _foregroundMessageSubscription?.cancel();
+    _openedMessageSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadMe() async {
@@ -440,15 +475,22 @@ class _AppGateState extends State<AppGate> {
     });
     try {
       final me = await ApiClient(session).getMe();
+      if (!mounted) return;
       setState(() => _me = me);
+      final accountId = me['user_id'] as String?;
+      if (me['status'] == 'active' && accountId != null) {
+        unawaited(PushNotifications.instance.activateForAccount(accountId));
+      }
     } catch (error) {
+      if (!mounted) return;
       setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _signOut() async {
+    await PushNotifications.instance.deactivateBeforeLogout();
     await Supabase.instance.client.auth.signOut();
     setState(() {
       _session = null;

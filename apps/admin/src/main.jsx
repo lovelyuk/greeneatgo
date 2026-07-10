@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Users, WalletCards, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Send, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
@@ -683,6 +683,70 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
   </section>;
 }
 
+function NotificationPanel({ token, history, migrationRequired, onSent, setMessage }) {
+  const [form, setForm] = useState({ target_type: 'all', title: '', body: '' });
+  const [audience, setAudience] = useState(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  async function loadAudience(targetType = form.target_type) {
+    if (migrationRequired) return null;
+    try {
+      const data = await apiFetch(`/admin/notifications/audience?target_type=${targetType}`, token);
+      setAudience(data); setError(''); return data;
+    } catch (audienceError) { setAudience(null); setError(audienceError.message); return null; }
+  }
+
+  useEffect(() => { loadAudience(form.target_type); }, [form.target_type, migrationRequired]);
+
+  async function send(event) {
+    event.preventDefault();
+    const title = form.title.trim();
+    const body = form.body.trim();
+    if (!title || !body) { setError('공지 제목과 내용을 입력해 주세요.'); return; }
+    const latestAudience = await loadAudience();
+    if (!latestAudience) return;
+    if (!latestAudience.target_count) { setError('발송 대상이 없습니다. 앱에서 알림을 허용한 사용자가 있는지 확인해 주세요.'); return; }
+    const confirmed = window.confirm(`총 ${latestAudience.target_count}명(${latestAudience.device_count}대 기기)에게 발송됩니다. 발송 후 취소할 수 없습니다. 진행할까요?`);
+    if (!confirmed) return;
+    setSending(true); setError('');
+    try {
+      const result = await apiFetch('/admin/notifications', token, {
+        method: 'POST', body: JSON.stringify({ title, body, target_type: form.target_type }),
+      });
+      setForm((current) => ({ ...current, title: '', body: '' }));
+      setPreviewOpen(false);
+      await onSent();
+      setMessage(`${result.target_count}명에게 발송을 시도해 ${result.success_count}명에게 FCM이 접수됐어요.`);
+    } catch (sendError) { setError(sendError.message); }
+    finally { setSending(false); }
+  }
+
+  return <section className="panel notification-panel">
+    <div className="panel-title"><div><h2>공지 발송</h2><p className="panel-note">장부직원과 일반사용자 앱으로 공지·이벤트 알림을 수동 발송합니다.</p></div><Bell size={24}/></div>
+    {migrationRequired && <div className="alert error">0022_push_notifications.sql 적용 후 공지 발송을 사용할 수 있어요.</div>}
+    {error && <div className="alert error">{error}</div>}
+    <form className="notification-form" onSubmit={send}>
+      <fieldset disabled={sending || migrationRequired}>
+        <legend>발송 대상</legend>
+        <label><input type="radio" name="notification-target" value="all" checked={form.target_type === 'all'} onChange={(event) => setForm((current) => ({ ...current, target_type: event.target.value }))}/> 전체 사용자 <small>장부직원 + 일반사용자</small></label>
+        <label><input type="radio" name="notification-target" value="voucher_only" checked={form.target_type === 'voucher_only'} onChange={(event) => setForm((current) => ({ ...current, target_type: event.target.value }))}/> 일반 사용자만 <small>개인 식권 구매자</small></label>
+      </fieldset>
+      <div className="notification-audience">{audience ? <><strong>발송 가능 {audience.target_count}명</strong><span>등록 기기 {audience.device_count}대 · 전체 조건 대상 {audience.eligible_count}명</span></> : <span>대상 인원을 확인하고 있어요.</span>}</div>
+      <label>제목<input value={form.title} maxLength="120" onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="예: 임시 휴무 안내" disabled={sending || migrationRequired} required/></label>
+      <label>내용<textarea value={form.body} maxLength="1000" rows="5" onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))} placeholder="앱 알림에 표시할 내용을 입력해 주세요." disabled={sending || migrationRequired} required/><small>{form.body.length}/1000</small></label>
+      {previewOpen && <div className="notification-preview"><span>앱 알림 미리보기</span><strong>{form.title.trim() || '공지 제목'}</strong><p>{form.body.trim() || '공지 내용이 여기에 표시됩니다.'}</p></div>}
+      <div className="row-actions"><button type="button" className="ghost" onClick={() => setPreviewOpen((open) => !open)} disabled={migrationRequired}>{previewOpen ? '미리보기 닫기' : '미리보기'}</button><button className="primary" disabled={sending || migrationRequired || !audience?.target_count}><Send size={17}/>{sending ? '발송 중...' : '발송하기'}</button></div>
+    </form>
+    <div className="notification-history">
+      <h3>발송 이력</h3>
+      {(history?.length ?? 0) === 0 ? <p className="empty-state">아직 발송한 공지가 없어요.</p> : <div className="table-wrap"><table><thead><tr><th>날짜</th><th>대상</th><th>제목</th><th>발송/성공</th><th>기기 성공/실패</th></tr></thead><tbody>{history.map((item) => <tr key={item.id}><td>{new Date(item.sent_at).toLocaleString('ko-KR')}</td><td>{item.target_type === 'voucher_only' ? '일반사용자' : '전체'}</td><td><strong>{item.title}</strong><small>{item.body}</small></td><td>{item.target_count}/{item.success_count}명</td><td>{item.success_device_count}/{item.failure_device_count}대</td></tr>)}</tbody></table></div>}
+      <p className="panel-note">성공 수는 사용자가 알림을 열었는지가 아니라 FCM 서버가 접수한 기준입니다.</p>
+    </div>
+  </section>;
+}
+
 function EmployeeBulkModal({ token, onClose, onConfirmed }) {
   const inputRef = useRef(null);
   const [preview, setPreview] = useState(null);
@@ -770,6 +834,8 @@ function Dashboard({ session, onLogout }) {
   const [products, setProducts] = useState(null);
   const [voucherProducts, setVoucherProducts] = useState([]);
   const [voucherProductsMigrationRequired, setVoucherProductsMigrationRequired] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsMigrationRequired, setNotificationsMigrationRequired] = useState(false);
   const [paymentNotices, setPaymentNotices] = useState([]);
   const [productForm, setProductForm] = useState({ name: '', price: '', category: '' });
   const [productImageFile, setProductImageFile] = useState(null);
@@ -918,14 +984,18 @@ function Dashboard({ session, onLogout }) {
         }
         if (meData.role === 'merchant_admin') {
           let voucherData;
-          [merchantCompanyData, transactionData, merchantQrData, voucherData] = await Promise.all([
+          let notificationData;
+          [merchantCompanyData, transactionData, merchantQrData, voucherData, notificationData] = await Promise.all([
             apiFetch('/admin/merchant/companies', token),
             apiFetch('/admin/merchant/transactions', token),
             apiFetch('/admin/merchant/qr', token),
             apiFetch('/admin/voucher-products', token),
+            apiFetch('/admin/notifications', token),
           ]);
           setVoucherProducts(voucherData.items ?? []);
           setVoucherProductsMigrationRequired(!!voucherData.migration_required);
+          setNotifications(notificationData.items ?? []);
+          setNotificationsMigrationRequired(!!notificationData.migration_required);
         }
       }
       setMe(meData);
@@ -1622,6 +1692,8 @@ function Dashboard({ session, onLogout }) {
 
 
     {isMerchantAdmin && <VoucherProductsPanel items={voucherProducts} migrationRequired={voucherProductsMigrationRequired} token={token} busy={busy} cropImage={requestImageCrop} uploadImage={uploadProductImage} deleteImage={deleteProductImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
+
+    {isMerchantAdmin && <NotificationPanel token={token} history={notifications} migrationRequired={notificationsMigrationRequired} onSent={load} setMessage={setMessage} />}
 
     {isMerchantAdmin && <section className="panel daily-menu-panel">
       <div className="panel-title">

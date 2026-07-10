@@ -30,6 +30,46 @@ class ProfileNameUpdateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class DeviceTokenRegisterRequest(BaseModel):
+    account_id: str = Field(min_length=8, max_length=80)
+    fcm_token: str = Field(min_length=20, max_length=4096)
+    platform: str = Field(pattern="^(android|ios)$")
+
+    @field_validator("account_id", "fcm_token", mode="before")
+    @classmethod
+    def trim_values(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
+class DeviceTokenDeleteRequest(BaseModel):
+    fcm_token: str = Field(min_length=20, max_length=4096)
+
+    @field_validator("fcm_token", mode="before")
+    @classmethod
+    def trim_token(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
+class NotificationCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=1000)
+    target_type: str = Field(pattern="^(all|voucher_only)$")
+    idempotency_key: str = Field(min_length=16, max_length=100)
+    expected_target_count: int = Field(ge=1)
+    expected_device_count: int = Field(ge=1)
+
+    @field_validator("title", "body", "idempotency_key", mode="before")
+    @classmethod
+    def trim_copy(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
 class TossOrderCreateRequest(BaseModel):
     qr_token: str = Field(min_length=1, max_length=120)
     product_id: str = Field(min_length=8, max_length=80)

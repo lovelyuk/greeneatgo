@@ -20,8 +20,24 @@ if (-not $authEmailRedirectTo) {
 
 & 'D:\dev\flutter\bin\flutter.bat' clean
 & 'D:\dev\flutter\bin\flutter.bat' pub get
-& 'D:\dev\flutter\bin\flutter.bat' build apk `
-  --dart-define="SUPABASE_URL=$($envs['VITE_SUPABASE_URL'])" `
-  --dart-define="SUPABASE_ANON_KEY=$($envs['VITE_SUPABASE_ANON_KEY'])" `
-  --dart-define="API_BASE_URL=$($envs['VITE_API_BASE_URL'])" `
-  --dart-define="AUTH_EMAIL_REDIRECT_TO=$authEmailRedirectTo"
+
+$buildArgs = @(
+  'build', 'apk',
+  "--dart-define=SUPABASE_URL=$($envs['VITE_SUPABASE_URL'])",
+  "--dart-define=SUPABASE_ANON_KEY=$($envs['VITE_SUPABASE_ANON_KEY'])",
+  "--dart-define=API_BASE_URL=$($envs['VITE_API_BASE_URL'])",
+  "--dart-define=AUTH_EMAIL_REDIRECT_TO=$authEmailRedirectTo"
+)
+$firebaseKeys = @('FIREBASE_API_KEY', 'FIREBASE_APP_ID', 'FIREBASE_MESSAGING_SENDER_ID', 'FIREBASE_PROJECT_ID')
+$firebaseValues = $firebaseKeys | Where-Object { $envs[$_] }
+if ($firebaseValues.Count -gt 0 -and $firebaseValues.Count -ne $firebaseKeys.Count) {
+  throw 'Firebase client config is incomplete. Set all FIREBASE_API_KEY, FIREBASE_APP_ID, FIREBASE_MESSAGING_SENDER_ID, FIREBASE_PROJECT_ID values.'
+}
+if ($firebaseValues.Count -eq $firebaseKeys.Count) {
+  $buildArgs += '--dart-define=FIREBASE_ENABLED=true'
+  foreach ($key in $firebaseKeys) {
+    $buildArgs += "--dart-define=$key=$($envs[$key])"
+  }
+}
+
+& 'D:\dev\flutter\bin\flutter.bat' @buildArgs

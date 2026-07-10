@@ -13,6 +13,8 @@ dependencies:
   http: ^1.2.2
   qr_code_scanner_plus: ^2.2.0
   supabase_flutter: ^2.8.0
+  url_launcher: ^6.3.1
+  webview_flutter: ^4.10.0
 
 dev_dependencies:
   flutter_test:

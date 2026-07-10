@@ -248,7 +248,7 @@ function buildTransactionRows(rawItems, range, q) {
       employee_name: tx.employee_name ?? tx.user_name ?? tx.display_name ?? '직원',
       employee_no: tx.employee_no ?? tx.user_id?.slice(0, 8) ?? '-',
       menu: tx.product_name ?? tx.meal_window ?? '구내식당 식권',
-      pay_type: tx.kind === 'wallet' ? '식권' : '장부',
+      pay_type: tx.kind === 'toss_payment' ? '토스결제' : tx.kind === 'wallet' ? '식권' : '장부',
       amount,
       status: cancelled ? 'refund' : 'paid',
       tx_code: tx.tx_code ?? '-',
@@ -361,7 +361,7 @@ function VendorTransactionModal({ txModal, token, onClose }) {
     ...item,
     time: item.created_at ? new Date(item.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : item.time,
     menu: item.menu ?? item.product_name ?? item.meal_window ?? '식대 사용',
-    pay_type: item.pay_type ?? (item.kind === 'spend' ? '식권' : '장부'),
+    pay_type: item.pay_type ?? (item.kind === 'toss_payment' ? '토스결제' : item.kind === 'spend' ? '식권' : '장부'),
   }))) : null, [serverDays]);
 
   const rows = useMemo(() => serverRows ?? buildTransactionRows(txModal.txItems, range, query), [serverRows, txModal.txItems, range, query]);

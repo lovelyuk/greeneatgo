@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
@@ -95,6 +97,18 @@ class ApiClient {
 
   Future<Map<String, dynamic>> requestJoin({required String inviteCode, required String displayName}) {
     return _request('/join/request', method: 'POST', body: {'invite_code': inviteCode, 'display_name': displayName});
+  }
+
+  Future<Map<String, dynamic>> registerConsumer({required String displayName}) {
+    return _request('/consumer/register', method: 'POST', body: {'display_name': displayName});
+  }
+
+  Future<Map<String, dynamic>> createTossOrder({required String qrToken, required MerchantProduct product}) {
+    return _request('/toss/orders', method: 'POST', body: {'qr_token': qrToken, 'product_id': product.id});
+  }
+
+  Future<Map<String, dynamic>> confirmTossPayment({required String paymentKey, required String orderId, required int amount}) {
+    return _request('/toss/confirm', method: 'POST', body: {'payment_key': paymentKey, 'order_id': orderId, 'amount': amount});
   }
 
   Future<Map<String, dynamic>> payProduct({required String qrToken, required MerchantProduct product}) {
@@ -449,22 +463,45 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
     }
   }
 
+  Future<void> _registerConsumer() async {
+    final displayName = _name.text.trim();
+    if (displayName.isEmpty) {
+      setState(() => _error = '이름을 입력해 주세요.');
+      return;
+    }
+    setState(() { _busy = true; _error = null; });
+    try {
+      await ApiClient(widget.session).registerConsumer(displayName: displayName);
+      await widget.onSubmitted();
+    } catch (error) {
+      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final rejected = widget.me?['status'] == 'rejected';
     return AppScaffold(
-      title: rejected ? '다시 초대코드를 확인해요' : '회사 초대코드 입력',
-      subtitle: rejected ? '관리자에게 확인 후 재요청할 수 있어요.' : '회사에서 받은 코드를 입력하면 승인 대기 상태가 됩니다.',
+      title: rejected ? '이용 유형을 다시 선택해요' : '이용 유형 선택',
+      subtitle: '장부업체 직원은 초대코드로, 일반 사용자는 토스페이먼츠로 이용할 수 있어요.',
       onSignOut: widget.onSignOut,
       child: BrandPanel(children: [
         const MiniSnackRow(),
         const SizedBox(height: 20),
         TextField(controller: _name, decoration: const InputDecoration(labelText: '이름', prefixIcon: Icon(Icons.person_outline))),
-        const SizedBox(height: 12),
-        TextField(controller: _code, decoration: const InputDecoration(labelText: '초대코드', prefixIcon: Icon(Icons.confirmation_number_outlined))),
+        const SizedBox(height: 16),
+        FilledButton.icon(onPressed: _busy ? null : _registerConsumer, icon: const Icon(Icons.credit_card_rounded), label: Text(_busy ? '처리 중...' : '일반 사용자로 시작하기')),
+        const SizedBox(height: 10),
+        const Text('상품 금액은 토스페이먼츠에서 직접 결제합니다.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
+        const Padding(padding: EdgeInsets.symmetric(vertical: 18), child: Divider(color: kLine)),
+        const Text('장부업체 직원', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 10),
+        TextField(controller: _code, decoration: const InputDecoration(labelText: '회사 초대코드', prefixIcon: Icon(Icons.confirmation_number_outlined))),
         if (_error != null) BrandNotice(text: _error!, kind: NoticeKind.error),
         const SizedBox(height: 16),
-        FilledButton(onPressed: _busy ? null : _submit, child: Text(_busy ? '요청 중...' : '가입 요청 보내기')),
+        OutlinedButton(onPressed: _busy ? null : _submit, child: Text(_busy ? '요청 중...' : '회사 장부 가입 요청')),
       ]),
     );
   }
@@ -522,7 +559,8 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = me['display_name'] as String? ?? '직원';
+    final name = me['display_name'] as String? ?? '사용자';
+    final isConsumer = me['role'] == 'customer';
     final monthUsed = (me['month_used'] as num?) ?? 0;
     final remainingLimit = (me['remaining_limit'] as num?) ?? 0;
     final recentTransactions = mapList(me['recent_transactions']);
@@ -536,15 +574,15 @@ class HomeScreen extends StatelessWidget {
           future: MenuClient().getProducts(defaultMerchantQrToken),
           builder: (context, snapshot) => _TodayMenuCard(
             todayMenu: snapshot.data?.todayMenu,
-            monthUsed: monthUsed,
-            remainingLimit: remainingLimit,
+            monthUsed: isConsumer ? null : monthUsed,
+            remainingLimit: isConsumer ? null : remainingLimit,
             loading: snapshot.connectionState != ConnectionState.done,
             error: snapshot.hasError ? snapshot.error.toString().replaceFirst('Exception: ', '') : null,
           ),
         ),
         const SizedBox(height: 16),
-        _QuickAction(icon: Icons.qr_code_scanner_rounded, label: '돈토 상품 선택', color: kOrange, onTap: () async {
-          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductSelectionScreen(session: Supabase.instance.client.auth.currentSession!)));
+        _QuickAction(icon: isConsumer ? Icons.credit_card_rounded : Icons.qr_code_scanner_rounded, label: isConsumer ? '상품 선택 · 토스 결제' : '돈토 상품 선택', color: kOrange, onTap: () async {
+          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductSelectionScreen(session: Supabase.instance.client.auth.currentSession!, isConsumer: isConsumer)));
           await onRefresh();
         }),
         const SizedBox(height: 24),
@@ -623,8 +661,8 @@ class ErrorScreen extends StatelessWidget {
 class _TodayMenuCard extends StatelessWidget {
   const _TodayMenuCard({required this.todayMenu, required this.monthUsed, required this.remainingLimit, this.loading = false, this.error});
   final TodayMenu? todayMenu;
-  final num monthUsed;
-  final num remainingLimit;
+  final num? monthUsed;
+  final num? remainingLimit;
   final bool loading;
   final String? error;
 
@@ -652,7 +690,7 @@ class _TodayMenuCard extends StatelessWidget {
       ),
       child: Stack(children: [
         const Positioned(right: 0, bottom: 0, child: SproutMark(size: 72, light: true)),
-        Positioned(
+        if (monthUsed != null && remainingLimit != null) Positioned(
           right: 0,
           top: 0,
           child: Container(
@@ -668,7 +706,7 @@ class _TodayMenuCard extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.only(right: 118),
+          padding: EdgeInsets.only(right: monthUsed == null ? 74 : 118),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(999)), child: const Text('TODAY BUFFET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12))),
             const SizedBox(height: 18),
@@ -683,8 +721,9 @@ class _TodayMenuCard extends StatelessWidget {
 }
 
 class ProductSelectionScreen extends StatefulWidget {
-  const ProductSelectionScreen({super.key, required this.session});
+  const ProductSelectionScreen({super.key, required this.session, required this.isConsumer});
   final Session session;
+  final bool isConsumer;
 
   @override
   State<ProductSelectionScreen> createState() => _ProductSelectionScreenState();
@@ -697,7 +736,9 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
   Widget build(BuildContext context) {
     return AppScaffold(
       title: '상품을 선택해요',
-      subtitle: '금액 입력 없이 식당에서 등록한 상품 중 하나를 골라 결제합니다.',
+      subtitle: widget.isConsumer
+          ? '식당 상품을 고른 뒤 토스페이먼츠에서 직접 결제합니다.'
+          : '금액 입력 없이 식당에서 등록한 상품 중 하나를 골라 결제합니다.',
       child: FutureBuilder<MerchantMenu>(
         future: _menu,
         builder: (context, snapshot) {
@@ -729,7 +770,11 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
               padding: const EdgeInsets.only(bottom: 10),
               child: InkWell(
                 onTap: () async {
-                  final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => QrScanPaymentScreen(session: widget.session, product: product)));
+                  final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(
+                    builder: (_) => widget.isConsumer
+                        ? TossPaymentScreen(session: widget.session, product: product, qrToken: defaultMerchantQrToken)
+                        : QrScanPaymentScreen(session: widget.session, product: product),
+                  ));
                   if (!context.mounted) return;
                   if (paid == true) Navigator.of(context).pop(true);
                 },
@@ -751,6 +796,139 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
           ]);
         },
       ),
+    );
+  }
+}
+
+class TossPaymentScreen extends StatefulWidget {
+  const TossPaymentScreen({super.key, required this.session, required this.product, required this.qrToken});
+  final Session session;
+  final MerchantProduct product;
+  final String qrToken;
+
+  @override
+  State<TossPaymentScreen> createState() => _TossPaymentScreenState();
+}
+
+class _TossPaymentScreenState extends State<TossPaymentScreen> {
+  late final WebViewController _controller;
+  bool _loading = true;
+  bool _confirming = false;
+  bool _completed = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageFinished: (_) { if (mounted) setState(() => _loading = false); },
+        onWebResourceError: (error) {
+          if (error.isForMainFrame == true && mounted) setState(() { _loading = false; _error = '결제화면을 불러오지 못했어요: ${error.description}'; });
+        },
+        onNavigationRequest: _onNavigationRequest,
+      ));
+    _createOrder();
+  }
+
+  Future<void> _createOrder() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final order = await ApiClient(widget.session).createTossOrder(qrToken: widget.qrToken, product: widget.product);
+      await _controller.loadRequest(Uri.parse(order['checkout_url'] as String));
+    } catch (error) {
+      if (mounted) setState(() { _loading = false; _error = error.toString().replaceFirst('Exception: ', ''); });
+    }
+  }
+
+  FutureOr<NavigationDecision> _onNavigationRequest(NavigationRequest request) async {
+    final uri = Uri.parse(request.url);
+    if (uri.path.endsWith('/toss/redirect/success')) {
+      await _confirm(uri);
+      return NavigationDecision.prevent;
+    }
+    if (uri.path.endsWith('/toss/redirect/fail')) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = uri.queryParameters['message'] ?? '결제가 취소되었어요.';
+        });
+      }
+      return NavigationDecision.prevent;
+    }
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        setState(() => _error = '결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.');
+      }
+      return NavigationDecision.prevent;
+    }
+    return NavigationDecision.navigate;
+  }
+
+  Future<void> _confirm(Uri uri) async {
+    if (_confirming || _completed) return;
+    final paymentKey = uri.queryParameters['paymentKey'];
+    final orderId = uri.queryParameters['orderId'];
+    final amount = int.tryParse(uri.queryParameters['amount'] ?? '');
+    if (paymentKey == null || orderId == null || amount == null) {
+      setState(() => _error = '결제 승인 정보가 올바르지 않아요.');
+      return;
+    }
+    setState(() { _confirming = true; _loading = true; _error = null; });
+    try {
+      await ApiClient(widget.session).confirmTossPayment(paymentKey: paymentKey, orderId: orderId, amount: amount);
+      if (mounted) setState(() { _completed = true; _loading = false; });
+    } catch (error) {
+      if (mounted) setState(() { _loading = false; _error = error.toString().replaceFirst('Exception: ', ''); });
+    } finally {
+      _confirming = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_completed) {
+      return Scaffold(
+        backgroundColor: kOrange,
+        body: SafeArea(child: Center(child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(34)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.check_circle_rounded, color: kOrange, size: 104),
+              const SizedBox(height: 18),
+              const Text('결제완료', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 10),
+              Text(widget.product.name, style: const TextStyle(color: Color(0xFF5C7A66), fontSize: 20, fontWeight: FontWeight.w800)),
+              Text(won(widget.product.price), style: const TextStyle(color: kOrange, fontSize: 46, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 18),
+              FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('식당 이용하기')),
+            ]),
+          ),
+        ))),
+      );
+    }
+    return Scaffold(
+      appBar: AppBar(title: Text('${widget.product.name} 결제')),
+      body: Stack(children: [
+        WebViewWidget(controller: _controller),
+        if (_loading) const ColoredBox(color: kCream, child: Center(child: CircularProgressIndicator())),
+        if (_error != null) ColoredBox(
+          color: kCream,
+          child: Center(child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: BrandPanel(children: [
+              BrandNotice(text: _error!, kind: NoticeKind.error),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: _createOrder, child: const Text('다시 결제하기')),
+              TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('상품 선택으로 돌아가기')),
+            ]),
+          )),
+        ),
+      ]),
     );
   }
 }

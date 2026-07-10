@@ -90,6 +90,36 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
     }
 
 
+def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
+    rows = repo.client.rest_get(
+        "toss_payment_orders",
+        {
+            "select": "id,amount,status,product_name,merchant_name,approved_at,created_at",
+            "user_id": f"eq.{user_id}",
+            "status": "eq.done",
+            "order": "approved_at.desc",
+            "limit": "3",
+        },
+    )
+    return {
+        "balance": None,
+        "monthly_limit": None,
+        "remaining_limit": None,
+        "month_used": None,
+        "recent_transactions": [
+            {
+                "id": row.get("id"),
+                "amount": int(row.get("amount") or 0),
+                "kind": "toss_payment",
+                "title": row.get("product_name") or "상품 결제",
+                "merchant_name": row.get("merchant_name") or "",
+                "created_at": row.get("approved_at") or row.get("created_at"),
+            }
+            for row in rows
+        ],
+    }
+
+
 @router.get("/me")
 def me(token: str = Depends(bearer_token)):
     repo = JoinRepository()
@@ -119,6 +149,8 @@ def me(token: str = Depends(bearer_token)):
             invite_code = _ensure_invite_code(repo, profile.company_id)
         if profile.role == "employee":
             usage = _employee_usage(repo, profile.id)
+        elif profile.role == "customer":
+            usage = _customer_usage(repo, profile.id)
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "사용자 정보를 불러오는 중 오류가 발생했어요") from exc
 

@@ -615,7 +615,32 @@ def list_transactions(token: str = Depends(bearer_token)):
                 "limit": "50",
             },
         )
-        return {"ok": True, "data": {"items": rows}, "error": None}
+        toss_rows = repo.client.rest_get(
+            "toss_payment_orders",
+            {
+                "select": "id,order_id,user_id,merchant_id,amount,status,payment_method,product_name,approved_at,created_at",
+                "merchant_id": f"eq.{merchant_id}",
+                "status": "eq.done",
+                "order": "approved_at.desc",
+                "limit": "50",
+            },
+        )
+        rows.extend({
+            "id": f"toss-{item['id']}",
+            "user_id": item.get("user_id"),
+            "company_id": None,
+            "merchant_id": item.get("merchant_id"),
+            "amount": -abs(int(item.get("amount") or 0)),
+            "kind": "toss_payment",
+            "tx_code": str(item.get("order_id") or "")[-8:],
+            "meal_window": item.get("payment_method") or "토스페이먼츠",
+            "flags": {"payment_provider": "toss"},
+            "product_name": item.get("product_name"),
+            "product_price": int(item.get("amount") or 0),
+            "created_at": item.get("approved_at") or item.get("created_at"),
+        } for item in toss_rows)
+        rows.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+        return {"ok": True, "data": {"items": rows[:50]}, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:

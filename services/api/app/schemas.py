@@ -11,6 +11,21 @@ class PayRequest(BaseModel):
     gps: GPSPoint | None = None
     idempotency_key: str
 
+
+class ConsumerRegisterRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=80)
+
+
+class TossOrderCreateRequest(BaseModel):
+    qr_token: str = Field(min_length=1, max_length=120)
+    product_id: str = Field(min_length=8, max_length=80)
+
+
+class TossPaymentConfirmRequest(BaseModel):
+    payment_key: str = Field(min_length=1, max_length=200)
+    order_id: str = Field(min_length=6, max_length=64)
+    amount: int = Field(gt=0)
+
 class ApiError(BaseModel):
     code: str
     message: str

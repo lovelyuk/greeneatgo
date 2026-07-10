@@ -23,13 +23,19 @@ class Settings:
     supabase_anon_key: str
     supabase_service_role_key: str
     supabase_jwt_secret: str | None = None
+    toss_client_key: str = ""
+    toss_secret_key: str = ""
+    public_api_base_url: str = "http://localhost:8000/v1"
     cors_allowed_origins: tuple[str, ...] = ("http://localhost:5173", "https://greeneatgo.vercel.app")
 
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv(Path(__file__).resolve().parents[1] / ".env")
         missing = [
-            key for key in ("SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY")
+            key for key in (
+                "SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY",
+                "TOSS_CLIENT_KEY", "TOSS_SECRET_KEY",
+            )
             if not os.environ.get(key)
         ]
         if missing:
@@ -39,6 +45,9 @@ class Settings:
             supabase_anon_key=os.environ["SUPABASE_ANON_KEY"],
             supabase_service_role_key=os.environ["SUPABASE_SERVICE_ROLE_KEY"],
             supabase_jwt_secret=os.environ.get("SUPABASE_JWT_SECRET") or None,
+            toss_client_key=os.environ["TOSS_CLIENT_KEY"],
+            toss_secret_key=os.environ["TOSS_SECRET_KEY"],
+            public_api_base_url=os.environ.get("PUBLIC_API_BASE_URL", "http://localhost:8000/v1").rstrip("/"),
             cors_allowed_origins=tuple(
                 origin.strip()
                 for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173,https://greeneatgo.vercel.app").split(",")

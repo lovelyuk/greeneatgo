@@ -30,6 +30,26 @@ def validate_confirm_input(*, expected_order_id: str, expected_amount: int, payl
         raise TossPaymentError(400, "AMOUNT_MISMATCH", "결제 금액이 주문 금액과 일치하지 않아요")
 
 
+def get_payment(secret_key: str, payment_key: str) -> dict[str, Any]:
+    """Fetch authoritative payment state; webhook bodies are only recovery hints."""
+    credentials = base64.b64encode(f"{secret_key}:".encode()).decode()
+    request = Request(
+        f"https://api.tosspayments.com/v1/payments/{payment_key}",
+        method="GET",
+        headers={"Authorization": f"Basic {credentials}", "Content-Type": "application/json"},
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        text = exc.read().decode("utf-8")
+        try:
+            error = json.loads(text)
+        except json.JSONDecodeError:
+            error = {}
+        raise TossPaymentError(exc.code, str(error.get("code") or "TOSS_PAYMENT_LOOKUP_ERROR"), str(error.get("message") or "결제 상태를 확인하지 못했어요")) from exc
+
+
 def confirm_payment(secret_key: str, payload: TossConfirmInput) -> dict[str, Any]:
     credentials = base64.b64encode(f"{secret_key}:".encode()).decode()
     body = json.dumps({

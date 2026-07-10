@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, field_validator
 
 class GPSPoint(BaseModel):
     lat: float
@@ -26,6 +28,58 @@ class TossPaymentConfirmRequest(BaseModel):
     order_id: str = Field(min_length=6, max_length=64)
     amount: int = Field(gt=0)
 
+
+class VoucherProductCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    voucher_count: int = Field(gt=0, le=1000)
+    bonus_count: int = Field(default=0, ge=0, le=1000)
+    unit_price: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    discount_rate: Decimal = Field(default=Decimal("0"), ge=0, lt=100, max_digits=5, decimal_places=2)
+    status: str = Field(default="active", pattern="^(active|inactive)$")
+    display_order: int = Field(default=0, ge=-100000, le=100000)
+    image_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def trim_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class VoucherProductUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    voucher_count: int | None = Field(default=None, gt=0, le=1000)
+    bonus_count: int | None = Field(default=None, ge=0, le=1000)
+    unit_price: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
+    discount_rate: Decimal | None = Field(default=None, ge=0, lt=100, max_digits=5, decimal_places=2)
+    status: str | None = Field(default=None, pattern="^(active|inactive)$")
+    display_order: int | None = Field(default=None, ge=-100000, le=100000)
+    image_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("name", "voucher_count", "bonus_count", "unit_price", "discount_rate", "status", "display_order", mode="before")
+    @classmethod
+    def reject_explicit_null(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("필드는 null일 수 없어요")
+        return value
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def trim_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class VoucherPurchaseRequest(BaseModel):
+    product_id: str = Field(min_length=8, max_length=80)
+
+
+class TransactionScanRequest(BaseModel):
+    qr_data: str = Field(min_length=1, max_length=500)
+    idempotency_key: str = Field(min_length=8, max_length=120)
+    product_id: str | None = Field(default=None, min_length=8, max_length=80)
+    # Accepted only for old scanner payload compatibility; server contract price always wins.
+    amount: int | None = Field(default=None, gt=0)
+    gps: GPSPoint | None = None
+
 class ApiError(BaseModel):
     code: str
     message: str
@@ -47,6 +101,19 @@ class JoinDecisionRequest(BaseModel):
 
 class EmployeeLimitUpdateRequest(BaseModel):
     monthly_limit: int = Field(ge=0, le=10000000)
+
+
+class EmployeeProfileUpdateRequest(BaseModel):
+    employee_no: str | None = Field(default=None, max_length=40)
+
+    @field_validator("employee_no", mode="before")
+    @classmethod
+    def normalize_employee_no(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
 
 class MealPolicyUpdateRequest(BaseModel):
@@ -78,7 +145,14 @@ class ProductUpdateRequest(BaseModel):
 class DailyMenuUpsertRequest(BaseModel):
     title: str = Field(default='오늘의 부페 메뉴', min_length=1, max_length=80)
     menu_text: str = Field(min_length=1, max_length=1000)
+    image_url: str | None = Field(default=None, max_length=500)
     is_active: bool = True
+
+
+class ImageUploadRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=100)
+    data_base64: str = Field(min_length=1, max_length=7_100_000)
 
 
 class PlatformMerchantCreateRequest(BaseModel):
@@ -108,6 +182,11 @@ class MerchantCompanyCreateAndLinkRequest(BaseModel):
 
 class SettlementPaymentConfirmRequest(BaseModel):
     paid_at: str = Field(min_length=8, max_length=40)
+
+
+class SettlementCreateRequest(BaseModel):
+    period_from: str = Field(min_length=10, max_length=10)
+    period_to: str = Field(min_length=10, max_length=10)
 
 
 class MerchantCompanyContractUpdateRequest(BaseModel):

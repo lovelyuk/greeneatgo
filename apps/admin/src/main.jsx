@@ -222,20 +222,25 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
 const krw = (value) => `₩${Number(value ?? 0).toLocaleString('ko-KR')}`;
 const dateKey = (value) => value ? new Date(value).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
 const dayLabel = (key) => new Date(`${key}T00:00:00`).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
-const todayInput = () => new Date().toISOString().slice(0, 10);
+const todayInput = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+
+async function fileToBase64(file) {
+  if (!file.type.startsWith('image/')) throw new Error('이미지 파일만 선택해 주세요.');
+  if (file.size > 5 * 1024 * 1024) throw new Error('이미지는 5MB 이하여야 해요.');
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',', 2)[1]);
+    reader.onerror = () => reject(new Error('이미지를 읽지 못했어요.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 function buildTransactionRows(rawItems, range, q) {
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth();
-  const presets = {
-    current: [new Date(y, m, 1), new Date(y, m + 1, 0, 23, 59, 59)],
-    previous: [new Date(y, m - 1, 1), new Date(y, m, 0, 23, 59, 59)],
-    quarter: [new Date(y, m - 2, 1), new Date(y, m + 1, 0, 23, 59, 59)],
-  };
-  const [from, to] = range.type === 'custom'
-    ? [new Date(`${range.from || todayInput()}T00:00:00`), new Date(`${range.to || todayInput()}T23:59:59`)]
-    : presets[range.type] ?? presets.current;
+  const from = new Date(`${range.from || todayInput()}T00:00:00`);
+  const to = new Date(`${range.to || todayInput()}T23:59:59`);
   const query = q.trim().toLowerCase();
   const normalized = rawItems.map((tx, index) => {
     const rawAmount = Number(tx.amount ?? tx.product_price ?? 0);
@@ -247,8 +252,9 @@ function buildTransactionRows(rawItems, range, q) {
       time: tx.created_at ? new Date(tx.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '12:00',
       employee_name: tx.employee_name ?? tx.user_name ?? tx.display_name ?? '직원',
       employee_no: tx.employee_no ?? tx.user_id?.slice(0, 8) ?? '-',
+      department: tx.department ?? '-',
       menu: tx.product_name ?? tx.meal_window ?? '구내식당 식권',
-      pay_type: tx.kind === 'toss_payment' ? '토스결제' : tx.kind === 'wallet' ? '식권' : '장부',
+      pay_type: tx.pay_type === 'voucher' ? '식권' : tx.pay_type === 'direct' ? '토스결제' : '장부',
       amount,
       status: cancelled ? 'refund' : 'paid',
       tx_code: tx.tx_code ?? '-',
@@ -268,7 +274,7 @@ function VendorTransactionModal({ txModal, token, onClose }) {
   const [activeTab, setActiveTab] = useState('transactions');
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [range, setRange] = useState({ type: 'current', from: todayInput().slice(0, 8) + '01', to: todayInput() });
+  const [range, setRange] = useState({ from: todayInput().slice(0, 8) + '01', to: todayInput() });
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState({});
   const [apiError, setApiError] = useState('');
@@ -306,27 +312,16 @@ function VendorTransactionModal({ txModal, token, onClose }) {
   }, [range, query, activeTab, txModal.companyId]);
 
   function rangeParams() {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const pad = (value) => String(value).padStart(2, '0');
-    if (range.type === 'previous') {
-      const start = new Date(y, m - 1, 1);
-      const end = new Date(y, m, 0);
-      return { from: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-01`, to: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}` };
-    }
-    if (range.type === 'quarter') {
-      const start = new Date(y, m - 2, 1);
-      const end = new Date(y, m + 1, 0);
-      return { from: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-01`, to: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}` };
-    }
-    if (range.type === 'custom') return { from: range.from, to: range.to };
-    const end = new Date(y, m + 1, 0);
-    return { from: `${y}-${pad(m + 1)}-01`, to: `${y}-${pad(m + 1)}-${pad(end.getDate())}` };
+    return { from: range.from, to: range.to };
   }
 
+  const invalidRange = !range.from || !range.to || range.from > range.to;
+
   useEffect(() => {
-    if (!txModal.companyId) return;
+    if (!txModal.companyId || invalidRange) {
+      if (invalidRange) setApiError('시작일은 종료일보다 늦을 수 없어요.');
+      return;
+    }
     let cancelled = false;
     async function loadVendorDetail() {
       setLoading(true);
@@ -337,7 +332,7 @@ function VendorTransactionModal({ txModal, token, onClose }) {
         const [summaryData, txData, settlementData] = await Promise.all([
           apiFetch(`/admin/merchant/companies/${txModal.companyId}/summary?${params}`, token),
           apiFetch(`/admin/merchant/companies/${txModal.companyId}/transactions?${params}&q=${encodeURIComponent(query)}`, token),
-          apiFetch(`/admin/merchant/companies/${txModal.companyId}/settlements`, token),
+          apiFetch(`/admin/merchant/companies/${txModal.companyId}/settlements?${params}`, token),
         ]);
         if (cancelled) return;
         setServerSummary(summaryData);
@@ -361,28 +356,23 @@ function VendorTransactionModal({ txModal, token, onClose }) {
     ...item,
     time: item.created_at ? new Date(item.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : item.time,
     menu: item.menu ?? item.product_name ?? item.meal_window ?? '식대 사용',
-    pay_type: item.pay_type ?? (item.kind === 'toss_payment' ? '토스결제' : item.kind === 'spend' ? '식권' : '장부'),
+    pay_type: item.pay_type === 'voucher' ? '식권' : item.pay_type === 'direct' ? '토스결제' : (item.pay_type ?? '장부'),
   }))) : null, [serverDays]);
 
   const rows = useMemo(() => serverRows ?? buildTransactionRows(txModal.txItems, range, query), [serverRows, txModal.txItems, range, query]);
   const summary = useMemo(() => {
     if (serverSummary) {
-      const next = serverSummary.next_settlement_date ? new Date(`${serverSummary.next_settlement_date}T00:00:00`) : new Date();
-      const dday = Math.ceil((new Date(next.toDateString()) - new Date(new Date().toDateString())) / 86400000);
       return {
         total: serverSummary.total_amount ?? 0,
         count: serverSummary.total_count ?? 0,
         cancelCount: serverSummary.cancel_count ?? 0,
         unsettled: serverSummary.unsettled_amount ?? 0,
-        nextSettlement: `${next.getMonth() + 1}/${next.getDate()} (D-${dday})`,
+        selectedPeriod: `${serverSummary.period?.from ?? range.from} ~ ${serverSummary.period?.to ?? range.to}`,
       };
     }
     const total = rows.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
     const cancelCount = rows.filter((row) => row.status === 'refund').length;
-    const next = new Date();
-    next.setMonth(next.getMonth() + 1, 0);
-    const dday = Math.ceil((new Date(next.toDateString()) - new Date(new Date().toDateString())) / 86400000);
-    return { total, count: rows.length, cancelCount, unsettled: Math.max(0, total), nextSettlement: `${next.getMonth() + 1}/${next.getDate()} (D-${dday})` };
+    return { total, count: rows.length, cancelCount, unsettled: Math.max(0, total), selectedPeriod: `${range.from} ~ ${range.to}` };
   }, [rows, serverSummary]);
   const unpaid = settlements.filter((item) => item.status !== '입금완료');
   const unpaidAmount = unpaid.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
@@ -419,8 +409,8 @@ function VendorTransactionModal({ txModal, token, onClose }) {
       const lines = [
         `${txModal.companyName} ${format === 'xlsx' ? '거래내역' : '청구서'}`,
         `총액,${summary.total},건수,${summary.count},미정산,${summary.unsettled}`,
-        '일자,시간,직원,사번,메뉴,결제구분,금액,상태',
-        ...rows.map((row) => `${dateKey(row.created_at)},${row.time},${row.employee_name},${row.employee_no},${row.menu},${row.pay_type},${row.amount},${row.status}`),
+        '날짜,시간,부서,이름,사번,메뉴/내역,결제구분,금액',
+        ...rows.map((row) => `${String(row.created_at ?? '').slice(0, 10)},${row.time},${row.department ?? '-'},${row.employee_name},${row.employee_no},${row.menu},${row.pay_type},${row.amount}`),
       ];
       const blob = new Blob([lines.join('\n')], { type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
@@ -431,6 +421,26 @@ function VendorTransactionModal({ txModal, token, onClose }) {
       setApiError(downloadError.message);
     } finally {
       setTimeout(() => setExporting(false), 300);
+    }
+  }
+
+  async function createSettlement() {
+    if (!txModal.companyId || invalidRange) return;
+    setExporting(true);
+    setApiError('');
+    try {
+      await apiFetch(`/admin/merchant/companies/${txModal.companyId}/settlements`, token, {
+        method: 'POST',
+        body: JSON.stringify({ period_from: range.from, period_to: range.to }),
+      });
+      const params = `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`;
+      const data = await apiFetch(`/admin/merchant/companies/${txModal.companyId}/settlements?${params}`, token);
+      setSettlements(data.items ?? []);
+      setActiveTab('settlements');
+    } catch (settlementError) {
+      setApiError(settlementError.message);
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -470,11 +480,9 @@ function VendorTransactionModal({ txModal, token, onClose }) {
 
       {activeTab === 'transactions' ? <>
         <div className="vendor-filterbar">
-          <div className="range-chips">
-            {[['current', '이번 달'], ['previous', '지난 달'], ['quarter', '최근 3개월'], ['custom', '직접 선택']].map(([type, label]) => <button key={type} className={range.type === type ? 'active' : ''} onClick={() => setRange((prev) => ({ ...prev, type }))}>{label}</button>)}
-          </div>
-          {range.type === 'custom' && <div className="date-range"><input type="date" value={range.from} onChange={(e) => setRange((prev) => ({ ...prev, from: e.target.value }))}/><span>~</span><input type="date" value={range.to} onChange={(e) => setRange((prev) => ({ ...prev, to: e.target.value }))}/></div>}
-          <label className="tx-search"><Search size={16}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="직원명/사번 검색" /></label>
+          <div className="date-range"><input aria-label="시작일" type="date" value={range.from} onChange={(e) => setRange((prev) => ({ ...prev, from: e.target.value }))}/><span>~</span><input aria-label="종료일" type="date" value={range.to} onChange={(e) => setRange((prev) => ({ ...prev, to: e.target.value }))}/></div>
+          <label className="tx-search"><Search size={16}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="부서/이름/사번 검색" /></label>
+          {invalidRange && <div className="alert error">시작일은 종료일보다 늦을 수 없어요.</div>}
         </div>
         <div className="vendor-modal-body">
           {apiError && <div className="alert error">상세 API 확인 필요: {apiError}</div>}
@@ -483,17 +491,12 @@ function VendorTransactionModal({ txModal, token, onClose }) {
               <article><span>총 이용금액</span><strong>{krw(summary.total)}</strong></article>
               <article><span>총 이용건수</span><strong>{summary.count}건 {summary.cancelCount ? `(취소 ${summary.cancelCount})` : ''}</strong></article>
               <article className="main-amount"><span>미정산 잔액</span><strong>{krw(summary.unsettled)}</strong></article>
-              <article><span>다음 정산일</span><strong><CalendarDays size={18}/>{summary.nextSettlement}</strong></article>
+              <article><span>선택 정산 기간</span><strong><CalendarDays size={18}/>{summary.selectedPeriod}</strong></article>
             </section>
-            {groups.length === 0 ? <p className="vendor-empty">📒 선택한 기간에 거래가 없습니다</p> : <section className="day-ledger-list">
-              {groups.map((group) => <article className="day-ledger" key={group.key}>
-                <button className="day-ledger-header" onClick={() => setCollapsed((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}><span>{dayLabel(group.key)} — {group.items.length}건 · {krw(group.subtotal)}</span><ChevronDown className={collapsed[group.key] ? 'closed' : ''} size={18}/></button>
-                {!collapsed[group.key] && <div className="table-wrap"><table><thead><tr><th>시각</th><th>직원명(사번)</th><th>메뉴/내역</th><th>결제구분</th><th>금액</th></tr></thead><tbody>{group.items.map((row) => <tr key={row.id} className={row.status === 'refund' ? 'refund-row' : ''}><td>{row.time}</td><td><strong>{row.employee_name}</strong> ({row.employee_no})</td><td>{row.menu} {row.status === 'refund' && <span className="refund-tag">환불</span>}</td><td>{row.pay_type}</td><td className="money">{krw(row.amount)}</td></tr>)}</tbody></table></div>}
-              </article>)}
-            </section>}
+            {rows.length === 0 ? <p className="vendor-empty">📒 선택한 기간에 거래가 없습니다</p> : <div className="table-wrap"><table><thead><tr><th>날짜</th><th>시간</th><th>부서</th><th>이름</th><th>사번</th><th>메뉴/내역</th><th>결제구분</th><th>금액</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={row.status === 'refund' ? 'refund-row' : ''}><td>{String(row.created_at ?? '').slice(0, 10)}</td><td>{row.time}</td><td>{row.department ?? '-'}</td><td>{row.employee_name}</td><td>{row.employee_no}</td><td>{row.menu} {row.status === 'refund' && <span className="refund-tag">환불</span>}</td><td>{row.pay_type}</td><td className="money">{krw(row.amount)}</td></tr>)}</tbody></table></div>}
           </>}
         </div>
-        <footer className="vendor-modal-footer"><button className="primary export-button" onClick={() => download('xlsx')} disabled={exporting}><Download size={17}/> 엑셀 다운로드</button><button className="primary export-button" onClick={() => download('pdf')} disabled={exporting}><FileText size={17}/> PDF 청구서</button><button className="ghost" onClick={onClose} disabled={exporting}>닫기</button></footer>
+        <footer className="vendor-modal-footer"><button className="primary export-button" onClick={createSettlement} disabled={exporting || invalidRange}>선택 기간 정산 생성</button><button className="primary export-button" onClick={() => download('xlsx')} disabled={exporting || invalidRange}><Download size={17}/> 엑셀 다운로드</button><button className="primary export-button" onClick={() => download('pdf')} disabled={exporting || invalidRange}><FileText size={17}/> PDF 청구서</button><button className="ghost" onClick={onClose} disabled={exporting}>닫기</button></footer>
       </> : <div className="vendor-modal-body settlement-tab">
         {apiError && <div className="alert error">상세 API 확인 필요: {apiError}</div>}
         {unpaidAmount > 0 && <div className="unpaid-banner">총 미수금 {krw(unpaidAmount)} — {unpaid.length}회차 미입금</div>}
@@ -507,15 +510,82 @@ function TransactionSkeleton() {
   return <div className="vendor-skeleton"><div className="vendor-summary-grid">{[0, 1, 2, 3].map((n) => <article key={n} className="skeleton-card" />)}</div><div className="skeleton-lines">{[0, 1, 2, 3, 4, 5].map((n) => <span key={n}/>)}</div></div>;
 }
 
+function VoucherProductsPanel({ items, token, busy, uploadImage, onChanged, setBusy, setError, setMessage }) {
+  const blank = { name: '', voucher_count: '10', bonus_count: '0', unit_price: '', discount_rate: '0', status: 'active', display_order: '0', image_url: '' };
+  const [form, setForm] = useState(blank);
+  const [editingId, setEditingId] = useState(null);
+  const count = Number(form.voucher_count || 0);
+  const bonus = Number(form.bonus_count || 0);
+  const discount = Number(form.discount_rate || 0);
+  const salePrice = Math.round(Number(form.unit_price || 0) * count * (100 - discount) / 100 * 100) / 100;
+
+  function edit(item) {
+    setEditingId(item.id);
+    setForm(Object.fromEntries(Object.entries({ ...blank, ...item }).map(([key, value]) => [key, value == null ? '' : String(value)])));
+  }
+  async function chooseImage(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy(true); setError('');
+    try {
+      const imageUrl = await uploadImage(file);
+      setForm((prev) => ({ ...prev, image_url: imageUrl }));
+    }
+    catch (uploadError) { setError(uploadError.message); }
+    finally { setBusy(false); event.target.value = ''; }
+  }
+  async function save(event) {
+    event.preventDefault(); setBusy(true); setError('');
+    try {
+      const body = {
+        name: form.name.trim(), voucher_count: count, bonus_count: bonus,
+        unit_price: Number(form.unit_price), discount_rate: discount, status: form.status,
+        display_order: Number(form.display_order || 0), image_url: form.image_url || null,
+      };
+      await apiFetch(`/admin/voucher-products${editingId ? `/${editingId}` : ''}`, token, { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify(body) });
+      setMessage(editingId ? '식권 패키지를 수정했어요.' : '식권 패키지를 등록했어요.');
+      setEditingId(null); setForm(blank); await onChanged();
+    } catch (saveError) { setError(saveError.message); }
+    finally { setBusy(false); }
+  }
+  async function toggle(item) {
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/admin/voucher-products/${item.id}`, token, { method: 'PATCH', body: JSON.stringify({ status: item.status === 'active' ? 'inactive' : 'active' }) });
+      setMessage(item.status === 'active' ? '식권 패키지를 숨겼어요.' : '식권 패키지 판매를 재개했어요.'); await onChanged();
+    } catch (toggleError) { setError(toggleError.message); } finally { setBusy(false); }
+  }
+  return <section className="panel voucher-panel">
+    <div className="panel-title"><div><h2>식권 패키지 관리</h2><p className="panel-note">삭제하지 않고 숨김/판매 재개합니다. 판매가는 서버 계산값으로 확정됩니다.</p></div><span className="badge">{items.length}개</span></div>
+    <form className="voucher-form" onSubmit={save}>
+      <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="패키지명" required />
+      <label>기본 장수<input type="number" min="1" max="1000" value={form.voucher_count} onChange={(e) => setForm((p) => ({ ...p, voucher_count: e.target.value }))} required /></label>
+      <div className="quick-buttons">{[1, 5, 10].map((n) => <button type="button" className="ghost" key={n} onClick={() => setForm((p) => ({ ...p, voucher_count: String(n) }))}>{n}장</button>)}</div>
+      <label>보너스 장수<input type="number" min="0" max="1000" value={form.bonus_count} onChange={(e) => setForm((p) => ({ ...p, bonus_count: e.target.value }))} /></label>
+      <label>장당 정가<input type="number" min="1" step="0.01" value={form.unit_price} onChange={(e) => setForm((p) => ({ ...p, unit_price: e.target.value }))} required /></label>
+      <label>할인율(%)<input type="number" min="0" max="99.99" step="0.01" value={form.discount_rate} onChange={(e) => setForm((p) => ({ ...p, discount_rate: e.target.value }))} /></label>
+      <label>상태<select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}><option value="active">판매중</option><option value="inactive">숨김</option></select></label>
+      <label>노출순서<input type="number" value={form.display_order} onChange={(e) => setForm((p) => ({ ...p, display_order: e.target.value }))} /></label>
+      <label className="image-picker compact">패키지 이미지<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={chooseImage} disabled={busy}/></label>
+      <div className="voucher-preview">미리보기 <strong>{count + bonus}장 · {krw(salePrice)}</strong><span>장당 {krw((count + bonus) ? salePrice / (count + bonus) : 0)}</span>{form.image_url && <img src={form.image_url} alt="식권 패키지 미리보기"/>}</div>
+      {bonus > 0 && discount > 0 && <div className="alert warning">보너스와 할인율이 동시에 적용됩니다. 판매가와 총 장수를 다시 확인하세요.</div>}
+      <div className="row-actions"><button className="primary" disabled={busy}>{editingId ? '수정 저장' : '패키지 등록'}</button>{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(blank); }}>취소</button>}</div>
+    </form>
+    <div className="product-list">{items.map((item) => <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}+{item.bonus_count}장 · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span></div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button className="ghost" onClick={() => toggle(item)}>{item.status === 'active' ? '숨김' : '판매 재개'}</button></div></article>)}</div>
+  </section>;
+}
+
 function Dashboard({ session, onLogout }) {
   const token = session.access_token;
   const [me, setMe] = useState(null);
   const [requests, setRequests] = useState([]);
   const [settlements, setSettlements] = useState(null);
   const [products, setProducts] = useState(null);
-  const [productForm, setProductForm] = useState({ name: '', price: '', category: '' });
+  const [voucherProducts, setVoucherProducts] = useState([]);
+  const [paymentNotices, setPaymentNotices] = useState([]);
+  const [productForm, setProductForm] = useState({ name: '', price: '', category: '', image_url: '' });
   const [dailyMenu, setDailyMenu] = useState(null);
-  const [dailyMenuForm, setDailyMenuForm] = useState({ title: '오늘의 부페 메뉴', menu_text: '' });
+  const [dailyMenuForm, setDailyMenuForm] = useState({ title: '오늘의 부페 메뉴', menu_text: '', image_url: '' });
   const [merchantCompanies, setMerchantCompanies] = useState(null);
   const [companySearch, setCompanySearch] = useState('');
   const [companySearchResults, setCompanySearchResults] = useState([]);
@@ -599,7 +669,7 @@ function Dashboard({ session, onLogout }) {
     ['권한', '관리자', WalletCards, 'brown'],
     ['상품', products ? `${products.items.filter((item) => item.is_active).length}개` : '조회 중', QrCode, 'orange'],
     ['장부업체', merchantCompanies ? `${merchantCompanies.items.length}곳` : '조회 중', Users, 'green'],
-    ['거래내역', transactions ? `${transactions.items.length}건` : '조회 중', FileSpreadsheet, 'orange'],
+    ['거래내역', transactions ? `${transactions.total_count ?? transactions.items.length}건` : '조회 중', FileSpreadsheet, 'orange'],
   ] : [
     ['가입 요청', `${requests.length}명`, Users, 'orange'],
     ['직원', employees ? `${employees.items.length}명` : '조회 중', WalletCards, 'brown'],
@@ -638,11 +708,14 @@ function Dashboard({ session, onLogout }) {
           ]);
         }
         if (meData.role === 'merchant_admin') {
-          [merchantCompanyData, transactionData, merchantQrData] = await Promise.all([
+          let voucherData;
+          [merchantCompanyData, transactionData, merchantQrData, voucherData] = await Promise.all([
             apiFetch('/admin/merchant/companies', token),
             apiFetch('/admin/merchant/transactions', token),
             apiFetch('/admin/merchant/qr', token),
+            apiFetch('/admin/voucher-products', token),
           ]);
+          setVoucherProducts(voucherData.items ?? []);
         }
       }
       setMe(meData);
@@ -666,6 +739,7 @@ function Dashboard({ session, onLogout }) {
       setDailyMenuForm({
         title: dailyMenuData?.today_menu?.title ?? '오늘의 부페 메뉴',
         menu_text: dailyMenuData?.today_menu?.menu_text ?? '',
+        image_url: dailyMenuData?.today_menu?.image_url ?? '',
       });
     } catch (loadError) {
       setError(loadError.message);
@@ -734,6 +808,16 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
+  async function saveEmployeeNo(employee) {
+    const value = window.prompt('사번을 입력해 주세요. 비우면 삭제됩니다.', employee.employee_no ?? '');
+    if (value === null) return;
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/admin/employees/${employee.id}`, token, { method: 'PATCH', body: JSON.stringify({ employee_no: value.trim() || null }) });
+      setMessage('직원 사번을 저장했어요.'); await load();
+    } catch (employeeError) { setError(employeeError.message); } finally { setBusy(false); }
+  }
+
   async function saveMealPolicy(event) {
     event.preventDefault();
     setBusy(true);
@@ -753,6 +837,50 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
+  async function uploadImage(file) {
+    const dataBase64 = await fileToBase64(file);
+    const data = await apiFetch('/admin/images', token, {
+      method: 'POST',
+      body: JSON.stringify({ filename: file.name, content_type: file.type, data_base64: dataBase64 }),
+    });
+    return data.image_url;
+  }
+
+  async function selectNewProductImage(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy(true); setError('');
+    try {
+      const imageUrl = await uploadImage(file);
+      setProductForm((form) => ({ ...form, image_url: imageUrl }));
+    } catch (uploadError) { setError(uploadError.message); }
+    finally { setBusy(false); event.target.value = ''; }
+  }
+
+  async function selectDailyMenuImage(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy(true); setError('');
+    try {
+      const imageUrl = await uploadImage(file);
+      setDailyMenuForm((form) => ({ ...form, image_url: imageUrl }));
+    } catch (uploadError) { setError(uploadError.message); }
+    finally { setBusy(false); event.target.value = ''; }
+  }
+
+  async function updateProductImage(product, event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy(true); setError('');
+    try {
+      const imageUrl = await uploadImage(file);
+      await apiFetch(`/admin/products/${product.id}`, token, { method: 'PATCH', body: JSON.stringify({ image_url: imageUrl }) });
+      setMessage(`${product.name} 이미지를 저장했어요.`);
+      await load();
+    } catch (uploadError) { setError(uploadError.message); }
+    finally { setBusy(false); event.target.value = ''; }
+  }
+
   async function createProduct(event) {
     event.preventDefault();
     setBusy(true);
@@ -765,10 +893,11 @@ function Dashboard({ session, onLogout }) {
           name: productForm.name.trim(),
           price: Number(productForm.price),
           category: productForm.category.trim() || null,
+          image_url: productForm.image_url || null,
           sort_order: (products?.items?.length ?? 0) + 1,
         }),
       });
-      setProductForm({ name: '', price: '', category: '' });
+      setProductForm({ name: '', price: '', category: '', image_url: '' });
       setMessage('상품을 등록했어요. 직원 앱 상품 선택 화면에 바로 반영됩니다.');
       await load();
     } catch (productError) {
@@ -808,6 +937,7 @@ function Dashboard({ session, onLogout }) {
         body: JSON.stringify({
           title: dailyMenuForm.title.trim() || '오늘의 부페 메뉴',
           menu_text: dailyMenuForm.menu_text.trim(),
+          image_url: dailyMenuForm.image_url || null,
           is_active: true,
         }),
       });
@@ -960,6 +1090,23 @@ function Dashboard({ session, onLogout }) {
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    const merchantId = merchantQr?.merchant?.id;
+    if (!supabase || !isMerchantAdmin || !merchantId) return undefined;
+    const channel = supabase.channel(`merchant-payments-${merchantId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'meal_transactions', filter: `merchant_id=eq.${merchantId}` }, async (event) => {
+        try {
+          const [detail, list] = await Promise.all([
+            apiFetch(`/admin/merchant/transactions/${event.new.id}`, token),
+            apiFetch('/admin/merchant/transactions', token),
+          ]);
+          setTransactions(list);
+          setPaymentNotices((queue) => [...queue, detail]);
+        } catch (noticeError) { setError(`결제 알림 확인 실패: ${noticeError.message}`); }
+      }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [isMerchantAdmin, merchantQr?.merchant?.id, token]);
+
   if (dashboardBooting) return <main className="loading"><BrandMark /><div className="spinner"/><p className="loading-copy">운영자 권한을 확인하고 있어요...</p></main>;
 
   if (!me) return <main className="loading"><BrandMark /><div className="alert error">권한 정보를 불러오지 못했어요. {error}</div><button className="ghost" onClick={onLogout}>로그아웃</button></main>;
@@ -981,6 +1128,20 @@ function Dashboard({ session, onLogout }) {
 
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}
+
+    {paymentNotices.length > 0 && <div className="modal-backdrop payment-notice-backdrop">
+      <section className="invite-modal payment-notice" role="alertdialog" aria-modal="true" aria-labelledby="payment-notice-title">
+        <h2 id="payment-notice-title">결제가 완료됐어요</h2>
+        <div className="profile-grid">
+          <span>직원</span><strong>{paymentNotices[0].employee_name} ({paymentNotices[0].employee_no})</strong>
+          <span>결제 구분</span><strong>{paymentNotices[0].pay_type === 'voucher' ? '식권' : '장부'}</strong>
+          <span>금액</span><strong>{krw(paymentNotices[0].amount)}</strong>
+          {paymentNotices[0].remaining != null && <><span>남은 식권</span><strong>{paymentNotices[0].remaining}장</strong></>}
+        </div>
+        {paymentNotices.length > 1 && <p className="panel-note">대기 중인 결제 알림 {paymentNotices.length - 1}건</p>}
+        <button className="primary" autoFocus onClick={() => setPaymentNotices((queue) => queue.slice(1))}>확인</button>
+      </section>
+    </div>}
 
     {inviteModal && <div className="modal-backdrop" onClick={() => setInviteModal(null)}>
       <section className="invite-modal" onClick={(event) => event.stopPropagation()}>
@@ -1138,7 +1299,7 @@ function Dashboard({ session, onLogout }) {
         <span className="badge">{employees?.items?.length ?? 0}명</span>
       </div>
       {employees?.migration_required && <div className="alert error">월 한도 저장 컬럼이 아직 적용되지 않아 기본값 200,000원으로 표시 중이에요. 0011_employee_monthly_limit.sql 적용 후 한도 수정이 저장됩니다.</div>}
-      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>이름</th><th>월 한도</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>한도수정</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{krw(employee.monthly_limit ?? 200000)}</td><td>{krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td><button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button></td><td><button className="ghost" onClick={() => openLimitModal(employee)}>한도수정</button></td></tr>)}</tbody></table></div>}
+      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>이름</th><th>사번</th><th>월 한도</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{krw(employee.monthly_limit ?? 200000)}</td><td>{krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td><button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button></td><td className="row-actions"><button className="ghost" onClick={() => saveEmployeeNo(employee)}>사번수정</button><button className="ghost" onClick={() => openLimitModal(employee)}>한도수정</button></td></tr>)}</tbody></table></div>}
     </section>}
 
     {!isPlatformAdmin && isMerchantAdmin && <section className="panel">
@@ -1173,6 +1334,8 @@ function Dashboard({ session, onLogout }) {
     </section>}
 
 
+    {isMerchantAdmin && <VoucherProductsPanel items={voucherProducts} token={token} busy={busy} uploadImage={uploadImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
+
     {isMerchantAdmin && <section className="panel daily-menu-panel">
       <div className="panel-title">
         <div><h2>오늘 부페 메뉴</h2><p className="panel-note">오늘 나오는 메뉴를 입력하면 직원 앱 상품 선택 화면 상단에 표시됩니다.</p></div>
@@ -1182,6 +1345,8 @@ function Dashboard({ session, onLogout }) {
       <form className="daily-menu-form" onSubmit={saveDailyMenu}>
         <input value={dailyMenuForm.title} onChange={(event) => setDailyMenuForm((form) => ({ ...form, title: event.target.value }))} placeholder="제목" required />
         <textarea value={dailyMenuForm.menu_text} onChange={(event) => setDailyMenuForm((form) => ({ ...form, menu_text: event.target.value }))} placeholder="예: 김치찌개, 제육볶음, 현미밥, 계절 샐러드, 반찬 4종" required rows={4} />
+        <label className="image-picker">오늘 메뉴 이미지 (최대 5MB)<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={selectDailyMenuImage} disabled={busy}/></label>
+        {dailyMenuForm.image_url && <img className="menu-image-preview" src={dailyMenuForm.image_url} alt="오늘 메뉴 미리보기" />}
         <button className="primary" disabled={busy || dailyMenu?.migration_required}>오늘 메뉴 저장</button>
       </form>
     </section>}
@@ -1192,17 +1357,20 @@ function Dashboard({ session, onLogout }) {
         <div><h2>식당 상품 관리</h2><p className="panel-note">직원 앱은 금액 입력 없이 여기 등록된 상품 중 하나를 선택해 결제합니다.</p></div>
       </div>
       {products?.migration_required && <div className="alert error">상품 DB 마이그레이션이 아직 적용되지 않아 기본 상품만 표시 중이에요. 0005_merchant_products.sql 적용 후 등록/수정이 활성화됩니다.</div>}
-      <form className="product-form" onSubmit={createProduct}>
+      <form className="product-form product-register-form" onSubmit={createProduct}>
         <input value={productForm.name} onChange={(event) => setProductForm((form) => ({ ...form, name: event.target.value }))} placeholder="상품명" required />
         <input value={productForm.price} onChange={(event) => setProductForm((form) => ({ ...form, price: event.target.value }))} placeholder="가격" type="number" min="1" required />
         <input value={productForm.category} onChange={(event) => setProductForm((form) => ({ ...form, category: event.target.value }))} placeholder="카테고리" />
+        <label className="image-picker compact">상품 이미지<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={selectNewProductImage} disabled={busy}/></label>
+        {productForm.image_url && <img className="product-image-preview" src={productForm.image_url} alt="새 상품 미리보기" />}
         <button className="primary" disabled={busy || products?.migration_required}>상품 등록</button>
       </form>
       {(products?.items?.length ?? 0) === 0
         ? <p className="empty-state">등록된 상품이 없어요. 첫 상품을 등록하면 직원 앱에 표시됩니다.</p>
         : <div className="product-list">{products.items.map((product) => <article className={product.is_active ? 'product-item' : 'product-item off'} key={product.id}>
-          <div><strong>{product.name}</strong><span>{product.category ?? '기본'} · {Number(product.price).toLocaleString('ko-KR')}원</span></div>
-          <button className="ghost" onClick={() => toggleProduct(product)} disabled={busy || products?.migration_required}>{product.is_active ? '숨김' : '판매중'}</button>
+          {product.image_url ? <img className="product-image-preview" src={product.image_url} alt={`${product.name} 이미지`} /> : <div className="product-image-placeholder">이미지 없음</div>}
+          <div className="product-copy"><strong>{product.name}</strong><span>{product.category ?? '기본'} · {Number(product.price).toLocaleString('ko-KR')}원</span></div>
+          <div className="row-actions"><label className="ghost image-change">이미지 변경<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => updateProductImage(product, event)} disabled={busy || products?.migration_required}/></label><button className="ghost" onClick={() => toggleProduct(product)} disabled={busy || products?.migration_required}>{product.is_active ? '숨김' : '판매중'}</button></div>
         </article>)}</div>}
     </section>}
 

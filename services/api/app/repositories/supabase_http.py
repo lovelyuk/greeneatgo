@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from app.config import Settings, get_settings
@@ -61,6 +61,29 @@ class SupabaseHttpClient:
 
     def rpc(self, function_name: str, payload: dict[str, Any]) -> Any:
         return self._request("POST", f"/rest/v1/rpc/{function_name}", key=self.settings.supabase_service_role_key, body=payload)
+
+    def upload_public_object(self, bucket: str, object_path: str, data: bytes, content_type: str) -> str:
+        """Upload one object with service-role credentials and return its public URL."""
+        key = self.settings.supabase_service_role_key
+        encoded_bucket = quote(bucket, safe="")
+        encoded_path = quote(object_path, safe="/")
+        req = Request(
+            f"{self.settings.supabase_url}/storage/v1/object/{encoded_bucket}/{encoded_path}",
+            data=data,
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {key}",
+                "Content-Type": content_type,
+                "x-upsert": "false",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(req, timeout=30) as response:
+                response.read()
+        except HTTPError as exc:
+            raise SupabaseHttpError(exc.code, exc.read().decode("utf-8")) from exc
+        return f"{self.settings.supabase_url}/storage/v1/object/public/{encoded_bucket}/{encoded_path}"
 
     def auth_get_user(self, access_token: str) -> AuthUser:
         headers = {

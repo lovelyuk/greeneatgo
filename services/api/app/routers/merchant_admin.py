@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import html
 import secrets
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from io import BytesIO
 from urllib.parse import quote
 from zipfile import ZIP_DEFLATED, ZipFile
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -12,10 +14,11 @@ from fastapi.responses import Response
 from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, SettlementPaymentConfirmRequest
+from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
 from app.services.join_flow import JoinErrorCode, JoinFlowError
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
+KST = ZoneInfo("Asia/Seoul")
 
 
 def _error(status: int, code: str, message: str) -> HTTPException:
@@ -94,7 +97,10 @@ def _upsert_link(repo: JoinRepository, merchant_id: str, company_id: str, actor_
 def _parse_date(value: str | None, fallback: date) -> date:
     if not value:
         return fallback
-    return date.fromisoformat(value[:10])
+    try:
+        return date.fromisoformat(value[:10])
+    except (TypeError, ValueError) as exc:
+        raise _error(400, "INVALID_DATE", "날짜는 YYYY-MM-DD 형식이어야 해요") from exc
 
 
 def _month_range(today: date | None = None) -> tuple[date, date]:
@@ -105,10 +111,26 @@ def _month_range(today: date | None = None) -> tuple[date, date]:
 
 
 def _iso_bounds(from_: str | None, to: str | None) -> tuple[str, str, date, date]:
-    default_from, default_to = _month_range()
+    default_from, default_to = _month_range(datetime.now(KST).date())
     from_date = _parse_date(from_, default_from)
     to_date = _parse_date(to, default_to)
-    return f"{from_date.isoformat()}T00:00:00+00:00", f"{to_date.isoformat()}T23:59:59+00:00", from_date, to_date
+    if from_date > to_date:
+        raise _error(400, "INVALID_DATE_RANGE", "시작일은 종료일보다 늦을 수 없어요")
+    start = datetime.combine(from_date, time.min, tzinfo=KST).astimezone(timezone.utc)
+    end = datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=KST).astimezone(timezone.utc)
+    return start.isoformat(), end.isoformat(), from_date, to_date
+
+
+def _paged_get(repo: JoinRepository, table: str, params: dict[str, str], page_size: int = 1000) -> list[dict]:
+    """Read every row rather than silently accepting PostgREST's project row cap."""
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        page = repo.client.rest_get(table, {**params, "limit": str(page_size), "offset": str(offset)})
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+        offset += page_size
 
 
 def _require_company_link(repo: JoinRepository, merchant_id: str, company_id: str) -> dict:
@@ -176,40 +198,59 @@ def _tx_amount(row: dict) -> int:
     return amount
 
 
+def _kst_iso(value: object) -> str:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(KST).isoformat()
+    except (TypeError, ValueError):
+        return str(value or "")
+
+
 def _load_vendor_transactions(repo: JoinRepository, merchant_id: str, company_id: str, from_: str | None, to: str | None, q: str | None = None) -> tuple[list[dict], date, date]:
     from_iso, to_iso, from_date, to_date = _iso_bounds(from_, to)
-    rows = repo.client.rest_get(
+    rows = _paged_get(
+        repo,
         "meal_transactions",
         {
-            "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,product_name,product_price,created_at",
+            "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,product_name,product_price,pay_type,created_at",
             "merchant_id": f"eq.{merchant_id}",
             "company_id": f"eq.{company_id}",
-            "and": f"(created_at.gte.{from_iso},created_at.lte.{to_iso})",
+            "pay_type": "eq.ledger",
+            "and": f"(created_at.gte.{from_iso},created_at.lt.{to_iso})",
             "order": "created_at.desc",
-            "limit": "1000",
         },
     )
     user_ids = sorted({row["user_id"] for row in rows if row.get("user_id")})
     users = {}
     if user_ids:
-        user_rows = repo.client.rest_get("app_users", {"select": "id,display_name", "id": f"in.({','.join(user_ids)})"})
+        user_rows = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no,group_id", "id": f"in.({','.join(user_ids)})"})
         users = {row["id"]: row for row in user_rows}
+    group_ids = sorted({str(row["group_id"]) for row in users.values() if row.get("group_id")})
+    groups = {}
+    if group_ids:
+        group_rows = repo.client.rest_get("employee_groups", {"select": "id,name", "id": f"in.({','.join(group_ids)})"})
+        groups = {row["id"]: row.get("name") for row in group_rows}
     query = (q or "").strip().lower()
     items = []
     for row in rows:
         user = users.get(row.get("user_id"), {})
         employee_name = user.get("display_name") or "직원"
-        employee_no = str(row.get("user_id") or "")[:8]
-        if query and query not in f"{employee_name} {employee_no}".lower():
+        employee_no = user.get("employee_no") or str(row.get("user_id") or "")[:8]
+        department = groups.get(user.get("group_id")) or "-"
+        if query and query not in f"{department} {employee_name} {employee_no}".lower():
             continue
         amount = _tx_amount(row)
         items.append({
             **row,
+            "created_at": _kst_iso(row.get("created_at")),
             "amount": amount,
             "employee_name": employee_name,
             "employee_no": employee_no,
+            "department": department,
             "menu": row.get("product_name") or row.get("meal_window") or "식대 사용",
-            "pay_type": "식권" if row.get("kind") == "spend" else "장부",
+            "pay_type": "식권" if row.get("pay_type") == "voucher" else "장부",
             "status": "refund" if row.get("kind") in {"refund", "cancel"} else "paid",
         })
     return items, from_date, to_date
@@ -240,22 +281,29 @@ def _next_settlement_date() -> str:
 def _settlement_status(row: dict) -> str:
     if row.get("status") == "paid":
         return "입금완료"
-    period = row.get("period_ym", "")
-    try:
-        y, m = [int(part) for part in period.split("-")[:2]]
-        due = date(y + (1 if m == 12 else 0), 1 if m == 12 else m + 1, 10)
-    except Exception:
-        due = date.today()
-    return "연체" if date.today() > due else "입금대기"
+    if row.get("period_to"):
+        try:
+            due = date.fromisoformat(str(row["period_to"])[:10]) + timedelta(days=10)
+        except ValueError:
+            due = datetime.now(KST).date()
+    else:
+        period = row.get("period_ym", "")
+        try:
+            y, m = [int(part) for part in period.split("-")[:2]]
+            due = date(y + (1 if m == 12 else 0), 1 if m == 12 else m + 1, 10)
+        except Exception:
+            due = datetime.now(KST).date()
+    return "연체" if datetime.now(KST).date() > due else "입금대기"
 
 
 def _ensure_settlements(repo: JoinRepository, merchant_id: str, company_id: str) -> list[dict]:
     tx_rows = repo.client.rest_get(
         "meal_transactions",
         {
-            "select": "id,amount,kind,created_at",
+            "select": "id,amount,kind,pay_type,created_at",
             "merchant_id": f"eq.{merchant_id}",
             "company_id": f"eq.{company_id}",
+            "pay_type": "eq.ledger",
             "kind": "in.(spend,refund)",
             "limit": "2000",
         },
@@ -270,7 +318,7 @@ def _ensure_settlements(repo: JoinRepository, merchant_id: str, company_id: str)
         bucket["total_amount"] += _tx_amount(row)
     existing = repo.client.rest_get(
         "settlements",
-        {"select": "id,company_id,merchant_id,period_ym,tx_count,total_amount,status,paid_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "order": "period_ym.desc"},
+        {"select": "id,company_id,merchant_id,period_ym,period_from,period_to,tx_count,total_amount,status,paid_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "order": "period_from.desc,period_ym.desc"},
     )
     existing_by_period = {row["period_ym"]: row for row in existing}
     for ym, summary in aggregates.items():
@@ -279,10 +327,11 @@ def _ensure_settlements(repo: JoinRepository, merchant_id: str, company_id: str)
             if row.get("status") != "paid" and (row.get("tx_count") != summary["tx_count"] or row.get("total_amount") != summary["total_amount"]):
                 repo.client.rest_patch("settlements", {"id": f"eq.{row['id']}"}, {"tx_count": summary["tx_count"], "total_amount": summary["total_amount"]})
         else:
-            repo.client.rest_post("settlements", {"company_id": company_id, "merchant_id": merchant_id, "period_ym": ym, "tx_count": summary["tx_count"], "total_amount": summary["total_amount"], "status": "confirmed"})
+            period_from, period_to = _settlement_period_bounds(ym)
+            repo.client.rest_post("settlements", {"company_id": company_id, "merchant_id": merchant_id, "period_ym": ym, "period_from": period_from, "period_to": period_to, "tx_count": summary["tx_count"], "total_amount": summary["total_amount"], "status": "confirmed"})
     return repo.client.rest_get(
         "settlements",
-        {"select": "id,company_id,merchant_id,period_ym,tx_count,total_amount,status,paid_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "order": "period_ym.desc"},
+        {"select": "id,company_id,merchant_id,period_ym,period_from,period_to,tx_count,total_amount,status,paid_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "order": "period_from.desc,period_ym.desc"},
     )
 
 
@@ -315,28 +364,19 @@ def _xlsx_bytes(rows: list[list[str]]) -> bytes:
 
 
 def _pdf_bytes(lines: list[str]) -> bytes:
-    safe_lines = [line.encode("latin-1", "replace").decode("latin-1").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") for line in lines]
-    text = "\n".join(f"0 -16 Td ({line}) Tj" for line in safe_lines)
-    stream = f"BT /F1 11 Tf 50 780 Td {text} ET".encode("latin-1")
-    objects = [
-        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
-        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
-        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
-        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
-        b"5 0 obj << /Length " + str(len(stream)).encode() + b" >> stream\n" + stream + b"\nendstream endobj",
-    ]
-    out = BytesIO()
-    out.write(b"%PDF-1.4\n")
-    offsets = [0]
-    for obj in objects:
-        offsets.append(out.tell())
-        out.write(obj + b"\n")
-    xref = out.tell()
-    out.write(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
-    for offset in offsets[1:]:
-        out.write(f"{offset:010d} 00000 n \n".encode())
-    out.write(f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode())
-    return out.getvalue()
+    # WeasyPrint embeds system fonts, preserving Korean headers and values.
+    import importlib
+
+    HTML = importlib.import_module("weasyprint").HTML
+
+    body = "".join(f"<div>{html.escape(line)}</div>" for line in lines)
+    document = f"""<!doctype html><html lang='ko'><meta charset='utf-8'><style>
+      @page {{ size: A4 landscape; margin: 18mm; }}
+      body {{ font-family: 'Noto Sans CJK KR', 'NanumGothic', sans-serif; font-size: 10px; color: #14351f; }}
+      div {{ padding: 4px 0; border-bottom: 1px solid #d9e8dc; white-space: pre-wrap; }}
+      div:nth-child(-n+4) {{ font-size: 13px; font-weight: bold; border: 0; }}
+    </style><body>{body}</body></html>"""
+    return HTML(string=document).write_pdf()
 
 
 def _safe_filename(value: str) -> str:
@@ -486,18 +526,21 @@ def vendor_summary(company_id: str, from_: str | None = Query(default=None, alia
     try:
         _, merchant_id = _merchant_admin(repo, token)
         link = _require_company_link(repo, merchant_id, company_id)
-        items, from_date, to_date = _load_vendor_transactions(repo, merchant_id, company_id, from_, to)
-        settlements = _ensure_settlements(repo, merchant_id, company_id)
-        total_amount = sum(int(item.get("amount") or 0) for item in items)
-        cancel_count = len([item for item in items if item.get("status") == "refund"])
+        _, _, from_date, to_date = _iso_bounds(from_, to)
+        summary = repo.client.rpc("merchant_ledger_summary", {
+            "p_merchant_id": merchant_id, "p_company_id": company_id,
+            "p_period_from": from_date.isoformat(), "p_period_to": to_date.isoformat(),
+        })
+        settlements = repo.client.rest_get("settlements", {
+            "select": "total_amount,status", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}",
+        })
         unsettled_amount = sum(int(row.get("total_amount") or 0) for row in settlements if row.get("status") != "paid")
         return {"ok": True, "data": {
             "period": {"from": from_date.isoformat(), "to": to_date.isoformat()},
-            "total_amount": total_amount,
-            "total_count": len(items),
-            "cancel_count": cancel_count,
+            "total_amount": int(summary.get("total_amount") or 0),
+            "total_count": int(summary.get("total_count") or 0),
+            "cancel_count": int(summary.get("cancel_count") or 0),
             "unsettled_amount": unsettled_amount,
-            "next_settlement_date": _next_settlement_date_for_contract(link),
             "contract": _contract_from_link(link),
         }, "error": None}
     except JoinFlowError as exc:
@@ -521,15 +564,32 @@ def vendor_transactions(company_id: str, from_: str | None = Query(default=None,
 
 
 @router.get("/companies/{company_id}/settlements")
-def vendor_settlements(company_id: str, token: str = Depends(bearer_token)):
+def vendor_settlements(company_id: str, from_: str | None = Query(default=None, alias="from"), to: str | None = None, token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         _, merchant_id = _merchant_admin(repo, token)
         _require_company_link(repo, merchant_id, company_id)
-        rows = _ensure_settlements(repo, merchant_id, company_id)
+        rows = repo.client.rest_get("settlements", {
+            "select": "id,company_id,merchant_id,period_ym,period_from,period_to,tx_count,total_amount,status,paid_at",
+            "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}",
+            "order": "period_from.desc,period_ym.desc",
+        })
+        filter_from = _parse_date(from_, date.min) if from_ else None
+        filter_to = _parse_date(to, date.max) if to else None
+        if filter_from and filter_to and filter_from > filter_to:
+            raise _error(400, "INVALID_DATE_RANGE", "시작일은 종료일보다 늦을 수 없어요")
         items = []
         for row in rows:
-            period_from, period_to = _settlement_period_bounds(row["period_ym"])
+            if row.get("period_from") and row.get("period_to"):
+                period_from = str(row["period_from"])[:10]
+                period_to = str(row["period_to"])[:10]
+            else:
+                period_from, period_to = _settlement_period_bounds(row["period_ym"])
+            row_from, row_to = date.fromisoformat(period_from), date.fromisoformat(period_to)
+            if filter_from and row_to < filter_from:
+                continue
+            if filter_to and row_from > filter_to:
+                continue
             items.append({
                 "id": row["id"],
                 "period_from": period_from,
@@ -544,6 +604,32 @@ def vendor_settlements(company_id: str, token: str = Depends(bearer_token)):
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "정산이력을 불러오는 중 오류가 발생했어요") from exc
+
+
+@router.post("/companies/{company_id}/settlements")
+def create_vendor_settlement(company_id: str, payload: SettlementCreateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        _require_company_link(repo, merchant_id, company_id)
+        _, _, period_from, period_to = _iso_bounds(payload.period_from, payload.period_to)
+        row = repo.client.rpc("create_merchant_settlement", {
+            "p_merchant_id": merchant_id, "p_company_id": company_id,
+            "p_period_from": period_from.isoformat(), "p_period_to": period_to.isoformat(),
+        })
+        return {"ok": True, "data": {"settlement": row}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        if "SETTLEMENT_PERIOD_OVERLAP" in exc.body:
+            raise _error(409, "SETTLEMENT_PERIOD_OVERLAP", "이미 정산된 기간과 겹쳐요") from exc
+        if "INVALID_DATE_RANGE" in exc.body:
+            raise _error(400, "INVALID_DATE_RANGE", "시작일은 종료일보다 늦을 수 없어요") from exc
+        if "period_from" in exc.body or "period_to" in exc.body or "PGRST204" in exc.body or "create_merchant_settlement" in exc.body:
+            raise _error(400, "MIGRATION_REQUIRED", "0016 마이그레이션 적용 후 기간 정산을 생성할 수 있어요") from exc
+        raise _error(502, "SUPABASE_ERROR", "기간 정산을 생성하는 중 오류가 발생했어요") from exc
 
 
 @router.post("/companies/{company_id}/settlements/{settlement_id}/confirm-payment")
@@ -578,11 +664,11 @@ def export_vendor_transactions(company_id: str, format: str = Query(pattern="^(x
         rows = [
             ["기간", from_date.isoformat(), to_date.isoformat()],
             ["총액", str(total_amount), "건수", str(len(items))],
-            ["일자", "시각", "직원", "사번", "메뉴", "결제구분", "금액", "상태"],
+            ["날짜", "시간", "부서", "이름", "사번", "메뉴/내역", "결제구분", "금액"],
         ]
         for item in items:
             created = str(item.get("created_at") or "")
-            rows.append([created[:10], created[11:16], item.get("employee_name", ""), item.get("employee_no", ""), item.get("menu", ""), item.get("pay_type", ""), str(item.get("amount", 0)), item.get("status", "")])
+            rows.append([created[:10], created[11:16], item.get("department", "-"), item.get("employee_name", ""), item.get("employee_no", ""), item.get("menu", ""), item.get("pay_type", ""), str(item.get("amount", 0))])
         ym = from_date.isoformat()[:7].replace("-", "")
         base = f"{_safe_filename(company_name)}_{'거래내역' if format == 'xlsx' else '청구서'}_{ym}.{format}"
         disposition = f"attachment; filename=\"vendor_{ym}.{format}\"; filename*=UTF-8''{quote(base)}"
@@ -592,8 +678,8 @@ def export_vendor_transactions(company_id: str, format: str = Query(pattern="^(x
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 headers={"Content-Disposition": disposition},
             )
-        pdf_lines = [f"MEALLEDGER Invoice - {company_name}", f"Period: {from_date.isoformat()} ~ {to_date.isoformat()}", f"Total: {total_amount:,} KRW", f"Count: {len(items)}"]
-        pdf_lines.extend([f"{row[0]} {row[1]} {row[2]} {row[4]} {row[6]}" for row in rows[3:80]])
+        pdf_lines = [f"MEALLEDGER Invoice - {company_name}", f"Period: {from_date.isoformat()} ~ {to_date.isoformat()}", f"Total: {total_amount:,} KRW", f"Count: {len(items)}", "날짜 | 시간 | 부서 | 이름 | 사번 | 메뉴/내역 | 결제구분 | 금액"]
+        pdf_lines.extend([" | ".join(str(value) for value in row) for row in rows[3:]])
         return Response(_pdf_bytes(pdf_lines), media_type="application/pdf", headers={"Content-Disposition": disposition})
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
@@ -609,7 +695,7 @@ def list_transactions(token: str = Depends(bearer_token)):
         rows = repo.client.rest_get(
             "meal_transactions",
             {
-                "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,product_name,product_price,created_at",
+                "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,product_name,product_price,pay_type,voucher_id,created_at",
                 "merchant_id": f"eq.{merchant_id}",
                 "order": "created_at.desc",
                 "limit": "50",
@@ -640,8 +726,46 @@ def list_transactions(token: str = Depends(bearer_token)):
             "created_at": item.get("approved_at") or item.get("created_at"),
         } for item in toss_rows)
         rows.sort(key=lambda item: item.get("created_at") or "", reverse=True)
-        return {"ok": True, "data": {"items": rows[:50]}, "error": None}
+        user_ids = sorted({str(item["user_id"]) for item in rows if item.get("user_id")})
+        users = {}
+        if user_ids:
+            user_rows = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no", "id": f"in.({','.join(user_ids)})"})
+            users = {item["id"]: item for item in user_rows}
+        for item in rows:
+            user = users.get(item.get("user_id"), {})
+            item["employee_name"] = user.get("display_name") or "직원"
+            item["employee_no"] = user.get("employee_no") or str(item.get("user_id") or "")[:8] or "-"
+        total_count = repo.client.rpc("merchant_transaction_count", {"p_merchant_id": merchant_id})
+        return {"ok": True, "data": {"items": rows[:50], "total_count": int(total_count or 0)}, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "거래내역을 불러오는 중 오류가 발생했어요") from exc
+
+
+@router.get("/transactions/{transaction_id}")
+def transaction_detail(transaction_id: str, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        rows = repo.client.rest_get("meal_transactions", {
+            "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,product_name,product_price,pay_type,voucher_id,created_at",
+            "id": f"eq.{transaction_id}", "merchant_id": f"eq.{merchant_id}", "limit": "1",
+        })
+        if not rows:
+            raise _error(404, "TRANSACTION_NOT_FOUND", "거래를 찾을 수 없어요")
+        item = rows[0]
+        users = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no", "id": f"eq.{item['user_id']}", "limit": "1"})
+        user = users[0] if users else {}
+        item["employee_name"] = user.get("display_name") or "직원"
+        item["employee_no"] = user.get("employee_no") or str(item.get("user_id") or "")[:8] or "-"
+        item["amount"] = abs(int(item.get("amount") or item.get("product_price") or 0))
+        if item.get("pay_type") == "voucher":
+            item["remaining"] = int(repo.client.rpc("voucher_balance", {"p_user_id": item["user_id"]}) or 0)
+        return {"ok": True, "data": item, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "거래 알림 상세를 불러오지 못했어요") from exc

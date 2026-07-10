@@ -10,6 +10,7 @@ FALLBACK_PRODUCTS: list[dict] = []
 FALLBACK_DAILY_MENU = {
     "title": "오늘의 부페 메뉴",
     "menu_text": "",
+    "image_url": None,
     "is_active": False,
 }
 
@@ -27,7 +28,7 @@ def get_today_menu(client: SupabaseHttpClient, merchant_id: str) -> tuple[dict |
         rows = client.rest_get(
             "merchant_daily_menus",
             {
-                "select": "id,merchant_id,service_date,title,menu_text,is_active,updated_at",
+                "select": "id,merchant_id,service_date,title,menu_text,image_url,is_active,updated_at",
                 "merchant_id": f"eq.{merchant_id}",
                 "service_date": f"eq.{today_kst()}",
                 "is_active": "eq.true",
@@ -36,6 +37,12 @@ def get_today_menu(client: SupabaseHttpClient, merchant_id: str) -> tuple[dict |
         )
         return (rows[0] if rows else None), False
     except SupabaseHttpError as exc:
+        if "image_url" in exc.body or "PGRST204" in exc.body:
+            rows = client.rest_get(
+                "merchant_daily_menus",
+                {"select": "id,merchant_id,service_date,title,menu_text,is_active,updated_at", "merchant_id": f"eq.{merchant_id}", "service_date": f"eq.{today_kst()}", "is_active": "eq.true", "limit": "1"},
+            )
+            return ({**rows[0], "image_url": None} if rows else None), True
         if "PGRST205" in exc.body:
             return None, True
         raise

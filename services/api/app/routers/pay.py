@@ -65,6 +65,9 @@ def _map_rpc_error(exc: SupabaseHttpError) -> HTTPException:
         "COMPANY_NOT_ACTIVE": (403, "COMPANY_NOT_ACTIVE", "회사 담당자 활성화 전이라 결제할 수 없어요"),
         "NOT_AFFILIATED": (403, "NOT_AFFILIATED", "이 식당은 우리 회사 제휴 식당이 아니에요"),
         "INVALID_AMOUNT": (400, "INVALID_AMOUNT", "결제 금액이 올바르지 않아요"),
+        "PRICE_NOT_CONFIGURED": (400, "PRICE_NOT_CONFIGURED", "식당 계약 단가가 설정되지 않았어요"),
+        "CONTRACT_PRICE_MISMATCH": (409, "CONTRACT_PRICE_MISMATCH", "계약 단가가 변경되었어요. 다시 시도해 주세요"),
+        "IDEMPOTENCY_CONFLICT": (409, "IDEMPOTENCY_CONFLICT", "이미 다른 결제에 사용된 요청 키예요"),
     }
     for key, value in mapping.items():
         if key in body:

@@ -1,3 +1,6 @@
+import base64
+import binascii
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,10 +9,17 @@ from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.products import FALLBACK_DAILY_MENU, FALLBACK_PRODUCTS, today_kst
-from app.schemas import DailyMenuUpsertRequest, EmployeeLimitUpdateRequest, JoinDecisionRequest, MealPolicyUpdateRequest, ProductCreateRequest, ProductUpdateRequest
+from app.schemas import DailyMenuUpsertRequest, EmployeeLimitUpdateRequest, EmployeeProfileUpdateRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest, ProductCreateRequest, ProductUpdateRequest
 from app.services.join_flow import JoinFlowError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+IMAGE_TYPES = {
+    "image/jpeg": ("jpg", (b"\xff\xd8\xff",)),
+    "image/png": ("png", (b"\x89PNG\r\n\x1a\n",)),
+    "image/webp": ("webp", (b"RIFF",)),
+    "image/gif": ("gif", (b"GIF87a", b"GIF89a")),
+}
 
 
 def _error(status: int, code: str, message: str) -> HTTPException:
@@ -85,7 +95,7 @@ def list_employees(token: str = Depends(bearer_token)):
         try:
             employees = repo.client.rest_get(
                 "app_users",
-                {"select": "id,display_name,status,monthly_limit,approved_at,created_at", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "order": "created_at.desc"},
+                {"select": "id,display_name,employee_no,status,monthly_limit,approved_at,created_at", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "order": "created_at.desc"},
             )
         except SupabaseHttpError as exc:
             if "monthly_limit" not in exc.body and "PGRST204" not in exc.body:
@@ -159,6 +169,26 @@ def update_employee_limit(user_id: str, payload: EmployeeLimitUpdateRequest, tok
         if "monthly_limit" in exc.body or "PGRST204" in exc.body:
             raise _error(400, "MIGRATION_REQUIRED", "0011_employee_monthly_limit.sql 적용 후 한도를 저장할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "직원 한도를 저장하는 중 오류가 발생했어요") from exc
+
+
+@router.patch("/employees/{user_id}")
+def update_employee_profile(user_id: str, payload: EmployeeProfileUpdateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        rows = repo.client.rest_get("app_users", {"select": "id,company_id,role", "id": f"eq.{user_id}", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "limit": "1"})
+        if not rows:
+            raise _error(404, "EMPLOYEE_NOT_FOUND", "직원을 찾을 수 없어요")
+        updated = repo.client.rest_patch("app_users", {"id": f"eq.{user_id}"}, {"employee_no": payload.employee_no})[0]
+        return {"ok": True, "data": {"employee": updated}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        if "employee_no" in exc.body or "PGRST204" in exc.body:
+            raise _error(400, "MIGRATION_REQUIRED", "0016 마이그레이션 적용 후 사번을 저장할 수 있어요") from exc
+        raise _error(502, "SUPABASE_ERROR", "직원 사번을 저장하는 중 오류가 발생했어요") from exc
 
 
 def _meal_policy_data(row: dict | None) -> dict:
@@ -351,6 +381,38 @@ def _ensure_product_belongs(repo: JoinRepository, product_id: str, merchant_id: 
     return rows[0]
 
 
+@router.post("/images")
+def upload_merchant_image(payload: ImageUploadRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _active_admin(repo, token)
+        merchant = _admin_merchant(repo, actor)
+        image_type = payload.content_type.lower().split(";", 1)[0].strip()
+        if image_type not in IMAGE_TYPES:
+            raise _error(400, "INVALID_IMAGE_TYPE", "JPEG, PNG, WEBP, GIF 이미지만 업로드할 수 있어요")
+        try:
+            content = base64.b64decode(payload.data_base64.split(",", 1)[-1], validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise _error(400, "INVALID_IMAGE_DATA", "올바른 base64 이미지가 아니에요") from exc
+        if not content or len(content) > MAX_IMAGE_BYTES:
+            raise _error(400, "IMAGE_TOO_LARGE", "이미지는 5MB 이하여야 해요")
+        extension, signatures = IMAGE_TYPES[image_type]
+        valid_signature = any(content.startswith(signature) for signature in signatures)
+        if image_type == "image/webp":
+            valid_signature = valid_signature and len(content) >= 12 and content[8:12] == b"WEBP"
+        if not valid_signature:
+            raise _error(400, "INVALID_IMAGE_DATA", "파일 내용과 이미지 형식이 일치하지 않아요")
+        object_path = f"{merchant['id']}/{uuid.uuid4().hex}.{extension}"
+        image_url = repo.client.upload_public_object("merchant-images", object_path, content, image_type)
+        return {"ok": True, "data": {"image_url": image_url, "filename": payload.filename, "content_type": image_type, "size": len(content)}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "IMAGE_UPLOAD_FAILED", "이미지 저장소 업로드에 실패했어요") from exc
+
+
 @router.get("/products")
 def list_products(token: str = Depends(bearer_token)):
     repo = JoinRepository()
@@ -434,7 +496,7 @@ def get_daily_menu(token: str = Depends(bearer_token)):
             rows = repo.client.rest_get(
                 "merchant_daily_menus",
                 {
-                    "select": "id,merchant_id,service_date,title,menu_text,is_active,updated_at",
+                    "select": "id,merchant_id,service_date,title,menu_text,image_url,is_active,updated_at",
                     "merchant_id": f"eq.{merchant['id']}",
                     "service_date": f"eq.{today_kst()}",
                     "limit": "1",
@@ -443,10 +505,18 @@ def get_daily_menu(token: str = Depends(bearer_token)):
             menu = rows[0] if rows else None
             migration_required = False
         except SupabaseHttpError as exc:
-            if "PGRST205" not in exc.body:
+            if "image_url" in exc.body or "PGRST204" in exc.body:
+                legacy_rows = repo.client.rest_get(
+                    "merchant_daily_menus",
+                    {"select": "id,merchant_id,service_date,title,menu_text,is_active,updated_at", "merchant_id": f"eq.{merchant['id']}", "service_date": f"eq.{today_kst()}", "limit": "1"},
+                )
+                menu = {**legacy_rows[0], "image_url": None} if legacy_rows else None
+                migration_required = True
+            elif "PGRST205" in exc.body:
+                menu = FALLBACK_DAILY_MENU
+                migration_required = True
+            else:
                 raise
-            menu = FALLBACK_DAILY_MENU
-            migration_required = True
         return {"ok": True, "data": {"merchant": merchant, "today_menu": menu, "service_date": today_kst(), "migration_required": migration_required}, "error": None}
     except JoinFlowError as exc:
         raise _handle_join_error(exc) from exc
@@ -472,6 +542,7 @@ def upsert_daily_menu(payload: DailyMenuUpsertRequest, token: str = Depends(bear
             "service_date": service_date,
             "title": payload.title,
             "menu_text": payload.menu_text,
+            "image_url": payload.image_url,
             "is_active": payload.is_active,
             "updated_at": datetime.now().isoformat(),
         }
@@ -483,6 +554,6 @@ def upsert_daily_menu(payload: DailyMenuUpsertRequest, token: str = Depends(bear
     except JoinFlowError as exc:
         raise _handle_join_error(exc) from exc
     except SupabaseHttpError as exc:
-        if "PGRST205" in exc.body:
-            raise _error(400, "MIGRATION_REQUIRED", "0006_merchant_daily_menus.sql 적용 후 오늘 메뉴를 저장할 수 있어요") from exc
+        if "PGRST205" in exc.body or "image_url" in exc.body or "PGRST204" in exc.body:
+            raise _error(400, "MIGRATION_REQUIRED", "0016_merchant_images_and_settlement_periods.sql 적용 후 오늘 메뉴 이미지를 저장할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "오늘 메뉴를 저장하는 중 오류가 발생했어요") from exc

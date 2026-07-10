@@ -26,6 +26,7 @@ class Settings:
     toss_client_key: str = ""
     toss_secret_key: str = ""
     public_api_base_url: str = "http://localhost:8000/v1"
+    pilot_merchant_id: str | None = None
     cors_allowed_origins: tuple[str, ...] = ("http://localhost:5173", "https://greeneatgo.vercel.app")
 
     @classmethod
@@ -48,6 +49,7 @@ class Settings:
             toss_client_key=os.environ["TOSS_CLIENT_KEY"],
             toss_secret_key=os.environ["TOSS_SECRET_KEY"],
             public_api_base_url=os.environ.get("PUBLIC_API_BASE_URL", "http://localhost:8000/v1").rstrip("/"),
+            pilot_merchant_id=(os.environ.get("PILOT_MERCHANT_ID") or "").strip() or None,
             cors_allowed_origins=tuple(
                 origin.strip()
                 for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173,https://greeneatgo.vercel.app").split(",")

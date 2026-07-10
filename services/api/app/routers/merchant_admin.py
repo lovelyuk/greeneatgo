@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
 import html
 import secrets
 from datetime import date, datetime, time, timedelta, timezone
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import quote
 from zipfile import ZIP_DEFLATED, ZipFile
 from zoneinfo import ZoneInfo
@@ -364,15 +366,20 @@ def _xlsx_bytes(rows: list[list[str]]) -> bytes:
 
 
 def _pdf_bytes(lines: list[str]) -> bytes:
-    # WeasyPrint embeds system fonts, preserving Korean headers and values.
+    # Bundle the Korean font in the service so Render/containers do not depend
+    # on an OS-level CJK font package. WeasyPrint embeds this data-URI font in
+    # the generated PDF, preventing Korean glyphs from becoming boxes.
     import importlib
 
     HTML = importlib.import_module("weasyprint").HTML
+    font_path = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "NanumGothic-Regular.ttf"
+    font_data = base64.b64encode(font_path.read_bytes()).decode("ascii")
 
     body = "".join(f"<div>{html.escape(line)}</div>" for line in lines)
     document = f"""<!doctype html><html lang='ko'><meta charset='utf-8'><style>
+      @font-face {{ font-family: 'MealLedger Korean'; src: url(data:font/ttf;base64,{font_data}) format('truetype'); }}
       @page {{ size: A4 landscape; margin: 18mm; }}
-      body {{ font-family: 'Noto Sans CJK KR', 'NanumGothic', sans-serif; font-size: 10px; color: #14351f; }}
+      body {{ font-family: 'MealLedger Korean', sans-serif; font-size: 10px; color: #14351f; }}
       div {{ padding: 4px 0; border-bottom: 1px solid #d9e8dc; white-space: pre-wrap; }}
       div:nth-child(-n+4) {{ font-size: 13px; font-weight: bold; border: 0; }}
     </style><body>{body}</body></html>"""
@@ -678,7 +685,7 @@ def export_vendor_transactions(company_id: str, format: str = Query(pattern="^(x
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 headers={"Content-Disposition": disposition},
             )
-        pdf_lines = [f"MEALLEDGER Invoice - {company_name}", f"Period: {from_date.isoformat()} ~ {to_date.isoformat()}", f"Total: {total_amount:,} KRW", f"Count: {len(items)}", "날짜 | 시간 | 부서 | 이름 | 사번 | 메뉴/내역 | 결제구분 | 금액"]
+        pdf_lines = [f"MEALLEDGER 청구서 - {company_name}", f"정산 기간: {from_date.isoformat()} ~ {to_date.isoformat()}", f"총 청구금액: {total_amount:,}원", f"거래 건수: {len(items)}건", "날짜 | 시간 | 부서 | 이름 | 사번 | 메뉴/내역 | 결제구분 | 금액"]
         pdf_lines.extend([" | ".join(str(value) for value in row) for row in rows[3:]])
         return Response(_pdf_bytes(pdf_lines), media_type="application/pdf", headers={"Content-Disposition": disposition})
     except JoinFlowError as exc:

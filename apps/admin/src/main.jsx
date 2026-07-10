@@ -511,8 +511,8 @@ function TransactionSkeleton() {
   return <div className="vendor-skeleton"><div className="vendor-summary-grid">{[0, 1, 2, 3].map((n) => <article key={n} className="skeleton-card" />)}</div><div className="skeleton-lines">{[0, 1, 2, 3, 4, 5].map((n) => <span key={n}/>)}</div></div>;
 }
 
-function VoucherProductsPanel({ items, token, busy, uploadImage, onChanged, setBusy, setError, setMessage }) {
-  const blank = { name: '', voucher_count: '10', bonus_count: '0', unit_price: '', discount_rate: '0', status: 'active', display_order: '0', image_url: '' };
+function VoucherProductsPanel({ items, migrationRequired, token, busy, uploadImage, onChanged, setBusy, setError, setMessage }) {
+  const blank = { name: '', voucher_count: '10', bonus_count: '0', unit_price: '', discount_rate: '0', status: 'active', display_order: '0', image_url: '', is_event: false, event_start_at: '', event_end_at: '' };
   const [form, setForm] = useState(blank);
   const [editingId, setEditingId] = useState(null);
   const count = Number(form.voucher_count || 0);
@@ -520,9 +520,27 @@ function VoucherProductsPanel({ items, token, busy, uploadImage, onChanged, setB
   const discount = Number(form.discount_rate || 0);
   const salePrice = Math.round(Number(form.unit_price || 0) * count * (100 - discount) / 100 * 100) / 100;
 
+  function dateTimeInput(value) {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
+  function displayEventPeriod(item) {
+    if (!item.is_event) return '';
+    const start = new Date(item.event_start_at).toLocaleString('ko-KR');
+    const end = new Date(item.event_end_at).toLocaleString('ko-KR');
+    return `${start} ~ ${end}`;
+  }
   function edit(item) {
     setEditingId(item.id);
-    setForm(Object.fromEntries(Object.entries({ ...blank, ...item }).map(([key, value]) => [key, value == null ? '' : String(value)])));
+    setForm({
+      ...blank,
+      ...Object.fromEntries(Object.entries(item).filter(([key]) => !['is_event', 'event_start_at', 'event_end_at'].includes(key)).map(([key, value]) => [key, value == null ? '' : String(value)])),
+      is_event: !!item.is_event,
+      event_start_at: dateTimeInput(item.event_start_at),
+      event_end_at: dateTimeInput(item.event_end_at),
+    });
   }
   async function chooseImage(event) {
     const file = event.target.files?.[0];
@@ -536,12 +554,21 @@ function VoucherProductsPanel({ items, token, busy, uploadImage, onChanged, setB
     finally { setBusy(false); event.target.value = ''; }
   }
   async function save(event) {
-    event.preventDefault(); setBusy(true); setError('');
+    event.preventDefault();
+    if (bonus > 0 && discount > 0 && !window.confirm('보너스와 할인을 동시에 적용하시겠어요?')) return;
+    if (form.is_event && (!form.event_start_at || !form.event_end_at)) { setError('이벤트 시작일시와 종료일시를 모두 입력해 주세요.'); return; }
+    if (form.is_event && new Date(form.event_end_at) <= new Date(form.event_start_at)) { setError('이벤트 종료일시는 시작일시보다 늦어야 해요.'); return; }
+    setBusy(true); setError('');
     try {
       const body = {
         name: form.name.trim(), voucher_count: count, bonus_count: bonus,
         unit_price: Number(form.unit_price), discount_rate: discount, status: form.status,
         display_order: Number(form.display_order || 0), image_url: form.image_url || null,
+        ...(!migrationRequired ? {
+          is_event: !!form.is_event,
+          event_start_at: form.is_event ? new Date(form.event_start_at).toISOString() : null,
+          event_end_at: form.is_event ? new Date(form.event_end_at).toISOString() : null,
+        } : {}),
       };
       await apiFetch(`/admin/voucher-products${editingId ? `/${editingId}` : ''}`, token, { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify(body) });
       setMessage(editingId ? '식권 패키지를 수정했어요.' : '식권 패키지를 등록했어요.');
@@ -557,7 +584,8 @@ function VoucherProductsPanel({ items, token, busy, uploadImage, onChanged, setB
     } catch (toggleError) { setError(toggleError.message); } finally { setBusy(false); }
   }
   return <section className="panel voucher-panel">
-    <div className="panel-title"><div><h2>식권 패키지 관리</h2><p className="panel-note">삭제하지 않고 숨김/판매 재개합니다. 판매가는 서버 계산값으로 확정됩니다.</p></div><span className="badge">{items.length}개</span></div>
+    <div className="panel-title"><div><h2>식권 패키지 관리</h2><p className="panel-note">삭제하지 않고 숨김/판매 재개합니다. 이벤트 상품은 설정 기간에만 자동 노출됩니다.</p></div><span className="badge">{items.length}개</span></div>
+    {migrationRequired && <div className="alert error">이벤트 상품 DB 마이그레이션이 아직 적용되지 않았어요. 0020_voucher_product_events.sql 적용 후 이벤트 등록이 활성화됩니다.</div>}
     <form className="voucher-form" onSubmit={save}>
       <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="패키지명" required />
       <label>기본 장수<input type="number" min="1" max="1000" value={form.voucher_count} onChange={(e) => setForm((p) => ({ ...p, voucher_count: e.target.value }))} required /></label>
@@ -567,12 +595,17 @@ function VoucherProductsPanel({ items, token, busy, uploadImage, onChanged, setB
       <label>할인율(%)<input type="number" min="0" max="99.99" step="0.01" value={form.discount_rate} onChange={(e) => setForm((p) => ({ ...p, discount_rate: e.target.value }))} /></label>
       <label>상태<select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}><option value="active">판매중</option><option value="inactive">숨김</option></select></label>
       <label>노출순서<input type="number" value={form.display_order} onChange={(e) => setForm((p) => ({ ...p, display_order: e.target.value }))} /></label>
+      <label className="event-toggle"><input type="checkbox" checked={form.is_event} onChange={(e) => setForm((p) => ({ ...p, is_event: e.target.checked }))} disabled={migrationRequired}/> 🎉 이벤트 상품으로 등록</label>
+      {form.is_event && <>
+        <label>이벤트 시작일시<input type="datetime-local" value={form.event_start_at} onChange={(e) => setForm((p) => ({ ...p, event_start_at: e.target.value }))} required /></label>
+        <label>이벤트 종료일시<input type="datetime-local" min={form.event_start_at} value={form.event_end_at} onChange={(e) => setForm((p) => ({ ...p, event_end_at: e.target.value }))} required /></label>
+      </>}
       <label className="image-picker compact">패키지 이미지<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={chooseImage} disabled={busy}/></label>
-      <div className="voucher-preview">미리보기 <strong>{count + bonus}장 · {krw(salePrice)}</strong><span>장당 {krw((count + bonus) ? salePrice / (count + bonus) : 0)}</span>{form.image_url && <img src={form.image_url} alt="식권 패키지 미리보기"/>}</div>
+      <div className="voucher-preview">미리보기 <strong>{count + bonus}장 · {krw(salePrice)}</strong><span>장당 {krw((count + bonus) ? salePrice / (count + bonus) : 0)}</span>{form.is_event && <span>🎉 노출 기간: {form.event_start_at || '시작일시'} ~ {form.event_end_at || '종료일시'} · 종료 후 자동 숨김</span>}{form.image_url && <img src={form.image_url} alt="식권 패키지 미리보기"/>}</div>
       {bonus > 0 && discount > 0 && <div className="alert warning">보너스와 할인율이 동시에 적용됩니다. 판매가와 총 장수를 다시 확인하세요.</div>}
       <div className="row-actions"><button className="primary" disabled={busy}>{editingId ? '수정 저장' : '패키지 등록'}</button>{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(blank); }}>취소</button>}</div>
     </form>
-    <div className="product-list">{items.map((item) => <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}+{item.bonus_count}장 · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span></div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button className="ghost" onClick={() => toggle(item)}>{item.status === 'active' ? '숨김' : '판매 재개'}</button></div></article>)}</div>
+    <div className="product-list">{items.map((item) => <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}+{item.bonus_count}장 · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span><span className={`exposure-status ${item.exposure_status}`}>{item.exposure_label}</span>{item.is_event && <span className="event-period">{displayEventPeriod(item)}</span>}</div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button className="ghost" onClick={() => toggle(item)}>{item.status === 'active' ? '숨김' : '판매 재개'}</button></div></article>)}</div>
   </section>;
 }
 
@@ -660,6 +693,7 @@ function Dashboard({ session, onLogout }) {
   const [settlements, setSettlements] = useState(null);
   const [products, setProducts] = useState(null);
   const [voucherProducts, setVoucherProducts] = useState([]);
+  const [voucherProductsMigrationRequired, setVoucherProductsMigrationRequired] = useState(false);
   const [paymentNotices, setPaymentNotices] = useState([]);
   const [productForm, setProductForm] = useState({ name: '', price: '', category: '', image_url: '' });
   const [dailyMenu, setDailyMenu] = useState(null);
@@ -795,6 +829,7 @@ function Dashboard({ session, onLogout }) {
             apiFetch('/admin/voucher-products', token),
           ]);
           setVoucherProducts(voucherData.items ?? []);
+          setVoucherProductsMigrationRequired(!!voucherData.migration_required);
         }
       }
       setMe(meData);
@@ -1435,7 +1470,7 @@ function Dashboard({ session, onLogout }) {
     </section>}
 
 
-    {isMerchantAdmin && <VoucherProductsPanel items={voucherProducts} token={token} busy={busy} uploadImage={uploadImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
+    {isMerchantAdmin && <VoucherProductsPanel items={voucherProducts} migrationRequired={voucherProductsMigrationRequired} token={token} busy={busy} uploadImage={uploadImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
 
     {isMerchantAdmin && <section className="panel daily-menu-panel">
       <div className="panel-title">

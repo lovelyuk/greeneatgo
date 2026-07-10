@@ -34,6 +34,8 @@ class TossPaymentServiceTests(unittest.TestCase):
             "product_name": "돈토식권",
             "merchant_name": "돈토",
             "pay_type": pay_type,
+            "merchant_id": "merchant-1",
+            "voucher_product_id": "voucher-product" if pay_type == "voucher" else None,
         }
         with patch("app.routers.toss_payments.JoinRepository") as repo_class, patch(
             "app.routers.toss_payments.get_settings",
@@ -42,7 +44,10 @@ class TossPaymentServiceTests(unittest.TestCase):
                 toss_client_key="test_ck_example",
             ),
         ):
-            repo_class.return_value.client.rest_get.return_value = [order]
+            responses = [[order]]
+            if pay_type == "voucher":
+                responses.append([{"id": "voucher-product", "status": "active", "is_event": False}])
+            repo_class.return_value.client.rest_get.side_effect = responses
             return bytes(checkout("checkout-token").body).decode()
 
     def test_voucher_checkout_opens_standard_payment_automatically(self):

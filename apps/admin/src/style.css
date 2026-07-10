@@ -224,10 +224,17 @@ select:focus { border-color: #2FB865; box-shadow: 0 0 0 5px rgba(47, 184, 101, .
 @media (max-width: 560px) { .product-register-form { grid-template-columns: 1fr; } .product-item { align-items: flex-start; flex-wrap: wrap; } }
 .voucher-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
 .voucher-form label { display: grid; gap: 6px; color: #5c7a66; font-size: 13px; font-weight: 900; }
-.voucher-form .alert, .voucher-form .row-actions, .voucher-preview { grid-column: 1 / -1; }
+.voucher-form .alert, .voucher-form .row-actions, .voucher-preview, .voucher-form .event-toggle { grid-column: 1 / -1; }
+.event-toggle { display: flex !important; flex-direction: row; align-items: center; gap: 9px !important; padding: 12px 14px; border-radius: 14px; background: #fff5e8; color: #6b3d13 !important; }
+.event-toggle input { width: 18px; height: 18px; }
+.exposure-status { width: fit-content; padding: 4px 9px; border-radius: 999px; background: #eaf7ec; color: #245f35 !important; font-size: 12px; }
+.exposure-status.event_active { background: #fff0d8; color: #a65300 !important; }
+.exposure-status.scheduled { background: #eef3ff; color: #35589a !important; }
+.exposure-status.event_ended, .exposure-status.hidden, .exposure-status.event_invalid { background: #f1f1f1; color: #777 !important; }
+.event-period { font-size: 12px; overflow-wrap: anywhere; }
 .quick-buttons { display: flex; gap: 6px; align-items: end; }
 .quick-buttons button { flex: 1; padding: 10px; }
-.voucher-preview { display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 18px; background: #eaf7ec; color: #5c7a66; font-weight: 850; }
+.voucher-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px; border-radius: 18px; background: #eaf7ec; color: #5c7a66; font-weight: 850; }
 .voucher-preview strong { color: #14351f; font-size: 20px; }
 .voucher-preview img { margin-left: auto; width: 72px; height: 72px; object-fit: cover; border-radius: 14px; }
 .payment-notice-backdrop { z-index: 1000; }

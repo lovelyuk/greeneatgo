@@ -13,6 +13,7 @@ from app.auth import bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
+from app.routers.voucher_products import _is_exposed, _load_products
 from app.schemas import TossOrderCreateRequest, TossPaymentConfirmRequest
 from app.services.toss_payment import TossConfirmInput, TossPaymentError, confirm_payment, get_payment, validate_confirm_input
 
@@ -39,6 +40,23 @@ def _customer(repo: JoinRepository, token: str):
     if profile is None or profile.status != "active" or profile.role != "customer":
         raise _error(403, "CUSTOMER_ONLY", "일반 사용자만 토스페이먼츠로 결제할 수 있어요")
     return auth, profile
+
+
+def _ensure_voucher_order_available(repo: JoinRepository, order: dict) -> None:
+    if order.get("pay_type") != "voucher":
+        return
+    product_id = order.get("voucher_product_id")
+    merchant_id = order.get("merchant_id")
+    if not product_id or not merchant_id:
+        raise _error(409, "INVALID_VOUCHER_ORDER", "식권 상품 정보가 없는 주문이에요")
+    products, _ = _load_products(repo, {
+        "id": f"eq.{product_id}",
+        "merchant_id": f"eq.{merchant_id}",
+        "status": "eq.active",
+        "limit": "1",
+    })
+    if not products or not _is_exposed(products[0]):
+        raise _error(409, "VOUCHER_PRODUCT_NOT_EXPOSED", "이벤트가 종료되었거나 판매가 중지된 상품이에요")
 
 
 @router.post("/orders")
@@ -117,6 +135,7 @@ def checkout(checkout_token: str):
     if not rows:
         raise _error(404, "ORDER_NOT_FOUND", "결제할 주문이 없거나 이미 처리됐어요")
     order = rows[0]
+    _ensure_voucher_order_available(repo, order)
     success_url = f"{settings.public_api_base_url}/toss/redirect/success"
     fail_url = f"{settings.public_api_base_url}/toss/redirect/fail"
     client_key = _json_for_script(settings.toss_client_key)
@@ -185,6 +204,7 @@ def confirm(payload: TossPaymentConfirmRequest, token: str = Depends(bearer_toke
                 "method": order.get("payment_method"), "approvedAt": order.get("approved_at"),
             }
         else:
+            _ensure_voucher_order_available(repo, order)
             payment = confirm_payment(settings.toss_secret_key, confirm_input)
             if payment.get("status") != "DONE":
                 raise TossPaymentError(400, "PAYMENT_NOT_DONE", "즉시 승인된 결제만 식당 이용이 가능해요")

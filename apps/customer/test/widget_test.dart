@@ -30,6 +30,26 @@ void main() {
     expect(product.imageUrl, isNotNull);
   });
 
+  test('event voucher exposes event flag and D-day label', () {
+    final product = VoucherProduct.fromJson({
+      'id': 'event-voucher',
+      'name': '여름 이벤트',
+      'voucher_count': 10,
+      'bonus_count': 0,
+      'unit_price': 8000,
+      'discount_rate': 10,
+      'sale_price': 72000,
+      'total_count': 10,
+      'is_event': true,
+      'event_end_at': '2026-07-13T23:59:59',
+    });
+
+    expect(product.isEvent, isTrue);
+    expect(product.eventEndAt, isNotNull);
+    expect(product.eventDdayAt(DateTime(2026, 7, 10, 12)), 'D-3');
+    expect(product.eventDdayAt(DateTime(2026, 7, 13, 8)), 'D-DAY');
+  });
+
   test('API exception retains status and no-voucher reason', () {
     const error = ApiException(statusCode: 402, reason: 'no_voucher', message: '보유 식권이 없습니다');
 

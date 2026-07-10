@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 class GPSPoint(BaseModel):
     lat: float
@@ -39,11 +39,26 @@ class VoucherProductCreateRequest(BaseModel):
     status: str = Field(default="active", pattern="^(active|inactive)$")
     display_order: int = Field(default=0, ge=-100000, le=100000)
     image_url: str | None = Field(default=None, max_length=500)
+    is_event: bool = False
+    event_start_at: datetime | None = None
+    event_end_at: datetime | None = None
 
     @field_validator("name", mode="before")
     @classmethod
     def trim_name(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_event_period(self):
+        if not self.is_event:
+            return self
+        if self.event_start_at is None or self.event_end_at is None:
+            raise ValueError("이벤트 시작일시와 종료일시는 모두 필수예요")
+        if self.event_start_at.tzinfo is None or self.event_end_at.tzinfo is None:
+            raise ValueError("이벤트 일시는 시간대 정보가 필요해요")
+        if self.event_end_at <= self.event_start_at:
+            raise ValueError("이벤트 종료일시는 시작일시보다 늦어야 해요")
+        return self
 
 
 class VoucherProductUpdateRequest(BaseModel):
@@ -55,8 +70,11 @@ class VoucherProductUpdateRequest(BaseModel):
     status: str | None = Field(default=None, pattern="^(active|inactive)$")
     display_order: int | None = Field(default=None, ge=-100000, le=100000)
     image_url: str | None = Field(default=None, max_length=500)
+    is_event: bool | None = None
+    event_start_at: datetime | None = None
+    event_end_at: datetime | None = None
 
-    @field_validator("name", "voucher_count", "bonus_count", "unit_price", "discount_rate", "status", "display_order", mode="before")
+    @field_validator("name", "voucher_count", "bonus_count", "unit_price", "discount_rate", "status", "display_order", "is_event", mode="before")
     @classmethod
     def reject_explicit_null(cls, value: object) -> object:
         if value is None:

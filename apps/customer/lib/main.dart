@@ -277,6 +277,8 @@ class VoucherProduct {
       required this.discountRate,
       required this.salePrice,
       required this.totalCount,
+      required this.isEvent,
+      this.eventEndAt,
       this.imageUrl});
   final String id;
   final String name;
@@ -286,10 +288,22 @@ class VoucherProduct {
   final num discountRate;
   final int salePrice;
   final int totalCount;
+  final bool isEvent;
+  final DateTime? eventEndAt;
   final String? imageUrl;
 
   int get regularPrice => unitPrice * voucherCount;
   int get saving => regularPrice - salePrice;
+  String get eventDday => eventDdayAt(DateTime.now());
+  String eventDdayAt(DateTime current) {
+    if (!isEvent || eventEndAt == null) return '';
+    final now = current.toLocal();
+    final end = eventEndAt!.toLocal();
+    final today = DateTime.utc(now.year, now.month, now.day);
+    final endDay = DateTime.utc(end.year, end.month, end.day);
+    final days = endDay.difference(today).inDays;
+    return days <= 0 ? 'D-DAY' : 'D-$days';
+  }
 
   factory VoucherProduct.fromJson(Map<String, dynamic> json) {
     int integer(String key) => (json[key] as num?)?.round() ?? 0;
@@ -302,6 +316,10 @@ class VoucherProduct {
       discountRate: json['discount_rate'] as num? ?? 0,
       salePrice: integer('sale_price'),
       totalCount: integer('total_count'),
+      isEvent: json['is_event'] as bool? ?? false,
+      eventEndAt: json['event_end_at'] == null
+          ? null
+          : DateTime.tryParse(json['event_end_at'] as String),
       imageUrl: json['image_url'] as String?,
     );
   }
@@ -1537,21 +1555,22 @@ class _VoucherProductCard extends StatelessWidget {
                           color: kOrange, size: 38)))),
           const SizedBox(height: 14),
         ],
-        Row(children: [
-          Expanded(
-              child: Text(product.name,
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.w900))),
+        Text(product.name,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          if (product.isEvent)
+            _PromoBadge(
+                text: '이벤트 · ${product.eventDday}',
+                icon: Icons.celebration_rounded),
           if (hasDiscount)
             _PromoBadge(
                 text: '${product.discountRate.round()}% 할인',
                 icon: Icons.local_offer_rounded),
           if (product.bonusCount > 0)
-            Padding(
-                padding: const EdgeInsets.only(left: 6),
-                child: _PromoBadge(
-                    text: '${product.bonusCount}장 보너스',
-                    icon: Icons.card_giftcard_rounded)),
+            _PromoBadge(
+                text: '${product.bonusCount}장 보너스',
+                icon: Icons.card_giftcard_rounded),
         ]),
         const SizedBox(height: 10),
         Text(

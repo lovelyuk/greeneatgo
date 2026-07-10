@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -10,7 +11,7 @@ from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.me import _customer_usage
 from app.routers.toss_payments import confirm
 from app.routers.transactions import scan
-from app.routers.voucher_products import _values, active_products
+from app.routers.voucher_products import _event_status, _is_exposed, _values, active_products
 from app.schemas import (
     TossPaymentConfirmRequest,
     TransactionScanRequest,
@@ -51,6 +52,34 @@ class VoucherCoreTests(unittest.TestCase):
         values = _values(payload, partial=False)
         self.assertNotIn("sale_price", values)
 
+    def test_event_product_requires_valid_period(self):
+        now = datetime.now(timezone.utc)
+        with self.assertRaises(ValidationError):
+            VoucherProductCreateRequest.model_validate({
+                "name": "이벤트", "voucher_count": 10, "unit_price": 8000, "is_event": True,
+            })
+        with self.assertRaises(ValidationError):
+            VoucherProductCreateRequest.model_validate({
+                "name": "이벤트", "voucher_count": 10, "unit_price": 8000, "is_event": True,
+                "event_start_at": now.isoformat(), "event_end_at": (now - timedelta(minutes=1)).isoformat(),
+            })
+
+    def test_event_exposure_is_computed_without_changing_status(self):
+        now = datetime(2026, 7, 10, 3, 0, tzinfo=timezone.utc)
+        base = {"status": "active", "is_event": True}
+        scheduled = {**base, "event_start_at": "2026-07-11T00:00:00+00:00", "event_end_at": "2026-07-12T00:00:00+00:00"}
+        ongoing = {**base, "event_start_at": "2026-07-09T00:00:00+00:00", "event_end_at": "2026-07-11T00:00:00+00:00"}
+        ended = {**base, "event_start_at": "2026-07-08T00:00:00+00:00", "event_end_at": "2026-07-09T00:00:00+00:00"}
+
+        self.assertEqual(_event_status(scheduled, now)[0], "scheduled")
+        self.assertEqual(_event_status(ongoing, now)[0], "event_active")
+        self.assertEqual(_event_status(ended, now)[0], "event_ended")
+        self.assertFalse(_is_exposed(scheduled, now))
+        self.assertTrue(_is_exposed(ongoing, now))
+        self.assertFalse(_is_exposed(ended, now))
+        self.assertTrue(_is_exposed({"status": "active", "is_event": False}, now))
+        self.assertFalse(_is_exposed({"status": "inactive", "is_event": False}, now))
+
     def test_qr_parser_keeps_supported_formats(self):
         self.assertEqual(parse_qr_data("restaurant:abc-123"), ("id", "abc-123"))
         self.assertEqual(parse_qr_data("QR-PILOT-KIMCHI"), ("qr_token", "QR-PILOT-KIMCHI"))
@@ -66,10 +95,13 @@ class VoucherCoreTests(unittest.TestCase):
         repo = repo_class.return_value
         repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="a@example.com")
         repo.get_profile.return_value = SimpleNamespace(id="user-1", role="customer", status="active")
-        repo.client.rest_get.return_value = [{
+        repo.client.rest_get.side_effect = [[{
             "id": "db-order", "order_id": "GE-V-order", "amount": 72000, "status": "ready",
-            "pay_type": "voucher", "payment_key": None, "approved_at": None,
-        }]
+            "pay_type": "voucher", "voucher_product_id": "voucher-product", "merchant_id": "merchant-1",
+            "payment_key": None, "approved_at": None,
+        }], [{
+            "id": "voucher-product", "status": "active", "is_event": False,
+        }]]
         toss_confirm.return_value = {
             "status": "DONE", "paymentKey": "payment-key", "method": "카드",
             "approvedAt": "2026-07-10T00:00:00Z",
@@ -84,6 +116,33 @@ class VoucherCoreTests(unittest.TestCase):
         repo.client.rpc.assert_called_once()
         self.assertEqual(repo.client.rpc.call_args.args[0], "fulfill_voucher_order")
         repo.client.rest_patch.assert_not_called()
+
+    @patch("app.routers.toss_payments.confirm_payment")
+    @patch("app.routers.toss_payments.get_settings")
+    @patch("app.routers.toss_payments.JoinRepository")
+    def test_toss_confirmation_rejects_expired_event_before_authorization(self, repo_class, settings, toss_confirm):
+        repo = repo_class.return_value
+        repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="a@example.com")
+        repo.get_profile.return_value = SimpleNamespace(id="user-1", role="customer", status="active")
+        now = datetime.now(timezone.utc)
+        repo.client.rest_get.side_effect = [[{
+            "id": "db-order", "order_id": "GE-V-expired", "amount": 65000, "status": "ready",
+            "pay_type": "voucher", "voucher_product_id": "event-product", "merchant_id": "merchant-1",
+            "payment_key": None, "approved_at": None,
+        }], [{
+            "id": "event-product", "status": "active", "is_event": True,
+            "event_start_at": (now - timedelta(days=2)).isoformat(),
+            "event_end_at": (now - timedelta(days=1)).isoformat(),
+        }]]
+
+        with self.assertRaises(HTTPException) as ctx:
+            confirm(TossPaymentConfirmRequest(
+                payment_key="payment-key", order_id="GE-V-expired", amount=65000
+            ), "bearer")
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        toss_confirm.assert_not_called()
+        repo.client.rpc.assert_not_called()
 
     @patch("app.routers.transactions.JoinRepository")
     def test_customer_scan_returns_402_no_voucher(self, repo_class):
@@ -140,6 +199,34 @@ class VoucherCoreTests(unittest.TestCase):
         self.assertEqual(result["data"]["items"], [])
         product_params = repo.client.rest_get.call_args_list[1].args[1]
         self.assertEqual(product_params["merchant_id"], "eq.merchant-pilot")
+
+    @patch("app.routers.voucher_products.get_settings")
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_product_listing_filters_scheduled_and_ended_events(self, repo_class, settings):
+        repo = repo_class.return_value
+        settings.return_value.pilot_merchant_id = "merchant-pilot"
+        now = datetime.now(timezone.utc)
+        base = {
+            "merchant_id": "merchant-pilot", "voucher_count": 10, "bonus_count": 0,
+            "unit_price": 8000, "discount_rate": 10, "sale_price": 72000,
+            "status": "active", "display_order": 0, "image_url": None,
+            "created_at": now.isoformat(), "updated_at": now.isoformat(),
+        }
+        rows = [
+            {**base, "id": "normal", "name": "상시", "is_event": False, "event_start_at": None, "event_end_at": None},
+            {**base, "id": "ongoing", "name": "진행", "is_event": True,
+             "event_start_at": (now - timedelta(days=1)).isoformat(), "event_end_at": (now + timedelta(days=1)).isoformat()},
+            {**base, "id": "scheduled", "name": "예정", "is_event": True,
+             "event_start_at": (now + timedelta(days=1)).isoformat(), "event_end_at": (now + timedelta(days=2)).isoformat()},
+            {**base, "id": "ended", "name": "종료", "is_event": True,
+             "event_start_at": (now - timedelta(days=2)).isoformat(), "event_end_at": (now - timedelta(days=1)).isoformat()},
+        ]
+        repo.client.rest_get.side_effect = [[{"id": "merchant-pilot", "name": "돈토"}], rows]
+
+        result = active_products()
+
+        self.assertEqual([item["id"] for item in result["data"]["items"]], ["normal", "ongoing"])
+        self.assertTrue(result["data"]["items"][1]["is_event"])
 
     def test_customer_usage_keeps_direct_toss_history_and_exact_rpc_balance(self):
         repo = MagicMock()

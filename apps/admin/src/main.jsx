@@ -1505,21 +1505,22 @@ function Dashboard({ session, onLogout }) {
 
   return <main className={`shell${isMerchantAdmin ? ' merchant-shell' : ''}`}>
     <ImageCropModal request={cropRequest} onCancel={() => finishImageCrop(null)} onApply={finishImageCrop} />
-    <header className={`topbar${isMerchantAdmin ? ' merchant-topbar' : ''}`}>
+    {(!isMerchantAdmin || merchantSection === 'main') && <header className={`topbar${isMerchantAdmin ? ' merchant-main-header' : ''}`}>
       <div className="top-copy">
-        <div className="brand-row">
+        {!isMerchantAdmin && <div className="brand-row">
           <BrandMark />
           <span className="pill">OPERATIONS</span>
-        </div>
+        </div>}
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
       <div className="top-actions">
         <button className="ghost" onClick={load} disabled={busy}><RefreshCw size={16}/> 새로고침</button>
         <button className="ghost" onClick={onLogout}><LogOut size={16}/> 로그아웃</button>
       </div>
-    </header>
+    </header>}
 
     {isMerchantAdmin && <nav className="merchant-sidebar" aria-label="식당 관리자 메뉴">
+      <div className="merchant-sidebar-brand"><BrandMark /></div>
       {merchantNavItems.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span></button>)}
     </nav>}
 

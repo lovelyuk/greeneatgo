@@ -22,7 +22,7 @@ router = APIRouter(prefix="/toss", tags=["toss-payments"])
 ORDER_SELECT = (
     "id,order_id,checkout_token,user_id,merchant_id,product_id,merchant_name,"
     "product_name,amount,status,payment_key,payment_method,approved_at,created_at,"
-    "pay_type,voucher_product_id,voucher_count,voucher_purchase_price,fulfilled_at,toss_response"
+    "pay_type,voucher_product_id,voucher_count,voucher_purchase_price,fulfilled_at,toss_response,company_id,company_subsidy_amount,restaurant_subsidy_amount,point_amount,point_reserved"
 )
 
 
@@ -34,10 +34,10 @@ def _json_for_script(value: object) -> str:
     return json.dumps(value, ensure_ascii=False).replace("</", "<\\/")
 
 
-def _customer(repo: JoinRepository, token: str):
+def _customer(repo: JoinRepository, token: str, *, allow_employee: bool = False):
     auth = repo.auth_user_from_token(token)
     profile = repo.get_profile(auth.id, email=auth.email)
-    if profile is None or profile.status != "active" or profile.role != "customer":
+    if profile is None or profile.status != "active" or (profile.role != "customer" and not (allow_employee and profile.role == "employee")):
         raise _error(403, "CUSTOMER_ONLY", "일반 사용자만 토스페이먼츠로 결제할 수 있어요")
     return auth, profile
 
@@ -147,7 +147,7 @@ def checkout(checkout_token: str):
     fail = _json_for_script(fail_url)
     merchant_name = escape(str(order["merchant_name"]))
     product_name = escape(str(order["product_name"]))
-    auto_start = "true" if order.get("pay_type") == "voucher" else "false"
+    auto_start = "true" if order.get("pay_type") in {"voucher", "subsidized"} else "false"
     return HTMLResponse(f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>그린잇 상품 결제</title><script src="https://js.tosspayments.com/v2/standard"></script>
@@ -182,7 +182,7 @@ def confirm(payload: TossPaymentConfirmRequest, token: str = Depends(bearer_toke
     repo = JoinRepository()
     settings = get_settings()
     try:
-        _, profile = _customer(repo, token)
+        _, profile = _customer(repo, token, allow_employee=True)
         rows = repo.client.rest_get(
             "toss_payment_orders",
             {"select": ORDER_SELECT, "order_id": f"eq.{payload.order_id}", "user_id": f"eq.{profile.id}", "limit": "1"},
@@ -209,8 +209,8 @@ def confirm(payload: TossPaymentConfirmRequest, token: str = Depends(bearer_toke
             if payment.get("status") != "DONE":
                 raise TossPaymentError(400, "PAYMENT_NOT_DONE", "즉시 승인된 결제만 식당 이용이 가능해요")
         approved_at = payment.get("approvedAt") or order.get("approved_at") or datetime.now(timezone.utc).isoformat()
-        if order.get("pay_type") == "voucher":
-            fulfillment = repo.client.rpc("fulfill_voucher_order", {
+        if order.get("pay_type") in {"voucher", "subsidized"}:
+            fulfillment = repo.client.rpc("fulfill_voucher_order" if order.get("pay_type") == "voucher" else "fulfill_subsidized_order", {
                 "p_order_id": order["id"],
                 "p_payment_key": payment.get("paymentKey") or payload.payment_key,
                 "p_payment_method": payment.get("method"),
@@ -285,8 +285,8 @@ def webhook(payload: dict = Body(...)):
         if payment.get("paymentKey") != payment_key:
             raise _error(400, "PAYMENT_KEY_MISMATCH", "결제키가 일치하지 않아요")
         approved_at = payment.get("approvedAt") or datetime.now(timezone.utc).isoformat()
-        if order.get("pay_type") == "voucher":
-            fulfillment = repo.client.rpc("fulfill_voucher_order", {
+        if order.get("pay_type") in {"voucher", "subsidized"}:
+            fulfillment = repo.client.rpc("fulfill_voucher_order" if order.get("pay_type") == "voucher" else "fulfill_subsidized_order", {
                 "p_order_id": order["id"], "p_payment_key": payment_key,
                 "p_payment_method": payment.get("method"), "p_toss_response": payment,
                 "p_approved_at": approved_at,

@@ -82,6 +82,8 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
         }
         for row in recent_spends
     ]
+    point_users = repo.client.rest_get("app_users", {"select": "point_balance", "id": f"eq.{user_id}", "limit": "1"})
+    point_rows = repo.client.rest_get("point_transactions", {"select": "id,type,amount,balance_after,reason,related_voucher_id,related_order_id,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "50"})
     return {
         "balance": balance,
         "monthly_limit": monthly_limit,
@@ -90,6 +92,8 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
         "recent_transactions": recent_transactions,
         "voucher_balance": None,
         "voucher_use_history": [],
+        "point_balance": int(point_users[0].get("point_balance") or 0) if point_users else 0,
+        "point_transactions": point_rows,
     }
 
 
@@ -224,6 +228,8 @@ def me(token: str = Depends(bearer_token)):
             "recent_transactions": usage["recent_transactions"],
             "voucher_balance": usage["voucher_balance"],
             "voucher_use_history": usage["voucher_use_history"],
+            "point_balance": usage.get("point_balance"),
+            "point_transactions": usage.get("point_transactions", []),
         },
         "error": None,
     }

@@ -22,6 +22,66 @@ logger = logging.getLogger(__name__)
 _PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,image_url,is_event,event_start_at,event_end_at,created_at,updated_at"
 _LEGACY_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,image_url,created_at,updated_at"
 
+def _subsidized_context(repo: JoinRepository, token: str):
+    auth = repo.auth_user_from_token(token)
+    profile = repo.get_profile(auth.id, email=auth.email)
+    if profile is None or profile.status != "active" or profile.role != "employee" or not profile.company_id:
+        raise _error(403, "LEDGER_EMPLOYEE_ONLY", "장부업체 직원만 이용할 수 있어요")
+    merchant = resolve_voucher_merchant(repo, get_settings().pilot_merchant_id)
+    if not merchant:
+        raise _error(404, "MERCHANT_NOT_FOUND", "식당을 찾을 수 없어요")
+    links = repo.client.rest_get("merchant_companies", {"select": "company_id,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,status", "merchant_id": f"eq.{merchant['id']}", "company_id": f"eq.{profile.company_id}", "status": "eq.active", "limit": "1"})
+    if not links or not links[0].get("subsidy_enabled"):
+        raise _error(404, "SUBSIDY_NOT_AVAILABLE", "보조금 계약 대상이 아니에요")
+    contract = links[0]
+    unit, company, restaurant = int(contract.get("unit_price") or 0), int(contract.get("company_subsidy_amount") or 0), int(contract.get("restaurant_subsidy_amount") or 0)
+    if unit <= 0 or company < 0 or restaurant < 0 or company + restaurant >= unit:
+        raise _error(409, "INVALID_SUBSIDY_CONTRACT", "보조금 계약 금액이 올바르지 않아요")
+    return profile, merchant, contract
+
+
+@router.get("/vouchers/subsidized-price")
+def subsidized_price(token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant, contract = _subsidized_context(repo, token)
+        unit, company, restaurant = int(contract["unit_price"]), int(contract["company_subsidy_amount"]), int(contract["restaurant_subsidy_amount"])
+        return {"ok": True, "data": {"merchant_id": merchant["id"], "merchant_name": merchant["name"], "unit_price": unit, "employee_pay_amount": unit-company-restaurant, "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant}, "error": None}
+    except HTTPException: raise
+    except SupabaseHttpError as exc: raise _error(502, "SUPABASE_ERROR", "보조금 가격을 불러오지 못했어요") from exc
+
+
+@router.post("/vouchers/subsidized-orders/{order_id}/cancel")
+def cancel_subsidized_order(order_id: str, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        auth = repo.auth_user_from_token(token)
+        rows = repo.client.rest_get("toss_payment_orders", {"select": "id,user_id,pay_type", "order_id": f"eq.{order_id}", "user_id": f"eq.{auth.id}", "pay_type": "eq.subsidized", "limit": "1"})
+        if not rows:
+            raise _error(404, "ORDER_NOT_FOUND", "취소할 주문을 찾을 수 없어요")
+        result = repo.client.rpc("release_subsidized_order_points", {"p_order_id": rows[0]["id"], "p_user_id": auth.id})
+        return {"ok": True, "data": result, "error": None}
+    except HTTPException: raise
+    except SupabaseHttpError as exc: raise _error(502, "ORDER_CANCEL_FAILED", "포인트 예약을 해제하지 못했어요") from exc
+
+
+@router.post("/vouchers/purchase-subsidized", status_code=201)
+def purchase_subsidized(token: str = Depends(bearer_token)):
+    repo, settings = JoinRepository(), get_settings()
+    try:
+        profile, merchant, contract = _subsidized_context(repo, token)
+        unit, company, restaurant = int(contract["unit_price"]), int(contract["company_subsidy_amount"]), int(contract["restaurant_subsidy_amount"])
+        employee_due, order_id, checkout_token = unit-company-restaurant, f"GE-S-{uuid.uuid4().hex}", secrets.token_urlsafe(32)
+        order = repo.client.rest_post("toss_payment_orders", {"order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id, "merchant_id": merchant["id"], "company_id": profile.company_id, "merchant_name": merchant["name"], "product_name": "보조금 식권", "amount": employee_due, "status": "ready", "pay_type": "subsidized", "voucher_count": 1, "voucher_purchase_price": str(employee_due), "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant})[0]
+        split = repo.client.rpc("reserve_subsidized_order_points", {"p_order_id": order["id"]})
+        point_amount, card_amount = int(split["point_amount"]), int(split["card_amount"])
+        fulfilled = None
+        if card_amount == 0:
+            fulfilled = repo.client.rpc("fulfill_subsidized_order", {"p_order_id": order["id"], "p_payment_key": None, "p_payment_method": "POINT", "p_toss_response": None, "p_approved_at": datetime.now(timezone.utc).isoformat()})
+        return {"ok": True, "data": {"order_id": order_id, "amount": card_amount, "employee_pay_amount": employee_due, "point_amount": point_amount, "card_amount": card_amount, "point_only": card_amount == 0, "checkout_url": None if card_amount == 0 else f"{settings.public_api_base_url}/toss/checkout/{checkout_token}", "fulfillment": fulfilled}, "error": None}
+    except HTTPException: raise
+    except SupabaseHttpError as exc: raise _error(502, "SUPABASE_ERROR", "보조금 식권 주문을 만들지 못했어요") from exc
+
 
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})

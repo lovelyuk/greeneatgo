@@ -193,6 +193,17 @@ select:focus { border-color: #2FB865; box-shadow: 0 0 0 5px rgba(47, 184, 101, .
 .contract-summary { margin-bottom: 18px; padding: 16px; border-radius: 20px; background: #EAF7EC; }
 .contract-form { display: grid; gap: 14px; }
 .contract-form .primary { width: auto; min-width: 120px; }
+.subsidy-toggle { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 10px; padding: 14px; border-radius: 18px; background: #eaf7ec; }
+.subsidy-toggle input { width: 20px; height: 20px; accent-color: #2fb865; }
+.subsidy-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; border: 1px solid #cdebd5; border-radius: 20px; background: #f8fcf9; }
+.employee-pay-preview { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-radius: 16px; background: #ddf3e2; color: #1e5631; }
+.employee-pay-preview.invalid { background: #ffe8e0; color: #b42318; }
+.subsidy-validation { grid-column: 1 / -1; margin: 0; }
+.pay-type-badge { display: inline-flex; padding: 5px 9px; border-radius: 999px; background: #eaf7ec; color: #1e5631; font-weight: 950; }
+.pay-type-badge.subsidized { background: #fff0d8; color: #a65300; }
+.subsidy-breakdown { display: block; margin-top: 4px; color: #5c7a66; font-weight: 750; text-decoration: none; }
+.restaurant-contribution { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 14px 16px; border-radius: 18px; background: #fff5e8; color: #6b3d13; font-weight: 900; }
+@media (max-width: 560px) { .subsidy-fields { grid-template-columns: 1fr; } }
 .merchant-qr-panel { min-height: 100%; }
 .qr-card-body { display: grid; grid-template-columns: 154px 1fr; gap: 16px; align-items: center; }
 .merchant-qr-image { width: 154px; height: 154px; padding: 10px; border-radius: 24px; background: #fff; border: 1.5px solid #CDEBD5; }

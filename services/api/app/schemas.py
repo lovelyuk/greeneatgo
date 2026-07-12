@@ -173,6 +173,29 @@ class EmployeeLimitUpdateRequest(BaseModel):
     monthly_limit: int = Field(ge=0, le=10000000)
 
 
+class EmployeePointChargeRequest(BaseModel):
+    amount: int = Field(gt=0, le=100000000)
+    reason: str = Field(min_length=1, max_length=500)
+    welfare_deduction_confirmed: bool
+    model_config = {"extra": "forbid"}
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def trim_reason(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class EmployeePointAdjustRequest(BaseModel):
+    target_balance: int = Field(ge=0, le=100000000)
+    reason: str = Field(min_length=1, max_length=500)
+    model_config = {"extra": "forbid"}
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def trim_reason(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
 class EmployeeProfileUpdateRequest(BaseModel):
     employee_no: str | None = Field(default=None, max_length=40)
 

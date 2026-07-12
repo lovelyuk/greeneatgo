@@ -216,10 +216,10 @@ def _load_vendor_transactions(repo: JoinRepository, merchant_id: str, company_id
         repo,
         "meal_transactions",
         {
-            "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,product_name,product_price,pay_type,created_at",
+            "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,product_name,product_price,pay_type,company_subsidy_amount,restaurant_subsidy_amount,employee_paid_amount,created_at",
             "merchant_id": f"eq.{merchant_id}",
             "company_id": f"eq.{company_id}",
-            "pay_type": "eq.ledger",
+            "pay_type": "in.(ledger,subsidized)",
             "and": f"(created_at.gte.{from_iso},created_at.lt.{to_iso})",
             "order": "created_at.desc",
         },
@@ -244,6 +244,9 @@ def _load_vendor_transactions(repo: JoinRepository, merchant_id: str, company_id
         if query and query not in f"{department} {employee_name} {employee_no}".lower():
             continue
         amount = _tx_amount(row)
+        if row.get("pay_type") == "subsidized":
+            company_charge = int(row.get("company_subsidy_amount") or 0)
+            amount = company_charge if row.get("kind") == "spend" else -company_charge
         items.append({
             **row,
             "created_at": _kst_iso(row.get("created_at")),
@@ -252,7 +255,7 @@ def _load_vendor_transactions(repo: JoinRepository, merchant_id: str, company_id
             "employee_no": employee_no,
             "department": department,
             "menu": row.get("product_name") or row.get("meal_window") or "식대 사용",
-            "pay_type": "식권" if row.get("pay_type") == "voucher" else "장부",
+            "pay_type": "보조금" if row.get("pay_type") == "subsidized" else ("식권" if row.get("pay_type") == "voucher" else "장부"),
             "status": "refund" if row.get("kind") in {"refund", "cancel"} else "paid",
         })
     return items, from_date, to_date
@@ -302,10 +305,10 @@ def _ensure_settlements(repo: JoinRepository, merchant_id: str, company_id: str)
     tx_rows = repo.client.rest_get(
         "meal_transactions",
         {
-            "select": "id,amount,kind,pay_type,created_at",
+            "select": "id,amount,kind,pay_type,company_subsidy_amount,created_at",
             "merchant_id": f"eq.{merchant_id}",
             "company_id": f"eq.{company_id}",
-            "pay_type": "eq.ledger",
+            "pay_type": "in.(ledger,subsidized)",
             "kind": "in.(spend,refund)",
             "limit": "2000",
         },
@@ -317,7 +320,8 @@ def _ensure_settlements(repo: JoinRepository, merchant_id: str, company_id: str)
             continue
         bucket = aggregates.setdefault(ym, {"tx_count": 0, "total_amount": 0})
         bucket["tx_count"] += 1
-        bucket["total_amount"] += _tx_amount(row)
+        charge = int(row.get("company_subsidy_amount") or 0) if row.get("pay_type") == "subsidized" else _tx_amount(row)
+        bucket["total_amount"] += -charge if row.get("kind") in {"refund", "cancel"} else charge
     existing = repo.client.rest_get(
         "settlements",
         {"select": "id,company_id,merchant_id,period_ym,period_from,period_to,tx_count,total_amount,status,paid_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "order": "period_from.desc,period_ym.desc"},

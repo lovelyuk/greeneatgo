@@ -11,10 +11,11 @@ from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.products import FALLBACK_DAILY_MENU, FALLBACK_PRODUCTS, today_kst
-from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeLimitUpdateRequest, EmployeeProfileUpdateRequest, ImageDeleteRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest, ProductCreateRequest, ProductUpdateRequest
+from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeLimitUpdateRequest, EmployeePointAdjustRequest, EmployeePointChargeRequest, EmployeeProfileUpdateRequest, ImageDeleteRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest, ProductCreateRequest, ProductUpdateRequest
 from app.services.employee_bulk import BulkFileError, RawEmployeeRow, build_template, read_employee_file, validate_rows
 from app.services.join_flow import JoinFlowError
 from app.services.product_images import ProductImageError, managed_image_path, normalize_product_image
+from app.services.push_notifications import send_individual_point_push
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -193,7 +194,7 @@ def list_employees(token: str = Depends(bearer_token)):
         try:
             employees = _paged_rest_get(repo,
                 "app_users",
-                {"select": "id,display_name,employee_no,phone,department,status,monthly_limit,approved_at,created_at", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "order": "created_at.desc"},
+                {"select": "id,display_name,employee_no,phone,department,status,monthly_limit,point_balance,approved_at,created_at", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "order": "created_at.desc"},
             )
         except SupabaseHttpError as exc:
             if "monthly_limit" not in exc.body and "PGRST204" not in exc.body:
@@ -245,6 +246,10 @@ def list_employees(token: str = Depends(bearer_token)):
             if stats[user_id]["recent"] is None or created > stats[user_id]["recent"]:
                 stats[user_id]["recent"] = created
         items = []
+        point_rows = _paged_rest_get(repo, "point_transactions", {"select": "user_id,amount,created_at", "company_id": f"eq.{actor.company_id}", "type": "eq.charge", "order": "created_at.desc"}) if user_ids and not migration_required else []
+        recent_charge = {}
+        for point in point_rows:
+            recent_charge.setdefault(point["user_id"], point)
         for employee in employees:
             employee_stats = stats.get(employee["id"], {"used": 0, "recent": None})
             items.append({
@@ -252,6 +257,8 @@ def list_employees(token: str = Depends(bearer_token)):
                 "monthly_limit": employee.get("monthly_limit") if employee.get("monthly_limit") is not None else 200000,
                 "month_used": employee_stats["used"],
                 "recent_used_at": employee_stats["recent"],
+                "point_balance": int(employee.get("point_balance") or 0),
+                "recent_point_charge": recent_charge.get(employee["id"]),
             })
         items.extend({
             **invite,
@@ -390,6 +397,54 @@ def update_meal_policy(payload: MealPolicyUpdateRequest, token: str = Depends(be
         raise _handle_join_error(exc) from exc
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "식대 사용시간 설정을 저장하는 중 오류가 발생했어요") from exc
+
+
+def _change_employee_points(user_id: str, mode: str, value: int, reason: str, confirmed: bool, token: str):
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        result = repo.client.rpc("company_admin_change_points", {"p_admin_id": actor.id, "p_employee_id": user_id, "p_mode": mode, "p_value": value, "p_reason": reason, "p_confirmed": confirmed})
+        if mode == "charge":
+            try:
+                rows = repo.client.rest_get("device_tokens", {"select": "fcm_token", "account_id": f"eq.{user_id}", "is_active": "eq.true"})
+                send_individual_point_push(tokens=[row["fcm_token"] for row in rows], amount=value, balance=int(result["point_balance"]))
+            except Exception:
+                logger.exception("Point charge committed but push failed for %s", user_id)
+        return {"ok": True, "data": result, "error": None}
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        for code, status in {"EMPLOYEE_NOT_FOUND": 404, "REASON_REQUIRED": 422, "WELFARE_DEDUCTION_CONFIRMATION_REQUIRED": 422, "INVALID_TARGET_BALANCE": 409, "NO_CHANGE": 409}.items():
+            if code in exc.body:
+                raise _error(status, code, code) from exc
+        raise _error(502, "POINT_CHANGE_FAILED", "포인트 변경을 저장하지 못했어요") from exc
+
+
+@router.post("/employees/{user_id}/points/charge")
+def charge_employee_points(user_id: str, payload: EmployeePointChargeRequest, token: str = Depends(bearer_token)):
+    if not payload.welfare_deduction_confirmed:
+        raise _error(422, "WELFARE_DEDUCTION_CONFIRMATION_REQUIRED", "외부 복지 차감 확인이 필요해요")
+    return _change_employee_points(user_id, "charge", payload.amount, payload.reason, True, token)
+
+
+@router.post("/employees/{user_id}/points/adjust")
+def adjust_employee_points(user_id: str, payload: EmployeePointAdjustRequest, token: str = Depends(bearer_token)):
+    return _change_employee_points(user_id, "adjust", payload.target_balance, payload.reason, False, token)
+
+
+@router.get("/employees/{user_id}/points")
+def employee_points(user_id: str, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        employees = repo.client.rest_get("app_users", {"select": "id,display_name,point_balance", "id": f"eq.{user_id}", "company_id": f"eq.{actor.company_id}", "role": "eq.employee", "limit": "1"})
+        if not employees:
+            raise _error(404, "EMPLOYEE_NOT_FOUND", "직원을 찾을 수 없어요")
+        items = repo.client.rest_get("point_transactions", {"select": "id,type,amount,balance_after,reason,processed_by,related_voucher_id,related_order_id,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "100"})
+        return {"ok": True, "data": {"employee": employees[0], "items": items}, "error": None}
+    except HTTPException: raise
+    except JoinFlowError as exc: raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc: raise _error(502, "POINT_HISTORY_FAILED", "포인트 내역을 불러오지 못했어요") from exc
 
 
 @router.get("/employees/{user_id}/transactions")

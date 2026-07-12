@@ -317,8 +317,11 @@ function buildTransactionRows(rawItems, range, q) {
       employee_no: tx.employee_no ?? tx.user_id?.slice(0, 8) ?? '-',
       department: tx.department ?? '-',
       menu: tx.product_name ?? tx.meal_window ?? '구내식당 식권',
-      pay_type: tx.pay_type === 'voucher' ? '식권' : tx.pay_type === 'direct' ? '토스결제' : '장부',
+      pay_type: tx.pay_type === 'subsidized' ? '보조금' : tx.pay_type === 'voucher' ? '식권' : tx.pay_type === 'direct' ? '토스결제' : '장부',
       amount,
+      company_subsidy_amount: tx.company_subsidy_amount,
+      restaurant_subsidy_amount: tx.restaurant_subsidy_amount,
+      employee_paid_amount: tx.employee_paid_amount,
       status: cancelled ? 'refund' : 'paid',
       tx_code: tx.tx_code ?? '-',
     };
@@ -419,7 +422,7 @@ function VendorTransactionModal({ txModal, token, onClose }) {
     ...item,
     time: item.created_at ? new Date(item.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : item.time,
     menu: item.menu ?? item.product_name ?? item.meal_window ?? '식대 사용',
-    pay_type: item.pay_type === 'voucher' ? '식권' : item.pay_type === 'direct' ? '토스결제' : (item.pay_type ?? '장부'),
+    pay_type: item.pay_type === 'subsidized' ? '보조금' : item.pay_type === 'voucher' ? '식권' : item.pay_type === 'direct' ? '토스결제' : (item.pay_type ?? '장부'),
   }))) : null, [serverDays]);
 
   const rows = useMemo(() => serverRows ?? buildTransactionRows(txModal.txItems, range, query), [serverRows, txModal.txItems, range, query]);
@@ -440,6 +443,10 @@ function VendorTransactionModal({ txModal, token, onClose }) {
   const unpaid = settlements.filter((item) => item.status !== '입금완료');
   const unpaidAmount = unpaid.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
   const contract = serverSummary?.contract ?? txModal.contract ?? null;
+  const restaurantContribution = rows.reduce((sum, row) => {
+    const value = Number(row.restaurant_subsidy_amount ?? 0);
+    return sum + (row.status === 'refund' ? -Math.abs(value) : Math.abs(value));
+  }, 0);
   const groups = useMemo(() => {
     const byDay = new Map();
     rows.forEach((row) => {
@@ -530,7 +537,7 @@ function VendorTransactionModal({ txModal, token, onClose }) {
         <div className="vendor-title-row">
           <div>
             <h2 id="vendor-modal-title">🏢 {txModal.companyName}</h2>
-            {contract && <span className="contract-badge">계약: {contract.cycle_label ?? contract.cycle}{contract.unit_price != null ? ` · 단가 ${Number(contract.unit_price).toLocaleString('ko-KR')}원` : ''}</span>}
+            {contract && <span className="contract-badge">계약: {contract.cycle_label ?? contract.cycle}{contract.unit_price != null ? ` · 단가 ${Number(contract.unit_price).toLocaleString('ko-KR')}원` : ''}{contract.subsidy_enabled ? ' · 보조금 계약' : ''}</span>}
           </div>
           <button className="ghost icon-button" onClick={onClose} disabled={exporting} aria-label="닫기"><X size={20}/></button>
         </div>
@@ -556,7 +563,8 @@ function VendorTransactionModal({ txModal, token, onClose }) {
               <article className="main-amount"><span>미정산 잔액</span><strong>{krw(summary.unsettled)}</strong></article>
               <article><span>선택 정산 기간</span><strong><CalendarDays size={18}/>{summary.selectedPeriod}</strong></article>
             </section>
-            {rows.length === 0 ? <p className="vendor-empty">📒 선택한 기간에 거래가 없습니다</p> : <div className="table-wrap"><table><thead><tr><th>날짜</th><th>시간</th><th>부서</th><th>이름</th><th>사번</th><th>메뉴/내역</th><th>금액</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={row.status === 'refund' ? 'refund-row' : ''}><td>{String(row.created_at ?? '').slice(0, 10)}</td><td>{row.time}</td><td>{row.department ?? '-'}</td><td>{row.employee_name}</td><td>{row.employee_no}</td><td>{row.menu} {row.status === 'refund' && <span className="refund-tag">환불</span>}</td><td className="money">{krw(row.amount)}</td></tr>)}</tbody></table></div>}
+            {restaurantContribution !== 0 && <div className="restaurant-contribution"><span>선택 기간 식당 부담금 (정산 제외)</span><strong>{krw(restaurantContribution)}</strong></div>}
+            {rows.length === 0 ? <p className="vendor-empty">📒 선택한 기간에 거래가 없습니다</p> : <div className="table-wrap"><table><thead><tr><th>날짜</th><th>시간</th><th>부서</th><th>이름</th><th>사번</th><th>메뉴/내역</th><th>구분</th><th>회사 청구액</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={row.status === 'refund' ? 'refund-row' : ''}><td>{String(row.created_at ?? '').slice(0, 10)}</td><td>{row.time}</td><td>{row.department ?? '-'}</td><td>{row.employee_name}</td><td>{row.employee_no}</td><td>{row.menu} {row.status === 'refund' && <span className="refund-tag">환불</span>}</td><td><span className={`pay-type-badge ${row.pay_type === '보조금' ? 'subsidized' : ''}`}>{row.pay_type}</span></td><td className="money">{krw(row.amount)}{row.pay_type === '보조금' && <small className="subsidy-breakdown">총 {krw(Number(row.employee_paid_amount ?? 0) + Number(row.company_subsidy_amount ?? 0) + Number(row.restaurant_subsidy_amount ?? 0))} · 직원 {krw(row.employee_paid_amount ?? 0)} · 식당 {krw(row.restaurant_subsidy_amount ?? 0)}</small>}</td></tr>)}</tbody></table></div>}
           </>}
         </div>
         <footer className="vendor-modal-footer"><button className="primary export-button" onClick={createSettlement} disabled={exporting || invalidRange}>선택 기간 정산 생성</button><button className="primary export-button" onClick={() => download('xlsx')} disabled={exporting || invalidRange}><Download size={17}/> 엑셀 다운로드</button><button className="primary export-button" onClick={() => download('pdf')} disabled={exporting || invalidRange}><FileText size={17}/> PDF 청구서</button><button className="ghost" onClick={onClose} disabled={exporting}>닫기</button></footer>
@@ -862,7 +870,7 @@ function Dashboard({ session, onLogout }) {
   const [inviteModal, setInviteModal] = useState(null);
   const [txModal, setTxModal] = useState(null);
   const [contractModal, setContractModal] = useState(null);
-  const [contractForm, setContractForm] = useState({ settlement_cycle: 'month_end', settlement_day: '25', unit_price: '' });
+  const [contractForm, setContractForm] = useState({ settlement_cycle: 'month_end', settlement_day: '25', unit_price: '', subsidy_enabled: false, company_subsidy_amount: '0', restaurant_subsidy_amount: '0' });
   const [busy, setBusy] = useState(false);
   const [dashboardBooting, setDashboardBooting] = useState(true);
   const [message, setMessage] = useState('');
@@ -1067,6 +1075,23 @@ function Dashboard({ session, onLogout }) {
   function openLimitModal(employee) {
     setLimitModal(employee);
     setLimitForm(String(employee.monthly_limit ?? 200000));
+  }
+
+  async function changePoints(employee, mode) {
+    const valueLabel = mode === 'charge' ? '충전할 포인트' : '조정 후 목표 잔액';
+    const raw = window.prompt(`${employee.display_name ?? '직원'} · ${valueLabel}`, mode === 'charge' ? '10000' : String(employee.point_balance ?? 0));
+    if (raw == null) return;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < (mode === 'charge' ? 1 : 0)) { setError('올바른 포인트 금액을 입력해 주세요.'); return; }
+    const reason = window.prompt('필수 사유/외부 복지 차감 참조번호를 입력해 주세요.');
+    if (!reason?.trim()) { setError('사유/참조번호는 필수예요.'); return; }
+    if (mode === 'charge' && !window.confirm('직원의 외부 복지비가 이미 차감되었음을 확인합니까?\n확인 후 즉시 포인트가 충전됩니다.')) return;
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/admin/employees/${employee.id}/points/${mode}`, token, { method: 'POST', body: JSON.stringify(mode === 'charge' ? { amount: value, reason: reason.trim(), welfare_deduction_confirmed: true } : { target_balance: value, reason: reason.trim() }) });
+      const employeeData = await apiFetch('/admin/employees', token); setEmployees(employeeData);
+      setMessage(mode === 'charge' ? '포인트를 충전하고 직원에게 알림을 시도했어요.' : '포인트 목표 잔액을 조정했어요.');
+    } catch (pointError) { setError(pointError.message); } finally { setBusy(false); }
   }
 
   async function saveEmployeeLimit(event) {
@@ -1364,12 +1389,20 @@ function Dashboard({ session, onLogout }) {
       settlement_cycle: item.settlement_cycle ?? item.contract?.settlement_cycle ?? 'month_end',
       settlement_day: String(item.settlement_day ?? item.contract?.settlement_day ?? 25),
       unit_price: item.unit_price == null ? '' : String(item.unit_price),
+      subsidy_enabled: !!(item.subsidy_enabled ?? item.contract?.subsidy_enabled),
+      company_subsidy_amount: String(item.company_subsidy_amount ?? item.contract?.company_subsidy_amount ?? 0),
+      restaurant_subsidy_amount: String(item.restaurant_subsidy_amount ?? item.contract?.restaurant_subsidy_amount ?? 0),
     });
   }
 
   async function saveContract(event) {
     event.preventDefault();
     if (!contractModal) return;
+    const unitPrice = Number(contractForm.unit_price);
+    const companySubsidy = Number(contractForm.company_subsidy_amount);
+    const restaurantSubsidy = Number(contractForm.restaurant_subsidy_amount);
+    if (contractForm.subsidy_enabled && (!contractForm.unit_price || unitPrice <= 0)) { setError('보조금 계약은 0원보다 큰 단가가 필요해요.'); return; }
+    if (contractForm.subsidy_enabled && (companySubsidy < 0 || restaurantSubsidy < 0 || companySubsidy + restaurantSubsidy > unitPrice)) { setError('회사 부담액과 식당 부담액의 합계는 단가를 초과할 수 없어요.'); return; }
     setBusy(true);
     setError('');
     setMessage('');
@@ -1380,6 +1413,9 @@ function Dashboard({ session, onLogout }) {
           settlement_cycle: contractForm.settlement_cycle,
           settlement_day: contractForm.settlement_cycle === 'day' ? Number(contractForm.settlement_day) : null,
           unit_price: contractForm.unit_price === '' ? null : Number(contractForm.unit_price),
+          subsidy_enabled: contractForm.subsidy_enabled,
+          company_subsidy_amount: contractForm.subsidy_enabled ? companySubsidy : 0,
+          restaurant_subsidy_amount: contractForm.subsidy_enabled ? restaurantSubsidy : 0,
         }),
       });
       setContractModal(null);
@@ -1484,7 +1520,7 @@ function Dashboard({ session, onLogout }) {
         <h2 id="payment-notice-title">결제가 완료됐어요</h2>
         <div className="profile-grid">
           <span>직원</span><strong>{paymentNotices[0].employee_name} ({paymentNotices[0].employee_no})</strong>
-          <span>결제 구분</span><strong>{paymentNotices[0].pay_type === 'voucher' ? '식권' : '장부'}</strong>
+          <span>결제 구분</span><strong>{paymentNotices[0].pay_type === 'subsidized' ? '보조금' : paymentNotices[0].pay_type === 'voucher' ? '식권' : '장부'}</strong>
           <span>금액</span><strong>{krw(paymentNotices[0].amount)}</strong>
           {paymentNotices[0].remaining != null && <><span>남은 식권</span><strong>{paymentNotices[0].remaining}장</strong></>}
         </div>
@@ -1534,8 +1570,15 @@ function Dashboard({ session, onLogout }) {
           <label>단가
             <input type="number" min="0" value={contractForm.unit_price} onChange={(event) => setContractForm((form) => ({ ...form, unit_price: event.target.value }))} placeholder="예: 8000" />
           </label>
+          <label className="subsidy-toggle"><input type="checkbox" checked={contractForm.subsidy_enabled} onChange={(event) => setContractForm((form) => ({ ...form, subsidy_enabled: event.target.checked }))} /> 보조금 계약</label>
+          {contractForm.subsidy_enabled && <div className="subsidy-fields">
+            <label>회사 부담액<input type="number" min="0" step="1" value={contractForm.company_subsidy_amount} onChange={(event) => setContractForm((form) => ({ ...form, company_subsidy_amount: event.target.value }))} required /></label>
+            <label>식당 부담액<input type="number" min="0" step="1" value={contractForm.restaurant_subsidy_amount} onChange={(event) => setContractForm((form) => ({ ...form, restaurant_subsidy_amount: event.target.value }))} required /></label>
+            <div className={`employee-pay-preview ${Number(contractForm.company_subsidy_amount || 0) + Number(contractForm.restaurant_subsidy_amount || 0) > Number(contractForm.unit_price || 0) ? 'invalid' : ''}`}><span>직원 실부담액</span><strong>{krw(Math.max(0, Number(contractForm.unit_price || 0) - Number(contractForm.company_subsidy_amount || 0) - Number(contractForm.restaurant_subsidy_amount || 0)))}</strong></div>
+            {Number(contractForm.company_subsidy_amount || 0) + Number(contractForm.restaurant_subsidy_amount || 0) > Number(contractForm.unit_price || 0) && <div className="alert error subsidy-validation">회사 부담액과 식당 부담액의 합계는 단가를 초과할 수 없어요.</div>}
+          </div>}
           <div className="row-actions invite-modal-actions">
-            <button className="primary" disabled={busy}>저장</button>
+            <button className="primary" disabled={busy || (contractForm.subsidy_enabled && Number(contractForm.company_subsidy_amount || 0) + Number(contractForm.restaurant_subsidy_amount || 0) > Number(contractForm.unit_price || 0))}>저장</button>
             <button className="ghost" type="button" onClick={() => setContractModal(null)}>닫기</button>
           </div>
         </form>
@@ -1656,7 +1699,7 @@ function Dashboard({ session, onLogout }) {
       </div>
       {employees?.migration_required && <div className="alert error">월 한도 저장 컬럼이 아직 적용되지 않아 기본값 200,000원으로 표시 중이에요. 0011_employee_monthly_limit.sql 적용 후 한도 수정이 저장됩니다.</div>}
       {employees?.bulk_migration_required && <div className="alert error">0017_employee_bulk_invites.sql 적용 후 직원 일괄등록을 사용할 수 있어요.</div>}
-      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하거나 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>월 한도</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className="badge">{employee.is_staged ? '초대대기' : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : krw(employee.monthly_limit ?? 200000)}</td><td>{employee.is_staged ? '-' : krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td>{employee.is_staged ? '-' : <button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button>}</td><td className="row-actions">{employee.is_staged ? <span className="muted">최초 가입 대기</span> : <><button className="ghost" onClick={() => saveEmployeeNo(employee)}>사번수정</button><button className="ghost" onClick={() => openLimitModal(employee)}>한도수정</button></>}</td></tr>)}</tbody></table></div>}
+      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하거나 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>최근 충전</th><th>월 한도</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className="badge">{employee.is_staged ? '초대대기' : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.recent_point_charge ? `${Number(employee.recent_point_charge.amount).toLocaleString()}P · ${new Date(employee.recent_point_charge.created_at).toLocaleDateString('ko-KR')}` : '-'}</td><td>{employee.is_staged ? '-' : krw(employee.monthly_limit ?? 200000)}</td><td>{employee.is_staged ? '-' : krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td>{employee.is_staged ? '-' : <button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button>}</td><td className="row-actions">{employee.is_staged ? <span className="muted">최초 가입 대기</span> : <><button className="primary" disabled={busy} onClick={() => changePoints(employee, 'charge')}>포인트 충전</button><button className="ghost" disabled={busy} onClick={() => changePoints(employee, 'adjust')}>잔액조정</button><button className="ghost" onClick={() => saveEmployeeNo(employee)}>사번수정</button><button className="ghost" onClick={() => openLimitModal(employee)}>한도수정</button></>}</td></tr>)}</tbody></table></div>}
     </section>}
 
     {!isPlatformAdmin && isMerchantAdmin && <section className="panel">

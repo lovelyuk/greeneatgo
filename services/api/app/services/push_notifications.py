@@ -74,6 +74,21 @@ def _firebase_send_batch(title: str, body: str, tokens: Sequence[str]):
     return messaging.send_each_for_multicast(message, app=_firebase_app())
 
 
+def send_individual_point_push(*, tokens: Sequence[str], amount: int, balance: int) -> int:
+    """Best effort individual notification; callers deliberately ignore failures."""
+    if not tokens:
+        return 0
+    message = messaging.MulticastMessage(
+        tokens=list(tokens),
+        notification=messaging.Notification(title="복지포인트가 충전됐어요", body=f"{amount:,}P 충전 · 잔액 {balance:,}P"),
+        data={"event": "point_charged", "amount": str(amount), "balance": str(balance)},
+        android=messaging.AndroidConfig(priority="high"),
+        apns=messaging.APNSConfig(headers={"apns-priority": "10"}),
+    )
+    response = messaging.send_each_for_multicast(message, app=_firebase_app())
+    return int(getattr(response, "success_count", 0))
+
+
 def _is_invalid_token(exception: Exception | None) -> bool:
     if exception is None:
         return False

@@ -45,12 +45,16 @@ def scan(payload: TransactionScanRequest, token: str = Depends(bearer_token)):
 
         if profile.role == "employee" and profile.company_id:
             links = repo.client.rest_get("merchant_companies", {
-                "select": "unit_price,status", "merchant_id": f"eq.{merchant['id']}",
+                "select": "unit_price,status,subsidy_enabled", "merchant_id": f"eq.{merchant['id']}",
                 "company_id": f"eq.{profile.company_id}", "status": "eq.active", "limit": "1",
             })
             amount = int(links[0]["unit_price"]) if links and links[0].get("unit_price") is not None else None
             if amount is None or amount <= 0:
                 raise _error(400, "PRICE_NOT_CONFIGURED", "식당 계약 단가가 설정되지 않았어요")
+            if links[0].get("subsidy_enabled"):
+                result = repo.client.rpc("consume_subsidized_voucher", {"p_user_id": profile.id, "p_company_id": profile.company_id, "p_merchant_id": merchant["id"], "p_idempotency_key": payload.idempotency_key})
+                companies = repo.client.rest_get("companies", {"select": "name", "id": f"eq.{profile.company_id}", "limit": "1"})
+                return {"result": "success", "pay_type": "subsidized", "company_name": companies[0]["name"] if companies else None, "remaining": result["remaining"], "transaction": result}
             legacy = pay(PayRequest(
                 qr_token=merchant["qr_token"], amount=amount, product_id=None,
                 gps=GPSPoint(lat=payload.gps.lat, lng=payload.gps.lng) if payload.gps else None,

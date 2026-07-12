@@ -154,12 +154,13 @@ class PushRouterTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 403)
         repo_class.return_value.client.rpc.assert_not_called()
 
+    @patch("app.routers.push_notifications.ensure_push_configured")
     @patch("app.routers.push_notifications.send_push_notifications")
     @patch("app.routers.push_notifications._merchant_admin")
     @patch("app.routers.push_notifications._audience")
     @patch("app.routers.push_notifications.JoinRepository")
     def test_send_records_history_and_removes_only_invalid_token(
-        self, repo_class, audience, merchant_admin, send_push
+        self, repo_class, audience, merchant_admin, send_push, _ensure_configured
     ):
         repo = repo_class.return_value
         actor = SimpleNamespace(id="merchant-admin-1")
@@ -172,7 +173,11 @@ class PushRouterTests(unittest.TestCase):
         }
         send_push.return_value = PushSendResult(2, 2, 1, 1, 1, ("bad-token",))
         repo.client.rest_post.return_value = [{"id": "notification-1", "sent_at": "2026-07-11T00:00:00Z"}]
-        payload = NotificationCreateRequest(title="공지", body="내용", target_type="all")
+        payload = NotificationCreateRequest(
+            title="공지", body="내용", target_type="all",
+            idempotency_key="notification-test-1",
+            expected_target_count=2, expected_device_count=2,
+        )
 
         result = create_notification(payload, "access-token")
 
@@ -180,7 +185,8 @@ class PushRouterTests(unittest.TestCase):
         history = repo.client.rest_post.call_args.args[1]
         self.assertEqual(history["merchant_id"], "merchant-1")
         self.assertEqual(history["target_count"], 2)
-        self.assertEqual(history["success_count"], 1)
+        history_update = repo.client.rest_patch.call_args.args[2]
+        self.assertEqual(history_update["success_count"], 1)
         self.assertEqual(result["data"]["failure_device_count"], 1)
 
     @patch("app.routers.push_notifications._merchant_admin")
@@ -191,7 +197,11 @@ class PushRouterTests(unittest.TestCase):
         audience.return_value = {
             "eligible_count": 4, "target_count": 0, "device_count": 0, "targets": []
         }
-        payload = NotificationCreateRequest(title="공지", body="내용", target_type="voucher_only")
+        payload = NotificationCreateRequest(
+            title="공지", body="내용", target_type="voucher_only",
+            idempotency_key="notification-test-zero",
+            expected_target_count=1, expected_device_count=1,
+        )
         with self.assertRaises(HTTPException) as ctx:
             create_notification(payload, "access-token")
         self.assertEqual(ctx.exception.status_code, 400)

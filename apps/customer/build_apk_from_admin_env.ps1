@@ -28,6 +28,18 @@ $buildArgs = @(
   "--dart-define=API_BASE_URL=$($envs['VITE_API_BASE_URL'])",
   "--dart-define=AUTH_EMAIL_REDIRECT_TO=$authEmailRedirectTo"
 )
+$firebaseConfigPath = 'D:\projects\greeneatGo\apps\customer\android\app\google-services.json'
+if (Test-Path $firebaseConfigPath) {
+  $firebaseConfig = Get-Content $firebaseConfigPath -Raw | ConvertFrom-Json
+  $firebaseClient = $firebaseConfig.client | Where-Object { $_.client_info.android_client_info.package_name -eq 'com.greeneat.greeneatgo' } | Select-Object -First 1
+  if ($firebaseClient) {
+    if (-not $envs['FIREBASE_API_KEY']) { $envs['FIREBASE_API_KEY'] = $firebaseClient.api_key[0].current_key }
+    if (-not $envs['FIREBASE_APP_ID']) { $envs['FIREBASE_APP_ID'] = $firebaseClient.client_info.mobilesdk_app_id }
+    if (-not $envs['FIREBASE_MESSAGING_SENDER_ID']) { $envs['FIREBASE_MESSAGING_SENDER_ID'] = $firebaseConfig.project_info.project_number }
+    if (-not $envs['FIREBASE_PROJECT_ID']) { $envs['FIREBASE_PROJECT_ID'] = $firebaseConfig.project_info.project_id }
+  }
+}
+
 $firebaseKeys = @('FIREBASE_API_KEY', 'FIREBASE_APP_ID', 'FIREBASE_MESSAGING_SENDER_ID', 'FIREBASE_PROJECT_ID')
 $firebaseValues = $firebaseKeys | Where-Object { $envs[$_] }
 if ($firebaseValues.Count -gt 0 -and $firebaseValues.Count -ne $firebaseKeys.Count) {

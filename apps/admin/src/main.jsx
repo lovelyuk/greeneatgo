@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Send, Settings, Users, WalletCards, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, Home, LogOut, Package, QrCode, RefreshCw, Search, Send, Settings, Utensils, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
@@ -666,7 +666,7 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
     } catch (toggleError) { setError(toggleError.message); } finally { setBusy(false); }
   }
   return <section className="panel voucher-panel">
-    <div className="panel-title"><div><h2>식권 패키지 관리</h2><p className="panel-note">삭제하지 않고 숨김/판매 재개합니다. 이벤트 상품은 설정 기간에만 자동 노출됩니다.</p></div><span className="badge">{items.length}개</span></div>
+    <div className="panel-title"><div><h2>판매 상품(일반)</h2><p className="panel-note">삭제하지 않고 숨김/판매 재개합니다. 이벤트 상품은 설정 기간에만 자동 노출됩니다.</p></div><span className="badge">{items.length}개</span></div>
     {migrationRequired && <div className="alert error">이벤트 상품 DB 마이그레이션이 아직 적용되지 않았어요. 0020_voucher_product_events.sql 적용 후 이벤트 등록이 활성화됩니다.</div>}
     <form className="voucher-form" onSubmit={save}>
       <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="패키지명" required />
@@ -685,7 +685,7 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
       <label className="image-picker compact">패키지 이미지<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={chooseImage} disabled={busy}/></label>
       <div className="voucher-preview">미리보기 <strong>{count + bonus}장 · {krw(salePrice)}</strong><span>장당 {krw((count + bonus) ? salePrice / (count + bonus) : 0)}</span>{form.is_event && <span>🎉 노출 기간: {form.event_start_at || '시작일시'} ~ {form.event_end_at || '종료일시'} · 종료 후 자동 숨김</span>}{(pendingPreview || form.image_url) && <img src={pendingPreview || form.image_url} alt="식권 패키지 미리보기"/>}</div>
       {bonus > 0 && discount > 0 && <div className="alert warning">보너스와 할인율이 동시에 적용됩니다. 판매가와 총 장수를 다시 확인하세요.</div>}
-      <div className="row-actions"><button className="primary" disabled={busy}>{editingId ? '수정 저장' : '패키지 등록'}</button>{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(blank); resetPendingImage(); }}>취소</button>}</div>
+      <div className="row-actions"><button className="primary" disabled={busy}>{editingId ? '수정 저장' : '상품 등록'}</button>{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(blank); resetPendingImage(); }}>취소</button>}</div>
     </form>
     <div className="product-list">{items.map((item) => <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}+{item.bonus_count}장 · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span><span className={`exposure-status ${item.exposure_status}`}>{item.exposure_label}</span>{item.is_event && <span className="event-period">{displayEventPeriod(item)}</span>}</div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button className="ghost" onClick={() => toggle(item)}>{item.status === 'active' ? '숨김' : '판매 재개'}</button></div></article>)}</div>
   </section>;
@@ -763,7 +763,7 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
   }
 
   return <section className="panel notification-panel">
-    <div className="panel-title"><div><h2>공지 발송</h2><p className="panel-note">장부직원과 일반사용자 앱으로 공지·이벤트 알림을 수동 발송합니다.</p></div><button type="button" className="ghost notification-history-button" onClick={() => setHistoryOpen(true)}><CalendarDays size={18}/> 발송 이력</button></div>
+    <div className="panel-title"><div><h2>알림 발송</h2><p className="panel-note">장부직원과 일반사용자 앱으로 공지·이벤트 알림을 수동 발송합니다.</p></div><button type="button" className="ghost notification-history-button" onClick={() => setHistoryOpen(true)}><CalendarDays size={18}/> 발송 이력</button></div>
     {migrationRequired && <div className="alert error">0022_push_notifications.sql 적용 후 공지 발송을 사용할 수 있어요.</div>}
     {error && <div className="alert error">{error}</div>}
     <form className="notification-form" onSubmit={send}>
@@ -914,8 +914,7 @@ function Dashboard({ session, onLogout }) {
   const [dailyMenu, setDailyMenu] = useState(null);
   const [dailyMenuForm, setDailyMenuForm] = useState({ service_date: todayInput(), title: '오늘 뷔페 메뉴', menu_text: '', image_url: '' });
   const [merchantCompanies, setMerchantCompanies] = useState(null);
-  const [companySearch, setCompanySearch] = useState('');
-  const [companySearchResults, setCompanySearchResults] = useState([]);
+  const [merchantSection, setMerchantSection] = useState('main');
   const [newCompanyForm, setNewCompanyForm] = useState({ name: '', owner_phone: '' });
   const [transactions, setTransactions] = useState(null);
   const [employees, setEmployees] = useState(null);
@@ -1359,42 +1358,6 @@ function Dashboard({ session, onLogout }) {
     });
   }
 
-  async function searchCompanies(event) {
-    event.preventDefault();
-    if (!companySearch.trim()) return;
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      const data = await apiFetch(`/admin/merchant/companies/search?q=${encodeURIComponent(companySearch.trim())}`, token);
-      setCompanySearchResults(data.items ?? []);
-    } catch (searchError) {
-      setError(searchError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function linkCompany(companyId) {
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      await apiFetch('/admin/merchant/companies/link', token, {
-        method: 'POST',
-        body: JSON.stringify({ company_id: companyId }),
-      });
-      setCompanySearchResults([]);
-      setCompanySearch('');
-      setMessage('장부업체를 연결했어요.');
-      await load();
-    } catch (linkError) {
-      setError(linkError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function createAndLinkCompany(event) {
     event.preventDefault();
     setBusy(true);
@@ -1531,9 +1494,18 @@ function Dashboard({ session, onLogout }) {
 
   if (!me) return <main className="loading"><BrandMark /><div className="alert error">권한 정보를 불러오지 못했어요. {error}</div><button className="ghost" onClick={onLogout}>로그아웃</button></main>;
 
-  return <main className="shell">
+  const merchantNavItems = [
+    ['main', '메인', Home],
+    ['companies', '업체 관리', Building2],
+    ['vouchers', '판매 상품(일반)', Package],
+    ['products', '식당 상품(장부)', Utensils],
+    ['notifications', '알림', Bell],
+    ['daily-menu', '오늘 뷔페 메뉴', Coffee],
+  ];
+
+  return <main className={`shell${isMerchantAdmin ? ' merchant-shell' : ''}`}>
     <ImageCropModal request={cropRequest} onCancel={() => finishImageCrop(null)} onApply={finishImageCrop} />
-    <header className="topbar">
+    <header className={`topbar${isMerchantAdmin ? ' merchant-topbar' : ''}`}>
       <div className="top-copy">
         <div className="brand-row">
           <BrandMark />
@@ -1546,6 +1518,12 @@ function Dashboard({ session, onLogout }) {
         <button className="ghost" onClick={onLogout}><LogOut size={16}/> 로그아웃</button>
       </div>
     </header>
+
+    {isMerchantAdmin && <nav className="merchant-sidebar" aria-label="식당 관리자 메뉴">
+      {merchantNavItems.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span></button>)}
+    </nav>}
+
+    <div className={isMerchantAdmin ? 'merchant-content' : undefined}>
 
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}
@@ -1645,11 +1623,11 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
 
-    <section className="grid">
+    {(!isMerchantAdmin || merchantSection === 'main') && <section className="grid">
       {cards.map(([label, value, Icon, tone]) => <article className={`card ${tone}`} key={label}>
         <Icon size={28}/><span>{label}</span><strong>{value}</strong>
       </article>)}
-    </section>
+    </section>}
 
     {isPlatformAdmin && <section className="panel">
       <div className="panel-title">
@@ -1674,7 +1652,7 @@ function Dashboard({ session, onLogout }) {
         </article>)}</div>}
     </section>}
 
-    <section className="two-col">
+    {(!isMerchantAdmin || merchantSection === 'main') && <section className="two-col">
       <article className="panel profile-panel">
         <div className="panel-title"><h2>로그인 정보</h2><span className="badge">secure</span></div>
         <div className="profile-grid">
@@ -1711,7 +1689,7 @@ function Dashboard({ session, onLogout }) {
           <button className="ghost" onClick={copyCompanyInviteCode} disabled={!me?.invite_code}>복사</button>
         </div>
       </article>}
-    </section>
+    </section>}
 
     {!isPlatformAdmin && !isMerchantAdmin && <section className="panel meal-policy-panel">
       <div className="panel-title">
@@ -1739,21 +1717,11 @@ function Dashboard({ session, onLogout }) {
       {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하거나 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className="badge">{employee.is_staged ? '초대대기' : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.is_staged ? '-' : krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td>{employee.is_staged ? '-' : <button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button>}</td><td>{employee.is_staged ? <span className="muted">최초 가입 대기</span> : <button className="ghost icon-button" disabled={busy} onClick={() => openEmployeeManage(employee)} aria-label={`${employee.display_name ?? '직원'} 관리`} title="직원 관리"><Settings size={18}/></button>}</td></tr>)}</tbody></table></div>}
     </section>}
 
-    {!isPlatformAdmin && isMerchantAdmin && <section className="panel">
+    {!isPlatformAdmin && isMerchantAdmin && merchantSection === 'companies' && <section className="panel">
       <div className="panel-title">
-        <div><h2>장부업체 관리</h2><p className="panel-note">거래를 허용할 회사를 검색해서 연결하거나, 새 회사 담당자를 초대합니다.</p></div>
+        <div><h2>업체 관리</h2><p className="panel-note">현재 연결된 회사를 관리하거나, 새 회사 담당자를 초대합니다.</p></div>
         <span className="badge">{merchantCompanies?.items?.length ?? 0}곳</span>
       </div>
-      <form className="product-form" onSubmit={searchCompanies}>
-        <input value={companySearch} onChange={(event) => setCompanySearch(event.target.value)} placeholder="회사명 검색" />
-        <button className="primary" disabled={busy || !companySearch.trim()}>검색</button>
-      </form>
-      {companySearchResults.length > 0 && <div className="product-list">
-        {companySearchResults.map((company) => <article className="product-item" key={company.id}>
-          <div><strong>{company.name}</strong><span>{company.status} · {company.biz_reg_no ?? '사업자번호 없음'}</span></div>
-          <button className="ghost" onClick={() => linkCompany(company.id)} disabled={busy}>연결</button>
-        </article>)}
-      </div>}
       <form className="product-form" onSubmit={createAndLinkCompany}>
         <input value={newCompanyForm.name} onChange={(event) => setNewCompanyForm((form) => ({ ...form, name: event.target.value }))} placeholder="신규 회사명" required />
         <input value={newCompanyForm.owner_phone} onChange={(event) => setNewCompanyForm((form) => ({ ...form, owner_phone: event.target.value }))} placeholder="담당자 연락처" required />
@@ -1771,11 +1739,11 @@ function Dashboard({ session, onLogout }) {
     </section>}
 
 
-    {isMerchantAdmin && <VoucherProductsPanel items={voucherProducts} migrationRequired={voucherProductsMigrationRequired} token={token} busy={busy} cropImage={requestImageCrop} uploadImage={uploadProductImage} deleteImage={deleteProductImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
+    {isMerchantAdmin && merchantSection === 'vouchers' && <VoucherProductsPanel items={voucherProducts} migrationRequired={voucherProductsMigrationRequired} token={token} busy={busy} cropImage={requestImageCrop} uploadImage={uploadProductImage} deleteImage={deleteProductImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
 
-    {isMerchantAdmin && <NotificationPanel token={token} history={notifications} migrationRequired={notificationsMigrationRequired} onSent={load} setMessage={setMessage} />}
+    {isMerchantAdmin && merchantSection === 'notifications' && <NotificationPanel token={token} history={notifications} migrationRequired={notificationsMigrationRequired} onSent={load} setMessage={setMessage} />}
 
-    {isMerchantAdmin && <section className="panel daily-menu-panel">
+    {isMerchantAdmin && merchantSection === 'daily-menu' && <section className="panel daily-menu-panel">
       <div className="panel-title">
         <div><h2>오늘 뷔페 메뉴</h2><p className="panel-note">날짜를 선택해 오늘과 이후의 뷔페 메뉴를 미리 저장할 수 있어요.</p></div>
         <span className="badge">{dailyMenuForm.service_date}</span>
@@ -1802,7 +1770,7 @@ function Dashboard({ session, onLogout }) {
     </section>}
 
 
-    {isMerchantAdmin && <section className="panel product-panel">
+    {isMerchantAdmin && merchantSection === 'products' && <section className="panel product-panel">
       <div className="panel-title">
         <div><h2>식당 상품 관리</h2><p className="panel-note">직원 앱은 금액 입력 없이 여기 등록된 상품 중 하나를 선택해 결제합니다.</p></div>
       </div>
@@ -1847,6 +1815,7 @@ function Dashboard({ session, onLogout }) {
         </table>
       </div>}
     </section>}
+    </div>
   </main>;
 }
 

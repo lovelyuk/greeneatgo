@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Send, Settings, Users, WalletCards, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Send, Settings, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
@@ -695,6 +695,7 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
   const [form, setForm] = useState({ target_type: 'all', title: '', body: '' });
   const [audience, setAudience] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const submitLock = useRef(false);
@@ -762,7 +763,7 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
   }
 
   return <section className="panel notification-panel">
-    <div className="panel-title"><div><h2>공지 발송</h2><p className="panel-note">장부직원과 일반사용자 앱으로 공지·이벤트 알림을 수동 발송합니다.</p></div><Bell size={24}/></div>
+    <div className="panel-title"><div><h2>공지 발송</h2><p className="panel-note">장부직원과 일반사용자 앱으로 공지·이벤트 알림을 수동 발송합니다.</p></div><button type="button" className="ghost notification-history-button" onClick={() => setHistoryOpen(true)}><CalendarDays size={18}/> 발송 이력</button></div>
     {migrationRequired && <div className="alert error">0022_push_notifications.sql 적용 후 공지 발송을 사용할 수 있어요.</div>}
     {error && <div className="alert error">{error}</div>}
     <form className="notification-form" onSubmit={send}>
@@ -777,11 +778,18 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
       {previewOpen && <div className="notification-preview"><span>앱 알림 미리보기</span><strong>{form.title.trim() || '공지 제목'}</strong><p>{form.body.trim() || '공지 내용이 여기에 표시됩니다.'}</p></div>}
       <div className="row-actions"><button type="button" className="ghost" onClick={() => setPreviewOpen((open) => !open)} disabled={migrationRequired}>{previewOpen ? '미리보기 닫기' : '미리보기'}</button><button className="primary" disabled={sending || migrationRequired || !audience?.target_count}><Send size={17}/>{sending ? '발송 중...' : '발송하기'}</button></div>
     </form>
-    <div className="notification-history">
-      <h3>발송 이력</h3>
-      {(history?.length ?? 0) === 0 ? <p className="empty-state">아직 발송한 공지가 없어요.</p> : <div className="table-wrap"><table><thead><tr><th>날짜</th><th>대상</th><th>제목</th><th>발송/성공</th><th>기기 성공/실패</th></tr></thead><tbody>{history.map((item) => <tr key={item.id}><td>{new Date(item.sent_at).toLocaleString('ko-KR')}</td><td>{item.target_type === 'voucher_only' ? '일반사용자' : '전체'}</td><td><strong>{item.title}</strong><small>{item.body}</small></td><td>{item.target_count}/{item.success_count}명</td><td>{item.success_device_count}/{item.failure_device_count}대</td></tr>)}</tbody></table></div>}
-      <p className="panel-note">성공 수는 사용자가 알림을 열었는지가 아니라 FCM 서버가 접수한 기준입니다.</p>
-    </div>
+    {historyOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHistoryOpen(false); }}>
+      <div className="modal-card notification-history-modal" role="dialog" aria-modal="true" aria-labelledby="notification-history-title">
+        <button type="button" className="modal-close" aria-label="닫기" onClick={() => setHistoryOpen(false)}><X size={20}/></button>
+        <div className="notification-history-heading">
+          <div className="notification-history-icon"><CalendarDays size={24}/></div>
+          <div><span className="eyebrow">공지 관리</span><h2 id="notification-history-title">발송 이력</h2><p>최근 공지의 대상과 FCM 접수 결과를 확인할 수 있어요.</p></div>
+        </div>
+        {(history?.length ?? 0) === 0 ? <p className="empty-state">아직 발송한 공지가 없어요.</p> : <div className="table-wrap notification-history-table"><table><thead><tr><th>날짜</th><th>대상</th><th>제목·내용</th><th>사용자 접수</th><th>기기 성공/실패</th></tr></thead><tbody>{history.map((item) => <tr key={item.id}><td>{new Date(item.sent_at).toLocaleString('ko-KR')}</td><td><span className="history-target-badge">{item.target_type === 'voucher_only' ? '일반사용자' : '전체'}</span></td><td><strong>{item.title}</strong><small>{item.body}</small></td><td>{item.success_count}/{item.target_count}명</td><td><strong className={item.failure_device_count ? 'history-partial' : 'history-success'}>{item.success_device_count}대</strong> / {item.failure_device_count}대</td></tr>)}</tbody></table></div>}
+        <p className="panel-note">성공 수는 사용자가 알림을 열었는지가 아니라 FCM 서버가 접수한 기준입니다.</p>
+        <div className="modal-actions"><button type="button" className="primary" onClick={() => setHistoryOpen(false)}>확인</button></div>
+      </div>
+    </div>}
     {confirmation && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeConfirmation(false); }}>
       <div className="modal-card notification-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="notification-confirm-title">
         <button type="button" className="modal-close" aria-label="닫기" onClick={() => closeConfirmation(false)}><X size={20}/></button>

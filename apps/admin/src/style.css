@@ -111,7 +111,7 @@ th, td { text-align: left; border-bottom: 1px solid #CDEBD5; padding: 15px 10px;
 th { color: #5C7A66; font-size: 14px; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(20, 53, 31, .38); backdrop-filter: blur(4px); }
 .notification-confirm-modal { position: relative; width: min(520px, 100%); padding: 30px; border: 1px solid #CDEBD5; border-radius: 28px; background: linear-gradient(160deg, #FFFFFF 0%, #F1FBF4 100%); box-shadow: 0 30px 80px rgba(20, 53, 31, .28); }
-.notification-confirm-modal .modal-close { position: absolute; top: 18px; right: 18px; display: grid; width: 38px; height: 38px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: #466552; background: #E8F5EC; }
+.notification-confirm-modal .modal-close, .notification-history-modal .modal-close { position: absolute; top: 18px; right: 18px; display: grid; width: 38px; height: 38px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: #466552; background: #E8F5EC; }
 .notification-confirm-icon { display: grid; width: 58px; height: 58px; place-items: center; margin-bottom: 18px; border-radius: 18px; color: white; background: linear-gradient(135deg, #2F8B57, #1D6540); box-shadow: 0 12px 26px rgba(47, 139, 87, .28); }
 .notification-confirm-copy .eyebrow { color: #2F8B57; font-size: 13px; font-weight: 800; letter-spacing: .08em; }
 .notification-confirm-copy h2 { margin: 7px 0 8px; font-size: 25px; color: #173E26; }
@@ -126,6 +126,23 @@ th { color: #5C7A66; font-size: 14px; }
 .notification-confirm-preview p { margin: 0; color: #506B59; line-height: 1.55; white-space: pre-wrap; }
 .notification-confirm-modal .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
 .notification-confirm-modal .modal-actions button { min-width: 120px; justify-content: center; }
+.notification-history-button { flex: 0 0 auto; }
+.notification-history-modal { position: relative; width: min(980px, 96vw); max-height: min(760px, 88vh); overflow: hidden; padding: 28px; border: 1px solid #CDEBD5; border-radius: 28px; background: #FCFEFC; box-shadow: 0 30px 80px rgba(20, 53, 31, .28); }
+.notification-history-heading { display: flex; align-items: center; gap: 15px; padding-right: 48px; margin-bottom: 20px; }
+.notification-history-heading h2 { margin: 3px 0 2px; color: #173E26; }
+.notification-history-heading p { margin: 0; color: #667B6C; }
+.notification-history-heading .eyebrow { color: #2F8B57; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+.notification-history-icon { display: grid; flex: 0 0 auto; width: 50px; height: 50px; place-items: center; border-radius: 16px; color: white; background: linear-gradient(135deg, #2F8B57, #1D6540); }
+.notification-history-table { max-height: min(500px, 58vh); overflow: auto; border: 1px solid #D5EBDD; border-radius: 18px; }
+.notification-history-table table { margin: 0; min-width: 780px; }
+.notification-history-table thead { position: sticky; top: 0; z-index: 1; background: #ECF7EF; }
+.notification-history-table td:nth-child(3) { min-width: 260px; white-space: normal; }
+.notification-history-table td small { display: block; margin-top: 5px; max-width: 360px; color: #6B7F70; white-space: pre-wrap; }
+.history-target-badge { display: inline-flex; padding: 5px 9px; border-radius: 999px; color: #276C46; background: #DDF0E3; font-size: 12px; font-weight: 700; }
+.history-success { color: #23814C; }
+.history-partial { color: #C17A1A; }
+.notification-history-modal .modal-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+@media (max-width: 640px) { .notification-history-modal { width: 100%; padding: 22px 16px; } .notification-history-heading { align-items: flex-start; } .notification-history-icon { width: 44px; height: 44px; } }
 .invite-modal { width: min(620px, 100%); padding: 26px; border-radius: 28px; background: #FCFEFC; border: 1.5px solid #CDEBD5; box-shadow: 0 28px 70px rgba(20, 53, 31, .24); }
 .invite-modal input { width: 100%; }
 .invite-modal-actions { margin-top: 14px; }

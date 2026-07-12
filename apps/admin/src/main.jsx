@@ -697,6 +697,13 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
   const [previewOpen, setPreviewOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const submitLock = useRef(false);
+  const idempotencyKey = useRef(null);
+
+  function updateForm(field, value) {
+    idempotencyKey.current = null;
+    setForm((current) => ({ ...current, [field]: value }));
+  }
 
   async function loadAudience(targetType = form.target_type) {
     if (migrationRequired) return null;
@@ -710,25 +717,34 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
 
   async function send(event) {
     event.preventDefault();
+    if (submitLock.current) return;
     const title = form.title.trim();
     const body = form.body.trim();
     if (!title || !body) { setError('공지 제목과 내용을 입력해 주세요.'); return; }
-    const latestAudience = await loadAudience();
-    if (!latestAudience) return;
-    if (!latestAudience.target_count) { setError('발송 대상이 없습니다. 앱에서 알림을 허용한 사용자가 있는지 확인해 주세요.'); return; }
-    const confirmed = window.confirm(`총 ${latestAudience.target_count}명(${latestAudience.device_count}대 기기)에게 발송됩니다. 발송 후 취소할 수 없습니다. 진행할까요?`);
-    if (!confirmed) return;
+    submitLock.current = true;
     setSending(true); setError('');
     try {
+      const latestAudience = await loadAudience();
+      if (!latestAudience) return;
+      if (!latestAudience.target_count) { setError('발송 대상이 없습니다. 앱에서 알림을 허용한 사용자가 있는지 확인해 주세요.'); return; }
+      const confirmed = window.confirm(`총 ${latestAudience.target_count}명(${latestAudience.device_count}대 기기)에게 발송됩니다. 발송 후 취소할 수 없습니다. 진행할까요?`);
+      if (!confirmed) return;
+      idempotencyKey.current ??= crypto.randomUUID();
       const result = await apiFetch('/admin/notifications', token, {
-        method: 'POST', body: JSON.stringify({ title, body, target_type: form.target_type }),
+        method: 'POST', body: JSON.stringify({
+          title, body, target_type: form.target_type,
+          idempotency_key: idempotencyKey.current,
+          expected_target_count: latestAudience.target_count,
+          expected_device_count: latestAudience.device_count,
+        }),
       });
+      idempotencyKey.current = null;
       setForm((current) => ({ ...current, title: '', body: '' }));
       setPreviewOpen(false);
       await onSent();
       setMessage(`${result.target_count}명에게 발송을 시도해 ${result.success_count}명에게 FCM이 접수됐어요.`);
     } catch (sendError) { setError(sendError.message); }
-    finally { setSending(false); }
+    finally { submitLock.current = false; setSending(false); }
   }
 
   return <section className="panel notification-panel">
@@ -738,12 +754,12 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
     <form className="notification-form" onSubmit={send}>
       <fieldset disabled={sending || migrationRequired}>
         <legend>발송 대상</legend>
-        <label><input type="radio" name="notification-target" value="all" checked={form.target_type === 'all'} onChange={(event) => setForm((current) => ({ ...current, target_type: event.target.value }))}/> 전체 사용자 <small>장부직원 + 일반사용자</small></label>
-        <label><input type="radio" name="notification-target" value="voucher_only" checked={form.target_type === 'voucher_only'} onChange={(event) => setForm((current) => ({ ...current, target_type: event.target.value }))}/> 일반 사용자만 <small>개인 식권 구매자</small></label>
+        <label><input type="radio" name="notification-target" value="all" checked={form.target_type === 'all'} onChange={(event) => updateForm('target_type', event.target.value)}/> 전체 사용자 <small>장부직원 + 일반사용자</small></label>
+        <label><input type="radio" name="notification-target" value="voucher_only" checked={form.target_type === 'voucher_only'} onChange={(event) => updateForm('target_type', event.target.value)}/> 일반 사용자만 <small>개인 식권 구매자</small></label>
       </fieldset>
       <div className="notification-audience">{audience ? <><strong>발송 가능 {audience.target_count}명</strong><span>등록 기기 {audience.device_count}대 · 전체 조건 대상 {audience.eligible_count}명</span></> : <span>대상 인원을 확인하고 있어요.</span>}</div>
-      <label>제목<input value={form.title} maxLength="120" onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="예: 임시 휴무 안내" disabled={sending || migrationRequired} required/></label>
-      <label>내용<textarea value={form.body} maxLength="1000" rows="5" onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))} placeholder="앱 알림에 표시할 내용을 입력해 주세요." disabled={sending || migrationRequired} required/><small>{form.body.length}/1000</small></label>
+      <label>제목<input value={form.title} maxLength="120" onChange={(event) => updateForm('title', event.target.value)} placeholder="예: 임시 휴무 안내" disabled={sending || migrationRequired} required/></label>
+      <label>내용<textarea value={form.body} maxLength="1000" rows="5" onChange={(event) => updateForm('body', event.target.value)} placeholder="앱 알림에 표시할 내용을 입력해 주세요." disabled={sending || migrationRequired} required/><small>{form.body.length}/1000</small></label>
       {previewOpen && <div className="notification-preview"><span>앱 알림 미리보기</span><strong>{form.title.trim() || '공지 제목'}</strong><p>{form.body.trim() || '공지 내용이 여기에 표시됩니다.'}</p></div>}
       <div className="row-actions"><button type="button" className="ghost" onClick={() => setPreviewOpen((open) => !open)} disabled={migrationRequired}>{previewOpen ? '미리보기 닫기' : '미리보기'}</button><button className="primary" disabled={sending || migrationRequired || !audience?.target_count}><Send size={17}/>{sending ? '발송 중...' : '발송하기'}</button></div>
     </form>

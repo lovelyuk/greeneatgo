@@ -699,6 +699,20 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
   const [error, setError] = useState('');
   const submitLock = useRef(false);
   const idempotencyKey = useRef(null);
+  const confirmationResolver = useRef(null);
+  const [confirmation, setConfirmation] = useState(null);
+
+  function requestConfirmation(audienceInfo) {
+    setConfirmation(audienceInfo);
+    return new Promise((resolve) => { confirmationResolver.current = resolve; });
+  }
+
+  function closeConfirmation(confirmed) {
+    const resolve = confirmationResolver.current;
+    confirmationResolver.current = null;
+    setConfirmation(null);
+    resolve?.(confirmed);
+  }
 
   function updateForm(field, value) {
     idempotencyKey.current = null;
@@ -727,7 +741,7 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
       const latestAudience = await loadAudience();
       if (!latestAudience) return;
       if (!latestAudience.target_count) { setError('발송 대상이 없습니다. 앱에서 알림을 허용한 사용자가 있는지 확인해 주세요.'); return; }
-      const confirmed = window.confirm(`총 ${latestAudience.target_count}명(${latestAudience.device_count}대 기기)에게 발송됩니다. 발송 후 취소할 수 없습니다. 진행할까요?`);
+      const confirmed = await requestConfirmation(latestAudience);
       if (!confirmed) return;
       idempotencyKey.current ??= crypto.randomUUID();
       const result = await apiFetch('/admin/notifications', token, {
@@ -768,6 +782,30 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
       {(history?.length ?? 0) === 0 ? <p className="empty-state">아직 발송한 공지가 없어요.</p> : <div className="table-wrap"><table><thead><tr><th>날짜</th><th>대상</th><th>제목</th><th>발송/성공</th><th>기기 성공/실패</th></tr></thead><tbody>{history.map((item) => <tr key={item.id}><td>{new Date(item.sent_at).toLocaleString('ko-KR')}</td><td>{item.target_type === 'voucher_only' ? '일반사용자' : '전체'}</td><td><strong>{item.title}</strong><small>{item.body}</small></td><td>{item.target_count}/{item.success_count}명</td><td>{item.success_device_count}/{item.failure_device_count}대</td></tr>)}</tbody></table></div>}
       <p className="panel-note">성공 수는 사용자가 알림을 열었는지가 아니라 FCM 서버가 접수한 기준입니다.</p>
     </div>
+    {confirmation && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeConfirmation(false); }}>
+      <div className="modal-card notification-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="notification-confirm-title">
+        <button type="button" className="modal-close" aria-label="닫기" onClick={() => closeConfirmation(false)}><X size={20}/></button>
+        <div className="notification-confirm-icon"><Send size={28}/></div>
+        <div className="notification-confirm-copy">
+          <span className="eyebrow">공지 발송 확인</span>
+          <h2 id="notification-confirm-title">이 공지를 발송할까요?</h2>
+          <p>발송이 시작되면 취소할 수 없어요. 대상과 내용을 마지막으로 확인해 주세요.</p>
+        </div>
+        <div className="notification-confirm-stats">
+          <div><span>발송 대상</span><strong>{confirmation.target_count}명</strong></div>
+          <div><span>등록 기기</span><strong>{confirmation.device_count}대</strong></div>
+        </div>
+        <div className="notification-confirm-preview">
+          <span>{form.target_type === 'voucher_only' ? '일반 사용자' : '전체 사용자'}</span>
+          <strong>{form.title.trim()}</strong>
+          <p>{form.body.trim()}</p>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="ghost" onClick={() => closeConfirmation(false)}>다시 확인</button>
+          <button type="button" className="primary" onClick={() => closeConfirmation(true)}><Send size={17}/> 공지 발송</button>
+        </div>
+      </div>
+    </div>}
   </section>;
 }
 

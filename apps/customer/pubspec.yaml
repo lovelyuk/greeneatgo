@@ -1,7 +1,7 @@
 name: greeneatgo_customer
 description: greeneatGo employee Flutter app
 publish_to: none
-version: 0.1.0+3
+version: 0.1.0+4
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -17,6 +17,7 @@ dependencies:
   webview_flutter: ^4.10.0
   firebase_core: ^4.11.0
   firebase_messaging: ^16.4.1
+  flutter_local_notifications: ^22.0.1
 
 dev_dependencies:
   flutter_test:

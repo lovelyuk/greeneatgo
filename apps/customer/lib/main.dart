@@ -485,12 +485,10 @@ class _AppGateState extends State<AppGate> {
 
   void _handleForegroundPush(RemoteMessage message) {
     if (!mounted || _session == null || _me?['status'] != 'active') return;
-    final title = message.notification?.title ?? '새 공지가 도착했어요';
-    final body = message.notification?.body ?? '';
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
-      content: Text(body.isEmpty ? title : '$title\n$body'),
-      duration: const Duration(seconds: 5),
-    ));
+    unawaited(PushNotifications.instance
+        .showForegroundNotification(message)
+        .catchError((error) => debugPrint(
+            'Foreground notification display failed: ${error.runtimeType}')));
     unawaited(_loadMe(showLoading: false));
   }
 

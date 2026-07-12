@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -45,6 +46,16 @@ class PushNotifications {
   String _apiBaseUrl = '';
   String? _accountId;
   StreamSubscription<String>? _tokenRefreshSubscription;
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
+
+  static const AndroidNotificationChannel _announcementChannel =
+      AndroidNotificationChannel(
+    'greeneat_announcements',
+    'Green eat 공지',
+    description: '공지와 포인트 충전 알림을 표시합니다.',
+    importance: Importance.max,
+  );
 
   bool get isAvailable => _initialized;
 
@@ -58,6 +69,21 @@ class PushNotifications {
     try {
       await Firebase.initializeApp(options: appFirebaseOptions);
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      await _localNotifications.initialize(
+        settings: const InitializationSettings(
+          android: AndroidInitializationSettings('ic_stat_notification'),
+          iOS: DarwinInitializationSettings(),
+        ),
+      );
+      await _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(_announcementChannel);
+      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
       _initialized = true;
     } catch (error) {
       debugPrint('FCM initialization failed: ${error.runtimeType}');
@@ -72,6 +98,35 @@ class PushNotifications {
 
   Future<RemoteMessage?> initialMessage() async =>
       _initialized ? FirebaseMessaging.instance.getInitialMessage() : null;
+
+  Future<void> showForegroundNotification(RemoteMessage message) async {
+    if (!_initialized) return;
+    final title = message.notification?.title ?? 'Green eat 알림';
+    final body = message.notification?.body ?? '';
+    await _localNotifications.show(
+      id: message.messageId?.hashCode ??
+          DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'greeneat_announcements',
+          'Green eat 공지',
+          channelDescription: '공지와 포인트 충전 알림을 표시합니다.',
+          importance: Importance.max,
+          priority: Priority.high,
+          icon: 'ic_stat_notification',
+          playSound: true,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: jsonEncode(message.data),
+    );
+  }
 
   Future<void> activateForAccount(String accountId) async {
     if (!_initialized) return;

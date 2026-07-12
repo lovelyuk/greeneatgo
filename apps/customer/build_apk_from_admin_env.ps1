@@ -19,7 +19,9 @@ if (-not $authEmailRedirectTo) {
 }
 
 & 'D:\dev\flutter\bin\flutter.bat' clean
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & 'D:\dev\flutter\bin\flutter.bat' pub get
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $buildArgs = @(
   'build', 'apk',
@@ -53,3 +55,4 @@ if ($firebaseValues.Count -eq $firebaseKeys.Count) {
 }
 
 & 'D:\dev\flutter\bin\flutter.bat' @buildArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

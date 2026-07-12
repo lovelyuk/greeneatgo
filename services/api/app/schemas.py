@@ -175,33 +175,24 @@ class EmployeeLimitUpdateRequest(BaseModel):
 
 class EmployeePointChargeRequest(BaseModel):
     amount: int = Field(gt=0, le=100000000)
-    reason: str = Field(min_length=1, max_length=500)
-    welfare_deduction_confirmed: bool
     model_config = {"extra": "forbid"}
-
-    @field_validator("reason", mode="before")
-    @classmethod
-    def trim_reason(cls, value: object) -> object:
-        return value.strip() if isinstance(value, str) else value
 
 
 class EmployeePointAdjustRequest(BaseModel):
     target_balance: int = Field(ge=0, le=100000000)
-    reason: str = Field(min_length=1, max_length=500)
     model_config = {"extra": "forbid"}
-
-    @field_validator("reason", mode="before")
-    @classmethod
-    def trim_reason(cls, value: object) -> object:
-        return value.strip() if isinstance(value, str) else value
 
 
 class EmployeeProfileUpdateRequest(BaseModel):
     employee_no: str | None = Field(default=None, max_length=40)
+    department: str | None = Field(default=None, max_length=120)
+    display_name: str = Field(min_length=1, max_length=80)
+    phone: str | None = Field(default=None, max_length=40)
+    model_config = {"extra": "forbid"}
 
-    @field_validator("employee_no", mode="before")
+    @field_validator("employee_no", "department", "display_name", "phone", mode="before")
     @classmethod
-    def normalize_employee_no(cls, value: object) -> object:
+    def normalize_profile_field(cls, value: object) -> object:
         if value is None:
             return None
         if isinstance(value, str):

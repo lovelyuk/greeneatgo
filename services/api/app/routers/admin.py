@@ -314,6 +314,13 @@ def update_employee_profile(user_id: str, payload: EmployeeProfileUpdateRequest,
             "p_user_id": user_id,
             "p_employee_no": payload.employee_no,
         })
+        patched = repo.client.rest_patch(
+            "app_users",
+            {"id": f"eq.{user_id}", "company_id": f"eq.{actor.company_id}", "role": "eq.employee"},
+            {"department": payload.department, "display_name": payload.display_name, "phone": payload.phone},
+        )
+        if patched:
+            updated = patched[0]
         return {"ok": True, "data": {"employee": updated}, "error": None}
     except HTTPException:
         raise
@@ -324,7 +331,7 @@ def update_employee_profile(user_id: str, payload: EmployeeProfileUpdateRequest,
             raise _error(409, "DUPLICATE_EMPLOYEE_NO", "이미 사용 중이거나 초대 대기 중인 사번이에요") from exc
         if "update_company_employee_no" in exc.body or "PGRST202" in exc.body or "PGRST204" in exc.body:
             raise _error(400, "MIGRATION_REQUIRED", "0017 마이그레이션 적용 후 사번을 저장할 수 있어요") from exc
-        raise _error(502, "SUPABASE_ERROR", "직원 사번을 저장하는 중 오류가 발생했어요") from exc
+        raise _error(502, "SUPABASE_ERROR", "직원 정보를 저장하는 중 오류가 발생했어요") from exc
 
 
 def _meal_policy_data(row: dict | None) -> dict:
@@ -422,14 +429,12 @@ def _change_employee_points(user_id: str, mode: str, value: int, reason: str, co
 
 @router.post("/employees/{user_id}/points/charge")
 def charge_employee_points(user_id: str, payload: EmployeePointChargeRequest, token: str = Depends(bearer_token)):
-    if not payload.welfare_deduction_confirmed:
-        raise _error(422, "WELFARE_DEDUCTION_CONFIRMATION_REQUIRED", "외부 복지 차감 확인이 필요해요")
-    return _change_employee_points(user_id, "charge", payload.amount, payload.reason, True, token)
+    return _change_employee_points(user_id, "charge", payload.amount, "관리자 직접 충전", True, token)
 
 
 @router.post("/employees/{user_id}/points/adjust")
 def adjust_employee_points(user_id: str, payload: EmployeePointAdjustRequest, token: str = Depends(bearer_token)):
-    return _change_employee_points(user_id, "adjust", payload.target_balance, payload.reason, False, token)
+    return _change_employee_points(user_id, "adjust", payload.target_balance, "관리자 잔액 조정", False, token)
 
 
 @router.get("/employees/{user_id}/points")

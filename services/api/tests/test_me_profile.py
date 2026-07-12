@@ -2,7 +2,6 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.routers.me import update_admin_name
@@ -48,19 +47,36 @@ class AdminProfileNameTests(unittest.TestCase):
         self.assertEqual(result["data"]["display_name"], "돈토 사장님")
 
     @patch("app.routers.me.JoinRepository")
-    def test_non_admin_cannot_use_admin_name_endpoint(self, repo_class):
+    def test_employee_can_update_only_profile_resolved_from_token(self, repo_class):
         repo = repo_class.return_value
         repo.auth_user_from_token.return_value = SimpleNamespace(id="employee-1", email="staff@example.com")
         repo.get_profile.return_value = UserProfile(
             id="employee-1", email="staff@example.com", display_name="직원",
             company_id="company-1", role="employee", status="active",
         )
+        repo.client.rest_patch.return_value = [{"display_name": "바꿀 이름"}]
 
-        with self.assertRaises(HTTPException) as ctx:
-            update_admin_name(ProfileNameUpdateRequest(display_name="바꿀 이름"), "token")
+        update_admin_name(ProfileNameUpdateRequest(display_name="바꿀 이름"), "token")
 
-        self.assertEqual(ctx.exception.status_code, 403)
-        repo.client.rest_patch.assert_not_called()
+        repo.client.rest_patch.assert_called_once_with(
+            "app_users", {"id": "eq.employee-1"}, {"display_name": "바꿀 이름"}
+        )
+
+    @patch("app.routers.me.JoinRepository")
+    def test_customer_can_update_own_name(self, repo_class):
+        repo = repo_class.return_value
+        repo.auth_user_from_token.return_value = SimpleNamespace(id="customer-1", email="customer@example.com")
+        repo.get_profile.return_value = UserProfile(
+            id="customer-1", email="customer@example.com", display_name="고객",
+            role="customer", status="active",
+        )
+        repo.client.rest_patch.return_value = [{"display_name": "새 고객 이름"}]
+
+        update_admin_name(ProfileNameUpdateRequest(display_name="새 고객 이름"), "token")
+
+        repo.client.rest_patch.assert_called_once_with(
+            "app_users", {"id": "eq.customer-1"}, {"display_name": "새 고객 이름"}
+        )
 
 
 if __name__ == "__main__":

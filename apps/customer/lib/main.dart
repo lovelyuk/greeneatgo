@@ -123,6 +123,9 @@ class ApiClient {
 
   Future<Map<String, dynamic>> getMe() async => _request('/me');
 
+  Future<Map<String, dynamic>> updateDisplayName(String displayName) =>
+      _request('/me', method: 'PATCH', body: {'display_name': displayName});
+
   Future<List<VoucherProduct>> getVoucherProducts() async {
     final data = await _request('/vouchers/products', authenticated: false);
     return mapList(data['items']).map(VoucherProduct.fromJson).toList();
@@ -413,7 +416,9 @@ String recentMeta(Map<String, dynamic> tx) {
 
 String displayMerchantName(String? name) {
   final value = (name ?? '').trim();
-  if (value.isEmpty || value.startsWith('밥장부') || value == '그린잇 식당') return '돈토';
+  if (value.isEmpty || value.startsWith('밥장부') || value == '그린잇 식당') {
+    return '돈토';
+  }
   return value;
 }
 
@@ -467,8 +472,9 @@ class _AppGateState extends State<AppGate> {
       setState(() => _session = event.session);
       _loadMe();
     });
-    _foregroundMessageSubscription =
-        PushNotifications.instance.foregroundMessages.listen(_handleForegroundPush);
+    _foregroundMessageSubscription = PushNotifications
+        .instance.foregroundMessages
+        .listen(_handleForegroundPush);
     _openedMessageSubscription =
         PushNotifications.instance.openedMessages.listen((_) => _loadMe());
     unawaited(PushNotifications.instance.initialMessage().then((message) {
@@ -561,7 +567,8 @@ class _AppGateState extends State<AppGate> {
       return BlockedScreen(
           status: status, onRefresh: _loadMe, onSignOut: _signOut);
     }
-    return HomeScreen(me: _me!, onRefresh: _loadMe, onSignOut: _signOut);
+    return HomeScreen(
+        session: _session!, me: _me!, onRefresh: _loadMe, onSignOut: _signOut);
   }
 }
 
@@ -941,12 +948,182 @@ class BlockedScreen extends StatelessWidget {
   }
 }
 
+class AccountSettingsScreen extends StatefulWidget {
+  const AccountSettingsScreen(
+      {super.key,
+      required this.session,
+      required this.me,
+      required this.onSignOut});
+  final Session session;
+  final Map<String, dynamic> me;
+  final Future<void> Function() onSignOut;
+
+  @override
+  State<AccountSettingsScreen> createState() => _AccountSettingsScreenState();
+}
+
+class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
+  late final TextEditingController _name;
+  final _password = TextEditingController();
+  final _passwordConfirm = TextEditingController();
+  bool _savingName = false;
+  bool _savingPassword = false;
+  bool _hidePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _name =
+        TextEditingController(text: widget.me['display_name'] as String? ?? '');
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _password.dispose();
+    _passwordConfirm.dispose();
+    super.dispose();
+  }
+
+  void _message(String text, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(text),
+        backgroundColor: error ? Colors.red.shade700 : kCocoa));
+  }
+
+  Future<void> _saveName() async {
+    final value = _name.text.trim();
+    if (value.isEmpty) return _message('이름을 입력해 주세요.', error: true);
+    setState(() => _savingName = true);
+    try {
+      await ApiClient(widget.session).updateDisplayName(value);
+      if (!mounted) return;
+      _message('이름을 변경했어요.');
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (mounted) {
+        _message(error.toString().replaceFirst('Exception: ', ''), error: true);
+      }
+    } finally {
+      if (mounted) setState(() => _savingName = false);
+    }
+  }
+
+  Future<void> _savePassword() async {
+    if (_password.text.length < 6) {
+      return _message('새 비밀번호는 6자 이상 입력해 주세요.', error: true);
+    }
+    if (_password.text != _passwordConfirm.text) {
+      return _message('새 비밀번호가 서로 일치하지 않아요.', error: true);
+    }
+    setState(() => _savingPassword = true);
+    try {
+      await Supabase.instance.client.auth
+          .updateUser(UserAttributes(password: _password.text));
+      _password.clear();
+      _passwordConfirm.clear();
+      if (mounted) _message('비밀번호를 안전하게 변경했어요.');
+    } catch (error) {
+      if (mounted) _message('비밀번호를 변경하지 못했어요. 잠시 후 다시 시도해 주세요.', error: true);
+    } finally {
+      if (mounted) setState(() => _savingPassword = false);
+    }
+  }
+
+  String get _roleLabel => switch (widget.me['role']) {
+        'employee' => '임직원',
+        'customer' => '일반 고객',
+        'company_admin' => '회사 관리자',
+        'merchant_admin' => '식당 관리자',
+        _ => '사용자',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final companyId = widget.me['company_id'] as String?;
+    return Scaffold(
+      appBar: AppBar(title: const Text('계정 설정')),
+      body: SafeArea(
+        child: ListView(padding: const EdgeInsets.all(20), children: [
+          const Text('계정 정보',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 12),
+          ListTile(
+              leading: const Icon(Icons.email_outlined),
+              title: const Text('이메일'),
+              subtitle: Text(widget.me['email'] as String? ??
+                  widget.session.user.email ??
+                  '-')),
+          ListTile(
+              leading: const Icon(Icons.badge_outlined),
+              title: const Text('계정 유형'),
+              subtitle: Text(_roleLabel)),
+          if (companyId != null)
+            ListTile(
+                leading: const Icon(Icons.business_outlined),
+                title: const Text('소속 회사'),
+                subtitle: Text(companyId)),
+          const Divider(height: 36),
+          const Text('이름 변경',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 12),
+          TextField(
+              controller: _name,
+              maxLength: 80,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(labelText: '표시 이름')),
+          FilledButton(
+              onPressed: _savingName ? null : _saveName,
+              child: Text(_savingName ? '저장 중...' : '이름 저장')),
+          const Divider(height: 40),
+          const Text('비밀번호 변경',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+          const Padding(
+              padding: EdgeInsets.only(top: 6, bottom: 12),
+              child: Text('현재 비밀번호는 입력하지 않아도 돼요. 새 비밀번호만 안전하게 변경합니다.',
+                  style: TextStyle(color: Color(0xFF5C7A66)))),
+          TextField(
+              controller: _password,
+              obscureText: _hidePassword,
+              decoration: InputDecoration(
+                  labelText: '새 비밀번호 (6자 이상)',
+                  suffixIcon: IconButton(
+                      onPressed: () =>
+                          setState(() => _hidePassword = !_hidePassword),
+                      icon: Icon(_hidePassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined)))),
+          const SizedBox(height: 12),
+          TextField(
+              controller: _passwordConfirm,
+              obscureText: _hidePassword,
+              decoration: const InputDecoration(labelText: '새 비밀번호 확인')),
+          const SizedBox(height: 16),
+          FilledButton(
+              onPressed: _savingPassword ? null : _savePassword,
+              child: Text(_savingPassword ? '변경 중...' : '비밀번호 변경')),
+          const SizedBox(height: 28),
+          OutlinedButton.icon(
+              onPressed: () async {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+                await widget.onSignOut();
+              },
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text('로그아웃')),
+        ]),
+      ),
+    );
+  }
+}
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen(
       {super.key,
+      required this.session,
       required this.me,
       required this.onRefresh,
       required this.onSignOut});
+  final Session session;
   final Map<String, dynamic> me;
   final Future<void> Function() onRefresh;
   final Future<void> Function() onSignOut;
@@ -967,6 +1144,16 @@ class HomeScreen extends StatelessWidget {
       subtitle: '$name님, 그린하게 챙기는 오늘 한 끼예요.',
       onSignOut: onSignOut,
       actions: [
+        IconButton(
+            tooltip: '계정 설정',
+            onPressed: () async {
+              final changed = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                      builder: (_) => AccountSettingsScreen(
+                          session: session, me: me, onSignOut: onSignOut)));
+              if (changed == true) await onRefresh();
+            },
+            icon: const Icon(Icons.settings_rounded)),
         IconButton(
             onPressed: onRefresh, icon: const Icon(Icons.refresh_rounded))
       ],
@@ -1041,12 +1228,24 @@ class HomeScreen extends StatelessWidget {
           ),
         ] else ...[
           Container(
-            margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(18),
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(18),
             decoration: brandCardDecoration(radius: 22),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('복지포인트', style: TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
-              Text('${won(pointBalance)} P', style: const TextStyle(color: kCocoa, fontSize: 27, fontWeight: FontWeight.w900)),
-              if (pointTransactions.isNotEmpty) Text('최근 ${pointTransactions.first['reason'] ?? '포인트 변경'} · ${pointTransactions.first['amount']}P', style: const TextStyle(fontSize: 12, color: Color(0xFF5C7A66))),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('복지포인트',
+                  style: TextStyle(
+                      color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
+              Text('${won(pointBalance)} P',
+                  style: const TextStyle(
+                      color: kCocoa,
+                      fontSize: 27,
+                      fontWeight: FontWeight.w900)),
+              if (pointTransactions.isNotEmpty)
+                Text(
+                    '최근 ${pointTransactions.first['reason'] ?? '포인트 변경'} · ${pointTransactions.first['amount']}P',
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF5C7A66))),
             ]),
           ),
           FutureBuilder<SubsidizedPrice>(
@@ -1060,11 +1259,13 @@ class HomeScreen extends StatelessWidget {
                   onPressed: () async {
                     await Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => SubsidizedVoucherPurchaseScreen(
-                            session: Supabase.instance.client.auth.currentSession!)));
+                            session: Supabase
+                                .instance.client.auth.currentSession!)));
                     await onRefresh();
                   },
                   icon: const Icon(Icons.add_card_rounded),
-                  label: Text('지원 식권 구매하기 · ${won(snapshot.data!.employeePayAmount)}'),
+                  label: Text(
+                      '지원 식권 구매하기 · ${won(snapshot.data!.employeePayAmount)}'),
                 ),
               );
             },
@@ -1604,8 +1805,8 @@ class _SubsidizedVoucherPurchaseScreenState
   late Future<SubsidizedPrice> _price =
       ApiClient(widget.session).getSubsidizedPrice();
 
-  void _reload() => setState(
-      () => _price = ApiClient(widget.session).getSubsidizedPrice());
+  void _reload() =>
+      setState(() => _price = ApiClient(widget.session).getSubsidizedPrice());
 
   @override
   Widget build(BuildContext context) => AppScaffold(
@@ -1620,9 +1821,11 @@ class _SubsidizedVoucherPurchaseScreenState
             }
             if (snapshot.hasError) {
               return BrandPanel(children: [
-                BrandNotice(text: snapshot.error.toString(), kind: NoticeKind.error),
+                BrandNotice(
+                    text: snapshot.error.toString(), kind: NoticeKind.error),
                 const SizedBox(height: 12),
-                OutlinedButton(onPressed: _reload, child: const Text('다시 불러오기')),
+                OutlinedButton(
+                    onPressed: _reload, child: const Text('다시 불러오기')),
               ]);
             }
             final price = snapshot.data!;
@@ -1632,17 +1835,22 @@ class _SubsidizedVoucherPurchaseScreenState
               const SizedBox(height: 12),
               Text('${price.merchantName} 식권',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+                  style: const TextStyle(
+                      fontSize: 24, fontWeight: FontWeight.w900)),
               const SizedBox(height: 10),
               Text(won(price.employeePayAmount),
                   style: const TextStyle(
-                      color: kOrange, fontSize: 34, fontWeight: FontWeight.w900)),
+                      color: kOrange,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),
               Text(
                   '정상가 ${won(price.unitPrice)} · 회사 지원 ${won(price.companySubsidyAmount)} · 식당 지원 ${won(price.restaurantSubsidyAmount)}',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                      color: Color(0xFF5C7A66), height: 1.5, fontWeight: FontWeight.w800)),
+                      color: Color(0xFF5C7A66),
+                      height: 1.5,
+                      fontWeight: FontWeight.w800)),
               const SizedBox(height: 18),
               FilledButton(
                   onPressed: () async {
@@ -1834,8 +2042,7 @@ class VoucherTossPaymentScreen extends StatefulWidget {
   final SubsidizedPrice? subsidizedPrice;
 
   bool get isSubsidized => subsidizedPrice != null;
-  String get paymentTitle =>
-      isSubsidized ? '지원 식권' : product!.name;
+  String get paymentTitle => isSubsidized ? '지원 식권' : product!.name;
   int get expectedIssued => isSubsidized ? 1 : product!.totalCount;
 
   @override
@@ -1852,7 +2059,6 @@ class _VoucherTossPaymentScreenState extends State<VoucherTossPaymentScreen> {
   int? _issued;
   int? _pointAmount;
   int? _cardAmount;
-  String? _subsidizedOrderId;
   String? _error;
 
   @override
@@ -1888,17 +2094,24 @@ class _VoucherTossPaymentScreenState extends State<VoucherTossPaymentScreen> {
           : await ApiClient(widget.session)
               .createVoucherOrder(productId: widget.product!.id);
       final checkoutUrl = order['checkout_url'] as String?;
-      if (widget.isSubsidized) _subsidizedOrderId = order['order_id'] as String?;
       _pointAmount = (order['point_amount'] as num?)?.round() ?? 0;
-      _cardAmount = (order['card_amount'] as num?)?.round() ?? (order['amount'] as num?)?.round();
+      _cardAmount = (order['card_amount'] as num?)?.round() ??
+          (order['amount'] as num?)?.round();
       if (order['point_only'] == true) {
-        final fulfillment = order['fulfillment'] is Map ? (order['fulfillment'] as Map).cast<String, dynamic>() : <String, dynamic>{};
-        if (mounted) setState(() { _issued = (fulfillment['issued_count'] as num?)?.round() ?? 1; _completed = true; _loading = false; });
+        final fulfillment = order['fulfillment'] is Map
+            ? (order['fulfillment'] as Map).cast<String, dynamic>()
+            : <String, dynamic>{};
+        if (mounted) {
+          setState(() {
+            _issued = (fulfillment['issued_count'] as num?)?.round() ?? 1;
+            _completed = true;
+            _loading = false;
+          });
+        }
         return;
       }
       if (checkoutUrl == null || checkoutUrl.isEmpty) {
-        throw const ApiException(
-            statusCode: 502, message: '결제 주소를 받지 못했어요.');
+        throw const ApiException(statusCode: 502, message: '결제 주소를 받지 못했어요.');
       }
       await _controller.loadRequest(Uri.parse(checkoutUrl));
     } catch (error) {
@@ -2003,7 +2216,11 @@ class _VoucherTossPaymentScreenState extends State<VoucherTossPaymentScreen> {
                                 fontWeight: FontWeight.w900)),
                         if (widget.isSubsidized) ...[
                           const SizedBox(height: 8),
-                          Text('포인트 ${won(_pointAmount)} P · 카드 ${won(_cardAmount)}', style: const TextStyle(color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
+                          Text(
+                              '포인트 ${won(_pointAmount)} P · 카드 ${won(_cardAmount)}',
+                              style: const TextStyle(
+                                  color: Color(0xFF5C7A66),
+                                  fontWeight: FontWeight.w800)),
                         ],
                         const SizedBox(height: 18),
                         FilledButton(
@@ -2140,8 +2357,8 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                           borderRadius: BorderRadius.circular(14),
                           child: SizedBox.square(
                             dimension: 62,
-                            child: _productImage(
-                                product.imageUrl, Icons.restaurant_menu_rounded),
+                            child: _productImage(product.imageUrl,
+                                Icons.restaurant_menu_rounded),
                           ),
                         ),
                         const SizedBox(width: 12),

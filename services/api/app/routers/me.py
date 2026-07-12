@@ -154,9 +154,11 @@ def update_admin_name(payload: ProfileNameUpdateRequest, token: str = Depends(be
         auth_user = repo.auth_user_from_token(token)
         profile = repo.get_profile(auth_user.id, email=auth_user.email)
         if profile is None:
-            raise _error(404, "PROFILE_NOT_FOUND", "관리자 프로필을 찾을 수 없어요")
-        if profile.role not in {"company_admin", "merchant_admin"}:
-            raise _error(403, "FORBIDDEN", "업체관리자 또는 식당관리자만 이름을 수정할 수 있어요")
+            raise _error(404, "PROFILE_NOT_FOUND", "프로필을 찾을 수 없어요")
+        # The target id is always resolved from the bearer token, so users can
+        # update their own display name only.
+        if profile.role not in {"company_admin", "merchant_admin", "employee", "customer"}:
+            raise _error(403, "FORBIDDEN", "이 계정은 이름을 수정할 수 없어요")
         rows = repo.client.rest_patch(
             "app_users",
             {"id": f"eq.{profile.id}"},

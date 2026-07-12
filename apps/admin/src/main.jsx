@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Send, Users, WalletCards, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, LogOut, QrCode, RefreshCw, Search, Send, Settings, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
@@ -861,8 +861,8 @@ function Dashboard({ session, onLogout }) {
   const [mealPolicyForm, setMealPolicyForm] = useState({ enabled: false, lunch_start: '11:00', lunch_end: '14:00', dinner_start: '17:30', dinner_end: '20:30' });
   const [employeeTxModal, setEmployeeTxModal] = useState(null);
   const [employeeBulkOpen, setEmployeeBulkOpen] = useState(false);
-  const [limitModal, setLimitModal] = useState(null);
-  const [limitForm, setLimitForm] = useState('200000');
+  const [employeeManageModal, setEmployeeManageModal] = useState(null);
+  const [employeeManageForm, setEmployeeManageForm] = useState({ department: '', display_name: '', employee_no: '', phone: '', charge_amount: '', target_balance: '' });
   const [merchantQr, setMerchantQr] = useState(null);
   const [platformMerchants, setPlatformMerchants] = useState(null);
   const [platformMerchantForm, setPlatformMerchantForm] = useState({ name: '', owner_phone: '', category: '', avg_price: '' });
@@ -1063,8 +1063,11 @@ function Dashboard({ session, onLogout }) {
     setBusy(true);
     setError('');
     try {
-      const data = await apiFetch(`/admin/employees/${employee.id}/transactions`, token);
-      setEmployeeTxModal({ employee, items: data.items ?? [] });
+      const [usageData, pointData] = await Promise.all([
+        apiFetch(`/admin/employees/${employee.id}/transactions`, token),
+        apiFetch(`/admin/employees/${employee.id}/points`, token),
+      ]);
+      setEmployeeTxModal({ employee, items: usageData.items ?? [], pointItems: pointData.items ?? [] });
     } catch (txError) {
       setError(txError.message);
     } finally {
@@ -1072,56 +1075,26 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
-  function openLimitModal(employee) {
-    setLimitModal(employee);
-    setLimitForm(String(employee.monthly_limit ?? 200000));
+  function openEmployeeManage(employee) {
+    setEmployeeManageModal(employee);
+    setEmployeeManageForm({ department: employee.department ?? '', display_name: employee.display_name ?? '', employee_no: employee.employee_no ?? '', phone: employee.phone ?? '', charge_amount: '', target_balance: '' });
   }
 
-  async function changePoints(employee, mode) {
-    const valueLabel = mode === 'charge' ? '충전할 포인트' : '조정 후 목표 잔액';
-    const raw = window.prompt(`${employee.display_name ?? '직원'} · ${valueLabel}`, mode === 'charge' ? '10000' : String(employee.point_balance ?? 0));
-    if (raw == null) return;
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value < (mode === 'charge' ? 1 : 0)) { setError('올바른 포인트 금액을 입력해 주세요.'); return; }
-    const reason = window.prompt('필수 사유/외부 복지 차감 참조번호를 입력해 주세요.');
-    if (!reason?.trim()) { setError('사유/참조번호는 필수예요.'); return; }
-    if (mode === 'charge' && !window.confirm('직원의 외부 복지비가 이미 차감되었음을 확인합니까?\n확인 후 즉시 포인트가 충전됩니다.')) return;
-    setBusy(true); setError('');
-    try {
-      await apiFetch(`/admin/employees/${employee.id}/points/${mode}`, token, { method: 'POST', body: JSON.stringify(mode === 'charge' ? { amount: value, reason: reason.trim(), welfare_deduction_confirmed: true } : { target_balance: value, reason: reason.trim() }) });
-      const employeeData = await apiFetch('/admin/employees', token); setEmployees(employeeData);
-      setMessage(mode === 'charge' ? '포인트를 충전하고 직원에게 알림을 시도했어요.' : '포인트 목표 잔액을 조정했어요.');
-    } catch (pointError) { setError(pointError.message); } finally { setBusy(false); }
-  }
-
-  async function saveEmployeeLimit(event) {
+  async function saveEmployeeManage(event) {
     event.preventDefault();
-    if (!limitModal) return;
-    setBusy(true);
-    setError('');
-    setMessage('');
+    if (!employeeManageModal) return;
+    const chargeAmount = employeeManageForm.charge_amount === '' ? null : Number(employeeManageForm.charge_amount);
+    const targetBalance = employeeManageForm.target_balance === '' ? null : Number(employeeManageForm.target_balance);
+    if (chargeAmount !== null && (!Number.isInteger(chargeAmount) || chargeAmount <= 0)) { setError('충전 금액을 올바르게 입력해 주세요.'); return; }
+    if (targetBalance !== null && (!Number.isInteger(targetBalance) || targetBalance < 0)) { setError('목표 잔액을 올바르게 입력해 주세요.'); return; }
+    setBusy(true); setError(''); setMessage('');
     try {
-      await apiFetch(`/admin/employees/${limitModal.id}/limit`, token, {
-        method: 'PATCH',
-        body: JSON.stringify({ monthly_limit: Number(limitForm) }),
-      });
-      setLimitModal(null);
-      setMessage('직원 월 한도를 저장했어요.');
+      await apiFetch(`/admin/employees/${employeeManageModal.id}`, token, { method: 'PATCH', body: JSON.stringify({ department: employeeManageForm.department.trim() || null, display_name: employeeManageForm.display_name.trim(), employee_no: employeeManageForm.employee_no.trim() || null, phone: employeeManageForm.phone.trim() || null }) });
+      if (chargeAmount !== null) await apiFetch(`/admin/employees/${employeeManageModal.id}/points/charge`, token, { method: 'POST', body: JSON.stringify({ amount: chargeAmount }) });
+      if (targetBalance !== null) await apiFetch(`/admin/employees/${employeeManageModal.id}/points/adjust`, token, { method: 'POST', body: JSON.stringify({ target_balance: targetBalance }) });
+      setEmployeeManageModal(null);
+      setMessage('직원 정보를 저장하고 포인트 변경을 반영했어요.');
       await load();
-    } catch (limitError) {
-      setError(limitError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveEmployeeNo(employee) {
-    const value = window.prompt('사번을 입력해 주세요. 비우면 삭제됩니다.', employee.employee_no ?? '');
-    if (value === null) return;
-    setBusy(true); setError('');
-    try {
-      await apiFetch(`/admin/employees/${employee.id}`, token, { method: 'PATCH', body: JSON.stringify({ employee_no: value.trim() || null }) });
-      setMessage('직원 사번을 저장했어요.'); await load();
     } catch (employeeError) { setError(employeeError.message); } finally { setBusy(false); }
   }
 
@@ -1585,17 +1558,17 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
 
-    {limitModal && <div className="modal-backdrop" onClick={() => setLimitModal(null)}>
+    {employeeManageModal && <div className="modal-backdrop" onClick={() => setEmployeeManageModal(null)}>
       <section className="invite-modal contract-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="panel-title"><div><h2>직원 월 한도 수정</h2><p className="panel-note">{limitModal.display_name ?? '직원'}님의 이번 달 식대 한도를 설정합니다.</p></div><button className="ghost icon-button" onClick={() => setLimitModal(null)} aria-label="닫기"><X size={20}/></button></div>
-        <form className="contract-form" onSubmit={saveEmployeeLimit}>
-          <label>월 한도
-            <input type="number" min="0" step="1000" value={limitForm} onChange={(event) => setLimitForm(event.target.value)} required />
-          </label>
-          <div className="row-actions invite-modal-actions">
-            <button className="primary" disabled={busy}>저장</button>
-            <button className="ghost" type="button" onClick={() => setLimitModal(null)}>닫기</button>
-          </div>
+        <div className="panel-title"><div><h2>직원 관리</h2><p className="panel-note">직원 정보와 포인트를 한 번에 변경합니다.</p></div><button className="ghost icon-button" onClick={() => setEmployeeManageModal(null)} aria-label="닫기"><X size={20}/></button></div>
+        <form className="contract-form" onSubmit={saveEmployeeManage}>
+          <label>부서<input value={employeeManageForm.department} maxLength="120" onChange={(event) => setEmployeeManageForm((form) => ({ ...form, department: event.target.value }))} /></label>
+          <label>이름<input value={employeeManageForm.display_name} maxLength="80" required onChange={(event) => setEmployeeManageForm((form) => ({ ...form, display_name: event.target.value }))} /></label>
+          <label>사번<input value={employeeManageForm.employee_no} maxLength="40" onChange={(event) => setEmployeeManageForm((form) => ({ ...form, employee_no: event.target.value }))} /></label>
+          <label>전화번호<input value={employeeManageForm.phone} maxLength="40" onChange={(event) => setEmployeeManageForm((form) => ({ ...form, phone: event.target.value }))} /></label>
+          <label>즉시 포인트 충전<input type="number" min="1" step="1" value={employeeManageForm.charge_amount} placeholder="충전하지 않으면 비워두세요" onChange={(event) => setEmployeeManageForm((form) => ({ ...form, charge_amount: event.target.value }))} /></label>
+          <label>조정 후 목표 잔액<input type="number" min="0" step="1" value={employeeManageForm.target_balance} placeholder={`현재 ${Number(employeeManageModal.point_balance ?? 0).toLocaleString()} P · 조정하지 않으면 비워두세요`} onChange={(event) => setEmployeeManageForm((form) => ({ ...form, target_balance: event.target.value }))} /></label>
+          <div className="row-actions invite-modal-actions"><button className="primary" disabled={busy}>저장</button><button className="ghost" type="button" onClick={() => setEmployeeManageModal(null)}>닫기</button></div>
         </form>
       </section>
     </div>}
@@ -1603,7 +1576,10 @@ function Dashboard({ session, onLogout }) {
     {employeeTxModal && <div className="modal-backdrop" onClick={() => setEmployeeTxModal(null)}>
       <section className="invite-modal employee-history-modal" onClick={(event) => event.stopPropagation()}>
         <div className="panel-title"><div><h2>직원 이용내역</h2><p className="panel-note">{employeeTxModal.employee.display_name ?? '직원'}님의 최근 이용내역입니다.</p></div><button className="ghost icon-button" onClick={() => setEmployeeTxModal(null)} aria-label="닫기"><X size={20}/></button></div>
+        <h3>식대 이용내역</h3>
         {(employeeTxModal.items?.length ?? 0) === 0 ? <p className="empty-state">아직 이용내역이 없어요.</p> : <div className="table-wrap"><table><thead><tr><th>일시</th><th>식당</th><th>내역</th><th>구분</th><th>금액</th></tr></thead><tbody>{employeeTxModal.items.map((item) => <tr key={item.id}><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td><td>{item.merchant_name ?? '-'}</td><td>{item.product_name ?? item.tx_code ?? '-'}</td><td>{item.kind}</td><td>{krw(Math.abs(Number(item.amount ?? 0)))}</td></tr>)}</tbody></table></div>}
+        <h3>포인트 내역</h3>
+        {(employeeTxModal.pointItems?.length ?? 0) === 0 ? <p className="empty-state">아직 포인트 내역이 없어요.</p> : <div className="table-wrap"><table><thead><tr><th>일시</th><th>구분</th><th>금액</th><th>변경 후 잔액</th></tr></thead><tbody>{employeeTxModal.pointItems.map((item) => <tr key={item.id}><td>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</td><td>{item.type === 'charge' ? '충전' : item.type === 'use' ? '사용' : '조정'}</td><td>{`${Number(item.amount ?? 0) > 0 ? '+' : ''}${Number(item.amount ?? 0).toLocaleString()} P`}</td><td>{`${Number(item.balance_after ?? 0).toLocaleString()} P`}</td></tr>)}</tbody></table></div>}
       </section>
     </div>}
 
@@ -1694,12 +1670,11 @@ function Dashboard({ session, onLogout }) {
 
     {!isPlatformAdmin && !isMerchantAdmin && <section className="panel employee-panel">
       <div className="panel-title">
-        <div><h2>등록된 직원목록</h2><p className="panel-note">직원별 월 한도와 이번 달 이용 현황을 확인합니다.</p></div>
+        <div><h2>등록된 직원목록</h2><p className="panel-note">직원 정보, 포인트 잔액과 이번 달 이용 현황을 확인합니다.</p></div>
         <div className="employee-panel-actions"><button className="primary bulk-open-button" onClick={() => setEmployeeBulkOpen(true)} disabled={employees?.bulk_migration_required}>+ 직원 일괄등록</button><span className="badge">{employees?.items?.length ?? 0}명</span></div>
       </div>
-      {employees?.migration_required && <div className="alert error">월 한도 저장 컬럼이 아직 적용되지 않아 기본값 200,000원으로 표시 중이에요. 0011_employee_monthly_limit.sql 적용 후 한도 수정이 저장됩니다.</div>}
       {employees?.bulk_migration_required && <div className="alert error">0017_employee_bulk_invites.sql 적용 후 직원 일괄등록을 사용할 수 있어요.</div>}
-      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하거나 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>최근 충전</th><th>월 한도</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className="badge">{employee.is_staged ? '초대대기' : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.recent_point_charge ? `${Number(employee.recent_point_charge.amount).toLocaleString()}P · ${new Date(employee.recent_point_charge.created_at).toLocaleDateString('ko-KR')}` : '-'}</td><td>{employee.is_staged ? '-' : krw(employee.monthly_limit ?? 200000)}</td><td>{employee.is_staged ? '-' : krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td>{employee.is_staged ? '-' : <button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button>}</td><td className="row-actions">{employee.is_staged ? <span className="muted">최초 가입 대기</span> : <><button className="primary" disabled={busy} onClick={() => changePoints(employee, 'charge')}>포인트 충전</button><button className="ghost" disabled={busy} onClick={() => changePoints(employee, 'adjust')}>잔액조정</button><button className="ghost" onClick={() => saveEmployeeNo(employee)}>사번수정</button><button className="ghost" onClick={() => openLimitModal(employee)}>한도수정</button></>}</td></tr>)}</tbody></table></div>}
+      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하거나 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className="badge">{employee.is_staged ? '초대대기' : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.is_staged ? '-' : krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td>{employee.is_staged ? '-' : <button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button>}</td><td>{employee.is_staged ? <span className="muted">최초 가입 대기</span> : <button className="ghost icon-button" disabled={busy} onClick={() => openEmployeeManage(employee)} aria-label={`${employee.display_name ?? '직원'} 관리`} title="직원 관리"><Settings size={18}/></button>}</td></tr>)}</tbody></table></div>}
     </section>}
 
     {!isPlatformAdmin && isMerchantAdmin && <section className="panel">

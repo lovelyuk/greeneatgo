@@ -491,7 +491,7 @@ class _AppGateState extends State<AppGate> {
       content: Text(body.isEmpty ? title : '$title\n$body'),
       duration: const Duration(seconds: 5),
     ));
-    unawaited(_loadMe());
+    unawaited(_loadMe(showLoading: false));
   }
 
   @override
@@ -502,7 +502,7 @@ class _AppGateState extends State<AppGate> {
     super.dispose();
   }
 
-  Future<void> _loadMe() async {
+  Future<void> _loadMe({bool showLoading = true}) async {
     final session = _session;
     if (session == null) {
       setState(() {
@@ -511,10 +511,14 @@ class _AppGateState extends State<AppGate> {
       });
       return;
     }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (showLoading) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    } else {
+      setState(() => _error = null);
+    }
     try {
       final me = await ApiClient(session).getMe();
       if (!mounted) return;

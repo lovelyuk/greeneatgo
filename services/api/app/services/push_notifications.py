@@ -68,7 +68,14 @@ def _firebase_send_batch(title: str, body: str, tokens: Sequence[str]):
         tokens=list(tokens),
         notification=messaging.Notification(title=title, body=body),
         data={"type": "announcement"},
-        android=messaging.AndroidConfig(priority="high"),
+        android=messaging.AndroidConfig(
+            priority="high",
+            notification=messaging.AndroidNotification(
+                icon="ic_stat_notification",
+                color="#245C47",
+                sound="default",
+            ),
+        ),
         apns=messaging.APNSConfig(headers={"apns-priority": "10"}),
     )
     return messaging.send_each_for_multicast(message, app=_firebase_app())
@@ -82,7 +89,14 @@ def send_individual_point_push(*, tokens: Sequence[str], amount: int, balance: i
         tokens=list(tokens),
         notification=messaging.Notification(title="복지포인트가 충전됐어요", body=f"{amount:,}P 충전 · 잔액 {balance:,}P"),
         data={"event": "point_charged", "amount": str(amount), "balance": str(balance)},
-        android=messaging.AndroidConfig(priority="high"),
+        android=messaging.AndroidConfig(
+            priority="high",
+            notification=messaging.AndroidNotification(
+                icon="ic_stat_notification",
+                color="#245C47",
+                sound="default",
+            ),
+        ),
         apns=messaging.APNSConfig(headers={"apns-priority": "10"}),
     )
     response = messaging.send_each_for_multicast(message, app=_firebase_app())

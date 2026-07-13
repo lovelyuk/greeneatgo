@@ -35,13 +35,21 @@ class CompanyInvitationTests(unittest.TestCase):
     @patch("app.services.company_invites.get_settings", return_value=_Settings())
     @patch("app.services.company_invites.urlopen", return_value=_Response())
     def test_resend_request_is_server_side_and_contains_invite_link(self, urlopen, _settings):
-        result = send_company_invitation(email="owner@example.com", company_name="Acme", token="secret-token")
+        result = send_company_invitation(
+            email="owner@example.com",
+            company_name="Acme",
+            token="secret-token",
+            sender_name="돈토식당",
+            reply_to="Manager@Restaurant.example",
+        )
         self.assertEqual(result.status, "sent")
         self.assertEqual(result.message_id, "email_123")
         request = urlopen.call_args.args[0]
         self.assertEqual(request.get_header("Authorization"), "Bearer server-secret")
         body = json.loads(request.data)
         self.assertEqual(body["to"], ["owner@example.com"])
+        self.assertEqual(body["from"], "돈토식당 <invite@example.com>")
+        self.assertEqual(body["reply_to"], ["manager@restaurant.example"])
         self.assertIn("https://admin.example.com/?invite=secret-token", body["html"])
 
     @patch("app.services.company_invites.get_settings")

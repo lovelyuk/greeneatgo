@@ -74,8 +74,28 @@ def _company_rows(repo: JoinRepository, ids: list[str]) -> list[dict]:
     return repo.client.rest_get("companies", {"select": "id,name,biz_reg_no,status,contact_email,contact_phone,created_at", "id": f"in.({','.join(ids)})"})
 
 
-def _deliver_company_invite(repo: JoinRepository, invite: dict, company_name: str) -> dict:
-    delivery = send_company_invitation(email=invite["email"], company_name=company_name, token=invite["token"])
+def _merchant_name(repo: JoinRepository, merchant_id: str) -> str:
+    rows = repo.client.rest_get(
+        "merchants", {"select": "name", "id": f"eq.{merchant_id}", "limit": "1"}
+    )
+    return (rows[0].get("name") if rows else None) or "그린잇 식당"
+
+
+def _deliver_company_invite(
+    repo: JoinRepository,
+    invite: dict,
+    company_name: str,
+    *,
+    sender_name: str,
+    reply_to: str | None,
+) -> dict:
+    delivery = send_company_invitation(
+        email=invite["email"],
+        company_name=company_name,
+        token=invite["token"],
+        sender_name=sender_name,
+        reply_to=reply_to,
+    )
     values = {"email_send_status": delivery.status, "email_message_id": delivery.message_id,
               "email_error": delivery.error,
               "email_sent_at": datetime.now(timezone.utc).isoformat() if delivery.status == "sent" else None}
@@ -516,7 +536,13 @@ def create_and_link_company(payload: MerchantCompanyCreateAndLinkRequest, token:
             "invited_by": actor.id,
             "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
         })[0]
-        invite = _deliver_company_invite(repo, invite, company["name"])
+        invite = _deliver_company_invite(
+            repo,
+            invite,
+            company["name"],
+            sender_name=_merchant_name(repo, merchant_id),
+            reply_to=actor.email or None,
+        )
         return {"ok": True, "data": {"company": {**company, "invite_code": invite_code}, "link": link, "invite": invite}, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
@@ -530,7 +556,7 @@ def create_and_link_company(payload: MerchantCompanyCreateAndLinkRequest, token:
 def resend_company_invite(company_id: str, token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
-        _, merchant_id = _merchant_admin(repo, token)
+        actor, merchant_id = _merchant_admin(repo, token)
         _require_company_link(repo, merchant_id, company_id)
         rows = repo.client.rest_get("invites", {"select": "*", "company_id": f"eq.{company_id}",
             "role": "eq.company_admin", "order": "created_at.desc", "limit": "1"})
@@ -548,7 +574,13 @@ def resend_company_invite(company_id: str, token: str = Depends(bearer_token)):
             raise _error(409, "INVITE_EXPIRED", "만료된 초대는 재전송할 수 없어요")
         if not invite.get("email"):
             raise _error(409, "INVITE_EMAIL_MISSING", "이메일이 없는 기존 초대는 재전송할 수 없어요")
-        delivered = _deliver_company_invite(repo, invite, _company_name(repo, company_id))
+        delivered = _deliver_company_invite(
+            repo,
+            invite,
+            _company_name(repo, company_id),
+            sender_name=_merchant_name(repo, merchant_id),
+            reply_to=actor.email or None,
+        )
         return {"ok": True, "data": {"invite": delivered}, "error": None}
     except HTTPException:
         raise

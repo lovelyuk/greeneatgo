@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from email.utils import parseaddr
 from html import escape
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -21,7 +22,14 @@ def invitation_url(token: str) -> str:
     return f"{settings.admin_app_url}/?invite={token}"
 
 
-def send_company_invitation(*, email: str, company_name: str, token: str) -> EmailDelivery:
+def send_company_invitation(
+    *,
+    email: str,
+    company_name: str,
+    token: str,
+    sender_name: str | None = None,
+    reply_to: str | None = None,
+) -> EmailDelivery:
     """Send through Resend's REST API. This module is server-only and never exposes the key."""
     settings = get_settings()
     if not settings.resend_api_key:
@@ -29,8 +37,11 @@ def send_company_invitation(*, email: str, company_name: str, token: str) -> Ema
     link = invitation_url(token)
     safe_company_name = escape(company_name)
     safe_link = escape(link, quote=True)
-    payload = json.dumps({
-        "from": settings.invite_email_from,
+    from_address = parseaddr(settings.invite_email_from)[1]
+    clean_sender_name = (sender_name or "그린잇").replace("\r", " ").replace("\n", " ").strip()
+    sender = f"{clean_sender_name} <{from_address}>" if from_address else settings.invite_email_from
+    message = {
+        "from": sender,
         "to": [email],
         "subject": f"[그린잇] {company_name} 회사관리자 초대",
         "html": (
@@ -39,7 +50,10 @@ def send_company_invitation(*, email: str, company_name: str, token: str) -> Ema
             f'<p><a href="{safe_link}">초대 수락하기</a></p>'
             "<p>이 링크는 7일 동안 유효합니다.</p>"
         ),
-    }).encode("utf-8")
+    }
+    if reply_to:
+        message["reply_to"] = [reply_to.strip().lower()]
+    payload = json.dumps(message).encode("utf-8")
     request = Request("https://api.resend.com/emails", data=payload, method="POST", headers={
         "Authorization": f"Bearer {settings.resend_api_key}",
         "Content-Type": "application/json",

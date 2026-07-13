@@ -912,6 +912,8 @@ function Dashboard({ session, onLogout }) {
   const [me, setMe] = useState(null);
   const [adminNameForm, setAdminNameForm] = useState('');
   const [adminNameEditing, setAdminNameEditing] = useState(false);
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const [accountSettingsForm, setAccountSettingsForm] = useState({ display_name: '', password: '', password_confirm: '' });
   const [requests, setRequests] = useState([]);
   const [settlements, setSettlements] = useState(null);
   const [products, setProducts] = useState(null);
@@ -991,6 +993,38 @@ function Dashboard({ session, onLogout }) {
       setAdminNameEditing(false);
       setMessage('관리자 이름을 수정했어요.');
     } catch (nameError) { setError(nameError.message); }
+    finally { setBusy(false); }
+  }
+
+  function openAccountSettings() {
+    setAccountSettingsForm({ display_name: me?.display_name ?? '', password: '', password_confirm: '' });
+    setError('');
+    setAccountSettingsOpen(true);
+  }
+
+  async function saveAccountSettings(event) {
+    event.preventDefault();
+    const displayName = accountSettingsForm.display_name.trim();
+    const password = accountSettingsForm.password;
+    if (!displayName) { setError('관리자 이름을 입력해 주세요.'); return; }
+    if (password && password.length < 6) { setError('새 비밀번호는 6자 이상 입력해 주세요.'); return; }
+    if (password !== accountSettingsForm.password_confirm) { setError('새 비밀번호 확인이 일치하지 않아요.'); return; }
+    setBusy(true); setError(''); setMessage('');
+    try {
+      if (displayName !== me?.display_name) {
+        const updated = await apiFetch('/me', token, {
+          method: 'PATCH', body: JSON.stringify({ display_name: displayName }),
+        });
+        setMe((current) => ({ ...current, display_name: updated.display_name }));
+        setAdminNameForm(updated.display_name);
+      }
+      if (password) {
+        const { error: passwordError } = await supabase.auth.updateUser({ password });
+        if (passwordError) throw passwordError;
+      }
+      setAccountSettingsOpen(false);
+      setMessage(password ? '관리자 정보와 비밀번호를 변경했어요.' : '관리자 정보를 변경했어요.');
+    } catch (settingsError) { setError(settingsError.message); }
     finally { setBusy(false); }
   }
 
@@ -1670,11 +1704,11 @@ function Dashboard({ session, onLogout }) {
 
     {(!isMerchantAdmin || merchantSection === 'main') && <section className="two-col">
       <article className="panel profile-panel">
-        <div className="panel-title"><h2>로그인 정보</h2><span className="badge">secure</span></div>
+        <div className="panel-title"><h2>로그인 정보</h2>{isMerchantAdmin ? <button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/></button> : <span className="badge">secure</span>}</div>
         <div className="profile-grid">
           <span>이메일</span><strong>{session.user.email}</strong>
           <span>{['company_admin', 'merchant_admin'].includes(me?.role) ? '관리자 이름' : '이름'}</span>
-          {['company_admin', 'merchant_admin'].includes(me?.role) ? (adminNameEditing
+          {me?.role === 'company_admin' ? (adminNameEditing
             ? <form className="profile-name-form" onSubmit={saveAdminName}><input value={adminNameForm} onChange={(event) => setAdminNameForm(event.target.value)} maxLength="80" autoFocus required/><button className="primary" disabled={busy}>저장</button><button type="button" className="ghost" disabled={busy} onClick={() => { setAdminNameEditing(false); setAdminNameForm(me?.display_name ?? ''); setError(''); }}>취소</button></form>
             : <div className="profile-name-value"><strong>{me?.display_name ?? '-'}</strong><button type="button" className="ghost" onClick={() => { setAdminNameForm(me?.display_name ?? ''); setAdminNameEditing(true); }}>이름 수정</button></div>)
             : <strong>{me?.display_name ?? '-'}</strong>}
@@ -1831,6 +1865,19 @@ function Dashboard({ session, onLogout }) {
         </table>
       </div>}
     </section>}
+    {isMerchantAdmin && accountSettingsOpen && <div className="modal-backdrop account-settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setAccountSettingsOpen(false); }}>
+      <section className="invite-modal account-settings-modal" role="dialog" aria-modal="true" aria-labelledby="account-settings-title">
+        <div className="panel-title"><div><span className="eyebrow">ACCOUNT</span><h2 id="account-settings-title">관리자 정보 설정</h2><p className="panel-note">관리자 이름과 로그인 비밀번호를 변경할 수 있어요.</p></div><button type="button" className="icon-button" onClick={() => setAccountSettingsOpen(false)} disabled={busy} aria-label="닫기"><X size={20}/></button></div>
+        {error && <div className="alert error">{error}</div>}
+        <form className="account-settings-form" onSubmit={saveAccountSettings}>
+          <label>로그인 이메일<input type="email" value={session.user.email ?? ''} disabled/></label>
+          <label>관리자 이름<input value={accountSettingsForm.display_name} maxLength="80" onChange={(event) => setAccountSettingsForm((form) => ({ ...form, display_name: event.target.value }))} required autoFocus/></label>
+          <label>새 비밀번호<input type="password" value={accountSettingsForm.password} minLength="6" autoComplete="new-password" placeholder="변경할 때만 입력 (6자 이상)" onChange={(event) => setAccountSettingsForm((form) => ({ ...form, password: event.target.value }))}/></label>
+          <label>새 비밀번호 확인<input type="password" value={accountSettingsForm.password_confirm} minLength="6" autoComplete="new-password" placeholder="새 비밀번호를 다시 입력" onChange={(event) => setAccountSettingsForm((form) => ({ ...form, password_confirm: event.target.value }))}/></label>
+          <div className="row-actions"><button type="button" className="ghost" onClick={() => setAccountSettingsOpen(false)} disabled={busy}>취소</button><button className="primary" disabled={busy}>{busy ? '저장 중...' : '변경사항 저장'}</button></div>
+        </form>
+      </section>
+    </div>}
     </div>
   </main>;
 }

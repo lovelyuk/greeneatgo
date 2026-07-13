@@ -30,41 +30,50 @@ def send_company_invitation(
     sender_name: str | None = None,
     reply_to: str | None = None,
 ) -> EmailDelivery:
-    """Send through Resend's REST API. This module is server-only and never exposes the key."""
+    """Send through SendGrid's v3 Mail Send API without exposing the server key."""
     settings = get_settings()
-    if not settings.resend_api_key:
-        return EmailDelivery("failed", error="RESEND_API_KEY is not configured")
+    if not settings.sendgrid_api_key:
+        return EmailDelivery("failed", error="SENDGRID_API_KEY is not configured")
+
+    from_address = parseaddr(settings.invite_email_from)[1].strip().lower()
+    if not from_address or "@" not in from_address:
+        return EmailDelivery("failed", error="INVITE_EMAIL_FROM is not a valid email address")
+
     link = invitation_url(token)
     safe_company_name = escape(company_name)
     safe_link = escape(link, quote=True)
-    from_address = parseaddr(settings.invite_email_from)[1]
     clean_sender_name = (sender_name or "그린잇").replace("\r", " ").replace("\n", " ").strip()
-    sender = f"{clean_sender_name} <{from_address}>" if from_address else settings.invite_email_from
-    message = {
-        "from": sender,
-        "to": [email],
+    html = (
+        f"<h2>{safe_company_name} 회사관리자 초대</h2>"
+        "<p>아래 버튼을 눌러 초대를 수락하고 관리자 계정을 만들어 주세요.</p>"
+        f'<p><a href="{safe_link}">초대 수락하기</a></p>'
+        "<p>이 링크는 7일 동안 유효합니다.</p>"
+    )
+    message: dict = {
+        "personalizations": [{"to": [{"email": email.strip().lower()}]}],
+        "from": {"email": from_address, "name": clean_sender_name},
         "subject": f"[그린잇] {company_name} 회사관리자 초대",
-        "html": (
-            f"<h2>{safe_company_name} 회사관리자 초대</h2>"
-            "<p>아래 버튼을 눌러 초대를 수락하고 관리자 계정을 만들어 주세요.</p>"
-            f'<p><a href="{safe_link}">초대 수락하기</a></p>'
-            "<p>이 링크는 7일 동안 유효합니다.</p>"
-        ),
+        "content": [{"type": "text/html", "value": html}],
     }
     if reply_to:
-        message["reply_to"] = [reply_to.strip().lower()]
-    payload = json.dumps(message).encode("utf-8")
-    request = Request("https://api.resend.com/emails", data=payload, method="POST", headers={
-        "Authorization": f"Bearer {settings.resend_api_key}",
-        "Content-Type": "application/json",
-        "User-Agent": "greeneatgo-api/1.0",
-    })
+        message["reply_to"] = {"email": reply_to.strip().lower()}
+
+    request = Request(
+        "https://api.sendgrid.com/v3/mail/send",
+        data=json.dumps(message).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {settings.sendgrid_api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "greeneatgo-api/1.0",
+        },
+    )
     try:
         with urlopen(request, timeout=10) as response:
-            result = json.loads(response.read().decode("utf-8"))
-        return EmailDelivery("sent", message_id=result.get("id"))
+            message_id = response.headers.get("X-Message-Id")
+        return EmailDelivery("sent", message_id=message_id)
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        return EmailDelivery("failed", error=f"Resend HTTP {exc.code}: {body[:500]}")
+        return EmailDelivery("failed", error=f"SendGrid HTTP {exc.code}: {body[:500]}")
     except (URLError, TimeoutError, ValueError) as exc:
-        return EmailDelivery("failed", error=f"Resend request failed: {str(exc)[:500]}")
+        return EmailDelivery("failed", error=f"SendGrid request failed: {str(exc)[:500]}")

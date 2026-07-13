@@ -1,4 +1,4 @@
--- Company administrator email invitations (Resend delivery metadata).
+-- Company administrator email invitations (provider-neutral delivery metadata).
 -- Employee invite codes and merchant/company links are intentionally unchanged.
 
 alter table companies add column if not exists contact_email text;

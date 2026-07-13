@@ -19,7 +19,7 @@ services:
         sync: false
       - key: ADMIN_APP_URL
         sync: false
-      - key: RESEND_API_KEY
+      - key: SENDGRID_API_KEY
         sync: false
       - key: INVITE_EMAIL_FROM
         sync: false

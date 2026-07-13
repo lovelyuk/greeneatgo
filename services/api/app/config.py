@@ -27,8 +27,8 @@ class Settings:
     toss_secret_key: str = ""
     public_api_base_url: str = "http://localhost:8000/v1"
     admin_app_url: str = "http://localhost:5173"
-    resend_api_key: str = ""
-    invite_email_from: str = "GreenEatGo <onboarding@resend.dev>"
+    sendgrid_api_key: str = ""
+    invite_email_from: str = "GreenEatGo <verified-sender@example.com>"
     pilot_merchant_id: str | None = None
     cors_allowed_origins: tuple[str, ...] = ("http://localhost:5173", "https://greeneatgo.vercel.app")
 
@@ -53,8 +53,8 @@ class Settings:
             toss_secret_key=os.environ["TOSS_SECRET_KEY"],
             public_api_base_url=os.environ.get("PUBLIC_API_BASE_URL", "http://localhost:8000/v1").rstrip("/"),
             admin_app_url=os.environ.get("ADMIN_APP_URL", "http://localhost:5173").rstrip("/"),
-            resend_api_key=os.environ.get("RESEND_API_KEY", "").strip(),
-            invite_email_from=os.environ.get("INVITE_EMAIL_FROM", "GreenEatGo <onboarding@resend.dev>").strip(),
+            sendgrid_api_key=os.environ.get("SENDGRID_API_KEY", "").strip(),
+            invite_email_from=os.environ.get("INVITE_EMAIL_FROM", "GreenEatGo <verified-sender@example.com>").strip(),
             pilot_merchant_id=(os.environ.get("PILOT_MERCHANT_ID") or "").strip() or None,
             cors_allowed_origins=tuple(
                 origin.strip()

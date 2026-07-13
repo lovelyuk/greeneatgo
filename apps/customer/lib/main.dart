@@ -21,14 +21,16 @@ const authEmailRedirectTo = String.fromEnvironment('AUTH_EMAIL_REDIRECT_TO',
 const defaultMerchantQrToken = String.fromEnvironment('MERCHANT_QR_TOKEN',
     defaultValue: 'QR-PILOT-KIMCHI');
 
-const kInk = Color(0xFF14351F);
-const kCocoa = Color(0xFF1E5631);
-const kOrange = Color(0xFF2FB865);
-const kTangerine = Color(0xFF7BD88F);
-const kCream = Color(0xFFF3FBF4);
-const kCard = Color(0xFFFCFEFC);
-const kMint = Color(0xFF15A05A);
-const kLine = Color(0xFFCDEBD5);
+// 관리자 웹과 공유하는 premium forest 디자인 토큰.
+const kInk = Color(0xFF18382A);
+const kCocoa = Color(0xFF03452E);
+const kOrange = Color(0xFF075C3B);
+const kTangerine = Color(0xFF53B875);
+const kCream = Color(0xFFF8F3E3);
+const kCard = Color(0xFFFFFAF0);
+const kMint = Color(0xFF46A868);
+const kLine = Color(0xFFE5DDC7);
+const kGold = Color(0xFFF3AE26);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -99,10 +101,27 @@ class GreeneatGoApp extends StatelessWidget {
           ),
         ),
         appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.transparent,
+            backgroundColor: Color(0xF7F8F3E3),
             elevation: 0,
+            surfaceTintColor: Colors.transparent,
             foregroundColor: kInk,
             centerTitle: false),
+        cardTheme: CardThemeData(
+          margin: const EdgeInsets.symmetric(vertical: 7),
+          color: kCard,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+            side: const BorderSide(color: kLine),
+          ),
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: kCard,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+        ),
+        dividerTheme: const DividerThemeData(color: kLine, thickness: 1),
       ),
       builder: (context, child) {
         final mq = MediaQuery.of(context);
@@ -1147,7 +1166,129 @@ class _CommunityScreenState extends State<CommunityScreen> {
   @override void initState(){super.initState(); reviews=widget.initialReviews; load();}
   Future<void> load() async { setState(()=>loading=true); try { final api=ApiClient(widget.session); data=reviews?await api.getReviews():await api.getAnnouncements(); reviewable=reviews?mapList((await api.getReviewableTransactions())['items']):[]; } catch(e){if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(e.toString())));} finally{if(mounted)setState(()=>loading=false);} }
   Future<void> write(Map<String,dynamic> tx) async { int rating=5; final text=TextEditingController(); final picked=<XFile>[]; await showDialog(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setLocal)=>AlertDialog(title:const Text('리뷰 작성'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[Wrap(children:List.generate(5,(i)=>IconButton(onPressed:()=>setLocal(()=>rating=i+1),icon:Icon(i<rating?Icons.star:Icons.star_border,color:Colors.amber)))),TextField(controller:text,maxLength:2000,maxLines:4,decoration:const InputDecoration(labelText:'후기 내용 (선택)')),OutlinedButton.icon(onPressed:picked.length>=3?null:()async{final images=await ImagePicker().pickMultiImage(imageQuality:90,limit:3-picked.length);setLocal(()=>picked.addAll(images.take(3-picked.length)));},icon:const Icon(Icons.add_photo_alternate_outlined),label:Text('사진 추가 (${picked.length}/3)'))])),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('취소')),FilledButton(onPressed:()async{try{final api=ApiClient(widget.session);final urls=<String>[];for(final image in picked){urls.add(await api.uploadReviewImage(image));}await api.createReview((tx['id'] as num).toInt(),rating,text.text,urls);if(dialogContext.mounted)Navigator.pop(dialogContext);await load();}catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(e.toString())));}},child:const Text('등록하기'))]))); text.dispose(); }
-  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(reviews?'구매 인증 리뷰':'공지사항'),actions:[IconButton(onPressed:(){setState(()=>reviews=!reviews);load();},icon:Icon(reviews?Icons.campaign_outlined:Icons.star_outline))]),body:loading?const Center(child:CircularProgressIndicator()):RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[if(reviews)...[Text('⭐ ${data['average_rating']??0} (${data['review_count']??0}개 후기)',style:const TextStyle(fontSize:20,fontWeight:FontWeight.w900)),...reviewable.map((tx)=>Card(child:ListTile(title:const Text('리뷰 작성 가능'),subtitle:Text('${tx['created_at']} · ${((tx['amount'] as num?)??0).abs()}원'),trailing:FilledButton(onPressed:()=>write((tx as Map).cast<String,dynamic>()),child:const Text('리뷰 쓰기')))))],...mapList(data['items']).map((item)=>Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('${item['pinned']==true?'📌 ':''}${reviews?item['author_name']:item['title']}',style:const TextStyle(fontSize:17,fontWeight:FontWeight.w900)),if(reviews)Text(List.filled((item['rating'] as num).toInt(), '⭐').join()),const SizedBox(height:8),Text((item['content']??'').toString()),if(reviews&&item['image_urls'] is List)Wrap(spacing:8,children:(item['image_urls'] as List).map<Widget>((u)=>Image.network(u.toString(),width:88,height:88,fit:BoxFit.cover)).toList()),if(reviews&&item['owner_reply']!=null)Container(margin:const EdgeInsets.only(top:10),padding:const EdgeInsets.all(10),color:kCream,child:Text('🏪 사장님 답글: ${item['owner_reply']}')),const SizedBox(height:6),Text((item['created_at']??'').toString(),style:const TextStyle(color:Color(0xFF5C7A66),fontSize:12))])))))])));
+  @override
+  Widget build(BuildContext context) {
+    final items = mapList(data['items']);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(reviews ? '구매 인증 리뷰' : '공지사항'),
+        actions: [
+          IconButton(
+            onPressed: () {
+              setState(() => reviews = !reviews);
+              load();
+            },
+            icon: Icon(reviews
+                ? Icons.campaign_outlined
+                : Icons.star_outline),
+          ),
+        ],
+      ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: load,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  if (reviews) ...[
+                    Text(
+                      '⭐ ${data['average_rating'] ?? 0} (${data['review_count'] ?? 0}개 후기)',
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w900),
+                    ),
+                    ...reviewable.map((tx) => Container(
+                          margin: const EdgeInsets.only(top: 12),
+                          padding: const EdgeInsets.all(18),
+                          decoration: brandCardDecoration(radius: 22),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Row(children: [
+                                Icon(Icons.verified_rounded,
+                                    color: kOrange, size: 20),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text('리뷰 작성 가능',
+                                      style: TextStyle(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w900)),
+                                ),
+                              ]),
+                              const SizedBox(height: 8),
+                              Text(
+                                '${shortKoreanDate(tx['created_at']?.toString())} · ${won((tx['amount'] as num?)?.abs())}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Color(0xFF5C7A66),
+                                    height: 1.4,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 14),
+                              FilledButton.icon(
+                                onPressed: () => write(
+                                    (tx as Map).cast<String, dynamic>()),
+                                icon: const Icon(Icons.edit_rounded, size: 18),
+                                label: const Text('리뷰 쓰기'),
+                              ),
+                            ],
+                          ),
+                        )),
+                  ],
+                  ...items.map((item) => Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${item['pinned'] == true ? '📌 ' : ''}${reviews ? item['author_name'] : item['title']}',
+                                style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w900),
+                              ),
+                              if (reviews)
+                                Text(List.filled(
+                                        (item['rating'] as num).toInt(), '⭐')
+                                    .join()),
+                              const SizedBox(height: 8),
+                              Text((item['content'] ?? '').toString()),
+                              if (reviews && item['image_urls'] is List)
+                                Wrap(
+                                  spacing: 8,
+                                  children: (item['image_urls'] as List)
+                                      .map<Widget>((url) => Image.network(
+                                            url.toString(),
+                                            width: 88,
+                                            height: 88,
+                                            fit: BoxFit.cover,
+                                          ))
+                                      .toList(),
+                                ),
+                              if (reviews && item['owner_reply'] != null)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 10),
+                                  padding: const EdgeInsets.all(10),
+                                  color: kCream,
+                                  child: Text(
+                                      '🏪 사장님 답글: ${item['owner_reply']}'),
+                                ),
+                              const SizedBox(height: 6),
+                              Text(
+                                (item['created_at'] ?? '').toString(),
+                                style: const TextStyle(
+                                    color: Color(0xFF5C7A66), fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )),
+                ],
+              ),
+            ),
+    );
+  }
 }
 
 class HomeScreen extends StatelessWidget {
@@ -1306,6 +1447,32 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 24),
+        const SectionHeader(title: '소식 & 리뷰', action: '돈토의 새로운 이야기를 확인하세요'),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: _CommunityShortcut(
+            icon: Icons.campaign_rounded,
+            eyebrow: 'NOTICE',
+            title: '공지사항',
+            description: '휴무·이벤트 소식',
+            color: kCocoa,
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => CommunityScreen(session: session, initialReviews: false),
+            )),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: _CommunityShortcut(
+            icon: Icons.star_rounded,
+            eyebrow: 'REVIEW',
+            title: '구매 인증 리뷰',
+            description: '후기 보기·작성하기',
+            color: const Color(0xFFB77A16),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => CommunityScreen(session: session, initialReviews: true),
+            )),
+          )),
+        ]),
+        const SizedBox(height: 26),
         const SectionHeader(title: '최근 이용', action: ''),
         const SizedBox(height: 10),
         if (recentTransactions.isEmpty)
@@ -1320,6 +1487,84 @@ class HomeScreen extends StatelessWidget {
       ]),
     );
   }
+}
+
+class _CommunityShortcut extends StatelessWidget {
+  const _CommunityShortcut({
+    required this.icon,
+    required this.eyebrow,
+    required this.title,
+    required this.description,
+    required this.color,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String eyebrow;
+  final String title;
+  final String description;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Ink(
+            height: 166,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [color, Color.lerp(color, kInk, .24)!],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: .20),
+                  blurRadius: 22,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .16),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(eyebrow,
+                        style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10,
+                            letterSpacing: 1.1,
+                            fontWeight: FontWeight.w900)),
+                  ),
+                  Icon(icon, color: Colors.white, size: 27),
+                ]),
+                const Spacer(),
+                Text(title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900)),
+                const SizedBox(height: 5),
+                Text(description,
+                    style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ),
+      );
 }
 
 class AppScaffold extends StatelessWidget {
@@ -1442,12 +1687,13 @@ class _TodayMenuCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(30),
         gradient: const LinearGradient(
-            colors: [Color(0xFF2FB865), Color(0xFF7BD88F)],
+            colors: [Color(0xFF285846), Color(0xFF547664)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight),
+        border: Border.all(color: const Color(0xFF769183), width: 1),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x332FB865), blurRadius: 22, offset: Offset(0, 12))
+              color: Color(0x2421382C), blurRadius: 20, offset: Offset(0, 10))
         ],
       ),
       child: Stack(children: [
@@ -1570,17 +1816,25 @@ class _UnifiedQrScanScreenState extends State<UnifiedQrScanScreen> {
     });
   }
 
-  void _scan(String? raw) {
+  Future<void> _scan(String? raw) async {
     final qrData = raw?.trim() ?? '';
     if (_handled || qrData.isEmpty) return;
     _handled = true;
-    _controller?.pauseCamera();
-    Navigator.of(context).pushReplacement(MaterialPageRoute(
+    await _controller?.pauseCamera();
+    if (!mounted) return;
+    final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(
         builder: (_) => UnifiedPaymentResultScreen(
               session: widget.session,
               isConsumer: widget.isConsumer,
               qrData: qrData,
             )));
+    if (!mounted) return;
+    if (paid == true) {
+      Navigator.of(context).pop(true);
+    } else {
+      _handled = false;
+      await _controller?.resumeCamera();
+    }
   }
 
   @override
@@ -2835,19 +3089,19 @@ class BrandBackground extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-            colors: [Color(0xFFEAF7EC), Color(0xFFF3FBF4), Color(0xFFD9F0DE)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight),
+            colors: [Color(0xFFF8F3E3), Color(0xFFF1EDDF), Color(0xFFE7E5D8)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter),
       ),
       child: Stack(children: [
         Positioned(
             top: -70,
             right: -45,
-            child: _Blob(size: 180, color: kTangerine.withValues(alpha: .35))),
+            child: _Blob(size: 180, color: kGold.withValues(alpha: .13))),
         Positioned(
             bottom: -80,
             left: -60,
-            child: _Blob(size: 210, color: kOrange.withValues(alpha: .16))),
+            child: _Blob(size: 210, color: kTangerine.withValues(alpha: .11))),
         child,
       ]),
     );
@@ -2871,7 +3125,9 @@ BoxDecoration brandCardDecoration({double radius = 26}) => BoxDecoration(
       border: Border.all(color: kLine, width: 1.4),
       boxShadow: const [
         BoxShadow(
-            color: Color(0x1A2FB865), blurRadius: 24, offset: Offset(0, 14))
+            color: Color(0x18312720), blurRadius: 26, offset: Offset(0, 14)),
+        BoxShadow(
+            color: Color(0x0D312720), blurRadius: 4, offset: Offset(0, 2))
       ],
     );
 

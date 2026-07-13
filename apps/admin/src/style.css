@@ -404,3 +404,142 @@ input,textarea,select { min-height:46px;border:1px solid var(--line);border-radi
 .account-settings-button{display:inline-grid;place-items:center;width:42px;height:42px;min-height:42px;padding:0;border:1px solid var(--line);border-radius:12px;color:var(--forest);background:rgba(255,255,255,.72)}
 .account-settings-button svg{width:20px;height:20px;color:var(--forest)!important}.account-settings-backdrop{z-index:1100}.account-settings-modal{width:min(480px,calc(100vw - 28px))}.account-settings-modal .panel-title{align-items:flex-start}.account-settings-form{display:grid;gap:16px}.account-settings-form label{display:grid;gap:7px}.account-settings-form input:disabled{color:var(--soft);background:#eeeade;cursor:not-allowed}.account-settings-form .row-actions{justify-content:flex-end;margin-top:4px}.account-settings-form .primary{width:auto}.account-settings-modal .icon-button{flex:0 0 auto;border:1px solid var(--line);color:var(--forest);background:rgba(255,255,255,.72)}
 @media(max-width:560px){.account-settings-backdrop{padding:12px}.account-settings-modal{padding:20px 16px}.account-settings-form .row-actions{display:grid;grid-template-columns:1fr 1fr}.account-settings-form .primary,.account-settings-form .ghost{width:100%}}
+
+/* Mobile-only admin experience. Desktop rules above remain untouched. */
+@media (max-width: 700px) {
+  html { background: var(--cream); }
+  body { min-width: 320px; background: var(--cream); }
+
+  /* Login becomes a compact, app-like entry screen instead of stacked desktop panels. */
+  .auth-page {
+    display: flex;
+    min-height: 100svh;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    background: var(--cream);
+  }
+  .auth-visual {
+    min-height: 224px;
+    padding: calc(22px + env(safe-area-inset-top)) 20px 24px;
+    border: 0;
+    border-radius: 0 0 30px 30px;
+    box-shadow: 0 14px 32px rgba(7,69,46,.20);
+  }
+  .auth-visual .brandmark img { width: 164px; max-height: 48px; }
+  .auth-visual:before { width: 210px; height: 210px; right: -72px; top: -72px; }
+  .auth-visual:after { width: 150px; height: 150px; left: -55px; bottom: -74px; }
+  .hero-copy { margin-top: 28px; max-width: 310px; }
+  .hero-copy .pill { margin-bottom: 10px; padding: 5px 9px; font-size: 10px; }
+  .hero-copy h1 { margin-bottom: 9px; font-size: 29px; line-height: 1.06; letter-spacing: -1.4px; }
+  .hero-copy p { margin: 0; font-size: 13px; line-height: 1.45; }
+  .floating-menu { display: none; }
+  .login-card {
+    width: calc(100% - 28px);
+    margin: -10px auto 24px;
+    padding: 26px 20px calc(24px + env(safe-area-inset-bottom));
+    border-radius: 24px;
+    box-shadow: 0 15px 36px rgba(39,48,32,.10);
+  }
+  .login-card .eyebrow { margin-bottom: 12px; }
+  .login-card h2 { font-size: 24px; }
+  .login-card .muted { font-size: 13px; line-height: 1.5; }
+  .login-card .form { gap: 14px; margin-top: 20px; }
+  .login-card input { min-height: 52px; font-size: 16px; }
+  .login-card .primary { min-height: 54px; font-size: 15px; }
+
+  /* Dashboard uses a compact header and an app-style fixed bottom navigation. */
+  .shell, .merchant-shell {
+    width: 100%;
+    min-height: 100svh;
+    margin: 0;
+    padding: 0 14px calc(92px + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .topbar, .merchant-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    margin: 0 -14px 16px;
+    padding: calc(11px + env(safe-area-inset-top)) 14px 11px;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+  }
+  .top-copy { display: block; flex: 1; min-width: 0; }
+  .top-copy .brand-row { margin: 0; }
+  .top-copy .brandmark img, .merchant-topbar .brandmark img { width: 138px; max-height: 42px; }
+  .top-copy p, .brand-row .pill { display: none; }
+  .top-actions, .merchant-topbar .top-actions { width: auto; flex: 0 0 auto; gap: 6px; }
+  .top-actions button, .merchant-topbar .top-actions button {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    min-height: 42px;
+    flex: none;
+    padding: 0;
+    border-radius: 13px;
+    font-size: 0;
+  }
+  .top-actions svg { width: 19px; height: 19px; }
+  .merchant-tabs {
+    position: fixed;
+    inset: auto 0 0 0;
+    top: auto;
+    z-index: 100;
+    display: flex;
+    gap: 3px;
+    margin: 0;
+    padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+    overflow-x: auto;
+    border-top: 1px solid var(--line);
+    border-bottom: 0;
+    background: rgba(255,250,240,.97);
+    box-shadow: 0 -10px 26px rgba(24,56,42,.10);
+    scrollbar-width: none;
+  }
+  .merchant-tabs::-webkit-scrollbar { display: none; }
+  .merchant-tabs button {
+    flex: 0 0 68px;
+    min-height: 58px;
+    padding: 7px 4px 5px;
+    flex-direction: column;
+    gap: 4px;
+    border-radius: 14px;
+    font-size: 10px;
+    line-height: 1.1;
+  }
+  .merchant-tabs button svg { width: 20px; height: 20px; }
+  .merchant-tabs button.active { box-shadow: none; }
+
+  /* Touch-friendly content and forms. */
+  .grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card { min-height: 112px; padding: 15px; border-radius: 16px; }
+  .card strong { font-size: 21px; overflow-wrap: anywhere; }
+  .panel { padding: 18px 14px; border-radius: 17px; }
+  .panel-title { align-items: flex-start; gap: 10px; }
+  .panel-title h2 { font-size: 19px; }
+  .two-col, .settlement-grid, .product-form, .product-register-form,
+  .voucher-form, .time-window-grid, .subsidy-fields { grid-template-columns: 1fr; }
+  .row-actions { width: 100%; }
+  .row-actions button { flex: 1; min-height: 46px; }
+  input, textarea, select { width: 100%; min-height: 50px; font-size: 16px; }
+  .table-wrap { margin-inline: -4px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 680px; }
+  th, td { padding: 13px 11px; }
+
+  /* Modals open as mobile bottom sheets. */
+  .modal-backdrop { align-items: end; padding: 0; }
+  .invite-modal, .notification-confirm-modal, .notification-history-modal,
+  .account-settings-modal, .tx-modal {
+    width: 100%;
+    max-height: 92svh;
+    overflow-y: auto;
+    padding: 22px 16px calc(18px + env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0;
+  }
+  .notification-confirm-modal .modal-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .notification-confirm-modal .modal-actions button { min-width: 0; }
+}

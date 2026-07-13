@@ -273,7 +273,8 @@ class InviteCreateRequest(BaseModel):
 
 
 class InviteClaimRequest(BaseModel):
-    auth_user_id: str = Field(min_length=8, max_length=80)
+    # Deprecated compatibility field. Authenticated claims ignore it.
+    auth_user_id: str | None = Field(default=None, min_length=8, max_length=80)
     display_name: str | None = Field(default=None, max_length=80)
 
 
@@ -283,7 +284,10 @@ class MerchantCompanyLinkRequest(BaseModel):
 
 class MerchantCompanyCreateAndLinkRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    owner_phone: str = Field(min_length=5, max_length=40)
+    contact_email: str = Field(min_length=3, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+    contact_phone: str | None = Field(default=None, max_length=40)
+    # Legacy clients may continue sending this name.
+    owner_phone: str | None = Field(default=None, max_length=40)
 
 
 class SettlementPaymentConfirmRequest(BaseModel):

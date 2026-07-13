@@ -144,6 +144,7 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
       try {
         const data = await publicApiFetch(`/invites/${token}`);
         setInvite(data);
+        if (data.email) setEmail(data.email);
       } catch (inviteError) {
         setError(inviteError.message);
       } finally {
@@ -173,7 +174,8 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
       if (!authUser?.id) throw new Error('가입된 사용자 정보를 찾을 수 없어요');
       await publicApiFetch(`/invites/${token}/claim`, {
         method: 'POST',
-        body: JSON.stringify({ auth_user_id: authUser.id, display_name: displayName.trim() || null }),
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+        body: JSON.stringify({ display_name: displayName.trim() || null }),
       });
       setMessage('가입과 초대 연결이 완료됐어요. 바로 관리자 화면으로 이동합니다.');
       setTimeout(onClaimed, 500);
@@ -207,7 +209,7 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
       </div>}
       <form className="form" onSubmit={signUpAndClaim}>
         <label>이메일
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="owner@example.com" required />
+          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="owner@example.com" readOnly={!!invite?.email} required />
         </label>
         <label>비밀번호
           <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="6자리 이상 비밀번호" minLength="6" required />
@@ -930,7 +932,7 @@ function Dashboard({ session, onLogout }) {
   const [dailyMenuForm, setDailyMenuForm] = useState({ service_date: todayInput(), title: '오늘 뷔페 메뉴', menu_text: '', image_url: '' });
   const [merchantCompanies, setMerchantCompanies] = useState(null);
   const [merchantSection, setMerchantSection] = useState('main');
-  const [newCompanyForm, setNewCompanyForm] = useState({ name: '', owner_phone: '' });
+  const [newCompanyForm, setNewCompanyForm] = useState({ name: '', contact_email: '', contact_phone: '' });
   const [transactions, setTransactions] = useState(null);
   const [employees, setEmployees] = useState(null);
   const [mealPolicy, setMealPolicy] = useState(null);
@@ -1415,17 +1417,27 @@ function Dashboard({ session, onLogout }) {
         method: 'POST',
         body: JSON.stringify({
           name: newCompanyForm.name.trim(),
-          owner_phone: newCompanyForm.owner_phone.trim(),
+          contact_email: newCompanyForm.contact_email.trim(),
+          contact_phone: newCompanyForm.contact_phone.trim() || null,
         }),
       });
-      setNewCompanyForm({ name: '', owner_phone: '' });
-      setMessage(`장부업체를 만들고 초대를 생성했어요. 업체관리자 초대링크: ${inviteLink(data.invite) || '-'}`);
+      setNewCompanyForm({ name: '', contact_email: '', contact_phone: '' });
+      setMessage(data.invite.email_send_status === 'sent' ? '장부업체를 만들고 초대 이메일을 보냈어요.' : `장부업체는 만들었지만 이메일 전송에 실패했어요: ${data.invite.email_error || '전송 설정을 확인해 주세요.'}`);
       await load();
     } catch (createError) {
       setError(createError.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function resendCompanyInvite(companyId) {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const data = await apiFetch(`/admin/merchant/companies/${companyId}/invite/resend`, token, { method: 'POST' });
+      setMessage(data.invite.email_send_status === 'sent' ? '초대 이메일을 다시 보냈어요.' : `재전송에 실패했어요: ${data.invite.email_error || '-'}`);
+      await load();
+    } catch (resendError) { setError(resendError.message); } finally { setBusy(false); }
   }
 
   function openContractModal(item) {
@@ -1774,17 +1786,18 @@ function Dashboard({ session, onLogout }) {
       </div>
       <form className="product-form" onSubmit={createAndLinkCompany}>
         <input value={newCompanyForm.name} onChange={(event) => setNewCompanyForm((form) => ({ ...form, name: event.target.value }))} placeholder="신규 회사명" required />
-        <input value={newCompanyForm.owner_phone} onChange={(event) => setNewCompanyForm((form) => ({ ...form, owner_phone: event.target.value }))} placeholder="담당자 연락처" required />
-        <button className="primary" disabled={busy}>신규 생성 + 초대</button>
+        <input type="email" value={newCompanyForm.contact_email} onChange={(event) => setNewCompanyForm((form) => ({ ...form, contact_email: event.target.value }))} placeholder="담당자 이메일 (필수)" required />
+        <input value={newCompanyForm.contact_phone} onChange={(event) => setNewCompanyForm((form) => ({ ...form, contact_phone: event.target.value }))} placeholder="담당자 연락처 (선택)" />
+        <button className="primary" disabled={busy}>신규 생성 + 이메일 초대</button>
       </form>
       {(merchantCompanies?.items?.length ?? 0) === 0
         ? <p className="empty-state">아직 연결된 장부업체가 없어요.</p>
-        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>회사상태</th><th>연결상태</th><th>거래내역</th><th>계약</th><th>초대링크</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
+        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>담당자 이메일</th><th>회사상태</th><th>연결상태</th><th>거래내역</th><th>계약</th><th>초대 상태</th><th>이메일 전송</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
           const link = inviteLink(item.invite);
           const companyName = item.company?.name ?? item.company_id;
           const txItems = (transactions?.items ?? []).filter((tx) => tx.company_id === item.company_id);
           const totalAmount = txItems.reduce((sum, tx) => sum + Math.abs(Number(tx.amount ?? 0)), 0);
-          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyId: item.company_id, companyName, txItems, totalAmount, contract: item.contract })}>{txItems.length}건 보기</button></td><td><button className="ghost" onClick={() => openContractModal(item)}>상세보기</button></td><td>{link ? <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>초대링크 보기</button> : '-'}</td></tr>;
+          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.contact_email ?? item.invite?.email ?? '-'}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyId: item.company_id, companyName, txItems, totalAmount, contract: item.contract })}>{txItems.length}건 보기</button></td><td><button className="ghost" onClick={() => openContractModal(item)}>상세보기</button></td><td><span className="badge">{item.invite?.status === 'pending' ? '대기중' : item.invite?.status === 'accepted' || item.invite?.status === 'claimed' ? '수락완료' : item.invite?.status || '-'}</span>{link && item.invite?.status === 'pending' && <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>링크</button>}</td><td>{item.invite?.email_send_status === 'sent' ? '전송완료' : item.invite?.email_send_status === 'failed' ? '전송실패' : '-'} {item.invite?.status === 'pending' && <button className="ghost" disabled={busy} onClick={() => resendCompanyInvite(item.company_id)}>재전송</button>}</td></tr>;
         })}</tbody></table></div>}
     </section>}
 

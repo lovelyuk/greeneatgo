@@ -18,6 +18,7 @@ from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
 from app.services.join_flow import JoinErrorCode, JoinFlowError
+from app.services.company_invites import send_company_invitation
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
 KST = ZoneInfo("Asia/Seoul")
@@ -70,7 +71,16 @@ def _merchant_admin(repo: JoinRepository, token: str):
 def _company_rows(repo: JoinRepository, ids: list[str]) -> list[dict]:
     if not ids:
         return []
-    return repo.client.rest_get("companies", {"select": "id,name,biz_reg_no,status,created_at", "id": f"in.({','.join(ids)})"})
+    return repo.client.rest_get("companies", {"select": "id,name,biz_reg_no,status,contact_email,contact_phone,created_at", "id": f"in.({','.join(ids)})"})
+
+
+def _deliver_company_invite(repo: JoinRepository, invite: dict, company_name: str) -> dict:
+    delivery = send_company_invitation(email=invite["email"], company_name=company_name, token=invite["token"])
+    values = {"email_send_status": delivery.status, "email_message_id": delivery.message_id,
+              "email_error": delivery.error,
+              "email_sent_at": datetime.now(timezone.utc).isoformat() if delivery.status == "sent" else None}
+    updated = repo.client.rest_patch("invites", {"id": f"eq.{invite['id']}"}, values)
+    return updated[0] if updated else {**invite, **values}
 
 
 def _upsert_link(repo: JoinRepository, merchant_id: str, company_id: str, actor_id: str) -> dict:
@@ -447,10 +457,9 @@ def list_companies(token: str = Depends(bearer_token)):
             invite_rows = repo.client.rest_get(
                 "invites",
                 {
-                    "select": "token,company_id,phone,status,expires_at,created_at",
+                    "select": "id,token,company_id,phone,email,status,email_send_status,email_sent_at,email_error,expires_at,accepted_at,created_at",
                     "company_id": f"in.({','.join(company_ids)})",
                     "role": "eq.company_admin",
-                    "status": "eq.pending",
                     "order": "created_at.desc",
                 },
             )
@@ -490,24 +499,63 @@ def create_and_link_company(payload: MerchantCompanyCreateAndLinkRequest, token:
     repo = JoinRepository()
     try:
         actor, merchant_id = _merchant_admin(repo, token)
-        company = repo.client.rest_post("companies", {"name": payload.name, "status": "invited"})[0]
+        company = repo.client.rest_post("companies", {
+            "name": payload.name.strip(),
+            "status": "invited",
+            "contact_email": payload.contact_email.strip().lower(),
+            "contact_phone": (payload.contact_phone or payload.owner_phone or "").strip() or None,
+        })[0]
         invite_code = _ensure_company_invite_code(repo, company["id"])
         link = _upsert_link(repo, merchant_id, company["id"], actor.id)
         invite = repo.client.rest_post("invites", {
             "token": _token(),
             "role": "company_admin",
             "company_id": company["id"],
-            "phone": payload.owner_phone,
+            "phone": company.get("contact_phone"),
+            "email": company["contact_email"],
             "invited_by": actor.id,
             "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
         })[0]
-        return {"ok": True, "data": {"company": {**company, "invite_code": invite_code}, "link": link, "invite": {**invite, "delivery": "manual"}}, "error": None}
+        invite = _deliver_company_invite(repo, invite, company["name"])
+        return {"ok": True, "data": {"company": {**company, "invite_code": invite_code}, "link": link, "invite": invite}, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
         if "PGRST205" in exc.body:
             raise _error(400, "MIGRATION_REQUIRED", "0008_mealledger_v23.sql 적용 후 장부업체를 만들 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "장부업체 생성 중 오류가 발생했어요") from exc
+
+
+@router.post("/companies/{company_id}/invite/resend")
+def resend_company_invite(company_id: str, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        _require_company_link(repo, merchant_id, company_id)
+        rows = repo.client.rest_get("invites", {"select": "*", "company_id": f"eq.{company_id}",
+            "role": "eq.company_admin", "order": "created_at.desc", "limit": "1"})
+        if not rows:
+            raise _error(404, "INVITE_NOT_FOUND", "재전송할 초대를 찾을 수 없어요")
+        invite = rows[0]
+        if invite.get("status") != "pending":
+            raise _error(409, "INVITE_ALREADY_ACCEPTED", "이미 수락된 초대는 재전송할 수 없어요")
+        try:
+            expires_at = datetime.fromisoformat(str(invite["expires_at"]).replace("Z", "+00:00"))
+        except (TypeError, ValueError) as exc:
+            raise _error(409, "INVITE_EXPIRED", "만료된 초대는 재전송할 수 없어요") from exc
+        if expires_at <= datetime.now(timezone.utc):
+            repo.client.rest_patch("invites", {"id": f"eq.{invite['id']}"}, {"status": "expired"})
+            raise _error(409, "INVITE_EXPIRED", "만료된 초대는 재전송할 수 없어요")
+        if not invite.get("email"):
+            raise _error(409, "INVITE_EMAIL_MISSING", "이메일이 없는 기존 초대는 재전송할 수 없어요")
+        delivered = _deliver_company_invite(repo, invite, _company_name(repo, company_id))
+        return {"ok": True, "data": {"invite": delivered}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "초대 이메일을 재전송하는 중 오류가 발생했어요") from exc
 
 
 @router.patch("/companies/{company_id}/contract")

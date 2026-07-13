@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.schemas import InviteClaimRequest
@@ -37,7 +38,7 @@ def get_invite(token: str):
     repo = JoinRepository()
     try:
         invite = _valid_invite(repo, token)
-        return {"ok": True, "data": {k: invite.get(k) for k in ("id", "role", "merchant_id", "company_id", "phone", "status", "expires_at")}, "error": None}
+        return {"ok": True, "data": {k: invite.get(k) for k in ("id", "role", "merchant_id", "company_id", "phone", "email", "status", "expires_at")}, "error": None}
     except HTTPException:
         raise
     except SupabaseHttpError as exc:
@@ -47,13 +48,16 @@ def get_invite(token: str):
 
 
 @router.post("/{token}/claim")
-def claim_invite(token: str, payload: InviteClaimRequest):
+def claim_invite(token: str, payload: InviteClaimRequest, access_token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         invite = _valid_invite(repo, token)
+        auth_user = repo.auth_user_from_token(access_token)
+        if invite.get("email") and (auth_user.email or "").strip().lower() != invite["email"].strip().lower():
+            raise _error(403, "INVITE_EMAIL_MISMATCH", "초대받은 이메일 계정으로 가입해 주세요")
         role = invite["role"]
         values = {
-            "id": payload.auth_user_id,
+            "id": auth_user.id,
             "display_name": payload.display_name or ("식당관리자" if role == "merchant_admin" else "회사관리자"),
             "role": role,
             "status": "active",
@@ -62,14 +66,15 @@ def claim_invite(token: str, payload: InviteClaimRequest):
             "approved_at": datetime.now(timezone.utc).isoformat(),
             "rejected_at": None,
         }
-        existing = repo.get_profile(payload.auth_user_id)
+        existing = repo.get_profile(auth_user.id)
         if existing:
             raise _error(409, "USER_PROFILE_EXISTS", "이미 운영자/직원 프로필이 있는 계정이에요. 초대 수락은 새 이메일 계정으로 진행해 주세요")
         user = repo.client.rest_post("app_users", values)[0]
-        repo.client.rest_patch("invites", {"id": f"eq.{invite['id']}"}, {"status": "claimed"})
+        accepted_at = datetime.now(timezone.utc).isoformat()
+        repo.client.rest_patch("invites", {"id": f"eq.{invite['id']}"}, {"status": "accepted", "accepted_at": accepted_at})
         if role == "company_admin" and invite.get("company_id"):
             repo.client.rest_patch("companies", {"id": f"eq.{invite['company_id']}"}, {"status": "active"})
-        return {"ok": True, "data": {"user": user, "invite_status": "claimed"}, "error": None}
+        return {"ok": True, "data": {"user": user, "invite_status": "accepted"}, "error": None}
     except HTTPException:
         raise
     except SupabaseHttpError as exc:

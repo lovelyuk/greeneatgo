@@ -894,6 +894,19 @@ function EmployeeBulkModal({ token, onClose, onConfirmed }) {
   </div>;
 }
 
+function AnnouncementReviewPanel({ token, section }) {
+  const [data, setData] = useState({ items: [] });
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({ title: '', content: '', pinned: false, send_push: false });
+  const [sort, setSort] = useState('latest');
+  const load = async () => { try { setData(await apiFetch(section === 'announcements' ? '/admin/announcements' : `/admin/reviews?sort=${sort}`, token)); setError(''); } catch (e) { setError(e.message); } };
+  useEffect(() => { load(); }, [section, sort]);
+  async function publish(e) { e.preventDefault(); try { await apiFetch('/admin/announcements', token, { method: 'POST', body: JSON.stringify(form) }); setForm({ title: '', content: '', pinned: false, send_push: false }); await load(); } catch (ex) { setError(ex.message); } }
+  async function patchItem(id, values) { try { await apiFetch(`/admin/${section}/${id}`, token, { method: 'PATCH', body: JSON.stringify(values) }); await load(); } catch (ex) { setError(ex.message); } }
+  if (section === 'announcements') return <section className="panel"><div className="panel-title"><div><h2>공지사항 관리</h2><p className="panel-note">앱에 계속 노출할 소식을 작성하고 관리합니다.</p></div></div>{error && <div className="alert error">{error}</div>}<form className="form" onSubmit={publish}><label>제목<input value={form.title} maxLength="120" onChange={e=>setForm({...form,title:e.target.value})} required/></label><label>내용<textarea rows="5" value={form.content} onChange={e=>setForm({...form,content:e.target.value})} required/></label><label className="checkbox"><input type="checkbox" checked={form.pinned} onChange={e=>setForm({...form,pinned:e.target.checked})}/> 상단 고정</label><label className="checkbox"><input type="checkbox" checked={form.send_push} onChange={e=>setForm({...form,send_push:e.target.checked})}/> 푸시 알림도 함께 발송</label><button className="primary">게시하기</button></form><div className="list">{data.items.map(item=><article className={`card ${item.status === 'hidden' ? 'muted' : ''}`} key={item.id}><h3>{item.pinned && '📌 '}{item.title} {item.status === 'hidden' && '(숨김)'}</h3><p>{item.content}</p><small>{new Date(item.created_at).toLocaleString('ko-KR')}</small><div className="actions"><button className="ghost" onClick={()=>patchItem(item.id,{pinned:!item.pinned})}>{item.pinned?'고정 해제':'상단 고정'}</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'published':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김'}</button></div></article>)}</div></section>;
+  return <section className="panel"><div className="panel-title"><div><h2>리뷰 관리</h2><p className="panel-note">평균 별점 ⭐ {data.average_rating ?? 0} ({data.review_count ?? 0}개)</p></div><select value={sort} onChange={e=>setSort(e.target.value)}><option value="latest">최신순</option><option value="rating_asc">낮은 별점순</option></select></div>{error && <div className="alert error">{error}</div>}<div className="list">{data.items.map(item=><article className={`card ${item.status==='hidden'?'muted':''}`} key={item.id}><h3>{item.author_name} {'⭐'.repeat(item.rating)} {item.status==='hidden'&&'(숨김)'}</h3><p>{item.content || '내용 없이 별점만 남긴 리뷰예요.'}</p>{item.image_urls?.length>0&&<div className="review-images">{item.image_urls.map(url=><img src={url} key={url} alt="리뷰"/>)}</div>}<label>사장님 답글<textarea defaultValue={item.owner_reply ?? ''} id={`reply-${item.id}`}/></label><div className="actions"><button className="primary" onClick={()=>patchItem(item.id,{owner_reply:document.getElementById(`reply-${item.id}`).value})}>답글 저장</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'visible':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김 처리'}</button></div></article>)}</div></section>;
+}
+
 function Dashboard({ session, onLogout }) {
   const token = session.access_token;
   const [me, setMe] = useState(null);
@@ -1500,6 +1513,8 @@ function Dashboard({ session, onLogout }) {
     ['vouchers', '판매 상품(일반)', Package],
     ['products', '식당 상품(장부)', Utensils],
     ['notifications', '알림', Bell],
+    ['announcements', '공지사항', FileText],
+    ['reviews', '리뷰', CheckCircle2],
     ['daily-menu', '오늘 뷔페 메뉴', Coffee],
   ];
 
@@ -1524,6 +1539,7 @@ function Dashboard({ session, onLogout }) {
     </nav>}
 
     <div className={isMerchantAdmin ? 'merchant-content' : undefined}>
+    {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantSection) && <AnnouncementReviewPanel token={token} section={merchantSection}/>}
 
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}

@@ -5,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -125,6 +126,21 @@ class ApiClient {
 
   Future<Map<String, dynamic>> updateDisplayName(String displayName) =>
       _request('/me', method: 'PATCH', body: {'display_name': displayName});
+
+  Future<Map<String, dynamic>> getAnnouncements() => _request('/announcements', authenticated: false);
+  Future<Map<String, dynamic>> getReviews() => _request('/reviews', authenticated: false);
+  Future<Map<String, dynamic>> getReviewableTransactions() => _request('/vouchers/reviewable-transactions');
+  Future<Map<String, dynamic>> createReview(int transactionId, int rating, String content, List<String> images) =>
+      _request('/reviews', method: 'POST', body: {'transaction_id': transactionId, 'rating': rating, 'content': content.trim().isEmpty ? null : content.trim(), 'image_urls': images});
+  Future<String> uploadReviewImage(XFile file) async {
+    final request = http.MultipartRequest('POST', Uri.parse('$apiBaseUrl/reviews/images'))
+      ..headers['Authorization'] = 'Bearer ${session.accessToken}'
+      ..files.add(await http.MultipartFile.fromPath('file', file.path, filename: file.name));
+    final response = await request.send();
+    final decoded = jsonDecode(await response.stream.bytesToString()) as Map<String, dynamic>;
+    if (response.statusCode < 200 || response.statusCode >= 300) throw ApiException(statusCode: response.statusCode, message: ((decoded['detail'] as Map?)?['message'] ?? '사진을 올리지 못했어요').toString());
+    return ((decoded['data'] as Map)['image_url']).toString();
+  }
 
   Future<List<VoucherProduct>> getVoucherProducts() async {
     final data = await _request('/vouchers/products', authenticated: false);
@@ -1066,6 +1082,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 title: const Text('소속 회사'),
                 subtitle: Text(companyId)),
           const Divider(height: 36),
+          ListTile(leading: const Icon(Icons.campaign_outlined), title: const Text('공지사항'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CommunityScreen(session: widget.session, initialReviews: false)))),
+          ListTile(leading: const Icon(Icons.star_outline), title: const Text('구매 인증 리뷰'), subtitle: const Text('이용 내역에 리뷰를 남겨 보세요'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CommunityScreen(session: widget.session, initialReviews: true)))),
+          const Divider(height: 36),
           const Text('이름 변경',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
           const SizedBox(height: 12),
@@ -1116,6 +1135,19 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       ),
     );
   }
+}
+
+class CommunityScreen extends StatefulWidget {
+  const CommunityScreen({super.key, required this.session, required this.initialReviews});
+  final Session session; final bool initialReviews;
+  @override State<CommunityScreen> createState() => _CommunityScreenState();
+}
+class _CommunityScreenState extends State<CommunityScreen> {
+  late bool reviews; bool loading=true; Map<String,dynamic> data={}; List<dynamic> reviewable=[];
+  @override void initState(){super.initState(); reviews=widget.initialReviews; load();}
+  Future<void> load() async { setState(()=>loading=true); try { final api=ApiClient(widget.session); data=reviews?await api.getReviews():await api.getAnnouncements(); reviewable=reviews?mapList((await api.getReviewableTransactions())['items']):[]; } catch(e){if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(e.toString())));} finally{if(mounted)setState(()=>loading=false);} }
+  Future<void> write(Map<String,dynamic> tx) async { int rating=5; final text=TextEditingController(); final picked=<XFile>[]; await showDialog(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setLocal)=>AlertDialog(title:const Text('리뷰 작성'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[Wrap(children:List.generate(5,(i)=>IconButton(onPressed:()=>setLocal(()=>rating=i+1),icon:Icon(i<rating?Icons.star:Icons.star_border,color:Colors.amber)))),TextField(controller:text,maxLength:2000,maxLines:4,decoration:const InputDecoration(labelText:'후기 내용 (선택)')),OutlinedButton.icon(onPressed:picked.length>=3?null:()async{final images=await ImagePicker().pickMultiImage(imageQuality:90,limit:3-picked.length);setLocal(()=>picked.addAll(images.take(3-picked.length)));},icon:const Icon(Icons.add_photo_alternate_outlined),label:Text('사진 추가 (${picked.length}/3)'))])),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('취소')),FilledButton(onPressed:()async{try{final api=ApiClient(widget.session);final urls=<String>[];for(final image in picked){urls.add(await api.uploadReviewImage(image));}await api.createReview((tx['id'] as num).toInt(),rating,text.text,urls);if(dialogContext.mounted)Navigator.pop(dialogContext);await load();}catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(e.toString())));}},child:const Text('등록하기'))]))); text.dispose(); }
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(reviews?'구매 인증 리뷰':'공지사항'),actions:[IconButton(onPressed:(){setState(()=>reviews=!reviews);load();},icon:Icon(reviews?Icons.campaign_outlined:Icons.star_outline))]),body:loading?const Center(child:CircularProgressIndicator()):RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[if(reviews)...[Text('⭐ ${data['average_rating']??0} (${data['review_count']??0}개 후기)',style:const TextStyle(fontSize:20,fontWeight:FontWeight.w900)),...reviewable.map((tx)=>Card(child:ListTile(title:const Text('리뷰 작성 가능'),subtitle:Text('${tx['created_at']} · ${((tx['amount'] as num?)??0).abs()}원'),trailing:FilledButton(onPressed:()=>write((tx as Map).cast<String,dynamic>()),child:const Text('리뷰 쓰기')))))],...mapList(data['items']).map((item)=>Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('${item['pinned']==true?'📌 ':''}${reviews?item['author_name']:item['title']}',style:const TextStyle(fontSize:17,fontWeight:FontWeight.w900)),if(reviews)Text(List.filled((item['rating'] as num).toInt(), '⭐').join()),const SizedBox(height:8),Text((item['content']??'').toString()),if(reviews&&item['image_urls'] is List)Wrap(spacing:8,children:(item['image_urls'] as List).map<Widget>((u)=>Image.network(u.toString(),width:88,height:88,fit:BoxFit.cover)).toList()),if(reviews&&item['owner_reply']!=null)Container(margin:const EdgeInsets.only(top:10),padding:const EdgeInsets.all(10),color:kCream,child:Text('🏪 사장님 답글: ${item['owner_reply']}')),const SizedBox(height:6),Text((item['created_at']??'').toString(),style:const TextStyle(color:Color(0xFF5C7A66),fontSize:12))])))))])));
 }
 
 class HomeScreen extends StatelessWidget {

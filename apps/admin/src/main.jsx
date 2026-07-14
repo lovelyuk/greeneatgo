@@ -95,19 +95,12 @@ function LoginScreen({ missingEnv, onLogin }) {
     onLogin(data.session);
   }
 
-  return <main className="auth-page">
-    <section className="auth-visual">
-      <BrandMark />
-      <div className="hero-copy">
-        <span className="pill">TODAY GREEN</span>
-        <h1>그린하게 먹고<br/>건강하게 잇는<br/>회사 식대</h1>
-        <p>직원 가입 승인부터 식대 지갑, 정산 현황까지 한 화면에서 관리합니다.</p>
-      </div>
-      <div className="floating-menu">
-        <span>🥗 샐러드</span><span>🍱 점심</span><span>☕ 카페</span>
-      </div>
-    </section>
+  return <main className="auth-page login-page">
     <section className="login-card">
+      <div className="login-brand">
+        <BrandMark />
+        <p className="login-tagline">건강한 한 끼, 그린잇</p>
+      </div>
       <p className="eyebrow">ADMIN LOGIN</p>
       <h2>관리자 로그인</h2>
       <p className="muted">회사관리자 또는 식당관리자 계정으로 운영 화면에 들어갈 수 있어요.</p>

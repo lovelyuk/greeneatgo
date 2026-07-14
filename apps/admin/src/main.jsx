@@ -11,6 +11,26 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
 const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
+let paymentAudioContext = null;
+
+function getPaymentAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  paymentAudioContext ??= new AudioContextClass();
+  return paymentAudioContext;
+}
+
+function unlockPaymentAudio() {
+  const context = getPaymentAudioContext();
+  if (context?.state === 'suspended') context.resume().catch(() => {});
+}
+
+function merchantMealPaymentIds(list) {
+  return (list?.items ?? [])
+    .filter((item) => item.source !== 'toss' && !['refund', 'cancel'].includes(item.kind))
+    .map((item) => String(item.id));
+}
+
 function assertEnv() {
   const missing = [];
   if (!supabaseUrl) missing.push('VITE_SUPABASE_URL');
@@ -84,6 +104,7 @@ function LoginScreen({ missingEnv, onLogin }) {
 
   async function submit(event) {
     event.preventDefault();
+    unlockPaymentAudio();
     setError('');
     setBusy(true);
     const { data, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
@@ -916,7 +937,8 @@ function Dashboard({ session, onLogout }) {
   const [notificationsMigrationRequired, setNotificationsMigrationRequired] = useState(false);
   const [paymentAlertDay, setPaymentAlertDay] = useState(todayInput());
   const [unreadPaymentCount, setUnreadPaymentCount] = useState(0);
-  const paymentAudioContextRef = useRef(null);
+  const notifiedPaymentIdsRef = useRef(new Set());
+  const paymentFeedReadyRef = useRef(false);
   const merchantSectionRef = useRef('main');
   const transactionRefreshVersionRef = useRef(0);
   const [productForm, setProductForm] = useState({ name: '', price: '', category: '' });
@@ -967,10 +989,8 @@ function Dashboard({ session, onLogout }) {
   const merchantQrImageUrl = merchantPayUrl ? `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=14&data=${encodeURIComponent(merchantPayUrl)}` : '';
 
   function playPaymentChime() {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    const context = paymentAudioContextRef.current ?? new AudioContextClass();
-    paymentAudioContextRef.current = context;
+    const context = getPaymentAudioContext();
+    if (!context) return;
     const play = () => {
       const start = context.currentTime;
       const gain = context.createGain();
@@ -1116,6 +1136,8 @@ function Dashboard({ session, onLogout }) {
             apiFetch('/admin/voucher-products', token),
             apiFetch('/admin/notifications', token),
           ]);
+          notifiedPaymentIdsRef.current = new Set(merchantMealPaymentIds(transactionData));
+          paymentFeedReadyRef.current = true;
           setVoucherProducts(voucherData.items ?? []);
           setVoucherProductsMigrationRequired(!!voucherData.migration_required);
           setNotifications(notificationData.items ?? []);
@@ -1552,21 +1574,57 @@ function Dashboard({ session, onLogout }) {
 
   useEffect(() => {
     if (!isMerchantAdmin) return undefined;
-    const unlockPaymentSound = () => {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) return;
-      const context = paymentAudioContextRef.current ?? new AudioContextClass();
-      paymentAudioContextRef.current = context;
-      if (context.state === 'suspended') context.resume().catch(() => {});
-    };
-    unlockPaymentSound();
-    window.addEventListener('pointerdown', unlockPaymentSound, { once: true, capture: true });
-    window.addEventListener('keydown', unlockPaymentSound, { once: true, capture: true });
+    unlockPaymentAudio();
+    window.addEventListener('pointerdown', unlockPaymentAudio, { once: true, capture: true });
+    window.addEventListener('keydown', unlockPaymentAudio, { once: true, capture: true });
     return () => {
-      window.removeEventListener('pointerdown', unlockPaymentSound, { capture: true });
-      window.removeEventListener('keydown', unlockPaymentSound, { capture: true });
+      window.removeEventListener('pointerdown', unlockPaymentAudio, { capture: true });
+      window.removeEventListener('keydown', unlockPaymentAudio, { capture: true });
     };
   }, [isMerchantAdmin]);
+
+  useEffect(() => {
+    if (!isMerchantAdmin) return undefined;
+    let stopped = false;
+    let polling = false;
+    const pollRecentPayments = async () => {
+      if (stopped || polling || document.visibilityState === 'hidden') return;
+      polling = true;
+      try {
+        const list = await apiFetch('/admin/merchant/transactions', token);
+        if (stopped) return;
+        const ids = merchantMealPaymentIds(list);
+        if (!paymentFeedReadyRef.current) {
+          notifiedPaymentIdsRef.current = new Set(ids);
+          paymentFeedReadyRef.current = true;
+        } else {
+          const newIds = ids.filter((id) => !notifiedPaymentIdsRef.current.has(id));
+          ids.forEach((id) => notifiedPaymentIdsRef.current.add(id));
+          if (newIds.length > 0) {
+            playPaymentChime();
+            if (merchantSectionRef.current !== 'main') {
+              setUnreadPaymentCount((count) => count + newIds.length);
+            }
+          }
+        }
+        setTransactions(list);
+      } catch {
+        // Realtime이 정상 동작하는 동안 폴링 실패는 화면을 방해하지 않는다.
+      } finally {
+        polling = false;
+      }
+    };
+    const timer = window.setInterval(pollRecentPayments, 5000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') pollRecentPayments();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [isMerchantAdmin, token]);
 
   useEffect(() => {
     const merchantId = merchantQr?.merchant?.id;
@@ -1574,8 +1632,12 @@ function Dashboard({ session, onLogout }) {
     const channel = supabase.channel(`merchant-payments-${merchantId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'meal_transactions', filter: `merchant_id=eq.${merchantId}` }, async (event) => {
         if (!['refund', 'cancel'].includes(event.new.kind)) {
-          playPaymentChime();
-          if (merchantSectionRef.current !== 'main') setUnreadPaymentCount((count) => count + 1);
+          const eventId = String(event.new.id);
+          if (!notifiedPaymentIdsRef.current.has(eventId)) {
+            notifiedPaymentIdsRef.current.add(eventId);
+            playPaymentChime();
+            if (merchantSectionRef.current !== 'main') setUnreadPaymentCount((count) => count + 1);
+          }
         }
         const refreshVersion = ++transactionRefreshVersionRef.current;
         try {

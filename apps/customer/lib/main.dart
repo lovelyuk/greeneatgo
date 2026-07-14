@@ -1305,7 +1305,6 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = me['display_name'] as String? ?? '사용자';
     final isConsumer =
         me['account_type'] == 'voucher' || me['role'] == 'customer';
     final monthUsed = (me['month_used'] as num?) ?? 0;
@@ -1316,7 +1315,7 @@ class HomeScreen extends StatelessWidget {
     final recentTransactions = mapList(me['recent_transactions']);
     return AppScaffold(
       title: '',
-      subtitle: '$name님, 그린하게 챙기는 오늘 한 끼예요.',
+      showBrand: false,
       onSignOut: onSignOut,
       actions: [
         IconButton(
@@ -1578,11 +1577,13 @@ class AppScaffold extends StatelessWidget {
       required this.child,
       this.subtitle,
       this.onSignOut,
+      this.showBrand = true,
       this.actions = const []});
   final String title;
   final String? subtitle;
   final Widget child;
   final Future<void> Function()? onSignOut;
+  final bool showBrand;
   final List<Widget> actions;
 
   @override
@@ -1603,7 +1604,7 @@ class AppScaffold extends StatelessWidget {
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const BrandTitle(height: 30),
+                  if (showBrand) const BrandTitle(height: 30),
                   if (title.isNotEmpty) ...[
                     const SizedBox(height: 18),
                     Text(title,
@@ -1621,7 +1622,8 @@ class AppScaffold extends StatelessWidget {
                             color: Color(0xFF5C7A66),
                             fontWeight: FontWeight.w700)),
                   ],
-                  const SizedBox(height: 22),
+                  if (showBrand || title.isNotEmpty || subtitle != null)
+                    const SizedBox(height: 22),
                   child,
                 ]),
           ),

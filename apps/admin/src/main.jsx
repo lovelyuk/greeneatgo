@@ -55,7 +55,7 @@ async function apiFetch(path, token, options = {}) {
 
 function BrandMark() {
   return <div className="brandmark" aria-label="그린잇">
-    <img src="/brand/title.png" alt="그린잇" />
+    <img src="/brand/greeneat_logo.png" alt="그린잇" />
   </div>;
 }
 

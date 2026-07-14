@@ -3134,7 +3134,7 @@ BoxDecoration brandCardDecoration({double radius = 26}) => BoxDecoration(
     );
 
 /// 좌측 정렬 브랜드 타이틀. 여러 화면에서 공통으로 사용한다.
-/// assets/brand/greenit_title.png 가 있으면 그 이미지를, 없으면 워드마크 텍스트로 표시한다.
+/// assets/brand/greeneat_logo.png를 원본 비율로 표시한다.
 class BrandTitle extends StatelessWidget {
   const BrandTitle(
       {super.key, this.height = 40, this.alignment = Alignment.centerLeft});
@@ -3146,7 +3146,7 @@ class BrandTitle extends StatelessWidget {
     return Align(
       alignment: alignment,
       child: Image.asset(
-        'assets/brand/greenit_title.png',
+        'assets/brand/greeneat_logo.png',
         height: height,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => Text(
@@ -3407,8 +3407,8 @@ class BrandLoadingScreen extends StatelessWidget {
           backgroundColor: Colors.transparent,
           body: Center(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Image.asset('assets/brand/title.png',
-                  width: 240, fit: BoxFit.contain),
+              Image.asset('assets/brand/greeneat_logo.png',
+                  height: 120, fit: BoxFit.contain),
               const SizedBox(height: 18),
               const CircularProgressIndicator(color: kOrange),
             ]),

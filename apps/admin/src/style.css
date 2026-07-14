@@ -306,6 +306,7 @@ select:focus { border-color: #2FB865; box-shadow: 0 0 0 5px rgba(47, 184, 101, .
 .notification-form fieldset { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 0; padding: 15px 16px; border: 1px solid #cdebd5; border-radius: 18px; background: #f8fcf9; }
 .notification-form fieldset legend { padding: 0 8px; color: #14351f; font-weight: 950; }
 .notification-form fieldset label { display: flex; align-items: center; gap: 8px; color: #14351f; font-weight: 900; }
+.notification-form fieldset input[type="radio"] { flex: 0 0 18px; width: 18px; height: 18px; min-height: 18px; margin: 0; padding: 0; }
 .notification-form fieldset small { color: #5c7a66; font-weight: 750; }
 .notification-form > label { display: grid; gap: 7px; color: #5c7a66; font-size: 13px; font-weight: 900; }
 .notification-form textarea { width: 100%; resize: vertical; min-height: 120px; }
@@ -321,7 +322,12 @@ select:focus { border-color: #2FB865; box-shadow: 0 0 0 5px rgba(47, 184, 101, .
 .notification-history td strong, .notification-history td small { display: block; }
 .notification-history td small { max-width: 360px; margin-top: 4px; color: #5c7a66; white-space: pre-wrap; }
 .notification-history .panel-note { margin-top: 12px; }
-@media (max-width: 620px) { .notification-form fieldset { display: grid; } .notification-form .row-actions { display: grid; grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px) {
+  .notification-form fieldset { display: grid; gap: 12px; }
+  .notification-form fieldset label { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 3px 9px; }
+  .notification-form fieldset small { grid-column: 2; line-height: 1.35; }
+  .notification-form .row-actions { display: grid; grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 800px) { .voucher-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .voucher-form { grid-template-columns: 1fr; } }
 

@@ -1402,46 +1402,50 @@ class HomeScreen extends StatelessWidget {
             label: const Text('식권 구매하기'),
           ),
         ] else ...[
-          Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(18),
-            decoration: brandCardDecoration(radius: 22),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('복지포인트',
-                  style: TextStyle(
-                      color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
-              Text('${won(pointBalance)} P',
-                  style: const TextStyle(
-                      color: kCocoa,
-                      fontSize: 27,
-                      fontWeight: FontWeight.w900)),
-              if (pointTransactions.isNotEmpty)
-                Text(
-                    '최근 ${pointTransactions.first['reason'] ?? '포인트 변경'} · ${pointTransactions.first['amount']}P',
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFF5C7A66))),
-            ]),
-          ),
           FutureBuilder<SubsidizedPrice>(
             future: ApiClient(Supabase.instance.client.auth.currentSession!)
                 .getSubsidizedPrice(),
             builder: (context, snapshot) {
               if (!snapshot.hasData) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    await Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => SubsidizedVoucherPurchaseScreen(
-                            session: Supabase
-                                .instance.client.auth.currentSession!)));
-                    await onRefresh();
-                  },
-                  icon: const Icon(Icons.add_card_rounded),
-                  label: Text(
-                      '지원 식권 구매하기 · ${won(snapshot.data!.employeePayAmount)}'),
-                ),
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(18),
+                    decoration: brandCardDecoration(radius: 22),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('포인트',
+                              style: TextStyle(
+                                  color: Color(0xFF5C7A66),
+                                  fontWeight: FontWeight.w800)),
+                          Text('${won(pointBalance)} P',
+                              style: const TextStyle(
+                                  color: kCocoa,
+                                  fontSize: 27,
+                                  fontWeight: FontWeight.w900)),
+                          if (pointTransactions.isNotEmpty)
+                            Text(
+                                '최근 ${pointTransactions.first['reason'] ?? '포인트 변경'} · ${pointTransactions.first['amount']}P',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Color(0xFF5C7A66))),
+                        ]),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      await Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => SubsidizedVoucherPurchaseScreen(
+                              session: Supabase
+                                  .instance.client.auth.currentSession!)));
+                      await onRefresh();
+                    },
+                    icon: const Icon(Icons.add_card_rounded),
+                    label: Text(
+                        '지원 식권 구매하기 · ${won(snapshot.data!.employeePayAmount)}'),
+                  ),
+                ],
               );
             },
           ),
@@ -1697,8 +1701,6 @@ class _TodayMenuCard extends StatelessWidget {
         ],
       ),
       child: Stack(children: [
-        const Positioned(
-            right: 0, bottom: 0, child: SproutMark(size: 72, light: true)),
         if (monthUsed != null && remainingLimit != null)
           Positioned(
             right: 0,
@@ -1735,7 +1737,7 @@ class _TodayMenuCard extends StatelessWidget {
             ),
           ),
         Padding(
-          padding: EdgeInsets.only(right: monthUsed == null ? 74 : 118),
+          padding: EdgeInsets.only(right: monthUsed == null ? 0 : 118),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(

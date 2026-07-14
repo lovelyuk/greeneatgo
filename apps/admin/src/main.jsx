@@ -912,8 +912,6 @@ function AnnouncementReviewPanel({ token, section }) {
 function Dashboard({ session, onLogout }) {
   const token = session.access_token;
   const [me, setMe] = useState(null);
-  const [adminNameForm, setAdminNameForm] = useState('');
-  const [adminNameEditing, setAdminNameEditing] = useState(false);
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   const [accountSettingsForm, setAccountSettingsForm] = useState({ display_name: '', password: '', password_confirm: '' });
   const [requests, setRequests] = useState([]);
@@ -1010,23 +1008,6 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
-  async function saveAdminName(event) {
-    event.preventDefault();
-    const displayName = adminNameForm.trim();
-    if (!displayName) { setError('관리자 이름을 입력해 주세요.'); return; }
-    setBusy(true); setError(''); setMessage('');
-    try {
-      const updated = await apiFetch('/me', token, {
-        method: 'PATCH', body: JSON.stringify({ display_name: displayName }),
-      });
-      setMe((current) => ({ ...current, display_name: updated.display_name }));
-      setAdminNameForm(updated.display_name);
-      setAdminNameEditing(false);
-      setMessage('관리자 이름을 수정했어요.');
-    } catch (nameError) { setError(nameError.message); }
-    finally { setBusy(false); }
-  }
-
   function openAccountSettings() {
     setAccountSettingsForm({ display_name: me?.display_name ?? '', password: '', password_confirm: '' });
     setError('');
@@ -1047,7 +1028,6 @@ function Dashboard({ session, onLogout }) {
           method: 'PATCH', body: JSON.stringify({ display_name: displayName }),
         });
         setMe((current) => ({ ...current, display_name: updated.display_name }));
-        setAdminNameForm(updated.display_name);
       }
       if (password) {
         const { error: passwordError } = await supabase.auth.updateUser({ password });
@@ -1095,8 +1075,7 @@ function Dashboard({ session, onLogout }) {
   ] : [
     ['가입 요청', `${requests.length}명`, Users, 'orange'],
     ['직원', employees ? `${employees.items.length}명` : '조회 중', WalletCards, 'brown'],
-    ['QR 결제', products ? `${products.items.filter((item) => item.is_active).length}개 상품` : '단일 식당', QrCode, 'orange'],
-  ], [isPlatformAdmin, isMerchantAdmin, requests.length, me, products, merchantCompanies, transactions, platformMerchants, employees]);
+  ], [isPlatformAdmin, isMerchantAdmin, requests.length, products, merchantCompanies, transactions, platformMerchants, employees]);
 
   const recentPaymentAlerts = useMemo(() => (transactions?.items ?? [])
     .filter((item) => !['refund', 'cancel'].includes(item.kind) && item.created_at && new Date(item.created_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) === paymentAlertDay)
@@ -1151,7 +1130,6 @@ function Dashboard({ session, onLogout }) {
         }
       }
       setMe(meData);
-      setAdminNameForm(meData.display_name ?? '');
       setRequests(requestData.items ?? []);
       setEmployees(employeeData);
       setMealPolicy(mealPolicyData);
@@ -1810,12 +1788,10 @@ function Dashboard({ session, onLogout }) {
         <div className="profile-grid">
           <span>이메일</span><strong>{session.user.email}</strong>
           <span>{['company_admin', 'merchant_admin'].includes(me?.role) ? '관리자 이름' : '이름'}</span>
-          {me?.role === 'company_admin' ? (adminNameEditing
-            ? <form className="profile-name-form" onSubmit={saveAdminName}><input value={adminNameForm} onChange={(event) => setAdminNameForm(event.target.value)} maxLength="80" autoFocus required/><button className="primary" disabled={busy}>저장</button><button type="button" className="ghost" disabled={busy} onClick={() => { setAdminNameEditing(false); setAdminNameForm(me?.display_name ?? ''); setError(''); }}>취소</button></form>
-            : <div className="profile-name-value"><strong>{me?.display_name ?? '-'}</strong><button type="button" className="ghost" onClick={() => { setAdminNameForm(me?.display_name ?? ''); setAdminNameEditing(true); }}>이름 수정</button></div>)
+          {me?.role === 'company_admin'
+            ? <div className="profile-name-value"><strong>{me?.display_name ?? '-'}</strong><button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/></button></div>
             : <strong>{me?.display_name ?? '-'}</strong>}
-          <span>권한</span><strong>{me?.role === 'merchant_admin' ? '관리자' : me?.role ?? '-'}</strong>
-          <span>상태</span><strong>{me?.status ?? '-'}</strong>
+          {me?.role !== 'company_admin' && <><span>권한</span><strong>{me?.role === 'merchant_admin' ? '관리자' : me?.role ?? '-'}</strong><span>상태</span><strong>{me?.status ?? '-'}</strong></>}
         </div>
       </article>
       <article className="panel menu-panel restaurant-card">
@@ -1953,7 +1929,7 @@ function Dashboard({ session, onLogout }) {
         </table>
       </div>}
     </section>}
-    {isMerchantAdmin && accountSettingsOpen && <div className="modal-backdrop account-settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setAccountSettingsOpen(false); }}>
+    {(isMerchantAdmin || me?.role === 'company_admin') && accountSettingsOpen && <div className="modal-backdrop account-settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setAccountSettingsOpen(false); }}>
       <section className="invite-modal account-settings-modal" role="dialog" aria-modal="true" aria-labelledby="account-settings-title">
         <div className="panel-title"><div><span className="eyebrow">ACCOUNT</span><h2 id="account-settings-title">관리자 정보 설정</h2><p className="panel-note">관리자 이름과 로그인 비밀번호를 변경할 수 있어요.</p></div><button type="button" className="icon-button" onClick={() => setAccountSettingsOpen(false)} disabled={busy} aria-label="닫기"><X size={20}/></button></div>
         {error && <div className="alert error">{error}</div>}

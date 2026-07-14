@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.me import _customer_usage
+from app.routers.merchant_admin import list_transactions
 from app.routers.toss_payments import confirm
 from app.routers.transactions import scan
 from app.routers.voucher_products import _delete_replaced_image, _event_status, _is_exposed, _values, active_products
@@ -21,6 +22,24 @@ from app.services.vouchers import calculate_sale_price, krw_amount, parse_qr_dat
 
 
 class VoucherCoreTests(unittest.TestCase):
+    @patch("app.routers.merchant_admin.JoinRepository")
+    def test_merchant_transactions_exclude_voucher_purchase_orders(self, repo_class):
+        repo = repo_class.return_value
+        repo.auth_user_from_token.return_value = SimpleNamespace(id="admin", email="admin@example.com")
+        repo.get_profile.return_value = SimpleNamespace(
+            id="admin", role="merchant_admin", status="active", merchant_id="merchant-1"
+        )
+        repo.client.rest_get.side_effect = [[], []]
+        repo.client.rpc.return_value = 0
+
+        result = list_transactions("bearer")
+
+        self.assertEqual(result["data"]["items"], [])
+        toss_params = repo.client.rest_get.call_args_list[1].args[1]
+        self.assertEqual(toss_params["status"], "eq.done")
+        self.assertEqual(toss_params["pay_type"], "eq.direct")
+        self.assertIn("pay_type", toss_params["select"])
+
     def test_discount_and_bonus_price_snapshots(self):
         sale = calculate_sale_price(8000, 10, 10)
         self.assertEqual(sale, Decimal("72000.00"))

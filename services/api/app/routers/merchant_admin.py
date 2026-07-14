@@ -795,9 +795,10 @@ def list_transactions(token: str = Depends(bearer_token)):
         toss_rows = repo.client.rest_get(
             "toss_payment_orders",
             {
-                "select": "id,order_id,user_id,merchant_id,amount,status,payment_method,product_name,approved_at,created_at",
+                "select": "id,order_id,user_id,merchant_id,amount,status,pay_type,payment_method,product_name,approved_at,created_at",
                 "merchant_id": f"eq.{merchant_id}",
                 "status": "eq.done",
+                "pay_type": "eq.direct",
                 "order": "approved_at.desc",
                 "limit": "50",
             },

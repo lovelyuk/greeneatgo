@@ -923,7 +923,11 @@ function Dashboard({ session, onLogout }) {
   const [voucherProductsMigrationRequired, setVoucherProductsMigrationRequired] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [notificationsMigrationRequired, setNotificationsMigrationRequired] = useState(false);
-  const [paymentNotices, setPaymentNotices] = useState([]);
+  const [paymentAlertDay, setPaymentAlertDay] = useState(todayInput());
+  const [unreadPaymentCount, setUnreadPaymentCount] = useState(0);
+  const paymentAudioContextRef = useRef(null);
+  const merchantSectionRef = useRef('main');
+  const transactionRefreshVersionRef = useRef(0);
   const [productForm, setProductForm] = useState({ name: '', price: '', category: '' });
   const [productImageFile, setProductImageFile] = useState(null);
   const [productImagePreview, setProductImagePreview] = useState('');
@@ -970,6 +974,31 @@ function Dashboard({ session, onLogout }) {
 
   const merchantPayUrl = merchantQr?.qr_token ? `${window.location.origin}/pay?qr=${encodeURIComponent(merchantQr.qr_token)}` : '';
   const merchantQrImageUrl = merchantPayUrl ? `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=14&data=${encodeURIComponent(merchantPayUrl)}` : '';
+
+  function playPaymentChime() {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = paymentAudioContextRef.current ?? new AudioContextClass();
+    paymentAudioContextRef.current = context;
+    const play = () => {
+      const start = context.currentTime;
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.24, start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.58);
+      gain.connect(context.destination);
+      [[880, 0], [1174.66, 0.16]].forEach(([frequency, delay]) => {
+        const oscillator = context.createOscillator();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(frequency, start + delay);
+        oscillator.connect(gain);
+        oscillator.start(start + delay);
+        oscillator.stop(start + delay + 0.34);
+      });
+    };
+    if (context.state === 'suspended') context.resume().then(play).catch(() => {});
+    else play();
+  }
 
   async function copyMerchantPayUrl() {
     if (!merchantPayUrl) return;
@@ -1068,6 +1097,11 @@ function Dashboard({ session, onLogout }) {
     ['직원', employees ? `${employees.items.length}명` : '조회 중', WalletCards, 'brown'],
     ['QR 결제', products ? `${products.items.filter((item) => item.is_active).length}개 상품` : '단일 식당', QrCode, 'orange'],
   ], [isPlatformAdmin, isMerchantAdmin, requests.length, me, products, merchantCompanies, transactions, platformMerchants, employees]);
+
+  const recentPaymentAlerts = useMemo(() => (transactions?.items ?? [])
+    .filter((item) => !['refund', 'cancel'].includes(item.kind) && item.created_at && new Date(item.created_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) === paymentAlertDay)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, 10), [transactions, paymentAlertDay]);
 
   async function load() {
     setBusy(true);
@@ -1533,17 +1567,49 @@ function Dashboard({ session, onLogout }) {
   useEffect(() => { load(); }, []);
 
   useEffect(() => {
+    const now = new Date();
+    const kstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000));
+    const nextKstMidnight = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate() + 1) - (9 * 60 * 60 * 1000);
+    const timer = window.setTimeout(() => setPaymentAlertDay(todayInput()), Math.max(1000, nextKstMidnight - now.getTime() + 100));
+    return () => window.clearTimeout(timer);
+  }, [paymentAlertDay]);
+
+  useEffect(() => {
+    merchantSectionRef.current = merchantSection;
+    if (merchantSection === 'main') setUnreadPaymentCount(0);
+  }, [merchantSection]);
+
+  useEffect(() => {
+    if (!isMerchantAdmin) return undefined;
+    const unlockPaymentSound = () => {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      const context = paymentAudioContextRef.current ?? new AudioContextClass();
+      paymentAudioContextRef.current = context;
+      if (context.state === 'suspended') context.resume().catch(() => {});
+    };
+    unlockPaymentSound();
+    window.addEventListener('pointerdown', unlockPaymentSound, { once: true, capture: true });
+    window.addEventListener('keydown', unlockPaymentSound, { once: true, capture: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockPaymentSound, { capture: true });
+      window.removeEventListener('keydown', unlockPaymentSound, { capture: true });
+    };
+  }, [isMerchantAdmin]);
+
+  useEffect(() => {
     const merchantId = merchantQr?.merchant?.id;
     if (!supabase || !isMerchantAdmin || !merchantId) return undefined;
     const channel = supabase.channel(`merchant-payments-${merchantId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'meal_transactions', filter: `merchant_id=eq.${merchantId}` }, async (event) => {
+        if (!['refund', 'cancel'].includes(event.new.kind)) {
+          playPaymentChime();
+          if (merchantSectionRef.current !== 'main') setUnreadPaymentCount((count) => count + 1);
+        }
+        const refreshVersion = ++transactionRefreshVersionRef.current;
         try {
-          const [detail, list] = await Promise.all([
-            apiFetch(`/admin/merchant/transactions/${event.new.id}`, token),
-            apiFetch('/admin/merchant/transactions', token),
-          ]);
-          setTransactions(list);
-          setPaymentNotices((queue) => [...queue, detail]);
+          const list = await apiFetch('/admin/merchant/transactions', token);
+          if (refreshVersion === transactionRefreshVersionRef.current) setTransactions(list);
         } catch (noticeError) { setError(`결제 알림 확인 실패: ${noticeError.message}`); }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -1575,13 +1641,18 @@ function Dashboard({ session, onLogout }) {
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
       <div className="top-actions">
+        {isMerchantAdmin && <div className="merchant-account-strip">
+          <span>{session.user.email}</span>
+          <strong>{me?.display_name ?? '-'}</strong>
+          <button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/></button>
+        </div>}
         <button className="ghost" onClick={load} disabled={busy}><RefreshCw size={16}/> 새로고침</button>
         <button className="ghost" onClick={onLogout}><LogOut size={16}/> 로그아웃</button>
       </div>
     </header>
 
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
-      {merchantNavItems.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span></button>)}
+      {merchantNavItems.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}
     </nav>}
 
     <div className={isMerchantAdmin ? 'merchant-content' : undefined}>
@@ -1590,19 +1661,6 @@ function Dashboard({ session, onLogout }) {
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}
 
-    {paymentNotices.length > 0 && <div className="modal-backdrop payment-notice-backdrop">
-      <section className="invite-modal payment-notice" role="alertdialog" aria-modal="true" aria-labelledby="payment-notice-title">
-        <h2 id="payment-notice-title">결제가 완료됐어요</h2>
-        <div className="profile-grid">
-          <span>직원</span><strong>{paymentNotices[0].employee_name} ({paymentNotices[0].employee_no})</strong>
-          <span>결제 구분</span><strong>{paymentNotices[0].pay_type === 'subsidized' ? '보조금' : paymentNotices[0].pay_type === 'voucher' ? '식권' : '장부'}</strong>
-          <span>금액</span><strong>{krw(paymentNotices[0].amount)}</strong>
-          {paymentNotices[0].remaining != null && <><span>남은 식권</span><strong>{paymentNotices[0].remaining}장</strong></>}
-        </div>
-        {paymentNotices.length > 1 && <p className="panel-note">대기 중인 결제 알림 {paymentNotices.length - 1}건</p>}
-        <button className="primary" autoFocus onClick={() => setPaymentNotices((queue) => queue.slice(1))}>확인</button>
-      </section>
-    </div>}
 
     {inviteModal && <div className="modal-backdrop" onClick={() => setInviteModal(null)}>
       <section className="invite-modal" onClick={(event) => event.stopPropagation()}>
@@ -1685,8 +1743,8 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
 
-    {(!isMerchantAdmin || merchantSection === 'main') && <section className="grid">
-      {cards.map(([label, value, Icon, tone]) => <article className={`card ${tone}`} key={label}>
+    {(!isMerchantAdmin || merchantSection === 'main') && <section className={`grid${isMerchantAdmin ? ' merchant-kpi-grid' : ''}`}>
+      {cards.map(([label, value, Icon, tone]) => <article className={`card ${tone}${isMerchantAdmin ? ' merchant-kpi-card' : ''}`} key={label}>
         <Icon size={28}/><span>{label}</span><strong>{value}</strong>
       </article>)}
     </section>}
@@ -1714,21 +1772,22 @@ function Dashboard({ session, onLogout }) {
         </article>)}</div>}
     </section>}
 
-    {(!isMerchantAdmin || merchantSection === 'main') && <section className="two-col">
-      <article className="panel profile-panel">
-        <div className="panel-title"><h2>로그인 정보</h2>{isMerchantAdmin ? <button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/></button> : <span className="badge">secure</span>}</div>
-        <div className="profile-grid">
-          <span>이메일</span><strong>{session.user.email}</strong>
-          <span>{['company_admin', 'merchant_admin'].includes(me?.role) ? '관리자 이름' : '이름'}</span>
-          {me?.role === 'company_admin' ? (adminNameEditing
-            ? <form className="profile-name-form" onSubmit={saveAdminName}><input value={adminNameForm} onChange={(event) => setAdminNameForm(event.target.value)} maxLength="80" autoFocus required/><button className="primary" disabled={busy}>저장</button><button type="button" className="ghost" disabled={busy} onClick={() => { setAdminNameEditing(false); setAdminNameForm(me?.display_name ?? ''); setError(''); }}>취소</button></form>
-            : <div className="profile-name-value"><strong>{me?.display_name ?? '-'}</strong><button type="button" className="ghost" onClick={() => { setAdminNameForm(me?.display_name ?? ''); setAdminNameEditing(true); }}>이름 수정</button></div>)
-            : <strong>{me?.display_name ?? '-'}</strong>}
-          <span>권한</span><strong>{me?.role === 'merchant_admin' ? '관리자' : me?.role ?? '-'}</strong>
-          <span>상태</span><strong>{me?.status ?? '-'}</strong>
-        </div>
+    {isMerchantAdmin && merchantSection === 'main' && <section className="two-col merchant-main-panels">
+      <article className="panel payment-alert-panel">
+        <div className="panel-title payment-alert-heading"><div><h2><Bell size={21}/> 오늘의 결제 알림</h2><p className="panel-note">오늘 승인된 최근 결제 10건을 실시간으로 표시합니다.</p></div><span className="badge">{recentPaymentAlerts.length}건</span></div>
+        {recentPaymentAlerts.length === 0 ? <p className="empty-state">오늘 들어온 결제가 아직 없어요.</p> : <div className="payment-alert-list">
+          {recentPaymentAlerts.map((item) => {
+            const paymentType = item.pay_type === 'voucher' ? '식권' : item.pay_type === 'subsidized' ? '보조금' : '장부';
+            return <div className="payment-alert-row" key={item.id}>
+              <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false })}</time>
+              <strong>{item.employee_name ?? '직원'}</strong>
+              <span className={`payment-type-badge ${item.pay_type ?? 'ledger'}`}>{paymentType}</span>
+              <b>{krw(Math.abs(Number(item.amount ?? 0)))}</b>
+            </div>;
+          })}
+        </div>}
       </article>
-      {isMerchantAdmin && <article className="panel merchant-qr-panel">
+      <article className="panel merchant-qr-panel">
         <div className="panel-title"><div><h2>내 매장 결제 QR</h2><p className="panel-note">카운터에 비치할 직원 결제용 QR입니다.</p></div><QrCode size={24}/></div>
         {merchantQrImageUrl ? <div className="qr-card-body">
           <img className="merchant-qr-image" src={merchantQrImageUrl} alt="매장 결제 QR 코드" />
@@ -1742,15 +1801,31 @@ function Dashboard({ session, onLogout }) {
             <button className="ghost" onClick={copyMerchantPayUrl}>링크 복사</button>
           </div>
         </div> : <p className="empty-state">매장 QR 정보를 불러오고 있어요.</p>}
-      </article>}
-      {!isMerchantAdmin && <article className="panel menu-panel restaurant-card">
+      </article>
+    </section>}
+
+    {!isMerchantAdmin && <section className="two-col">
+      <article className="panel profile-panel">
+        <div className="panel-title"><h2>로그인 정보</h2><span className="badge">secure</span></div>
+        <div className="profile-grid">
+          <span>이메일</span><strong>{session.user.email}</strong>
+          <span>{['company_admin', 'merchant_admin'].includes(me?.role) ? '관리자 이름' : '이름'}</span>
+          {me?.role === 'company_admin' ? (adminNameEditing
+            ? <form className="profile-name-form" onSubmit={saveAdminName}><input value={adminNameForm} onChange={(event) => setAdminNameForm(event.target.value)} maxLength="80" autoFocus required/><button className="primary" disabled={busy}>저장</button><button type="button" className="ghost" disabled={busy} onClick={() => { setAdminNameEditing(false); setAdminNameForm(me?.display_name ?? ''); setError(''); }}>취소</button></form>
+            : <div className="profile-name-value"><strong>{me?.display_name ?? '-'}</strong><button type="button" className="ghost" onClick={() => { setAdminNameForm(me?.display_name ?? ''); setAdminNameEditing(true); }}>이름 수정</button></div>)
+            : <strong>{me?.display_name ?? '-'}</strong>}
+          <span>권한</span><strong>{me?.role === 'merchant_admin' ? '관리자' : me?.role ?? '-'}</strong>
+          <span>상태</span><strong>{me?.status ?? '-'}</strong>
+        </div>
+      </article>
+      <article className="panel menu-panel restaurant-card">
         <div className="restaurant-card-head"><Coffee size={24}/><strong>돈토 식당</strong></div>
         <div className="invite-code-box">
           <span>초대코드</span>
           <strong>{me?.invite_code ?? '-'}</strong>
           <button className="ghost" onClick={copyCompanyInviteCode} disabled={!me?.invite_code}>복사</button>
         </div>
-      </article>}
+      </article>
     </section>}
 
     {!isPlatformAdmin && !isMerchantAdmin && <section className="panel meal-policy-panel">

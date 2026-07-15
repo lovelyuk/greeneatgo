@@ -1988,6 +1988,7 @@ class _UnifiedQrScanScreenState extends State<UnifiedQrScanScreen> {
 
   @override
   Widget build(BuildContext context) => AppScaffold(
+        showBrand: false,
         title: '매장 QR을 스캔해요',
         subtitle:
             widget.isConsumer ? '보유 식권 1장이 사용됩니다.' : '회사 장부의 계약 단가로 결제됩니다.',
@@ -2339,6 +2340,7 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
 
   @override
   Widget build(BuildContext context) => AppScaffold(
+        showBrand: false,
         title: '돈토 식권 구매',
         subtitle: '원하는 식권 패키지를 고르고 토스페이먼츠에서 결제해요.',
         child: FutureBuilder<List<VoucherProduct>>(

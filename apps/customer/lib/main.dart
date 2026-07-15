@@ -1839,12 +1839,9 @@ class _TodayMenuCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
+        color: kOrange,
         borderRadius: BorderRadius.circular(30),
-        gradient: const LinearGradient(
-            colors: [Color(0xFF285846), Color(0xFF547664)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight),
-        border: Border.all(color: const Color(0xFF769183), width: 1),
+        border: Border.all(color: kOrange, width: 1),
         boxShadow: const [
           BoxShadow(
               color: Color(0x2421382C), blurRadius: 20, offset: Offset(0, 10))
@@ -3436,8 +3433,7 @@ class BrandNotice extends StatelessWidget {
                   isError ? const Color(0xFFFFB49A) : const Color(0xFFB9E9CC))),
       child: Text(text,
           style: TextStyle(
-              color:
-                  isError ? const Color(0xFFB42318) : const Color(0xFF047857),
+              color: isError ? const Color(0xFFB42318) : kOrange,
               fontWeight: FontWeight.w800)),
     );
   }

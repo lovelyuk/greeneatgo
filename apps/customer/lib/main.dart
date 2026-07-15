@@ -1449,7 +1449,6 @@ class HomeScreen extends StatelessWidget {
     final isConsumer =
         me['account_type'] == 'voucher' || me['role'] == 'customer';
     final monthUsed = (me['month_used'] as num?) ?? 0;
-    final remainingLimit = (me['remaining_limit'] as num?) ?? 0;
     final voucherBalance = (me['voucher_balance'] as num?)?.round() ?? 0;
     final pointBalance = (me['point_balance'] as num?)?.round() ?? 0;
     final pointTransactions = mapList(me['point_transactions']);
@@ -1478,7 +1477,6 @@ class HomeScreen extends StatelessWidget {
           builder: (context, snapshot) => _TodayMenuCard(
             todayMenu: snapshot.data?.todayMenu,
             monthUsed: isConsumer ? null : monthUsed,
-            remainingLimit: isConsumer ? null : remainingLimit,
             loading: snapshot.connectionState != ConnectionState.done,
             error: snapshot.hasError
                 ? snapshot.error.toString().replaceFirst('Exception: ', '')
@@ -1810,12 +1808,10 @@ class _TodayMenuCard extends StatelessWidget {
   const _TodayMenuCard(
       {required this.todayMenu,
       required this.monthUsed,
-      required this.remainingLimit,
       this.loading = false,
       this.error});
   final TodayMenu? todayMenu;
   final num? monthUsed;
-  final num? remainingLimit;
   final bool loading;
   final String? error;
 
@@ -1848,7 +1844,7 @@ class _TodayMenuCard extends StatelessWidget {
         ],
       ),
       child: Stack(children: [
-        if (monthUsed != null && remainingLimit != null)
+        if (monthUsed != null)
           Positioned(
             right: 0,
             top: 0,
@@ -1865,17 +1861,6 @@ class _TodayMenuCard extends StatelessWidget {
                         fontSize: 11,
                         fontWeight: FontWeight.w900)),
                 Text(won(monthUsed),
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900)),
-                const SizedBox(height: 3),
-                const Text('남은 한도',
-                    style: TextStyle(
-                        color: Color(0xFFEAFBF0),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900)),
-                Text(won(remainingLimit),
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 15,
@@ -2264,6 +2249,7 @@ class _SubsidizedVoucherPurchaseScreenState
 
   @override
   Widget build(BuildContext context) => AppScaffold(
+        showBrand: false,
         title: '지원 식권 구매',
         subtitle: '회사와 식당의 지원이 적용된 직원 전용 식권이에요.',
         child: FutureBuilder<SubsidizedPrice>(

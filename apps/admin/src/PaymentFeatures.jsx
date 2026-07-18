@@ -3,7 +3,7 @@ import { BarChart3, CalendarDays, CheckCircle2, ChevronDown, RotateCcw, Search, 
 
 const money = (value) => `₩${Number(value ?? 0).toLocaleString('ko-KR')}`;
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
-const granularities = [['year', '연'], ['month', '월'], ['day', '일'], ['hour', '시간']];
+const granularities = [['year', '연'], ['month', '월'], ['day', '일']];
 
 function Chart({ series, label }) {
   const data = (Array.isArray(series) ? series : []).map((item, index) => ({

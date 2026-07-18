@@ -1662,7 +1662,6 @@ function Dashboard({ session, onLogout }) {
 
   const merchantNavItems = [
     ['main', '메인', Home],
-    ['payment-history', '결제내역', CreditCard],
     ['companies', '업체 관리', Building2],
     ['vouchers', '판매 상품(일반)', Package],
     ['products', '식당 상품(장부)', Utensils],
@@ -1670,6 +1669,7 @@ function Dashboard({ session, onLogout }) {
     ['announcements', '공지사항', FileText],
     ['reviews', '리뷰', CheckCircle2],
     ['daily-menu', '오늘 뷔페 메뉴', Coffee],
+    ['payment-history', '결제내역', CreditCard],
   ];
 
   return <main className={`shell${isMerchantAdmin ? ' merchant-shell' : ''}`}>

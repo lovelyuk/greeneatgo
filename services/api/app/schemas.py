@@ -142,6 +142,20 @@ class VoucherPurchaseRequest(BaseModel):
     product_id: str = Field(min_length=8, max_length=80)
 
 
+class RefundReceiveAccount(BaseModel):
+    bank: str = Field(min_length=2, max_length=20)
+    accountNumber: str = Field(min_length=5, max_length=40)
+    holderName: str = Field(min_length=1, max_length=60)
+    model_config = {"extra": "forbid"}
+
+
+class MerchantRefundRequest(BaseModel):
+    account_id: str = Field(min_length=8, max_length=80)
+    order_id: str = Field(min_length=8, max_length=80)
+    refund_account: RefundReceiveAccount | None = None
+    model_config = {"extra": "forbid"}
+
+
 class TransactionScanRequest(BaseModel):
     qr_data: str = Field(min_length=1, max_length=500)
     idempotency_key: str = Field(min_length=8, max_length=120)

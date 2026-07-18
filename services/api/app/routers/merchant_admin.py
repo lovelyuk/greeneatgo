@@ -14,11 +14,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from app.auth import bearer_token
+from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
+from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
 from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
+from app.services.refunds import calculate_refund
+from app.services.toss_payment import TossPaymentError, cancel_payment
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
 KST = ZoneInfo("Asia/Seoul")
@@ -776,6 +779,221 @@ def export_vendor_transactions(company_id: str, format: str = Query(pattern="^(x
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "내보내기 파일을 만드는 중 오류가 발생했어요") from exc
+
+
+_REFUND_ORDER_SELECT = "id,order_id,user_id,merchant_id,company_id,product_name,amount,status,pay_type,payment_key,payment_method,refund_account,approved_at,created_at,voucher_count,paid_voucher_count,bonus_voucher_count,point_amount"
+
+
+def _order_quotes(repo: JoinRepository, orders: list[dict]) -> list[dict]:
+    order_ids = [str(order["id"]) for order in orders]
+    vouchers = _paged_get(repo, "vouchers", {
+        "select": "id,order_id,issue_index,status", "order_id": f"in.({','.join(order_ids)})",
+    }) if order_ids else []
+    by_order: dict[str, list[dict]] = {}
+    for voucher in vouchers:
+        by_order.setdefault(str(voucher["order_id"]), []).append(voucher)
+    result = []
+    for order in orders:
+        order_vouchers = by_order.get(str(order["id"]), [])
+        quote = calculate_refund(order, order_vouchers)
+        if not quote.refundable:
+            continue
+        used_count = sum(1 for voucher in order_vouchers if voucher.get("status") == "used")
+        unused_count = sum(1 for voucher in order_vouchers if voucher.get("status") == "unused")
+        result.append({
+            "purchase_order_id": order["order_id"], "account_id": order["user_id"],
+            "product_name": order.get("product_name"), "pay_type": order.get("pay_type"),
+            "purchased_at": order.get("approved_at") or order.get("created_at"),
+            "paid_amount": int(order.get("amount") or 0), "point_amount": quote.point_amount,
+            "total_count": len(order_vouchers), "used_count": used_count, "remaining_count": unused_count,
+            "refundable": quote.refundable, "refund_amount": quote.refund_amount,
+            "refundable_voucher_count": quote.refunded_voucher_count,
+            "forfeited_bonus_count": quote.forfeited_voucher_count, "reason": quote.reason,
+        })
+    return result
+
+
+@router.get("/customers/search")
+def search_refund_customers(query: str = Query(min_length=1, max_length=80), token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        orders = _paged_get(repo, "toss_payment_orders", {
+            "select": "user_id", "merchant_id": f"eq.{merchant_id}",
+            "pay_type": "in.(voucher,subsidized)", "status": "in.(done,refunded)",
+        })
+        user_ids = sorted({str(row["user_id"]) for row in orders if row.get("user_id")})
+        users = repo.client.rest_get("app_users", {
+            "select": "id,display_name,phone,role,status", "id": f"in.({','.join(user_ids)})",
+        }) if user_ids else []
+        needle = query.strip().lower()
+        items = [row for row in users if needle in f"{row.get('display_name') or ''} {row.get('phone') or ''}".lower()]
+        return {"ok": True, "data": {"items": items[:30]}, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "고객을 검색하지 못했어요") from exc
+
+
+@router.get("/customers/{account_id}/refundable-orders")
+def refundable_orders(account_id: str, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        orders = _paged_get(repo, "toss_payment_orders", {
+            "select": _REFUND_ORDER_SELECT, "merchant_id": f"eq.{merchant_id}",
+            "user_id": f"eq.{account_id}", "pay_type": "in.(voucher,subsidized)",
+            "status": "eq.done", "order": "approved_at.desc,created_at.desc",
+        })
+        return {"ok": True, "data": {"items": _order_quotes(repo, orders)}, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "환불 가능 주문을 불러오지 못했어요") from exc
+
+
+@router.post("/refunds")
+def refund_purchase_order(payload: MerchantRefundRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    claim = None
+    try:
+        actor, merchant_id = _merchant_admin(repo, token)
+        # Re-read ownership and current state immediately before the locked claim.
+        rows = repo.client.rest_get("toss_payment_orders", {
+            "select": _REFUND_ORDER_SELECT, "order_id": f"eq.{payload.order_id}",
+            "merchant_id": f"eq.{merchant_id}", "user_id": f"eq.{payload.account_id}", "limit": "1",
+        })
+        if not rows:
+            raise _error(404, "ORDER_NOT_FOUND", "해당 고객의 구매 주문을 찾을 수 없어요")
+        if int(rows[0].get("amount") or 0) > 0 and not rows[0].get("payment_key"):
+            raise _error(409, "PAYMENT_KEY_MISSING", "카드 결제키가 없어 자동 환불할 수 없어요")
+        account = payload.refund_account.model_dump() if payload.refund_account else rows[0].get("refund_account")
+        claim = repo.client.rpc("claim_purchase_order_refund", {
+            "p_order_id": rows[0]["id"], "p_merchant_id": merchant_id,
+            "p_user_id": payload.account_id, "p_requested_by": actor.id,
+            "p_refund_account": account,
+        })
+        pg_response = None
+        amount = int(claim.get("refund_amount") or 0)
+        if amount > 0:
+            if not claim.get("payment_key"):
+                raise _error(409, "PAYMENT_KEY_MISSING", "카드 결제키가 없어 자동 환불할 수 없어요")
+            pg_response = cancel_payment(
+                get_settings().toss_secret_key, claim["payment_key"], amount, account,
+                idempotency_key=f"refund-{claim['refund_request_id']}",
+            )
+        result = repo.client.rpc("finalize_purchase_order_refund", {
+            "p_refund_request_id": claim["refund_request_id"],
+            "p_merchant_id": merchant_id, "p_pg_response": pg_response,
+        })
+        return {"ok": True, "data": result, "error": None}
+    except HTTPException:
+        raise
+    except TossPaymentError as exc:
+        if claim:
+            try:
+                repo.client.rest_patch("refund_requests", {"id": f"eq.{claim['refund_request_id']}", "status": "eq.processing"}, {
+                    "status": "failed", "failure_code": exc.code, "failure_message": exc.message,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+            except SupabaseHttpError:
+                pass
+        raise _error(exc.status if 400 <= exc.status < 500 else 502, exc.code, exc.message) from exc
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        code_map = {
+            "ORDER_ALREADY_USED": (409, "ORDER_ALREADY_USED", "이미 사용한 보조금 식권은 환불할 수 없어요"),
+            "PAID_VOUCHERS_EXHAUSTED": (409, "PAID_VOUCHERS_EXHAUSTED", "유료 식권을 모두 사용해 환불할 금액이 없어요"),
+            "REFUND_ALREADY_REQUESTED": (409, "REFUND_ALREADY_REQUESTED", "이미 처리 중이거나 완료된 환불이에요"),
+        }
+        for marker, detail in code_map.items():
+            if marker in exc.body:
+                raise _error(*detail) from exc
+        raise _error(502, "REFUND_FAILED", "환불 처리 중 오류가 발생했어요") from exc
+
+
+def _analytics_bounds(selected: date, granularity: str) -> tuple[datetime, datetime, str]:
+    if granularity == "year":
+        start = datetime(selected.year, 1, 1, tzinfo=KST)
+        end = datetime(selected.year + 1, 1, 1, tzinfo=KST)
+        return start, end, "%Y-%m"
+    if granularity == "month":
+        start = datetime(selected.year, selected.month, 1, tzinfo=KST)
+        end_date = date(selected.year + (selected.month == 12), 1 if selected.month == 12 else selected.month + 1, 1)
+        return start, datetime.combine(end_date, time.min, tzinfo=KST), "%Y-%m-%d"
+    start = datetime.combine(selected, time.min, tzinfo=KST)
+    return start, start + timedelta(days=1), "%Y-%m-%dT%H:00"
+
+
+def _bucket(value: object, pattern: str) -> str:
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(KST).strftime(pattern)
+
+
+@router.get("/payment-history")
+def payment_history(date_: str = Query(alias="date"), granularity: str = Query(pattern="^(year|month|day|hour)$"), token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        selected = _parse_date(date_, datetime.now(KST).date())
+        start, end, pattern = _analytics_bounds(selected, granularity)
+        start_iso, end_iso = start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
+        txs = _paged_get(repo, "meal_transactions", {
+            "select": "id,user_id,amount,kind,pay_type,created_at", "merchant_id": f"eq.{merchant_id}",
+            "and": f"(created_at.gte.{start_iso},created_at.lt.{end_iso})", "order": "created_at.desc",
+        })
+        payments = _paged_get(repo, "toss_payment_orders", {
+            "select": "id,order_id,user_id,amount,point_amount,status,pay_type,product_name,payment_method,approved_at,created_at",
+            "merchant_id": f"eq.{merchant_id}", "status": "in.(done,refunded)",
+            "and": f"(approved_at.gte.{start_iso},approved_at.lt.{end_iso})", "order": "approved_at.desc",
+        })
+        refunds = _paged_get(repo, "refund_requests", {
+            "select": "id,order_id,user_id,refund_amount,point_amount,status,created_at,completed_at",
+            "merchant_id": f"eq.{merchant_id}", "status": "eq.completed",
+            "and": f"(completed_at.gte.{start_iso},completed_at.lt.{end_iso})", "order": "completed_at.desc",
+        })
+        series: dict[str, dict[str, int]] = {}
+        for row in txs:
+            key = _bucket(row["created_at"], pattern)
+            item = series.setdefault(key, {"transactions": 0, "transaction_amount": 0, "payments": 0, "payment_amount": 0, "refunds": 0, "refund_amount": 0})
+            item["transactions"] += 1; item["transaction_amount"] += _tx_amount(row)
+        for row in payments:
+            key = _bucket(row.get("approved_at") or row["created_at"], pattern)
+            item = series.setdefault(key, {"transactions": 0, "transaction_amount": 0, "payments": 0, "payment_amount": 0, "refunds": 0, "refund_amount": 0})
+            item["payments"] += 1; item["payment_amount"] += int(row.get("amount") or 0) + int(row.get("point_amount") or 0)
+        for row in refunds:
+            key = _bucket(row.get("completed_at") or row["created_at"], pattern)
+            item = series.setdefault(key, {"transactions": 0, "transaction_amount": 0, "payments": 0, "payment_amount": 0, "refunds": 0, "refund_amount": 0})
+            item["refunds"] += 1; item["refund_amount"] += int(row.get("refund_amount") or 0) + int(row.get("point_amount") or 0)
+        points = [{"bucket": key, **series[key]} for key in sorted(series)]
+        gross = sum(item["payment_amount"] for item in series.values())
+        refunded = sum(item["refund_amount"] for item in series.values())
+        tx_series = [{"label": item["bucket"], "value": item["transaction_amount"]} for item in points]
+        payment_series = [{"label": item["bucket"], "value": item["payment_amount"] - item["refund_amount"]} for item in points]
+        transaction_total = sum(_tx_amount(row) for row in txs)
+        is_selected_day = lambda value: datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(KST).date() == selected
+        day_txs = [row for row in txs if is_selected_day(row.get("created_at"))]
+        day_payments = [row for row in payments if is_selected_day(row.get("approved_at") or row.get("created_at"))]
+        day_refunds = [row for row in refunds if is_selected_day(row.get("completed_at") or row.get("created_at"))]
+        payment_items = [*day_payments, *[{**row, "kind": "refund", "amount": -int(row.get("refund_amount") or 0) - int(row.get("point_amount") or 0), "created_at": row.get("completed_at") or row.get("created_at")} for row in day_refunds]]
+        payment_items.sort(key=lambda row: row.get("created_at") or row.get("approved_at") or "", reverse=True)
+        shaped = {
+            "transaction": {"total": transaction_total, "count": len(txs), "detail_count": len(day_txs), "series": tx_series, "items": day_txs},
+            "payment": {"total": gross-refunded, "gross_total": gross, "refund_total": refunded,
+                        "count": len(payments), "detail_count": len(payment_items), "series": payment_series, "items": payment_items},
+        }
+        return {"ok": True, "data": {**shaped, "series": points, "rows": payments, "refunds": refunds, "totals": {
+            "transaction_count": len(txs), "transaction_amount": sum(abs(int(row.get("amount") or 0)) for row in txs),
+            "payment_count": len(payments), "payment_amount": gross, "refund_count": len(refunds),
+            "refund_amount": refunded, "net_payment_amount": gross-refunded,
+        }}, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "결제 분석을 불러오지 못했어요") from exc
 
 
 @router.get("/transactions")

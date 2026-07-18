@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.routers.toss_payments import checkout
-from app.services.toss_payment import TossConfirmInput, TossPaymentError, confirm_payment, validate_confirm_input
+from app.services.toss_payment import TossConfirmInput, TossPaymentError, cancel_payment, confirm_payment, validate_confirm_input
 
 
 class _Response:
@@ -86,6 +86,19 @@ class TossPaymentServiceTests(unittest.TestCase):
             "amount": 9000,
         })
         self.assertEqual(result["status"], "DONE")
+
+    @patch("app.services.toss_payment.urlopen", return_value=_Response())
+    def test_cancel_sends_partial_amount_and_optional_refund_account(self, mocked_urlopen):
+        account = {"bank": "20", "accountNumber": "12345678", "holderName": "홍길동"}
+        cancel_payment("test_secret", "payment-key", 72000, account, idempotency_key="refund-1")
+
+        request = mocked_urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://api.tosspayments.com/v1/payments/payment-key/cancel")
+        self.assertEqual(request.get_header("Idempotency-key"), "refund-1")
+        self.assertEqual(json.loads(request.data), {
+            "cancelReason": "식권 구매 주문 환불", "cancelAmount": 72000,
+            "refundReceiveAccount": account,
+        })
 
 
 if __name__ == "__main__":

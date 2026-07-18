@@ -81,3 +81,41 @@ def confirm_payment(secret_key: str, payload: TossConfirmInput) -> dict[str, Any
             str(error.get("code") or "TOSS_PAYMENT_ERROR"),
             str(error.get("message") or "토스페이먼츠 결제 승인에 실패했어요"),
         ) from exc
+
+
+def cancel_payment(
+    secret_key: str,
+    payment_key: str,
+    cancel_amount: int,
+    refund_account: dict[str, str] | None = None,
+    *,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Partially cancel an authoritative Toss payment (integer KRW)."""
+    if cancel_amount <= 0:
+        raise TossPaymentError(400, "INVALID_CANCEL_AMOUNT", "환불 금액이 올바르지 않아요")
+    credentials = base64.b64encode(f"{secret_key}:".encode()).decode()
+    payload: dict[str, Any] = {"cancelReason": "식권 구매 주문 환불", "cancelAmount": cancel_amount}
+    if refund_account is not None:
+        payload["refundReceiveAccount"] = refund_account
+    request = Request(
+        f"https://api.tosspayments.com/v1/payments/{payment_key}/cancel",
+        data=json.dumps(payload).encode("utf-8"), method="POST",
+        headers={
+            "Authorization": f"Basic {credentials}", "Content-Type": "application/json",
+            "Idempotency-Key": idempotency_key or f"refund-{payment_key}-{cancel_amount}",
+        },
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        text = exc.read().decode("utf-8")
+        try:
+            error = json.loads(text)
+        except json.JSONDecodeError:
+            error = {}
+        raise TossPaymentError(
+            exc.code, str(error.get("code") or "TOSS_CANCEL_ERROR"),
+            str(error.get("message") or "토스페이먼츠 환불에 실패했어요"),
+        ) from exc

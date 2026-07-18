@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, Coffee, Download, FileSpreadsheet, FileText, Home, LogOut, Package, QrCode, RefreshCw, Search, Send, Settings, Utensils, Users, WalletCards, X, XCircle } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Home, LogOut, Package, QrCode, RefreshCw, RotateCcw, Search, Send, Settings, Utensils, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
+import { PaymentHistoryDashboard, RefundModal } from './PaymentFeatures.jsx';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -68,7 +69,11 @@ async function apiFetch(path, token, options = {}) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = payload.detail ?? payload.error ?? {};
-    throw new Error(detail.message || detail.code || `API 오류 (${response.status})`);
+    const error = new Error(detail.message || detail.code || `API 오류 (${response.status})`);
+    error.code = detail.code || payload.code;
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
   return payload.data;
 }
@@ -949,6 +954,8 @@ function Dashboard({ session, onLogout }) {
   const [dailyMenuForm, setDailyMenuForm] = useState({ service_date: todayInput(), title: '오늘 뷔페 메뉴', menu_text: '', image_url: '' });
   const [merchantCompanies, setMerchantCompanies] = useState(null);
   const [merchantSection, setMerchantSection] = useState('main');
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [paymentHistoryRefreshKey, setPaymentHistoryRefreshKey] = useState(0);
   const [newCompanyForm, setNewCompanyForm] = useState({ name: '', contact_email: '', contact_phone: '' });
   const [transactions, setTransactions] = useState(null);
   const [employees, setEmployees] = useState(null);
@@ -973,6 +980,7 @@ function Dashboard({ session, onLogout }) {
 
   const isMerchantAdmin = me?.role === 'merchant_admin';
   const isPlatformAdmin = me?.role === 'platform_admin';
+  const merchantRequest = useMemo(() => (path, options) => apiFetch(path, token, options), [token]);
   const inviteLink = (invite) => invite?.token ? `${window.location.origin}/?invite=${invite.token}` : '';
 
   async function copyInviteLink() {
@@ -1654,6 +1662,7 @@ function Dashboard({ session, onLogout }) {
 
   const merchantNavItems = [
     ['main', '메인', Home],
+    ['payment-history', '결제내역', CreditCard],
     ['companies', '업체 관리', Building2],
     ['vouchers', '판매 상품(일반)', Package],
     ['products', '식당 상품(장부)', Utensils],
@@ -1707,6 +1716,8 @@ function Dashboard({ session, onLogout }) {
     </div>}
 
     {txModal && <VendorTransactionModal txModal={txModal} token={token} onClose={() => setTxModal(null)} />}
+
+    {refundOpen && <RefundModal request={merchantRequest} onClose={() => setRefundOpen(false)} onRefunded={async () => { setPaymentHistoryRefreshKey((key) => key + 1); await load(); }} />}
 
     {employeeBulkOpen && <EmployeeBulkModal token={token} onClose={() => setEmployeeBulkOpen(false)} onConfirmed={async (count) => { setEmployeeBulkOpen(false); setMessage(`직원 ${count}명의 초대를 등록했어요.`); await load(); }} />}
 
@@ -1836,6 +1847,10 @@ function Dashboard({ session, onLogout }) {
         </div> : <p className="empty-state">매장 QR 정보를 불러오고 있어요.</p>}
       </article>
     </section>}
+
+    {isMerchantAdmin && merchantSection === 'main' && <aside className="merchant-refund-dock"><div><span>결제 취소가 필요하신가요?</span><strong>고객 주문을 조회해 안전하게 환불하세요.</strong></div><button className="refund-open-button" type="button" onClick={() => setRefundOpen(true)}><RotateCcw size={19}/> 환불하기</button></aside>}
+
+    {isMerchantAdmin && merchantSection === 'payment-history' && <PaymentHistoryDashboard request={merchantRequest} refreshKey={paymentHistoryRefreshKey}/>}
 
     {!isMerchantAdmin && <section className="two-col">
       <article className="panel profile-panel">

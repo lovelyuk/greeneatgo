@@ -72,7 +72,7 @@ def purchase_subsidized(token: str = Depends(bearer_token)):
         profile, merchant, contract = _subsidized_context(repo, token)
         unit, company, restaurant = int(contract["unit_price"]), int(contract["company_subsidy_amount"]), int(contract["restaurant_subsidy_amount"])
         employee_due, order_id, checkout_token = unit-company-restaurant, f"GE-S-{uuid.uuid4().hex}", secrets.token_urlsafe(32)
-        order = repo.client.rest_post("toss_payment_orders", {"order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id, "merchant_id": merchant["id"], "company_id": profile.company_id, "merchant_name": merchant["name"], "product_name": "보조금 식권", "amount": employee_due, "status": "ready", "pay_type": "subsidized", "voucher_count": 1, "voucher_purchase_price": str(employee_due), "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant})[0]
+        order = repo.client.rest_post("toss_payment_orders", {"order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id, "merchant_id": merchant["id"], "company_id": profile.company_id, "merchant_name": merchant["name"], "product_name": "보조금 식권", "amount": employee_due, "status": "ready", "pay_type": "subsidized", "voucher_count": 1, "paid_voucher_count": 1, "bonus_voucher_count": 0, "voucher_purchase_price": str(employee_due), "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant})[0]
         split = repo.client.rpc("reserve_subsidized_order_points", {"p_order_id": order["id"]})
         point_amount, card_amount = int(split["point_amount"]), int(split["card_amount"])
         fulfilled = None
@@ -295,6 +295,8 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
             "merchant_id": merchant["id"], "product_id": None, "voucher_product_id": product["id"],
             "merchant_name": merchant["name"], "product_name": product["name"], "amount": amount,
             "status": "ready", "pay_type": "voucher", "voucher_count": total_count,
+            "paid_voucher_count": int(product["voucher_count"]),
+            "bonus_voucher_count": int(product.get("bonus_count") or 0),
             # Toss charges integer KRW; snapshot from that exact charged amount, not numeric sale_price.
             "voucher_purchase_price": str(per_voucher_price(amount, total_count)),
         })[0]

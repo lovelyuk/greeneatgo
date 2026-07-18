@@ -934,12 +934,20 @@ def _bucket(value: object, pattern: str) -> str:
 
 
 @router.get("/payment-history")
-def payment_history(date_: str = Query(alias="date"), granularity: str = Query(pattern="^(year|month|day|hour)$"), token: str = Depends(bearer_token)):
+def payment_history(date_: str = Query(alias="date"), granularity: str = Query(pattern="^(year|month|day|hour|range)$"), token: str = Depends(bearer_token), end_date: str | None = Query(default=None)):
     repo = JoinRepository()
     try:
         _, merchant_id = _merchant_admin(repo, token)
         selected = _parse_date(date_, datetime.now(KST).date())
-        start, end, pattern = _analytics_bounds(selected, granularity)
+        if granularity == "range":
+            selected_end = _parse_date(end_date, selected)
+            if selected_end < selected:
+                raise _error(400, "INVALID_DATE_RANGE", "종료일은 시작일보다 빠를 수 없어요")
+            start = datetime.combine(selected, time.min, tzinfo=KST)
+            end = datetime.combine(selected_end + timedelta(days=1), time.min, tzinfo=KST)
+            pattern = "%Y-%m-%d"
+        else:
+            start, end, pattern = _analytics_bounds(selected, granularity)
         start_iso, end_iso = start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
         txs = _paged_get(repo, "meal_transactions", {
             "select": "id,user_id,amount,kind,pay_type,created_at", "merchant_id": f"eq.{merchant_id}",
@@ -975,13 +983,13 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
         payment_series = [{"label": item["bucket"], "value": item["payment_amount"] - item["refund_amount"]} for item in points]
         transaction_total = sum(_tx_amount(row) for row in txs)
         is_selected_day = lambda value: datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(KST).date() == selected
-        day_txs = [row for row in txs if is_selected_day(row.get("created_at"))]
-        day_payments = [row for row in payments if is_selected_day(row.get("approved_at") or row.get("created_at"))]
-        day_refunds = [row for row in refunds if is_selected_day(row.get("completed_at") or row.get("created_at"))]
-        payment_items = [*day_payments, *[{**row, "kind": "refund", "amount": -int(row.get("refund_amount") or 0) - int(row.get("point_amount") or 0), "created_at": row.get("completed_at") or row.get("created_at")} for row in day_refunds]]
+        detail_txs = [row for row in txs if is_selected_day(row.get("created_at"))] if granularity in ("day", "hour") else txs
+        detail_payments = [row for row in payments if is_selected_day(row.get("approved_at") or row.get("created_at"))] if granularity in ("day", "hour") else payments
+        detail_refunds = [row for row in refunds if is_selected_day(row.get("completed_at") or row.get("created_at"))] if granularity in ("day", "hour") else refunds
+        payment_items = [*detail_payments, *[{**row, "kind": "refund", "amount": -int(row.get("refund_amount") or 0) - int(row.get("point_amount") or 0), "created_at": row.get("completed_at") or row.get("created_at")} for row in detail_refunds]]
         payment_items.sort(key=lambda row: row.get("created_at") or row.get("approved_at") or "", reverse=True)
         shaped = {
-            "transaction": {"total": transaction_total, "count": len(txs), "detail_count": len(day_txs), "series": tx_series, "items": day_txs},
+            "transaction": {"total": transaction_total, "count": len(txs), "detail_count": len(detail_txs), "series": tx_series, "items": detail_txs},
             "payment": {"total": gross-refunded, "gross_total": gross, "refund_total": refunded,
                         "count": len(payments), "detail_count": len(payment_items), "series": payment_series, "items": payment_items},
         }

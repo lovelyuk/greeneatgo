@@ -1,28 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart3, CalendarDays, CheckCircle2, ChevronDown, RotateCcw, Search, X } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronDown, RotateCcw, Search, X } from 'lucide-react';
 
 const money = (value) => `₩${Number(value ?? 0).toLocaleString('ko-KR')}`;
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
-const granularities = [['year', '연'], ['month', '월'], ['day', '일']];
-
-function Chart({ series, label }) {
-  const data = (Array.isArray(series) ? series : []).map((item, index) => ({
-    label: String(item?.label ?? item?.period ?? item?.date ?? item?.time ?? index + 1),
-    value: Number(item?.value ?? item?.amount ?? item?.total ?? item?.count ?? 0),
-  }));
-  if (!data.length) return <div className="history-chart-empty">표시할 그래프 데이터가 없어요.</div>;
-  const max = Math.max(1, ...data.map((item) => Math.abs(item.value)));
-  const x = (index) => data.length === 1 ? 50 : (index / (data.length - 1)) * 100;
-  const y = (value) => 38 - (Math.max(0, value) / max) * 32;
-  return <div className="history-chart" role="img" aria-label={`${label} 추이: ${data.map((item) => `${item.label} ${item.value.toLocaleString('ko-KR')}`).join(', ')}`}>
-    <svg viewBox="0 0 100 42" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="38" x2="100" y2="38" className="chart-axis"/><polyline points={data.map((item, index) => `${x(index)},${y(item.value)}`).join(' ')} className="chart-line"/>{data.map((item, index) => <circle key={`${item.label}-${index}`} cx={x(index)} cy={y(item.value)} r="1.4"/>)}</svg>
-    <div className="history-chart-labels"><span>{data[0].label}</span><span>{data[data.length - 1].label}</span></div>
-  </div>;
-}
-
-function Granularity({ value, onChange, label }) {
-  return <div className="history-granularity" aria-label={`${label} 그래프 단위`}>{granularities.map(([id, text]) => <button type="button" key={id} className={value === id ? 'active' : ''} aria-pressed={value === id} onClick={() => onChange(id)}>{text}</button>)}</div>;
-}
+const periodModes = [['year', '올해'], ['month', '이번달'], ['date', '날짜'], ['range', '기간']];
 
 function Rows({ items, kind }) {
   const rows = Array.isArray(items) ? items : [];
@@ -34,39 +15,45 @@ function Rows({ items, kind }) {
 }
 
 export function PaymentHistoryDashboard({ request, refreshKey }) {
-  const [date, setDate] = useState(today());
-  const [transactionGranularity, setTransactionGranularity] = useState('day');
-  const [paymentGranularity, setPaymentGranularity] = useState('day');
+  const current = today();
+  const [mode, setMode] = useState('date');
+  const [date, setDate] = useState(current);
+  const [range, setRange] = useState({ from: current, to: current });
   const [transaction, setTransaction] = useState({});
   const [payment, setPayment] = useState({});
-  const [loading, setLoading] = useState({ transaction: true, payment: true });
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    let cancelled = false; setLoading((s) => ({ ...s, transaction: true }));
-    request(`/admin/merchant/payment-history?date=${encodeURIComponent(date)}&granularity=${transactionGranularity}`).then((data) => { if (!cancelled) { setTransaction(data?.transaction ?? {}); setError(''); } }).catch((e) => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading((s) => ({ ...s, transaction: false })); });
+    let cancelled = false;
+    const baseDate = mode === 'year' ? `${current.slice(0, 4)}-01-01` : mode === 'month' ? `${current.slice(0, 7)}-01` : mode === 'range' ? range.from : date;
+    const granularity = mode === 'date' ? 'day' : mode;
+    const end = mode === 'range' ? `&end_date=${encodeURIComponent(range.to)}` : '';
+    setLoading(true);
+    request(`/admin/merchant/payment-history?date=${encodeURIComponent(baseDate)}&granularity=${granularity}${end}`).then((data) => {
+      if (!cancelled) { setTransaction(data?.transaction ?? {}); setPayment(data?.payment ?? {}); setError(''); }
+    }).catch((e) => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [date, transactionGranularity, request, refreshKey]);
-  useEffect(() => {
-    let cancelled = false; setLoading((s) => ({ ...s, payment: true }));
-    request(`/admin/merchant/payment-history?date=${encodeURIComponent(date)}&granularity=${paymentGranularity}`).then((data) => { if (!cancelled) { setPayment(data?.payment ?? {}); setError(''); } }).catch((e) => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading((s) => ({ ...s, payment: false })); });
-    return () => { cancelled = true; };
-  }, [date, paymentGranularity, request, refreshKey]);
+  }, [mode, date, range.from, range.to, request, refreshKey, current]);
 
-  const dateLabel = new Date(`${date}T00:00:00`).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+  const filterLabel = mode === 'year' ? `${current.slice(0, 4)}년` : mode === 'month' ? `${Number(current.slice(5, 7))}월` : mode === 'range' ? `${range.from} ~ ${range.to}` : new Date(`${date}T00:00:00`).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
   return <section className="payment-history-dashboard" aria-labelledby="payment-history-title">
-    <div className="history-heading"><div><span className="eyebrow">PAYMENT ANALYTICS</span><h2 id="payment-history-title">결제내역</h2><p>거래와 실결제 흐름을 단위별로 비교하고 날짜별 상세 내역을 확인합니다.</p></div><BarChart3 size={34}/></div>
-    {error && <div className="alert error">결제내역을 불러오지 못했어요: {error}</div>}
-    <div className="payment-history-grid">
-      <article className="panel history-summary-card"><header><div><span>거래 합계</span><strong>{money(transaction.total)}</strong><small>{Number(transaction.count ?? 0).toLocaleString('ko-KR')}건</small></div><Granularity label="거래" value={transactionGranularity} onChange={setTransactionGranularity}/></header>{loading.transaction ? <div className="history-chart-empty">거래 그래프를 불러오는 중...</div> : <Chart series={transaction.series} label="거래 합계"/>}</article>
-      <article className="panel history-summary-card payment-card"><header><div><span>결제 합계</span><strong>{money(payment.total)}</strong><small>{Number(payment.count ?? 0).toLocaleString('ko-KR')}건</small></div><Granularity label="결제" value={paymentGranularity} onChange={setPaymentGranularity}/></header>{loading.payment ? <div className="history-chart-empty">결제 그래프를 불러오는 중...</div> : <Chart series={payment.series} label="결제 합계"/>}</article>
-      <article className="panel history-detail-card"><header><div><span>선택 날짜 거래 상세</span><strong>{Number(transaction.detail_count ?? (transaction.items ?? []).length).toLocaleString('ko-KR')}건</strong></div><b>{money((transaction.items ?? []).reduce((sum, item) => sum + Math.abs(Number(item.amount ?? 0)), 0))}</b></header><Rows items={transaction.items} kind="transaction"/></article>
-      <article className="panel history-detail-card payment-detail-card"><header><div><span>선택 날짜 결제 · 환불 상세</span><strong>{Number(payment.detail_count ?? (payment.items ?? []).length).toLocaleString('ko-KR')}건</strong></div><div className="history-payment-totals"><small>기간 환불 {money(payment.refund_total)}</small><b>기간 순결제 {money(payment.total)}</b></div></header><Rows items={payment.items} kind="payment"/></article>
+    <div className="history-heading"><div><span className="eyebrow">PAYMENT HISTORY</span><h2 id="payment-history-title">결제내역</h2><p>조회 기간을 선택해 거래와 결제·환불 상세 내역을 확인합니다.</p></div></div>
+    <div className="history-period-filter">
+      <div className="history-period-modes">{periodModes.map(([id, label]) => <button type="button" key={id} className={mode === id ? 'active' : ''} aria-pressed={mode === id} onClick={() => setMode(id)}>{label}</button>)}</div>
+      <div className="history-period-inputs">
+        {mode === 'date' && <label>조회 날짜<input type="date" value={date} onChange={(event) => setDate(event.target.value)}/></label>}
+        {mode === 'range' && <><label>시작일<input type="date" value={range.from} max={range.to} onChange={(event) => setRange((state) => ({ ...state, from: event.target.value }))}/></label><span>~</span><label>종료일<input type="date" value={range.to} min={range.from} onChange={(event) => setRange((state) => ({ ...state, to: event.target.value }))}/></label></>}
+        <div className="history-period-label"><CalendarDays size={19}/><strong>{filterLabel}</strong></div>
+      </div>
     </div>
-    <footer className="history-date-dock"><div><CalendarDays size={22}/><span>조회 날짜</span><strong>{dateLabel}</strong></div><label>날짜 변경<input type="date" value={date} onChange={(event) => setDate(event.target.value)}/></label></footer>
+    {error && <div className="alert error">결제내역을 불러오지 못했어요: {error}</div>}
+    <div className="payment-history-grid is-detail-only">
+      <article className="panel history-detail-card"><header><div><span>거래내역 및 총합</span><strong>{Number(transaction.detail_count ?? (transaction.items ?? []).length).toLocaleString('ko-KR')}건</strong></div><b>{money(transaction.total)}</b></header>{loading ? <p className="history-list-empty">거래내역을 불러오는 중...</p> : <Rows items={transaction.items} kind="transaction"/>}</article>
+      <article className="panel history-detail-card payment-detail-card"><header><div><span>결제 · 환불 및 총합</span><strong>{Number(payment.detail_count ?? (payment.items ?? []).length).toLocaleString('ko-KR')}건</strong></div><div className="history-payment-totals"><small>환불 {money(payment.refund_total)}</small><b>순결제 {money(payment.total)}</b></div></header>{loading ? <p className="history-list-empty">결제내역을 불러오는 중...</p> : <Rows items={payment.items} kind="payment"/>}</article>
+    </div>
   </section>;
 }
-
 function maskPhone(phone) {
   const value = String(phone ?? '');
   if (!value) return '연락처 없음';

@@ -37,8 +37,8 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
   }, [mode, date, range.from, range.to, request, refreshKey, current]);
 
   const filterLabel = mode === 'year' ? `${current.slice(0, 4)}년` : mode === 'month' ? `${Number(current.slice(5, 7))}월` : mode === 'range' ? `${range.from} ~ ${range.to}` : new Date(`${date}T00:00:00`).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
-  return <section className="payment-history-dashboard" aria-labelledby="payment-history-title">
-    <div className="history-heading"><div><span className="eyebrow">PAYMENT HISTORY</span><h2 id="payment-history-title">결제내역</h2><p>조회 기간을 선택해 거래와 결제·환불 상세 내역을 확인합니다.</p></div></div>
+  return <section className="payment-history-dashboard" aria-label="결제내역">
+    <div className="history-heading"><div><span className="eyebrow">PAYMENT HISTORY</span><p>조회 기간을 선택해 거래와 결제·환불 상세 내역을 확인합니다.</p></div></div>
     <div className="history-period-filter">
       <div className="history-period-modes">{periodModes.map(([id, label]) => <button type="button" key={id} className={mode === id ? 'active' : ''} aria-pressed={mode === id} onClick={() => setMode(id)}>{label}</button>)}</div>
       <div className="history-period-inputs">

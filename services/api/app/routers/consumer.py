@@ -47,5 +47,5 @@ def register_consumer(payload: ConsumerRegisterRequest, token: str = Depends(bea
         if exc.status in (401, 403):
             raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
         if "app_users_role_check" in exc.body or "customer" in exc.body:
-            raise _error(400, "MIGRATION_REQUIRED", "0014_toss_consumer_payments.sql 적용이 필요해요") from exc
+            raise _error(400, "MIGRATION_REQUIRED", "0014_consumer_payments.sql 적용이 필요해요") from exc
         raise _error(502, "SUPABASE_ERROR", "일반 사용자 등록 중 오류가 발생했어요") from exc

@@ -21,7 +21,7 @@ from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCre
 from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
-from app.services.toss_payment import TossPaymentError, cancel_payment
+from app.services.kiwoom_payment import KiwoomPaymentError, cancel_payment
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
 KST = ZoneInfo("Asia/Seoul")
@@ -781,7 +781,7 @@ def export_vendor_transactions(company_id: str, format: str = Query(pattern="^(x
         raise _error(502, "SUPABASE_ERROR", "내보내기 파일을 만드는 중 오류가 발생했어요") from exc
 
 
-_REFUND_ORDER_SELECT = "id,order_id,user_id,merchant_id,company_id,product_name,amount,status,pay_type,payment_key,payment_method,refund_account,approved_at,created_at,voucher_count,paid_voucher_count,bonus_voucher_count,point_amount"
+_REFUND_ORDER_SELECT = "id,order_id,user_id,merchant_id,company_id,product_name,amount,status,pay_type,provider_payment_key,payment_method,refund_account,approved_at,created_at,voucher_count,paid_voucher_count,bonus_voucher_count,point_amount"
 
 
 def _order_quotes(repo: JoinRepository, orders: list[dict]) -> list[dict]:
@@ -818,7 +818,7 @@ def search_refund_customers(query: str = Query(min_length=1, max_length=80), tok
     repo = JoinRepository()
     try:
         _, merchant_id = _merchant_admin(repo, token)
-        orders = _paged_get(repo, "toss_payment_orders", {
+        orders = _paged_get(repo, "payment_orders", {
             "select": "user_id", "merchant_id": f"eq.{merchant_id}",
             "pay_type": "in.(voucher,subsidized)", "status": "in.(done,refunded)",
         })
@@ -840,7 +840,7 @@ def refundable_orders(account_id: str, token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         _, merchant_id = _merchant_admin(repo, token)
-        orders = _paged_get(repo, "toss_payment_orders", {
+        orders = _paged_get(repo, "payment_orders", {
             "select": _REFUND_ORDER_SELECT, "merchant_id": f"eq.{merchant_id}",
             "user_id": f"eq.{account_id}", "pay_type": "in.(voucher,subsidized)",
             "status": "eq.done", "order": "approved_at.desc,created_at.desc",
@@ -859,14 +859,14 @@ def refund_purchase_order(payload: MerchantRefundRequest, token: str = Depends(b
     try:
         actor, merchant_id = _merchant_admin(repo, token)
         # Re-read ownership and current state immediately before the locked claim.
-        rows = repo.client.rest_get("toss_payment_orders", {
+        rows = repo.client.rest_get("payment_orders", {
             "select": _REFUND_ORDER_SELECT, "order_id": f"eq.{payload.order_id}",
             "merchant_id": f"eq.{merchant_id}", "user_id": f"eq.{payload.account_id}", "limit": "1",
         })
         if not rows:
             raise _error(404, "ORDER_NOT_FOUND", "해당 고객의 구매 주문을 찾을 수 없어요")
-        if int(rows[0].get("amount") or 0) > 0 and not rows[0].get("payment_key"):
-            raise _error(409, "PAYMENT_KEY_MISSING", "카드 결제키가 없어 자동 환불할 수 없어요")
+        if int(rows[0].get("amount") or 0) > 0 and not rows[0].get("provider_payment_key"):
+            raise _error(409, "PAYMENT_KEY_MISSING", "카드 결제 거래번호가 없어 자동 환불할 수 없어요")
         account = payload.refund_account.model_dump() if payload.refund_account else rows[0].get("refund_account")
         claim = repo.client.rpc("claim_purchase_order_refund", {
             "p_order_id": rows[0]["id"], "p_merchant_id": merchant_id,
@@ -876,11 +876,18 @@ def refund_purchase_order(payload: MerchantRefundRequest, token: str = Depends(b
         pg_response = None
         amount = int(claim.get("refund_amount") or 0)
         if amount > 0:
-            if not claim.get("payment_key"):
-                raise _error(409, "PAYMENT_KEY_MISSING", "카드 결제키가 없어 자동 환불할 수 없어요")
+            transaction_id = claim.get("provider_payment_key")
+            if not transaction_id:
+                raise _error(409, "PAYMENT_KEY_MISSING", "카드 결제 거래번호가 없어 자동 환불할 수 없어요")
+            settings = get_settings()
             pg_response = cancel_payment(
-                get_settings().toss_secret_key, claim["payment_key"], amount, account,
-                idempotency_key=f"refund-{claim['refund_request_id']}",
+                settings.kiwoompay_base_url,
+                settings.kiwoompay_authorization_key,
+                settings.kiwoompay_cpid,
+                transaction_id,
+                amount,
+                pay_method="CARD",
+                cancel_reason="식권구매환불",
             )
         result = repo.client.rpc("finalize_purchase_order_refund", {
             "p_refund_request_id": claim["refund_request_id"],
@@ -889,7 +896,7 @@ def refund_purchase_order(payload: MerchantRefundRequest, token: str = Depends(b
         return {"ok": True, "data": result, "error": None}
     except HTTPException:
         raise
-    except TossPaymentError as exc:
+    except KiwoomPaymentError as exc:
         if claim:
             try:
                 repo.client.rest_patch("refund_requests", {"id": f"eq.{claim['refund_request_id']}", "status": "eq.processing"}, {
@@ -953,7 +960,7 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
             "select": "id,user_id,amount,kind,pay_type,created_at", "merchant_id": f"eq.{merchant_id}",
             "and": f"(created_at.gte.{start_iso},created_at.lt.{end_iso})", "order": "created_at.desc",
         })
-        payments = _paged_get(repo, "toss_payment_orders", {
+        payments = _paged_get(repo, "payment_orders", {
             "select": "id,order_id,user_id,amount,point_amount,status,pay_type,product_name,payment_method,approved_at,created_at",
             "merchant_id": f"eq.{merchant_id}", "status": "in.(done,refunded)",
             "and": f"(approved_at.gte.{start_iso},approved_at.lt.{end_iso})", "order": "approved_at.desc",
@@ -1018,8 +1025,8 @@ def list_transactions(token: str = Depends(bearer_token)):
                 "limit": "50",
             },
         )
-        toss_rows = repo.client.rest_get(
-            "toss_payment_orders",
+        payment_rows = repo.client.rest_get(
+            "payment_orders",
             {
                 "select": "id,order_id,user_id,merchant_id,amount,status,pay_type,payment_method,product_name,approved_at,created_at",
                 "merchant_id": f"eq.{merchant_id}",
@@ -1030,19 +1037,19 @@ def list_transactions(token: str = Depends(bearer_token)):
             },
         )
         rows.extend({
-            "id": f"toss-{item['id']}",
+            "id": f"kiwoompay-{item['id']}",
             "user_id": item.get("user_id"),
             "company_id": None,
             "merchant_id": item.get("merchant_id"),
             "amount": -abs(int(item.get("amount") or 0)),
-            "kind": "toss_payment",
+            "kind": "payment",
             "tx_code": str(item.get("order_id") or "")[-8:],
-            "meal_window": item.get("payment_method") or "토스페이먼츠",
-            "flags": {"payment_provider": "toss"},
+            "meal_window": item.get("payment_method") or "키움페이",
+            "flags": {"payment_provider": "kiwoompay"},
             "product_name": item.get("product_name"),
             "product_price": int(item.get("amount") or 0),
             "created_at": item.get("approved_at") or item.get("created_at"),
-        } for item in toss_rows)
+        } for item in payment_rows)
         rows.sort(key=lambda item: item.get("created_at") or "", reverse=True)
         user_ids = sorted({str(item["user_id"]) for item in rows if item.get("user_id")})
         users = {}

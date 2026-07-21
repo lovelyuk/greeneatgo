@@ -217,18 +217,15 @@ class ApiClient {
         method: 'POST', body: {'display_name': displayName});
   }
 
-  Future<Map<String, dynamic>> createTossOrder(
+  Future<Map<String, dynamic>> createPaymentOrder(
       {required String qrToken, required MerchantProduct product}) {
-    return _request('/toss/orders',
+    return _request('/payments/orders',
         method: 'POST', body: {'qr_token': qrToken, 'product_id': product.id});
   }
 
-  Future<Map<String, dynamic>> confirmTossPayment(
-      {required String paymentKey,
-      required String orderId,
-      required int amount}) {
-    return _request('/toss/confirm', method: 'POST', body: {
-      'payment_key': paymentKey,
+  Future<Map<String, dynamic>> confirmPayment(
+      {required String orderId, required int amount}) {
+    return _request('/payments/confirm', method: 'POST', body: {
       'order_id': orderId,
       'amount': amount
     });
@@ -919,7 +916,7 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
     final rejected = widget.me?['status'] == 'rejected';
     return AppScaffold(
       title: rejected ? '이용 유형을 다시 선택해요' : '이용 유형 선택',
-      subtitle: '장부업체 직원은 초대코드로, 일반 사용자는 토스페이먼츠로 이용할 수 있어요.',
+      subtitle: '장부업체 직원은 초대코드로, 일반 사용자는 키움페이로 이용할 수 있어요.',
       onSignOut: widget.onSignOut,
       child: BrandPanel(children: [
         const MiniSnackRow(),
@@ -934,7 +931,7 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
             icon: const Icon(Icons.credit_card_rounded),
             label: Text(_busy ? '처리 중...' : '일반 사용자로 시작하기')),
         const SizedBox(height: 10),
-        const Text('상품 금액은 토스페이먼츠에서 직접 결제합니다.',
+        const Text('상품 금액은 키움페이에서 직접 결제합니다.',
             textAlign: TextAlign.center,
             style: TextStyle(
                 color: Color(0xFF5C7A66), fontWeight: FontWeight.w700)),
@@ -2296,7 +2293,7 @@ class _SubsidizedVoucherPurchaseScreenState
                   onPressed: () async {
                     final paid = await Navigator.of(context).push<bool>(
                         MaterialPageRoute(
-                            builder: (_) => VoucherTossPaymentScreen.subsidized(
+                            builder: (_) => VoucherKiwoomPaymentScreen.subsidized(
                                 session: widget.session, price: price)));
                     if (paid == true && context.mounted) {
                       Navigator.of(context).pop(true);
@@ -2328,7 +2325,7 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
   Widget build(BuildContext context) => AppScaffold(
         showBrand: false,
         title: '돈토 식권 구매',
-        subtitle: '원하는 식권 패키지를 고르고 토스페이먼츠에서 결제해요.',
+        subtitle: '원하는 식권 패키지를 고르고 키움페이에서 결제해요.',
         child: FutureBuilder<List<VoucherProduct>>(
           future: _products,
           builder: (context, snapshot) {
@@ -2359,7 +2356,7 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
                         onBuy: () async {
                           final paid = await Navigator.of(context).push<bool>(
                               MaterialPageRoute(
-                                  builder: (_) => VoucherTossPaymentScreen(
+                                  builder: (_) => VoucherKiwoomPaymentScreen(
                                       session: widget.session,
                                       product: product)));
                           if (paid == true && context.mounted) {
@@ -2470,11 +2467,11 @@ class _PromoBadge extends StatelessWidget {
       ]));
 }
 
-class VoucherTossPaymentScreen extends StatefulWidget {
-  const VoucherTossPaymentScreen(
+class VoucherKiwoomPaymentScreen extends StatefulWidget {
+  const VoucherKiwoomPaymentScreen(
       {super.key, required this.session, required this.product})
       : subsidizedPrice = null;
-  const VoucherTossPaymentScreen.subsidized(
+  const VoucherKiwoomPaymentScreen.subsidized(
       {super.key, required this.session, required SubsidizedPrice price})
       : product = null,
         subsidizedPrice = price;
@@ -2487,11 +2484,11 @@ class VoucherTossPaymentScreen extends StatefulWidget {
   int get expectedIssued => isSubsidized ? 1 : product!.totalCount;
 
   @override
-  State<VoucherTossPaymentScreen> createState() =>
-      _VoucherTossPaymentScreenState();
+  State<VoucherKiwoomPaymentScreen> createState() =>
+      _VoucherKiwoomPaymentScreenState();
 }
 
-class _VoucherTossPaymentScreenState extends State<VoucherTossPaymentScreen> {
+class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen> {
   late final WebViewController _controller;
   bool _loading = true;
   bool _confirming = false;
@@ -2568,11 +2565,12 @@ class _VoucherTossPaymentScreenState extends State<VoucherTossPaymentScreen> {
   FutureOr<NavigationDecision> _navigate(NavigationRequest request) async {
     final uri = Uri.tryParse(request.url);
     if (uri == null) return NavigationDecision.prevent;
-    if (uri.path.endsWith('/toss/redirect/success')) {
+    if (uri.path.endsWith('/payments/redirect/success')) {
       await _confirm(uri);
       return NavigationDecision.prevent;
     }
-    if (uri.path.endsWith('/toss/redirect/fail')) {
+    if (uri.path.endsWith('/payments/redirect/fail') ||
+        uri.path.endsWith('/payments/redirect/close')) {
       if (mounted) {
         setState(() {
           _loading = false;
@@ -2591,10 +2589,9 @@ class _VoucherTossPaymentScreenState extends State<VoucherTossPaymentScreen> {
 
   Future<void> _confirm(Uri uri) async {
     if (_confirming || _completed) return;
-    final paymentKey = uri.queryParameters['paymentKey'];
     final orderId = uri.queryParameters['orderId'];
     final amount = int.tryParse(uri.queryParameters['amount'] ?? '');
-    if (paymentKey == null || orderId == null || amount == null) {
+    if (orderId == null || amount == null) {
       setState(() => _error = '결제 승인 정보가 올바르지 않아요.');
       return;
     }
@@ -2605,8 +2602,8 @@ class _VoucherTossPaymentScreenState extends State<VoucherTossPaymentScreen> {
     });
     try {
       // Vouchers are issued atomically by this confirm response; redirect alone is not success.
-      final confirmed = await ApiClient(widget.session).confirmTossPayment(
-          paymentKey: paymentKey, orderId: orderId, amount: amount);
+      final confirmed = await ApiClient(widget.session).confirmPayment(
+          orderId: orderId, amount: amount);
       final fulfillment = confirmed['fulfillment'] is Map
           ? (confirmed['fulfillment'] as Map).cast<String, dynamic>()
           : confirmed;
@@ -2716,7 +2713,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     return AppScaffold(
       title: '상품을 선택해요',
       subtitle: widget.isConsumer
-          ? '식당 상품을 고른 뒤 토스페이먼츠에서 직접 결제합니다.'
+          ? '식당 상품을 고른 뒤 키움페이에서 직접 결제합니다.'
           : '금액 입력 없이 식당에서 등록한 상품 중 하나를 골라 결제합니다.',
       child: FutureBuilder<MerchantMenu>(
         future: _menu,
@@ -2776,7 +2773,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                       final paid = await Navigator.of(context)
                           .push<bool>(MaterialPageRoute(
                         builder: (_) => widget.isConsumer
-                            ? TossPaymentScreen(
+                            ? KiwoomPaymentScreen(
                                 session: widget.session,
                                 product: product,
                                 qrToken: defaultMerchantQrToken)
@@ -2833,8 +2830,8 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
   }
 }
 
-class TossPaymentScreen extends StatefulWidget {
-  const TossPaymentScreen(
+class KiwoomPaymentScreen extends StatefulWidget {
+  const KiwoomPaymentScreen(
       {super.key,
       required this.session,
       required this.product,
@@ -2844,10 +2841,10 @@ class TossPaymentScreen extends StatefulWidget {
   final String qrToken;
 
   @override
-  State<TossPaymentScreen> createState() => _TossPaymentScreenState();
+  State<KiwoomPaymentScreen> createState() => _KiwoomPaymentScreenState();
 }
 
-class _TossPaymentScreenState extends State<TossPaymentScreen> {
+class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen> {
   late final WebViewController _controller;
   bool _loading = true;
   bool _confirming = false;
@@ -2883,7 +2880,7 @@ class _TossPaymentScreenState extends State<TossPaymentScreen> {
     });
     try {
       final order = await ApiClient(widget.session)
-          .createTossOrder(qrToken: widget.qrToken, product: widget.product);
+          .createPaymentOrder(qrToken: widget.qrToken, product: widget.product);
       await _controller.loadRequest(Uri.parse(order['checkout_url'] as String));
     } catch (error) {
       if (mounted) {
@@ -2898,11 +2895,12 @@ class _TossPaymentScreenState extends State<TossPaymentScreen> {
   FutureOr<NavigationDecision> _onNavigationRequest(
       NavigationRequest request) async {
     final uri = Uri.parse(request.url);
-    if (uri.path.endsWith('/toss/redirect/success')) {
+    if (uri.path.endsWith('/payments/redirect/success')) {
       await _confirm(uri);
       return NavigationDecision.prevent;
     }
-    if (uri.path.endsWith('/toss/redirect/fail')) {
+    if (uri.path.endsWith('/payments/redirect/fail') ||
+        uri.path.endsWith('/payments/redirect/close')) {
       if (mounted) {
         setState(() {
           _loading = false;
@@ -2923,10 +2921,9 @@ class _TossPaymentScreenState extends State<TossPaymentScreen> {
 
   Future<void> _confirm(Uri uri) async {
     if (_confirming || _completed) return;
-    final paymentKey = uri.queryParameters['paymentKey'];
     final orderId = uri.queryParameters['orderId'];
     final amount = int.tryParse(uri.queryParameters['amount'] ?? '');
-    if (paymentKey == null || orderId == null || amount == null) {
+    if (orderId == null || amount == null) {
       setState(() => _error = '결제 승인 정보가 올바르지 않아요.');
       return;
     }
@@ -2936,8 +2933,8 @@ class _TossPaymentScreenState extends State<TossPaymentScreen> {
       _error = null;
     });
     try {
-      await ApiClient(widget.session).confirmTossPayment(
-          paymentKey: paymentKey, orderId: orderId, amount: amount);
+      await ApiClient(widget.session).confirmPayment(
+          orderId: orderId, amount: amount);
       if (mounted) {
         setState(() {
           _completed = true;

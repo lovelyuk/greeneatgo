@@ -30,8 +30,9 @@ cp .env.example .env
 SUPABASE_URL=https://PROJECT.supabase.co
 SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-TOSS_CLIENT_KEY=...
-TOSS_SECRET_KEY=...
+KIWOOMPAY_CPID=...
+KIWOOMPAY_AUTHORIZATION_KEY=...
+KIWOOMPAY_BASE_URL=https://apitest.kiwoompay.co.kr
 ```
 
 ### 관리자 웹
@@ -52,11 +53,10 @@ Flutter release 스크립트도 이 파일의 공개 설정을 사용합니다.
 
 ## 3. 마이그레이션 원칙
 
-- 신규 DB는 번호순으로 모두 적용합니다.
-- 운영 DB는 적용 이력과 실제 함수·제약을 대조한 후 필요한 파일만 적용합니다.
-- 적용 전 백업 또는 PITR 가능 여부를 확인합니다.
+- 개발 DB는 기존 프로젝트를 승계하지 않고 새 Supabase 프로젝트에 번호순으로 모두 적용합니다.
+- 이전 PG 스키마의 rename/호환 마이그레이션은 사용하지 않습니다.
 - SQL Editor에서 중간 실패하면 일부 문장만 반영될 수 있으므로 결과를 반드시 검증합니다.
-- `0003_process_meal_pay_stub.sql`은 초기 골격이며 최종 결제 함수가 아닙니다. 반드시 후속 결제 마이그레이션까지 적용합니다.
+- `0003_process_meal_pay_stub.sql`은 초기 골격이며 최종 결제 함수가 아닙니다. 반드시 `0029`까지 모두 적용합니다.
 
 ## 4. 현재 마이그레이션 순서
 
@@ -74,7 +74,7 @@ Flutter release 스크립트도 이 파일의 공개 설정을 사용합니다.
 0011_employee_monthly_limit.sql
 0012_process_meal_pay_no_balance_check.sql
 0013_rename_pilot_merchant_to_donto.sql
-0014_toss_consumer_payments.sql
+0014_consumer_payments.sql
 0015_voucher_products_and_unified_scan.sql
 0016_merchant_images_and_settlement_periods.sql
 0017_employee_bulk_invites.sql
@@ -88,9 +88,11 @@ Flutter release 스크립트도 이 파일의 공개 설정을 사용합니다.
 0025_announcements_reviews.sql
 0026_company_invite_email.sql
 0027_allow_point_only_orders.sql
+0028_refunds_and_payment_analytics.sql
+0029_public_table_rls_hardening.sql
 ```
 
-`0027`은 `ece6201` 커밋으로 저장소에 반영됐습니다. 파일 존재만으로 운영 적용을 단정하지 말고 실제 제약조건을 확인합니다.
+`0014`부터 결제 스키마는 `payment_orders`, `provider_payment_key`, `provider_response`를 직접 생성합니다. 이전 PG 전용 테이블이나 호환 마이그레이션은 포함하지 않습니다.
 
 ## 5. 신규 프로젝트 적용
 
@@ -145,7 +147,7 @@ Additional Redirect URL: https://greeneatgo-api.onrender.com/v1/auth/confirmed
 - [ ] service role RPC는 API에서 정상 호출
 - [ ] 최신 `process_meal_pay` 함수 정의
 - [ ] 월 한도와 식사 시간 정책
-- [ ] Toss 주문 금액 제약
+- [ ] 키움페이 주문 금액 제약
 - [ ] `amount=0` 포인트 전액 주문
 - [ ] 일반 식권 원자 발급·FIFO 사용
 - [ ] 지원 식권과 포인트 예약·확정·해제

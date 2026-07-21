@@ -14,7 +14,7 @@
 
 - [ ] 적용 전 DB 백업 또는 PITR 정책 확인
 - [ ] `infra/migrations`를 번호순으로 대조
-- [ ] `0027`의 0원 카드금액 제약 적용 여부 확인
+- [ ] 새 개발 DB에 `0001~0029` 전체 적용 및 0원 카드금액 제약 확인
 - [ ] RLS 활성화와 anon/authenticated 직접 쓰기 차단 확인
 - [ ] service role 전용 RPC 실행권 확인
 - [ ] `process_meal_pay`가 최신 함수인지 확인
@@ -26,8 +26,10 @@
 - [ ] `SUPABASE_URL`
 - [ ] `SUPABASE_ANON_KEY`
 - [ ] `SUPABASE_SERVICE_ROLE_KEY`
-- [ ] `TOSS_CLIENT_KEY`
-- [ ] `TOSS_SECRET_KEY`
+- [ ] `KIWOOMPAY_CPID`
+- [ ] `KIWOOMPAY_AUTHORIZATION_KEY`
+- [ ] `KIWOOMPAY_BASE_URL`
+- [ ] `KIWOOMPAY_NOTIFICATION_IPS`
 - [ ] `PUBLIC_API_BASE_URL=https://greeneatgo-api.onrender.com/v1`
 - [ ] `ADMIN_APP_URL=https://greeneatgo.vercel.app`
 - [ ] `CORS_ALLOWED_ORIGINS`에 운영 웹 포함
@@ -67,7 +69,7 @@
 
 ### 일반 식권
 
-- [ ] 상품 조회→Toss 승인→식권 낱장 발급
+- [ ] 상품 조회→키움페이 승인→식권 낱장 발급
 - [ ] 금액·주문번호 위변조 차단
 - [ ] QR 사용 시 FIFO 1장 차감
 - [ ] 식권 부족 시 구매 안내

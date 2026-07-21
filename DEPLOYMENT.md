@@ -15,7 +15,7 @@
 - `infra/migrations` 적용 현황
 - GitHub `main` 배포 권한
 - Render·Vercel 프로젝트 연결
-- Toss 테스트/운영 키
+- 키움페이 테스트/운영 키
 - 필요 시 SendGrid와 Firebase 프로젝트
 
 비밀값은 Git, `VITE_` 환경변수, Flutter 클라이언트에 넣지 않습니다.
@@ -38,8 +38,9 @@
 SUPABASE_URL=https://PROJECT.supabase.co
 SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-TOSS_CLIENT_KEY=...
-TOSS_SECRET_KEY=...
+KIWOOMPAY_CPID=...
+KIWOOMPAY_AUTHORIZATION_KEY=...
+KIWOOMPAY_BASE_URL=https://apitest.kiwoompay.co.kr
 PUBLIC_API_BASE_URL=https://greeneatgo-api.onrender.com/v1
 ADMIN_APP_URL=https://greeneatgo.vercel.app
 CORS_ALLOWED_ORIGINS=http://localhost:5173,https://greeneatgo.vercel.app
@@ -91,7 +92,7 @@ VITE_API_BASE_URL=https://greeneatgo-api.onrender.com/v1
 VITE_AUTH_EMAIL_REDIRECT_TO=https://greeneatgo-api.onrender.com/v1/auth/confirmed
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY`, Toss secret, SendGrid key, Firebase Admin 키는 Vercel에 넣지 않습니다.
+`SUPABASE_SERVICE_ROLE_KEY`, 키움페이 secret, SendGrid key, Firebase Admin 키는 Vercel에 넣지 않습니다.
 
 ### 확인
 
@@ -107,7 +108,7 @@ curl -I https://greeneatgo.vercel.app
 
 배포 전 최소 확인:
 
-- 마이그레이션 `0001~0027` 실제 적용 상태
+- 마이그레이션 `0001~0029` 실제 적용 상태
 - RLS와 RPC 실행권
 - Email Auth와 Redirect URL
 - 이미지 Storage 버킷과 정책
@@ -161,7 +162,7 @@ Redirect URL: https://greeneatgo-api.onrender.com/v1/auth/confirmed
 5. 관리자 웹 build
 6. Vercel 배포와 역할별 로그인 확인
 7. Flutter test/analyze/build
-8. Toss·QR·포인트·정산 핵심 E2E
+8. 키움페이·QR·포인트·정산 핵심 E2E
 9. FCM 사용 시 실기기 수신 확인
 
 배포 후 점검은 [운영 체크리스트](docs/OPERATIONS_CHECKLIST.md)를 사용합니다.

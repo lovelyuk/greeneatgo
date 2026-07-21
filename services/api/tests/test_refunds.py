@@ -63,7 +63,7 @@ def test_refund_never_exceeds_remaining_payment_balance():
 
 @patch("app.routers.merchant_admin.cancel_payment")
 @patch("app.routers.merchant_admin.JoinRepository")
-def test_point_only_refund_skips_toss_and_finalizes_atomically(repo_class, cancel):
+def test_point_only_refund_skips_pg_and_finalizes_atomically(repo_class, cancel):
     repo = repo_class.return_value
     repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
     repo.get_profile.return_value = SimpleNamespace(
@@ -72,7 +72,7 @@ def test_point_only_refund_skips_toss_and_finalizes_atomically(repo_class, cance
     repo.client.rest_get.return_value = [{
         "id": "internal-order", "order_id": "GE-S-order123", "user_id": "account-123",
         "merchant_id": "merchant-1", "pay_type": "subsidized", "status": "done",
-        "amount": 0, "point_amount": 5000, "payment_key": None,
+        "amount": 0, "point_amount": 5000, "provider_payment_key": None,
     }]
     repo.client.rpc.side_effect = [
         {"refund_request_id": "refund-1", "refund_amount": 0, "point_amount": 5000},
@@ -92,7 +92,7 @@ def test_point_only_refund_skips_toss_and_finalizes_atomically(repo_class, cance
 @patch("app.routers.merchant_admin.cancel_payment")
 @patch("app.routers.merchant_admin.get_settings")
 @patch("app.routers.merchant_admin.JoinRepository")
-def test_card_refund_uses_claimed_amount_and_order_payment_key(repo_class, settings, cancel):
+def test_card_refund_uses_claimed_amount_and_order_provider_payment_key(repo_class, settings, cancel):
     repo = repo_class.return_value
     repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
     repo.get_profile.return_value = SimpleNamespace(
@@ -101,22 +101,26 @@ def test_card_refund_uses_claimed_amount_and_order_payment_key(repo_class, setti
     repo.client.rest_get.return_value = [{
         "id": "internal-order", "order_id": "GE-V-order123", "user_id": "account-123",
         "merchant_id": "merchant-1", "pay_type": "voucher", "status": "done",
-        "amount": 80000, "point_amount": 0, "payment_key": "pay-key",
+        "amount": 80000, "point_amount": 0, "provider_payment_key": "pay-key",
     }]
     repo.client.rpc.side_effect = [
-        {"refund_request_id": "refund-1", "refund_amount": 72000, "payment_key": "pay-key"},
+        {"refund_request_id": "refund-1", "refund_amount": 72000, "provider_payment_key": "pay-key"},
         {"status": "completed", "refund_amount": 72000},
     ]
-    settings.return_value.toss_secret_key = "secret"
-    cancel.return_value = {"status": "PARTIAL_CANCELED"}
+    settings.return_value.kiwoompay_base_url = "https://apitest.kiwoompay.co.kr"
+    settings.return_value.kiwoompay_authorization_key = "auth-key"
+    settings.return_value.kiwoompay_cpid = "CPID"
+    cancel.return_value = {"RESULTCODE": "0000", "AMOUNT": "72000"}
 
     refund_purchase_order(MerchantRefundRequest(
         account_id="account-123", order_id="GE-V-order123"
     ), "token")
 
-    assert cancel.call_args.args[:3] == ("secret", "pay-key", 72000)
+    assert cancel.call_args.args == (
+        "https://apitest.kiwoompay.co.kr", "auth-key", "CPID", "pay-key", 72000,
+    )
     finalize = repo.client.rpc.call_args_list[1].args[1]
-    assert finalize["p_pg_response"]["status"] == "PARTIAL_CANCELED"
+    assert finalize["p_pg_response"]["RESULTCODE"] == "0000"
 
 
 @patch("app.routers.merchant_admin.JoinRepository")

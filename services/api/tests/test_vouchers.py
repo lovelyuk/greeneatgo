@@ -10,11 +10,11 @@ from pydantic import ValidationError
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.me import _customer_usage
 from app.routers.merchant_admin import list_transactions
-from app.routers.toss_payments import confirm
+from app.routers.payments import confirm
 from app.routers.transactions import scan
 from app.routers.voucher_products import _delete_replaced_image, _event_status, _is_exposed, _values, active_products
 from app.schemas import (
-    TossPaymentConfirmRequest,
+    PaymentConfirmRequest,
     TransactionScanRequest,
     VoucherProductCreateRequest,
 )
@@ -35,10 +35,10 @@ class VoucherCoreTests(unittest.TestCase):
         result = list_transactions("bearer")
 
         self.assertEqual(result["data"]["items"], [])
-        toss_params = repo.client.rest_get.call_args_list[1].args[1]
-        self.assertEqual(toss_params["status"], "eq.done")
-        self.assertEqual(toss_params["pay_type"], "eq.direct")
-        self.assertIn("pay_type", toss_params["select"])
+        payment_params = repo.client.rest_get.call_args_list[1].args[1]
+        self.assertEqual(payment_params["status"], "eq.done")
+        self.assertEqual(payment_params["pay_type"], "eq.direct")
+        self.assertIn("pay_type", payment_params["select"])
 
     def test_discount_and_bonus_price_snapshots(self):
         sale = calculate_sale_price(8000, 10, 10)
@@ -119,60 +119,19 @@ class VoucherCoreTests(unittest.TestCase):
             ("qr_token", "QR-PILOT-KIMCHI"),
         )
 
-    @patch("app.routers.toss_payments.confirm_payment")
-    @patch("app.routers.toss_payments.get_settings")
-    @patch("app.routers.toss_payments.JoinRepository")
-    def test_toss_done_uses_atomic_voucher_fulfillment(self, repo_class, settings, toss_confirm):
+    @patch("app.routers.payments.JoinRepository")
+    def test_confirm_returns_authoritative_completed_order(self, repo_class):
         repo = repo_class.return_value
         repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="a@example.com")
         repo.get_profile.return_value = SimpleNamespace(id="user-1", role="customer", status="active")
-        repo.client.rest_get.side_effect = [[{
-            "id": "db-order", "order_id": "GE-V-order", "amount": 72000, "status": "ready",
-            "pay_type": "voucher", "voucher_product_id": "voucher-product", "merchant_id": "merchant-1",
-            "payment_key": None, "approved_at": None,
-        }], [{
-            "id": "voucher-product", "status": "active", "is_event": False,
-        }]]
-        toss_confirm.return_value = {
-            "status": "DONE", "paymentKey": "payment-key", "method": "카드",
-            "approvedAt": "2026-07-10T00:00:00Z",
-        }
-        repo.client.rpc.return_value = {"issued_count": 10, "voucher_balance": 10, "duplicate": False}
+        repo.client.rest_get.return_value = [{
+            "id": "db-order", "order_id": "GE-V-order", "amount": 72000, "status": "done",
+            "pay_type": "voucher", "provider_payment_key": "daou-trx", "approved_at": "2026-07-10T00:00:00Z",
+        }]
 
-        result = confirm(TossPaymentConfirmRequest(
-            payment_key="payment-key", order_id="GE-V-order", amount=72000
-        ), "bearer")
+        result = confirm(PaymentConfirmRequest(order_id="GE-V-order", amount=72000), "bearer")
 
-        self.assertEqual(result["data"]["issued_count"], 10)
-        repo.client.rpc.assert_called_once()
-        self.assertEqual(repo.client.rpc.call_args.args[0], "fulfill_voucher_order")
-        repo.client.rest_patch.assert_not_called()
-
-    @patch("app.routers.toss_payments.confirm_payment")
-    @patch("app.routers.toss_payments.get_settings")
-    @patch("app.routers.toss_payments.JoinRepository")
-    def test_toss_confirmation_rejects_expired_event_before_authorization(self, repo_class, settings, toss_confirm):
-        repo = repo_class.return_value
-        repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="a@example.com")
-        repo.get_profile.return_value = SimpleNamespace(id="user-1", role="customer", status="active")
-        now = datetime.now(timezone.utc)
-        repo.client.rest_get.side_effect = [[{
-            "id": "db-order", "order_id": "GE-V-expired", "amount": 65000, "status": "ready",
-            "pay_type": "voucher", "voucher_product_id": "event-product", "merchant_id": "merchant-1",
-            "payment_key": None, "approved_at": None,
-        }], [{
-            "id": "event-product", "status": "active", "is_event": True,
-            "event_start_at": (now - timedelta(days=2)).isoformat(),
-            "event_end_at": (now - timedelta(days=1)).isoformat(),
-        }]]
-
-        with self.assertRaises(HTTPException) as ctx:
-            confirm(TossPaymentConfirmRequest(
-                payment_key="payment-key", order_id="GE-V-expired", amount=65000
-            ), "bearer")
-
-        self.assertEqual(ctx.exception.status_code, 409)
-        toss_confirm.assert_not_called()
+        self.assertEqual(result["data"]["provider_payment_key"], "daou-trx")
         repo.client.rpc.assert_not_called()
 
     @patch("app.routers.transactions.JoinRepository")
@@ -259,7 +218,7 @@ class VoucherCoreTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in result["data"]["items"]], ["normal", "ongoing"])
         self.assertTrue(result["data"]["items"][1]["is_event"])
 
-    def test_customer_usage_keeps_direct_toss_history_and_exact_rpc_balance(self):
+    def test_customer_usage_keeps_direct_payment_history_and_exact_rpc_balance(self):
         repo = MagicMock()
         repo.client.rpc.return_value = 1501
         repo.client.rest_get.side_effect = [
@@ -274,7 +233,7 @@ class VoucherCoreTests(unittest.TestCase):
         usage = _customer_usage(repo, "user-1")
 
         self.assertEqual(usage["voucher_balance"], 1501)
-        self.assertEqual(usage["recent_transactions"][0]["kind"], "toss_payment")
+        self.assertEqual(usage["recent_transactions"][0]["kind"], "payment")
         self.assertEqual(usage["voucher_use_history"][0]["kind"], "voucher_use")
         repo.client.rpc.assert_called_once_with("voucher_balance", {"p_user_id": "user-1"})
 

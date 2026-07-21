@@ -23,8 +23,14 @@ class Settings:
     supabase_anon_key: str
     supabase_service_role_key: str
     supabase_jwt_secret: str | None = None
-    toss_client_key: str = ""
-    toss_secret_key: str = ""
+    kiwoompay_cpid: str = ""
+    kiwoompay_authorization_key: str = ""
+    kiwoompay_base_url: str = "https://apitest.kiwoompay.co.kr"
+    kiwoompay_notification_ips: tuple[str, ...] = (
+        "123.140.121.205", "27.102.213.200", "27.102.213.201",
+        "27.102.213.202", "27.102.213.203",
+    )
+    kiwoompay_app_url: str = "greeneatgo://payment"
     public_api_base_url: str = "http://localhost:8000/v1"
     admin_app_url: str = "http://localhost:5173"
     sendgrid_api_key: str = ""
@@ -38,7 +44,6 @@ class Settings:
         missing = [
             key for key in (
                 "SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY",
-                "TOSS_CLIENT_KEY", "TOSS_SECRET_KEY",
             )
             if not os.environ.get(key)
         ]
@@ -49,8 +54,18 @@ class Settings:
             supabase_anon_key=os.environ["SUPABASE_ANON_KEY"],
             supabase_service_role_key=os.environ["SUPABASE_SERVICE_ROLE_KEY"],
             supabase_jwt_secret=os.environ.get("SUPABASE_JWT_SECRET") or None,
-            toss_client_key=os.environ["TOSS_CLIENT_KEY"],
-            toss_secret_key=os.environ["TOSS_SECRET_KEY"],
+            kiwoompay_cpid=os.environ.get("KIWOOMPAY_CPID", "").strip(),
+            kiwoompay_authorization_key=os.environ.get("KIWOOMPAY_AUTHORIZATION_KEY", "").strip(),
+            kiwoompay_base_url=os.environ.get("KIWOOMPAY_BASE_URL", "https://apitest.kiwoompay.co.kr").rstrip("/"),
+            kiwoompay_notification_ips=tuple(
+                ip.strip()
+                for ip in os.environ.get(
+                    "KIWOOMPAY_NOTIFICATION_IPS",
+                    "123.140.121.205,27.102.213.200,27.102.213.201,27.102.213.202,27.102.213.203",
+                ).split(",")
+                if ip.strip()
+            ),
+            kiwoompay_app_url=os.environ.get("KIWOOMPAY_APP_URL", "greeneatgo://payment").strip(),
             public_api_base_url=os.environ.get("PUBLIC_API_BASE_URL", "http://localhost:8000/v1").rstrip("/"),
             admin_app_url=os.environ.get("ADMIN_APP_URL", "http://localhost:5173").rstrip("/"),
             sendgrid_api_key=os.environ.get("SENDGRID_API_KEY", "").strip(),

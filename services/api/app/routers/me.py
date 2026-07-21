@@ -108,7 +108,7 @@ def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
         },
     )
     direct_rows = repo.client.rest_get(
-        "toss_payment_orders",
+        "payment_orders",
         {
             "select": "id,amount,product_name,merchant_name,approved_at,created_at,pay_type",
             "user_id": f"eq.{user_id}", "status": "eq.done", "pay_type": "eq.direct",
@@ -133,7 +133,7 @@ def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
     direct_history = [
         {
             "id": row.get("id"), "amount": int(row.get("amount") or 0),
-            "kind": "toss_payment", "title": row.get("product_name") or "상품 결제",
+            "kind": "payment", "title": row.get("product_name") or "상품 결제",
             "merchant_name": row.get("merchant_name") or "",
             "created_at": row.get("approved_at") or row.get("created_at"),
         }

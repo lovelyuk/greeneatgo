@@ -70,13 +70,12 @@ class NotificationCreateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class TossOrderCreateRequest(BaseModel):
+class PaymentOrderCreateRequest(BaseModel):
     qr_token: str = Field(min_length=1, max_length=120)
     product_id: str = Field(min_length=8, max_length=80)
 
 
-class TossPaymentConfirmRequest(BaseModel):
-    payment_key: str = Field(min_length=1, max_length=200)
+class PaymentConfirmRequest(BaseModel):
     order_id: str = Field(min_length=6, max_length=64)
     amount: int = Field(gt=0)
 

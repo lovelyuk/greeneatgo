@@ -19,6 +19,18 @@ services:
         sync: false
       - key: ADMIN_APP_URL
         sync: false
+      - key: PUBLIC_API_BASE_URL
+        sync: false
+      - key: KIWOOMPAY_CPID
+        sync: false
+      - key: KIWOOMPAY_AUTHORIZATION_KEY
+        sync: false
+      - key: KIWOOMPAY_BASE_URL
+        sync: false
+      - key: KIWOOMPAY_NOTIFICATION_IPS
+        sync: false
+      - key: KIWOOMPAY_APP_URL
+        sync: false
       - key: SENDGRID_API_KEY
         sync: false
       - key: INVITE_EMAIL_FROM

@@ -1,4 +1,4 @@
--- Subsidized ledger vouchers: contract pricing, atomic Toss fulfillment/consumption, settlement.
+-- Subsidized ledger vouchers: contract pricing, atomic KiwoomPay fulfillment/consumption, settlement.
 -- Apply after 0022_push_notifications.sql.
 
 alter table merchant_companies
@@ -12,15 +12,15 @@ alter table merchant_companies add constraint merchant_companies_subsidy_amounts
     company_subsidy_amount + restaurant_subsidy_amount < unit_price))
 );
 
-alter table toss_payment_orders
+alter table payment_orders
   add column if not exists company_id uuid references companies(id),
   add column if not exists company_subsidy_amount int,
   add column if not exists restaurant_subsidy_amount int;
-alter table toss_payment_orders drop constraint if exists toss_payment_orders_pay_type_check;
-alter table toss_payment_orders add constraint toss_payment_orders_pay_type_check
+alter table payment_orders drop constraint if exists payment_orders_pay_type_check;
+alter table payment_orders add constraint payment_orders_pay_type_check
   check (pay_type in ('direct','voucher','subsidized'));
-alter table toss_payment_orders drop constraint if exists toss_payment_orders_voucher_columns_check;
-alter table toss_payment_orders add constraint toss_payment_orders_voucher_columns_check check (
+alter table payment_orders drop constraint if exists payment_orders_voucher_columns_check;
+alter table payment_orders add constraint payment_orders_voucher_columns_check check (
   (pay_type = 'direct' and voucher_product_id is null and voucher_count is null and voucher_purchase_price is null and fulfilled_at is null and company_id is null)
   or (pay_type = 'voucher' and product_id is null and voucher_product_id is not null and voucher_count > 0 and voucher_purchase_price > 0 and amount > 0 and company_id is null and voucher_purchase_price = round(amount::numeric / voucher_count, 4))
   or (pay_type = 'subsidized' and product_id is null and voucher_product_id is null and voucher_count = 1 and voucher_purchase_price = amount and amount > 0 and company_id is not null and company_subsidy_amount >= 0 and restaurant_subsidy_amount >= 0)
@@ -50,20 +50,20 @@ alter table meal_transactions add constraint meal_transactions_payment_columns_c
   or (pay_type='subsidized' and company_id is not null and voucher_id is not null and employee_paid_amount >= 0 and company_subsidy_amount >= 0 and restaurant_subsidy_amount >= 0 and employee_paid_amount + company_subsidy_amount + restaurant_subsidy_amount = abs(amount))
 );
 
-create or replace function fulfill_subsidized_order(p_order_id uuid,p_payment_key text,p_payment_method text,p_toss_response jsonb,p_approved_at timestamptz) returns jsonb
+create or replace function fulfill_subsidized_order(p_order_id uuid,p_provider_payment_key text,p_payment_method text,p_provider_response jsonb,p_approved_at timestamptz) returns jsonb
 language plpgsql security definer set search_path=public as $$
-declare v_order toss_payment_orders%rowtype; v_voucher vouchers%rowtype; v_duplicate boolean;
+declare v_order payment_orders%rowtype; v_voucher vouchers%rowtype; v_duplicate boolean;
 begin
- select * into v_order from toss_payment_orders where id=p_order_id for update;
+ select * into v_order from payment_orders where id=p_order_id for update;
  if not found then raise exception 'ORDER_NOT_FOUND' using errcode='P0001'; end if;
  if v_order.pay_type <> 'subsidized' or v_order.company_id is null or v_order.voucher_count <> 1 or v_order.amount <> v_order.voucher_purchase_price then raise exception 'NOT_SUBSIDIZED_ORDER' using errcode='P0001'; end if;
- if p_payment_key is null or btrim(p_payment_key)='' then raise exception 'PAYMENT_KEY_REQUIRED' using errcode='P0001'; end if;
+ if p_provider_payment_key is null or btrim(p_provider_payment_key)='' then raise exception 'PAYMENT_KEY_REQUIRED' using errcode='P0001'; end if;
  if v_order.status not in ('ready','done') then raise exception 'ORDER_NOT_FULFILLABLE' using errcode='P0001'; end if;
- if v_order.payment_key is not null and v_order.payment_key <> p_payment_key then raise exception 'PAYMENT_KEY_MISMATCH' using errcode='P0001'; end if;
+ if v_order.provider_payment_key is not null and v_order.provider_payment_key <> p_provider_payment_key then raise exception 'PAYMENT_KEY_MISMATCH' using errcode='P0001'; end if;
  v_duplicate := v_order.fulfilled_at is not null;
- update toss_payment_orders set status='done',payment_key=coalesce(payment_key,p_payment_key),payment_method=coalesce(p_payment_method,payment_method),toss_response=coalesce(p_toss_response,toss_response),approved_at=coalesce(approved_at,p_approved_at,now()),fulfilled_at=coalesce(fulfilled_at,now()),updated_at=now() where id=p_order_id returning * into v_order;
+ update payment_orders set status='done',provider_payment_key=coalesce(provider_payment_key,p_provider_payment_key),payment_method=coalesce(p_payment_method,payment_method),provider_response=coalesce(p_provider_response,provider_response),approved_at=coalesce(approved_at,p_approved_at,now()),fulfilled_at=coalesce(fulfilled_at,now()),updated_at=now() where id=p_order_id returning * into v_order;
  insert into vouchers(user_id,merchant_id,product_id,order_id,issue_index,purchase_price,company_id,company_subsidy_amount,pg_transaction_id,purchased_at)
- values(v_order.user_id,v_order.merchant_id,null,v_order.id,1,v_order.amount,v_order.company_id,v_order.company_subsidy_amount,v_order.payment_key,coalesce(v_order.approved_at,now())) on conflict(order_id,issue_index) do nothing;
+ values(v_order.user_id,v_order.merchant_id,null,v_order.id,1,v_order.amount,v_order.company_id,v_order.company_subsidy_amount,v_order.provider_payment_key,coalesce(v_order.approved_at,now())) on conflict(order_id,issue_index) do nothing;
  select * into v_voucher from vouchers where order_id=v_order.id and issue_index=1;
  return jsonb_build_object('order_id',v_order.order_id,'status','done','issued_count',1,'voucher_id',v_voucher.id,'duplicate',v_duplicate);
 end $$;

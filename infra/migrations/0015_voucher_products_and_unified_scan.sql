@@ -1,5 +1,5 @@
--- Voucher products, Toss fulfillment, and unified ledger/voucher transactions.
--- Apply after 0014_toss_consumer_payments.sql.
+-- Voucher products, KiwoomPay fulfillment, and unified ledger/voucher transactions.
+-- Apply after 0014_consumer_payments.sql.
 
 create table if not exists voucher_products (
   id uuid primary key default gen_random_uuid(),
@@ -20,18 +20,18 @@ create index if not exists idx_voucher_products_merchant_status_order
   on voucher_products(merchant_id, status, display_order, created_at);
 alter table voucher_products enable row level security;
 
-alter table toss_payment_orders
+alter table payment_orders
   add column if not exists pay_type text not null default 'direct',
   add column if not exists voucher_product_id uuid references voucher_products(id),
   add column if not exists voucher_count int,
   add column if not exists voucher_purchase_price numeric(14,4),
   add column if not exists fulfilled_at timestamptz;
 
-alter table toss_payment_orders drop constraint if exists toss_payment_orders_pay_type_check;
-alter table toss_payment_orders add constraint toss_payment_orders_pay_type_check
+alter table payment_orders drop constraint if exists payment_orders_pay_type_check;
+alter table payment_orders add constraint payment_orders_pay_type_check
   check (pay_type in ('direct','voucher'));
-alter table toss_payment_orders drop constraint if exists toss_payment_orders_voucher_columns_check;
-alter table toss_payment_orders add constraint toss_payment_orders_voucher_columns_check check (
+alter table payment_orders drop constraint if exists payment_orders_voucher_columns_check;
+alter table payment_orders add constraint payment_orders_voucher_columns_check check (
   (pay_type = 'direct' and voucher_product_id is null and voucher_count is null
     and voucher_purchase_price is null and fulfilled_at is null)
   or
@@ -39,15 +39,15 @@ alter table toss_payment_orders add constraint toss_payment_orders_voucher_colum
     and voucher_count > 0 and voucher_purchase_price > 0 and amount > 0
     and voucher_purchase_price = round(amount::numeric / voucher_count, 4))
 );
-create index if not exists idx_toss_payment_orders_voucher_product
-  on toss_payment_orders(voucher_product_id) where voucher_product_id is not null;
+create index if not exists idx_payment_orders_voucher_product
+  on payment_orders(voucher_product_id) where voucher_product_id is not null;
 
 create table if not exists vouchers (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references app_users(id),
   merchant_id uuid not null references merchants(id),
   product_id uuid not null references voucher_products(id),
-  order_id uuid not null references toss_payment_orders(id),
+  order_id uuid not null references payment_orders(id),
   issue_index int not null check (issue_index > 0),
   purchase_price numeric(14,4) not null check (purchase_price >= 0),
   status text not null default 'unused' check (status in ('unused','used','refunded')),
@@ -83,13 +83,13 @@ alter table meal_transactions add constraint meal_transactions_payment_columns_c
 create unique index if not exists idx_meal_transactions_voucher_unique
   on meal_transactions(voucher_id) where voucher_id is not null;
 
--- Atomically marks a verified Toss voucher order DONE and issues all vouchers once.
--- The API must call this only after Toss returned status=DONE.
+-- Atomically marks a verified KiwoomPay voucher order done and issues all vouchers once.
+-- The API calls this only after the authoritative payment notification is validated.
 create or replace function fulfill_voucher_order(
   p_order_id uuid,
-  p_payment_key text,
+  p_provider_payment_key text,
   p_payment_method text,
-  p_toss_response jsonb,
+  p_provider_response jsonb,
   p_approved_at timestamptz
 ) returns jsonb
 language plpgsql
@@ -97,11 +97,11 @@ security definer
 set search_path = public
 as $$
 declare
-  v_order toss_payment_orders%rowtype;
+  v_order payment_orders%rowtype;
   v_issued int;
   v_balance int;
 begin
-  select * into v_order from toss_payment_orders where id = p_order_id for update;
+  select * into v_order from payment_orders where id = p_order_id for update;
   if not found then raise exception 'ORDER_NOT_FOUND' using errcode = 'P0001'; end if;
   if v_order.pay_type <> 'voucher' or v_order.product_id is not null
      or v_order.voucher_product_id is null or v_order.voucher_count is null
@@ -110,27 +110,27 @@ begin
      or v_order.voucher_purchase_price <> round(v_order.amount::numeric / v_order.voucher_count, 4) then
     raise exception 'NOT_VOUCHER_ORDER' using errcode = 'P0001';
   end if;
-  if p_payment_key is null or btrim(p_payment_key) = '' then
+  if p_provider_payment_key is null or btrim(p_provider_payment_key) = '' then
     raise exception 'PAYMENT_KEY_REQUIRED' using errcode = 'P0001';
   end if;
   if v_order.status not in ('ready','done') then
     raise exception 'ORDER_NOT_FULFILLABLE' using errcode = 'P0001';
   end if;
-  if v_order.payment_key is not null and v_order.payment_key <> p_payment_key then
+  if v_order.provider_payment_key is not null and v_order.provider_payment_key <> p_provider_payment_key then
     raise exception 'PAYMENT_KEY_MISMATCH' using errcode = 'P0001';
   end if;
 
-  update toss_payment_orders set
-    status = 'done', payment_key = coalesce(payment_key, p_payment_key),
+  update payment_orders set
+    status = 'done', provider_payment_key = coalesce(provider_payment_key, p_provider_payment_key),
     payment_method = coalesce(p_payment_method, payment_method),
-    toss_response = coalesce(p_toss_response, toss_response),
+    provider_response = coalesce(p_provider_response, provider_response),
     approved_at = coalesce(approved_at, p_approved_at, now()), updated_at = now()
   where id = p_order_id returning * into v_order;
 
   insert into vouchers(user_id, merchant_id, product_id, order_id, issue_index,
                        purchase_price, pg_transaction_id, purchased_at)
   select v_order.user_id, v_order.merchant_id, v_order.voucher_product_id, v_order.id, n,
-         v_order.voucher_purchase_price, v_order.payment_key, coalesce(v_order.approved_at, now())
+         v_order.voucher_purchase_price, v_order.provider_payment_key, coalesce(v_order.approved_at, now())
   from generate_series(1, v_order.voucher_count) n
   on conflict (order_id, issue_index) do nothing;
 
@@ -138,7 +138,7 @@ begin
   if v_issued <> v_order.voucher_count then
     raise exception 'VOUCHER_ISSUE_INCOMPLETE' using errcode = 'P0001';
   end if;
-  update toss_payment_orders set fulfilled_at = coalesce(fulfilled_at, now()) where id = v_order.id;
+  update payment_orders set fulfilled_at = coalesce(fulfilled_at, now()) where id = v_order.id;
   select count(*) into v_balance from vouchers
     where user_id = v_order.user_id and merchant_id = v_order.merchant_id and status = 'unused';
   return jsonb_build_object('order_id', v_order.order_id, 'status', 'done',

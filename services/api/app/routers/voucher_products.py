@@ -56,7 +56,7 @@ def cancel_subsidized_order(order_id: str, token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         auth = repo.auth_user_from_token(token)
-        rows = repo.client.rest_get("toss_payment_orders", {"select": "id,user_id,pay_type", "order_id": f"eq.{order_id}", "user_id": f"eq.{auth.id}", "pay_type": "eq.subsidized", "limit": "1"})
+        rows = repo.client.rest_get("payment_orders", {"select": "id,user_id,pay_type", "order_id": f"eq.{order_id}", "user_id": f"eq.{auth.id}", "pay_type": "eq.subsidized", "limit": "1"})
         if not rows:
             raise _error(404, "ORDER_NOT_FOUND", "취소할 주문을 찾을 수 없어요")
         result = repo.client.rpc("release_subsidized_order_points", {"p_order_id": rows[0]["id"], "p_user_id": auth.id})
@@ -72,13 +72,13 @@ def purchase_subsidized(token: str = Depends(bearer_token)):
         profile, merchant, contract = _subsidized_context(repo, token)
         unit, company, restaurant = int(contract["unit_price"]), int(contract["company_subsidy_amount"]), int(contract["restaurant_subsidy_amount"])
         employee_due, order_id, checkout_token = unit-company-restaurant, f"GE-S-{uuid.uuid4().hex}", secrets.token_urlsafe(32)
-        order = repo.client.rest_post("toss_payment_orders", {"order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id, "merchant_id": merchant["id"], "company_id": profile.company_id, "merchant_name": merchant["name"], "product_name": "보조금 식권", "amount": employee_due, "status": "ready", "pay_type": "subsidized", "voucher_count": 1, "paid_voucher_count": 1, "bonus_voucher_count": 0, "voucher_purchase_price": str(employee_due), "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant})[0]
+        order = repo.client.rest_post("payment_orders", {"order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id, "merchant_id": merchant["id"], "company_id": profile.company_id, "merchant_name": merchant["name"], "product_name": "보조금 식권", "amount": employee_due, "status": "ready", "pay_type": "subsidized", "voucher_count": 1, "paid_voucher_count": 1, "bonus_voucher_count": 0, "voucher_purchase_price": str(employee_due), "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant})[0]
         split = repo.client.rpc("reserve_subsidized_order_points", {"p_order_id": order["id"]})
         point_amount, card_amount = int(split["point_amount"]), int(split["card_amount"])
         fulfilled = None
         if card_amount == 0:
-            fulfilled = repo.client.rpc("fulfill_subsidized_order", {"p_order_id": order["id"], "p_payment_key": None, "p_payment_method": "POINT", "p_toss_response": None, "p_approved_at": datetime.now(timezone.utc).isoformat()})
-        return {"ok": True, "data": {"order_id": order_id, "amount": card_amount, "employee_pay_amount": employee_due, "point_amount": point_amount, "card_amount": card_amount, "point_only": card_amount == 0, "checkout_url": None if card_amount == 0 else f"{settings.public_api_base_url}/toss/checkout/{checkout_token}", "fulfillment": fulfilled}, "error": None}
+            fulfilled = repo.client.rpc("fulfill_subsidized_order", {"p_order_id": order["id"], "p_provider_payment_key": None, "p_payment_method": "POINT", "p_provider_response": None, "p_approved_at": datetime.now(timezone.utc).isoformat()})
+        return {"ok": True, "data": {"order_id": order_id, "amount": card_amount, "employee_pay_amount": employee_due, "point_amount": point_amount, "card_amount": card_amount, "point_only": card_amount == 0, "checkout_url": None if card_amount == 0 else f"{settings.public_api_base_url}/payments/checkout/{checkout_token}", "fulfillment": fulfilled}, "error": None}
     except HTTPException: raise
     except SupabaseHttpError as exc: raise _error(502, "SUPABASE_ERROR", "보조금 식권 주문을 만들지 못했어요") from exc
 
@@ -290,20 +290,20 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
             raise _error(400, "INVALID_AMOUNT", "결제 금액이 올바르지 않아요")
         order_id = f"GE-V-{uuid.uuid4().hex}"
         checkout_token = secrets.token_urlsafe(32)
-        order = repo.client.rest_post("toss_payment_orders", {
+        order = repo.client.rest_post("payment_orders", {
             "order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id,
             "merchant_id": merchant["id"], "product_id": None, "voucher_product_id": product["id"],
             "merchant_name": merchant["name"], "product_name": product["name"], "amount": amount,
             "status": "ready", "pay_type": "voucher", "voucher_count": total_count,
             "paid_voucher_count": int(product["voucher_count"]),
             "bonus_voucher_count": int(product.get("bonus_count") or 0),
-            # Toss charges integer KRW; snapshot from that exact charged amount, not numeric sale_price.
+            # KiwoomPay charges integer KRW; snapshot from that exact charged amount, not numeric sale_price.
             "voucher_purchase_price": str(per_voucher_price(amount, total_count)),
         })[0]
         return {"ok": True, "data": {
             "order_id": order_id, "amount": int(order["amount"]), "product_id": product["id"],
             "product_name": product["name"], "total_count": total_count,
-            "checkout_url": f"{settings.public_api_base_url}/toss/checkout/{checkout_token}",
+            "checkout_url": f"{settings.public_api_base_url}/payments/checkout/{checkout_token}",
         }, "error": None}
     except HTTPException:
         raise

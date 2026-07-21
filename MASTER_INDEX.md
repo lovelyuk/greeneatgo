@@ -32,16 +32,16 @@
 
 | 컴포넌트 | 경로 | 현재 책임 |
 |---|---|---|
-| 사용자 앱 | `apps/customer` | 가입·로그인, 장부/식권 QR, Toss, 포인트, 공지·리뷰, FCM |
+| 사용자 앱 | `apps/customer` | 가입·로그인, 장부/식권 QR, 키움페이, 포인트, 공지·리뷰, FCM |
 | 관리자 웹 | `apps/admin` | 회사·식당·플랫폼 역할별 관리 화면 |
 | API | `services/api` | 인증, 결제, 발급, 사용, 정산, 이미지, 알림, 초대 |
 | DB | `infra/migrations` | PostgreSQL 스키마, RLS, RPC, 감사 원장 |
 
 ## 현재 릴리스 게이트
 
-- [ ] 운영 Supabase의 `0001~0027` 적용 현황 대조
-- [ ] `0027_allow_point_only_orders.sql` 운영 Supabase 적용 확인
-- [ ] Toss sandbox 구매→발급→QR 사용→취소/환불 E2E
+- [ ] 새 개발 Supabase에 `0001~0029` 순서대로 적용
+- [ ] 새 개발 DB의 포인트 전액 주문(`amount=0`) 검증
+- [ ] 키움페이 sandbox 구매→발급→QR 사용→취소/환불 E2E
 - [ ] 장부 결제 한도 검사를 DB 잠금 내부에서 원자화
 - [ ] 정산 2,000건 상한과 감사 이력 보강
 - [ ] Firebase 실기기 전면·백그라운드·종료 수신 검증

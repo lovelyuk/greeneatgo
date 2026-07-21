@@ -3,10 +3,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.routers.merchant_admin import _ensure_settlements
-from app.routers.toss_payments import confirm
+from app.routers.payments import confirm
 from app.routers.transactions import scan
 from app.routers.voucher_products import purchase_subsidized, subsidized_price
-from app.schemas import TossPaymentConfirmRequest, TransactionScanRequest
+from app.schemas import PaymentConfirmRequest, TransactionScanRequest
 
 
 class SubsidizedLedgerTests(unittest.TestCase):
@@ -42,7 +42,7 @@ class SubsidizedLedgerTests(unittest.TestCase):
 
     @patch("app.routers.voucher_products.get_settings")
     @patch("app.routers.voucher_products.JoinRepository")
-    def test_point_only_purchase_skips_toss_and_fulfills_atomically(self, repo_class, settings):
+    def test_point_only_purchase_skips_pg_and_fulfills_atomically(self, repo_class, settings):
         repo = repo_class.return_value
         self._employee_repo(repo)
         settings.return_value.pilot_merchant_id = "merchant-1"
@@ -55,7 +55,7 @@ class SubsidizedLedgerTests(unittest.TestCase):
         self.assertTrue(result["point_only"])
         self.assertIsNone(result["checkout_url"])
         self.assertEqual(repo.client.rpc.call_args_list[1].args[0], "fulfill_subsidized_order")
-        self.assertIsNone(repo.client.rpc.call_args_list[1].args[1]["p_payment_key"])
+        self.assertIsNone(repo.client.rpc.call_args_list[1].args[1]["p_provider_payment_key"])
 
     @patch("app.routers.transactions.get_settings")
     @patch("app.routers.transactions.JoinRepository")
@@ -71,20 +71,17 @@ class SubsidizedLedgerTests(unittest.TestCase):
         repo.client.rpc.assert_called_once_with("consume_subsidized_voucher", {
             "p_user_id": "user-1", "p_company_id": "company-1", "p_merchant_id": "merchant-1", "p_idempotency_key": "subsidized-scan"})
 
-    @patch("app.routers.toss_payments.confirm_payment")
-    @patch("app.routers.toss_payments.get_settings")
-    @patch("app.routers.toss_payments.JoinRepository")
-    def test_toss_subsidized_confirmation_uses_atomic_fulfillment(self, repo_class, settings, toss_confirm):
+    @patch("app.routers.payments.JoinRepository")
+    def test_subsidized_confirm_reads_completed_notification_result(self, repo_class):
         repo = repo_class.return_value
         self._employee_repo(repo)
-        repo.client.rest_get.return_value = [{"id": "db-order", "order_id": "GE-S-order", "amount": 6000,
-            "status": "ready", "pay_type": "subsidized", "payment_key": None, "approved_at": None}]
-        toss_confirm.return_value = {"status": "DONE", "paymentKey": "pay-key", "method": "카드"}
-        repo.client.rpc.return_value = {"issued_count": 1, "duplicate": False}
-        result = confirm(TossPaymentConfirmRequest(payment_key="pay-key", order_id="GE-S-order", amount=6000), "bearer")
-        self.assertEqual(result["data"]["issued_count"], 1)
-        self.assertEqual(repo.client.rpc.call_args.args[0], "fulfill_subsidized_order")
-        repo.client.rest_patch.assert_not_called()
+        repo.client.rest_get.return_value = [{
+            "id": "db-order", "order_id": "GE-S-order", "amount": 6000,
+            "status": "done", "pay_type": "subsidized", "provider_payment_key": "daou-trx",
+        }]
+        result = confirm(PaymentConfirmRequest(order_id="GE-S-order", amount=6000), "bearer")
+        self.assertEqual(result["data"]["provider_payment_key"], "daou-trx")
+        repo.client.rpc.assert_not_called()
 
     def test_settlement_charges_only_company_share_for_subsidized(self):
         repo = MagicMock()

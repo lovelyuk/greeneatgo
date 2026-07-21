@@ -28,7 +28,7 @@ function unlockPaymentAudio() {
 
 function merchantMealPaymentIds(list) {
   return (list?.items ?? [])
-    .filter((item) => item.source !== 'toss' && !['refund', 'cancel'].includes(item.kind))
+    .filter((item) => item.source !== 'payment' && !['refund', 'cancel'].includes(item.kind))
     .map((item) => String(item.id));
 }
 
@@ -338,7 +338,7 @@ function buildTransactionRows(rawItems, range, q) {
       employee_no: tx.employee_no ?? tx.user_id?.slice(0, 8) ?? '-',
       department: tx.department ?? '-',
       menu: tx.product_name ?? tx.meal_window ?? '구내식당 식권',
-      pay_type: tx.pay_type === 'subsidized' ? '보조금' : tx.pay_type === 'voucher' ? '식권' : tx.pay_type === 'direct' ? '토스결제' : '장부',
+      pay_type: tx.pay_type === 'subsidized' ? '보조금' : tx.pay_type === 'voucher' ? '식권' : tx.pay_type === 'direct' ? '키움페이결제' : '장부',
       amount,
       company_subsidy_amount: tx.company_subsidy_amount,
       restaurant_subsidy_amount: tx.restaurant_subsidy_amount,
@@ -443,7 +443,7 @@ function VendorTransactionModal({ txModal, token, onClose }) {
     ...item,
     time: item.created_at ? new Date(item.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : item.time,
     menu: item.menu ?? item.product_name ?? item.meal_window ?? '식대 사용',
-    pay_type: item.pay_type === 'subsidized' ? '보조금' : item.pay_type === 'voucher' ? '식권' : item.pay_type === 'direct' ? '토스결제' : (item.pay_type ?? '장부'),
+    pay_type: item.pay_type === 'subsidized' ? '보조금' : item.pay_type === 'voucher' ? '식권' : item.pay_type === 'direct' ? '키움페이결제' : (item.pay_type ?? '장부'),
   }))) : null, [serverDays]);
 
   const rows = useMemo(() => serverRows ?? buildTransactionRows(txModal.txItems, range, query), [serverRows, txModal.txItems, range, query]);

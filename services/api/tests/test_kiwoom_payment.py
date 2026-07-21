@@ -110,6 +110,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertIn("https://apitest.kiwoompay.co.kr/pay/linkEnc", html)
         self.assertIn('name="KIWOOM_ENC" value="secure-hash"', html)
         self.assertIn('name="PAYMETHOD" value="TOTAL"', html)
+        self.assertIn('name="PRODUCTTYPE" value="1"', html)
         self.assertIn("document.getElementById('payment').submit()", html)
 
     def test_bank_checkout_binds_hash_and_form_to_bank(self):
@@ -133,6 +134,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
             html = bytes(checkout("checkout-token").body).decode()
         self.assertEqual(request_hash.call_args.args[1].pay_method, "BANK")
         self.assertIn('name="PAYMETHOD" value="BANK"', html)
+        self.assertIn('name="PRODUCTTYPE" value="1"', html)
 
     def test_notification_validates_order_and_persists_daou_transaction(self):
         app = FastAPI()

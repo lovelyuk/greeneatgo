@@ -52,6 +52,17 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         })
         self.assertEqual(result, "secure-hash")
 
+    @patch("app.services.kiwoom_payment.urlopen", return_value=_Response({
+        "RESULTCODE": "0000", "ERRORMESSAGE": "", "KIWOOM_ENC": "bank-hash",
+    }))
+    def test_hash_request_supports_bank_only_link(self, mocked_urlopen):
+        request_payment_hash(
+            "https://apitest.kiwoompay.co.kr",
+            KiwoomHashInput(cpid="CPID", order_id="GE-V-bank", amount=80000, pay_method="BANK"),
+        )
+        request = mocked_urlopen.call_args.args[0]
+        self.assertEqual(json.loads(request.data.decode())["PAYMETHOD"], "BANK")
+
     @patch("app.services.kiwoom_payment.urlopen")
     def test_cancel_runs_ready_then_cancel_and_validates_result(self, mocked_urlopen):
         mocked_urlopen.side_effect = [
@@ -84,6 +95,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
             "user_id": "user-1", "amount": 8000, "order_id": "GE-order-123",
             "product_name": "그린잇 식권", "merchant_name": "돈토", "pay_type": "direct",
             "merchant_id": "merchant-1", "product_id": "product-1", "voucher_product_id": None,
+            "requested_payment_method": "TOTAL",
         }
         settings = SimpleNamespace(
             public_api_base_url="https://api.example.com/v1",
@@ -100,12 +112,35 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertIn('name="PAYMETHOD" value="TOTAL"', html)
         self.assertIn("document.getElementById('payment').submit()", html)
 
+    def test_bank_checkout_binds_hash_and_form_to_bank(self):
+        order = {
+            "user_id": "user-1", "amount": 80000, "order_id": "GE-V-bank",
+            "product_name": "식권 10+1", "merchant_name": "돈토", "pay_type": "voucher",
+            "merchant_id": "merchant-1", "product_id": None, "voucher_product_id": "voucher-1",
+            "requested_payment_method": "BANK",
+        }
+        settings = SimpleNamespace(
+            public_api_base_url="https://api.example.com/v1",
+            kiwoompay_cpid="CPID", kiwoompay_base_url="https://apitest.kiwoompay.co.kr",
+            kiwoompay_app_url="greeneatgo://payment",
+        )
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ), patch("app.routers.payments._ensure_voucher_order_available"), patch(
+            "app.routers.payments.request_payment_hash", return_value="bank-hash",
+        ) as request_hash:
+            repo_class.return_value.client.rest_get.return_value = [order]
+            html = bytes(checkout("checkout-token").body).decode()
+        self.assertEqual(request_hash.call_args.args[1].pay_method, "BANK")
+        self.assertIn('name="PAYMETHOD" value="BANK"', html)
+
     def test_notification_validates_order_and_persists_daou_transaction(self):
         app = FastAPI()
         app.include_router(router)
         order = {
             "id": "db-order", "order_id": "GE-order-123", "amount": 8000,
             "status": "ready", "pay_type": "direct", "provider_payment_key": None,
+            "requested_payment_method": "TOTAL",
         }
         settings = SimpleNamespace(
             kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",),
@@ -128,6 +163,30 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         update = repo.client.rest_patch.call_args.args[2]
         self.assertEqual(update["provider_payment_key"], "daou-trx-1")
         self.assertEqual(update["provider_response"]["ORDERNO"], "GE-order-123")
+
+    def test_bank_order_rejects_non_bank_notification(self):
+        app = FastAPI()
+        app.include_router(router)
+        order = {
+            "id": "db-order", "order_id": "GE-V-bank", "amount": 80000,
+            "status": "ready", "pay_type": "voucher", "provider_payment_key": None,
+            "requested_payment_method": "BANK",
+        }
+        settings = SimpleNamespace(
+            kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",),
+        )
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ):
+            repo = repo_class.return_value
+            repo.client.rest_get.return_value = [order]
+            response = TestClient(app).get("/payments/notification", params={
+                "CPID": "CPID", "PAYMETHOD": "CARD", "ORDERNO": "GE-V-bank",
+                "DAOUTRX": "daou-trx-card", "AMOUNT": "80000",
+            })
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("<RESULT>FAIL</RESULT>", response.text)
+        repo.client.rpc.assert_not_called()
 
 
 if __name__ == "__main__":

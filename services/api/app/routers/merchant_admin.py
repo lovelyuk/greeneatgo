@@ -866,7 +866,7 @@ def refund_purchase_order(payload: MerchantRefundRequest, token: str = Depends(b
         if not rows:
             raise _error(404, "ORDER_NOT_FOUND", "해당 고객의 구매 주문을 찾을 수 없어요")
         if int(rows[0].get("amount") or 0) > 0 and not rows[0].get("provider_payment_key"):
-            raise _error(409, "PAYMENT_KEY_MISSING", "카드 결제 거래번호가 없어 자동 환불할 수 없어요")
+            raise _error(409, "PAYMENT_KEY_MISSING", "결제 거래번호가 없어 자동 환불할 수 없어요")
         account = payload.refund_account.model_dump() if payload.refund_account else rows[0].get("refund_account")
         claim = repo.client.rpc("claim_purchase_order_refund", {
             "p_order_id": rows[0]["id"], "p_merchant_id": merchant_id,
@@ -878,15 +878,16 @@ def refund_purchase_order(payload: MerchantRefundRequest, token: str = Depends(b
         if amount > 0:
             transaction_id = claim.get("provider_payment_key")
             if not transaction_id:
-                raise _error(409, "PAYMENT_KEY_MISSING", "카드 결제 거래번호가 없어 자동 환불할 수 없어요")
+                raise _error(409, "PAYMENT_KEY_MISSING", "결제 거래번호가 없어 자동 환불할 수 없어요")
             settings = get_settings()
+            cancel_method = "BANK" if rows[0].get("payment_method") == "BANK" else "CARD"
             pg_response = cancel_payment(
                 settings.kiwoompay_base_url,
                 settings.kiwoompay_authorization_key,
                 settings.kiwoompay_cpid,
                 transaction_id,
                 amount,
-                pay_method="CARD",
+                pay_method=cancel_method,
                 cancel_reason="식권구매환불",
             )
         result = repo.client.rpc("finalize_purchase_order_refund", {

@@ -19,7 +19,7 @@ from app.services.vouchers import calculate_sale_price, krw_amount, per_voucher_
 
 router = APIRouter(tags=["voucher-products"])
 logger = logging.getLogger(__name__)
-_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,image_url,is_event,event_start_at,event_end_at,created_at,updated_at"
+_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,kiwoom_pay_method,image_url,is_event,event_start_at,event_end_at,created_at,updated_at"
 _LEGACY_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,image_url,created_at,updated_at"
 
 def _subsidized_context(repo: JoinRepository, token: str):
@@ -72,7 +72,7 @@ def purchase_subsidized(token: str = Depends(bearer_token)):
         profile, merchant, contract = _subsidized_context(repo, token)
         unit, company, restaurant = int(contract["unit_price"]), int(contract["company_subsidy_amount"]), int(contract["restaurant_subsidy_amount"])
         employee_due, order_id, checkout_token = unit-company-restaurant, f"GE-S-{uuid.uuid4().hex}", secrets.token_urlsafe(32)
-        order = repo.client.rest_post("payment_orders", {"order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id, "merchant_id": merchant["id"], "company_id": profile.company_id, "merchant_name": merchant["name"], "product_name": "보조금 식권", "amount": employee_due, "status": "ready", "pay_type": "subsidized", "voucher_count": 1, "paid_voucher_count": 1, "bonus_voucher_count": 0, "voucher_purchase_price": str(employee_due), "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant})[0]
+        order = repo.client.rest_post("payment_orders", {"order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id, "merchant_id": merchant["id"], "company_id": profile.company_id, "merchant_name": merchant["name"], "product_name": "보조금 식권", "amount": employee_due, "status": "ready", "pay_type": "subsidized", "requested_payment_method": "TOTAL", "voucher_count": 1, "paid_voucher_count": 1, "bonus_voucher_count": 0, "voucher_purchase_price": str(employee_due), "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant})[0]
         split = repo.client.rpc("reserve_subsidized_order_points", {"p_order_id": order["id"]})
         point_amount, card_amount = int(split["point_amount"]), int(split["card_amount"])
         fulfilled = None
@@ -154,9 +154,9 @@ def _load_products(repo: JoinRepository, params: dict[str, str], *, allow_legacy
         if not ("is_event" in exc.body or "event_start_at" in exc.body or "PGRST204" in exc.body):
             raise
         if not allow_legacy:
-            raise _error(503, "MIGRATION_REQUIRED", "0020_voucher_product_events.sql 적용이 필요해요") from exc
+            raise _error(503, "MIGRATION_REQUIRED", "0020_voucher_product_events.sql 또는 0030_kiwoom_product_payment_method.sql 적용이 필요해요") from exc
         rows = repo.client.rest_get("voucher_products", {"select": _LEGACY_PRODUCT_SELECT, **params})
-        return [{**row, "is_event": False, "event_start_at": None, "event_end_at": None} for row in rows], True
+        return [{**row, "kiwoom_pay_method": "TOTAL", "is_event": False, "event_start_at": None, "event_end_at": None} for row in rows], True
 
 
 def _delete_replaced_image(repo: JoinRepository, merchant_id: str, old_url: str | None, new_url: str | None) -> None:
@@ -295,6 +295,7 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
             "merchant_id": merchant["id"], "product_id": None, "voucher_product_id": product["id"],
             "merchant_name": merchant["name"], "product_name": product["name"], "amount": amount,
             "status": "ready", "pay_type": "voucher", "voucher_count": total_count,
+            "requested_payment_method": product.get("kiwoom_pay_method") or "TOTAL",
             "paid_voucher_count": int(product["voucher_count"]),
             "bonus_voucher_count": int(product.get("bonus_count") or 0),
             # KiwoomPay charges integer KRW; snapshot from that exact charged amount, not numeric sale_price.

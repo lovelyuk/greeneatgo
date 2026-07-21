@@ -21,6 +21,7 @@ void main() {
       'discount_rate': 10,
       'sale_price': 72000,
       'total_count': 11,
+      'kiwoom_pay_method': 'BANK',
       'image_url': 'https://example.com/voucher.jpg',
     });
 
@@ -28,6 +29,7 @@ void main() {
     expect(product.saving, 8000);
     expect(product.totalCount, 11);
     expect(product.imageUrl, isNotNull);
+    expect(product.kiwoomPayMethod, 'BANK');
   });
 
   test('event voucher exposes event flag and D-day label', () {

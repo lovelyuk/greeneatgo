@@ -25,7 +25,8 @@ ORDER_SELECT = (
     "id,order_id,checkout_token,user_id,merchant_id,product_id,merchant_name,"
     "product_name,amount,status,provider_payment_key,payment_method,approved_at,created_at,"
     "pay_type,voucher_product_id,voucher_count,voucher_purchase_price,fulfilled_at,provider_response,"
-    "company_id,company_subsidy_amount,restaurant_subsidy_amount,point_amount,point_reserved"
+    "company_id,company_subsidy_amount,restaurant_subsidy_amount,point_amount,point_reserved,"
+    "requested_payment_method"
 )
 
 
@@ -86,6 +87,7 @@ def create_order(payload: PaymentOrderCreateRequest, token: str = Depends(bearer
             "merchant_id": merchant["id"], "product_id": product["id"],
             "merchant_name": merchant["name"], "product_name": product["name"],
             "amount": int(product["price"]), "status": "ready", "pay_type": "direct",
+            "requested_payment_method": "TOTAL",
         })[0]
         return {"ok": True, "data": {
             "order_id": order_id, "amount": order["amount"], "product_name": order["product_name"],
@@ -118,9 +120,13 @@ def checkout(checkout_token: str):
         raise _error(404, "ORDER_NOT_FOUND", "결제할 주문이 없거나 이미 처리됐어요")
     order = rows[0]
     _ensure_voucher_order_available(repo, order)
+    pay_method = str(order.get("requested_payment_method") or "TOTAL")
+    if pay_method not in {"TOTAL", "BANK"}:
+        raise _error(409, "INVALID_PAYMENT_METHOD", "주문 결제수단 설정이 올바르지 않아요")
     try:
         secure_hash = request_payment_hash(settings.kiwoompay_base_url, KiwoomHashInput(
             cpid=settings.kiwoompay_cpid, order_id=order["order_id"], amount=int(order["amount"]),
+            pay_method=pay_method,
         ))
     except KiwoomPaymentError as exc:
         raise _error(exc.status if 400 <= exc.status < 500 else 502, exc.code, exc.message) from exc
@@ -131,7 +137,7 @@ def checkout(checkout_token: str):
     fail_url = f"{settings.public_api_base_url}/payments/redirect/fail?orderId={order_id}"
     close_url = f"{settings.public_api_base_url}/payments/redirect/close?orderId={order_id}"
     fields = {
-        "PAYMETHOD": "TOTAL", "TYPE": "W", "CPID": settings.kiwoompay_cpid,
+        "PAYMETHOD": pay_method, "TYPE": "W", "CPID": settings.kiwoompay_cpid,
         "ORDERNO": order_id, "AMOUNT": amount,
         "PRODUCTNAME": _safe_text(order["product_name"], 50),
         "PRODUCTCODE": _safe_text(order.get("product_id") or order.get("voucher_product_id") or "GE", 10),
@@ -147,7 +153,7 @@ def checkout(checkout_token: str):
     return HTMLResponse(f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>그린잇 결제</title>
 <style>body{{margin:0;background:#f3fbf4;color:#14351f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}main{{max-width:560px;margin:auto;padding:32px 18px;text-align:center}}.card{{background:#fff;border:1px solid #cdebd5;border-radius:22px;padding:24px}}button{{width:100%;border:0;border-radius:16px;padding:17px;background:#2fb865;color:#fff;font-size:17px;font-weight:800}}</style></head>
-<body><main><section class="card"><h1>{escape(str(order['merchant_name']))}</h1><p>{escape(str(order['product_name']))}</p><strong>{int(amount):,}원</strong><form id="payment" method="post" action="{action}" accept-charset="UTF-8">{hidden}<button type="submit">카드 결제하기</button></form></section></main>
+<body><main><section class="card"><h1>{escape(str(order['merchant_name']))}</h1><p>{escape(str(order['product_name']))}</p><strong>{int(amount):,}원</strong><form id="payment" method="post" action="{action}" accept-charset="UTF-8">{hidden}<button type="submit">결제하기</button></form></section></main>
 <script>document.getElementById('payment').submit();</script></body></html>""")
 
 
@@ -195,6 +201,9 @@ async def _notification(request: Request) -> Response:
             return _ack(False, 404)
         order = rows[0]
         if int(values.get("AMOUNT") or 0) != int(order["amount"]):
+            return _ack(False, 409)
+        requested_method = str(order.get("requested_payment_method") or "TOTAL")
+        if requested_method == "BANK" and pay_method != "BANK":
             return _ack(False, 409)
         if order.get("status") == "done":
             return _ack(order.get("provider_payment_key") == transaction_id, 200 if order.get("provider_payment_key") == transaction_id else 409)

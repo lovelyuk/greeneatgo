@@ -23,6 +23,7 @@ services:
         sync: false
       - key: KIWOOMPAY_CPID
         sync: false
+      # Optional: not used for payment; required only by automatic cancel/refund API calls.
       - key: KIWOOMPAY_AUTHORIZATION_KEY
         sync: false
       - key: KIWOOMPAY_BASE_URL

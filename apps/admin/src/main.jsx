@@ -603,7 +603,7 @@ function TransactionSkeleton() {
 }
 
 function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage, uploadImage, deleteImage, onChanged, setBusy, setError, setMessage }) {
-  const blank = { name: '', voucher_count: '0', bonus_count: '0', unit_price: '', discount_rate: '0', status: 'active', display_order: '0', image_url: '', is_event: false, event_start_at: '', event_end_at: '' };
+  const blank = { name: '', voucher_count: '0', bonus_count: '0', unit_price: '', discount_rate: '0', status: 'active', display_order: '0', kiwoom_pay_method: 'TOTAL', image_url: '', is_event: false, event_start_at: '', event_end_at: '' };
   const [form, setForm] = useState(blank);
   const [editingId, setEditingId] = useState(null);
   const [pendingImage, setPendingImage] = useState(null);
@@ -665,6 +665,7 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
         unit_price: Number(form.unit_price), discount_rate: discount, status: form.status,
         display_order: Number(form.display_order || 0), image_url: uploadedImageUrl || form.image_url || null,
         ...(!migrationRequired ? {
+          kiwoom_pay_method: form.kiwoom_pay_method,
           is_event: !!form.is_event,
           event_start_at: form.is_event ? new Date(form.event_start_at).toISOString() : null,
           event_end_at: form.is_event ? new Date(form.event_end_at).toISOString() : null,
@@ -688,7 +689,7 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
   }
   return <section className="panel voucher-panel">
     <div className="panel-title"><div><h2>판매 상품(일반)</h2><p className="panel-note">삭제하지 않고 숨김/판매 재개합니다. 이벤트 상품은 설정 기간에만 자동 노출됩니다.</p></div><span className="badge">{items.length}개</span></div>
-    {migrationRequired && <div className="alert error">이벤트 상품 DB 마이그레이션이 아직 적용되지 않았어요. 0020_voucher_product_events.sql 적용 후 이벤트 등록이 활성화됩니다.</div>}
+    {migrationRequired && <div className="alert error">상품 DB 마이그레이션이 아직 적용되지 않았어요. 0020과 0030 마이그레이션 적용 후 이벤트·결제방식 설정이 활성화됩니다.</div>}
     <form className="voucher-form" onSubmit={save}>
       <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="패키지명" required />
       <label>기본 장수<input type="number" min="1" max="1000" value={form.voucher_count} onChange={(e) => setForm((p) => ({ ...p, voucher_count: e.target.value }))} required /></label>
@@ -697,6 +698,7 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
       <label>장당 정가<input type="number" min="1" step="0.01" value={form.unit_price} onChange={(e) => setForm((p) => ({ ...p, unit_price: e.target.value }))} required /></label>
       <label>할인율(%)<input type="number" min="0" max="99.99" step="0.01" value={form.discount_rate} onChange={(e) => setForm((p) => ({ ...p, discount_rate: e.target.value }))} /></label>
       <label>상태<select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}><option value="active">판매중</option><option value="inactive">숨김</option></select></label>
+      <label>결제 방식<select value={form.kiwoom_pay_method} onChange={(e) => setForm((p) => ({ ...p, kiwoom_pay_method: e.target.value }))} disabled={migrationRequired}><option value="TOTAL">통합결제창</option><option value="BANK">계좌이체 전용</option></select></label>
       <label>노출순서<input type="number" value={form.display_order} onChange={(e) => setForm((p) => ({ ...p, display_order: e.target.value }))} /></label>
       <label className="event-toggle"><input type="checkbox" checked={form.is_event} onChange={(e) => setForm((p) => ({ ...p, is_event: e.target.checked }))} disabled={migrationRequired}/> 🎉 이벤트 상품으로 등록</label>
       {form.is_event && <>
@@ -708,7 +710,7 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
       {bonus > 0 && discount > 0 && <div className="alert warning">보너스와 할인율이 동시에 적용됩니다. 판매가와 총 장수를 다시 확인하세요.</div>}
       <div className="row-actions"><button className="primary" disabled={busy}>{editingId ? '수정 저장' : '상품 등록'}</button>{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(blank); resetPendingImage(); }}>취소</button>}</div>
     </form>
-    <div className="product-list">{items.map((item) => <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}+{item.bonus_count}장 · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span><span className={`exposure-status ${item.exposure_status}`}>{item.exposure_label}</span>{item.is_event && <span className="event-period">{displayEventPeriod(item)}</span>}</div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button className="ghost" onClick={() => toggle(item)}>{item.status === 'active' ? '숨김' : '판매 재개'}</button></div></article>)}</div>
+    <div className="product-list">{items.map((item) => <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}+{item.bonus_count}장 · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span><span className="badge">{item.kiwoom_pay_method === 'BANK' ? '계좌이체 전용' : '통합결제창'}</span><span className={`exposure-status ${item.exposure_status}`}>{item.exposure_label}</span>{item.is_event && <span className="event-period">{displayEventPeriod(item)}</span>}</div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button className="ghost" onClick={() => toggle(item)}>{item.status === 'active' ? '숨김' : '판매 재개'}</button></div></article>)}</div>
   </section>;
 }
 

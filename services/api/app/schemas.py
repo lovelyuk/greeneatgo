@@ -88,6 +88,7 @@ class VoucherProductCreateRequest(BaseModel):
     discount_rate: Decimal = Field(default=Decimal("0"), ge=0, lt=100, max_digits=5, decimal_places=2)
     status: str = Field(default="active", pattern="^(active|inactive)$")
     display_order: int = Field(default=0, ge=-100000, le=100000)
+    kiwoom_pay_method: str = Field(default="TOTAL", pattern="^(TOTAL|BANK)$")
     image_url: str | None = Field(default=None, max_length=500)
     is_event: bool = False
     event_start_at: datetime | None = None
@@ -119,12 +120,13 @@ class VoucherProductUpdateRequest(BaseModel):
     discount_rate: Decimal | None = Field(default=None, ge=0, lt=100, max_digits=5, decimal_places=2)
     status: str | None = Field(default=None, pattern="^(active|inactive)$")
     display_order: int | None = Field(default=None, ge=-100000, le=100000)
+    kiwoom_pay_method: str | None = Field(default=None, pattern="^(TOTAL|BANK)$")
     image_url: str | None = Field(default=None, max_length=500)
     is_event: bool | None = None
     event_start_at: datetime | None = None
     event_end_at: datetime | None = None
 
-    @field_validator("name", "voucher_count", "bonus_count", "unit_price", "discount_rate", "status", "display_order", "is_event", mode="before")
+    @field_validator("name", "voucher_count", "bonus_count", "unit_price", "discount_rate", "status", "display_order", "kiwoom_pay_method", "is_event", mode="before")
     @classmethod
     def reject_explicit_null(cls, value: object) -> object:
         if value is None:

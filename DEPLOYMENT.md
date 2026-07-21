@@ -39,6 +39,7 @@ SUPABASE_URL=https://PROJECT.supabase.co
 SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 KIWOOMPAY_CPID=...
+# 결제에는 불필요. 자동 취소/환불 API를 사용할 때만 키움페이 발급값 설정.
 KIWOOMPAY_AUTHORIZATION_KEY=...
 KIWOOMPAY_BASE_URL=https://apitest.kiwoompay.co.kr
 PUBLIC_API_BASE_URL=https://greeneatgo-api.onrender.com/v1
@@ -108,7 +109,7 @@ curl -I https://greeneatgo.vercel.app
 
 배포 전 최소 확인:
 
-- 마이그레이션 `0001~0029` 실제 적용 상태
+- 마이그레이션 `0001~0030` 실제 적용 상태
 - RLS와 RPC 실행권
 - Email Auth와 Redirect URL
 - 이미지 Storage 버킷과 정책

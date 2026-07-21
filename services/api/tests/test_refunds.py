@@ -123,6 +123,38 @@ def test_card_refund_uses_claimed_amount_and_order_provider_payment_key(repo_cla
     assert finalize["p_pg_response"]["RESULTCODE"] == "0000"
 
 
+@patch("app.routers.merchant_admin.cancel_payment")
+@patch("app.routers.merchant_admin.get_settings")
+@patch("app.routers.merchant_admin.JoinRepository")
+def test_bank_refund_uses_bank_cancel_method(repo_class, settings, cancel):
+    repo = repo_class.return_value
+    repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
+    repo.get_profile.return_value = SimpleNamespace(
+        id="admin-123", role="merchant_admin", status="active", merchant_id="merchant-1"
+    )
+    repo.client.rest_get.return_value = [{
+        "id": "internal-order", "order_id": "GE-V-bank123", "user_id": "account-123",
+        "merchant_id": "merchant-1", "pay_type": "voucher", "status": "done",
+        "amount": 80000, "point_amount": 0, "provider_payment_key": "bank-trx",
+        "payment_method": "BANK",
+    }]
+    repo.client.rpc.side_effect = [
+        {"refund_request_id": "refund-bank", "refund_amount": 80000,
+         "provider_payment_key": "bank-trx"},
+        {"status": "completed", "refund_amount": 80000},
+    ]
+    settings.return_value.kiwoompay_base_url = "https://apitest.kiwoompay.co.kr"
+    settings.return_value.kiwoompay_authorization_key = "auth-key"
+    settings.return_value.kiwoompay_cpid = "CPID"
+    cancel.return_value = {"RESULTCODE": "0000", "AMOUNT": "80000"}
+
+    refund_purchase_order(MerchantRefundRequest(
+        account_id="account-123", order_id="GE-V-bank123"
+    ), "token")
+
+    assert cancel.call_args.kwargs["pay_method"] == "BANK"
+
+
 @patch("app.routers.merchant_admin.JoinRepository")
 def test_payment_history_separates_usage_payments_and_refunds(repo_class):
     repo = repo_class.return_value

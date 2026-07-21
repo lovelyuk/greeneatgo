@@ -342,6 +342,7 @@ class VoucherProduct {
       required this.discountRate,
       required this.salePrice,
       required this.totalCount,
+      required this.kiwoomPayMethod,
       required this.isEvent,
       this.eventEndAt,
       this.imageUrl});
@@ -353,6 +354,7 @@ class VoucherProduct {
   final num discountRate;
   final int salePrice;
   final int totalCount;
+  final String kiwoomPayMethod;
   final bool isEvent;
   final DateTime? eventEndAt;
   final String? imageUrl;
@@ -381,6 +383,7 @@ class VoucherProduct {
       discountRate: json['discount_rate'] as num? ?? 0,
       salePrice: integer('sale_price'),
       totalCount: integer('total_count'),
+      kiwoomPayMethod: json['kiwoom_pay_method'] as String? ?? 'TOTAL',
       isEvent: json['is_event'] as bool? ?? false,
       eventEndAt: json['event_end_at'] == null
           ? null
@@ -2421,6 +2424,9 @@ class _VoucherProductCard extends StatelessWidget {
             _PromoBadge(
                 text: '${product.bonusCount}장 보너스',
                 icon: Icons.card_giftcard_rounded),
+          if (product.kiwoomPayMethod == 'BANK')
+            const _PromoBadge(
+                text: '계좌이체 전용', icon: Icons.account_balance_rounded),
         ]),
         const SizedBox(height: 10),
         Text(

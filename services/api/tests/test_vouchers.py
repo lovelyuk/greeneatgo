@@ -53,6 +53,22 @@ class VoucherCoreTests(unittest.TestCase):
                 {"name": "free", "voucher_count": 1, "unit_price": 8000, "discount_rate": 100}
             )
 
+    def test_voucher_payment_policy_defaults_total_and_accepts_only_bank_or_total(self):
+        default = VoucherProductCreateRequest.model_validate(
+            {"name": "일반", "voucher_count": 1, "unit_price": 8000}
+        )
+        bank = VoucherProductCreateRequest.model_validate(
+            {"name": "10+1", "voucher_count": 10, "bonus_count": 1,
+             "unit_price": 8000, "kiwoom_pay_method": "BANK"}
+        )
+        self.assertEqual(default.kiwoom_pay_method, "TOTAL")
+        self.assertEqual(bank.kiwoom_pay_method, "BANK")
+        with self.assertRaises(ValidationError):
+            VoucherProductCreateRequest.model_validate(
+                {"name": "잘못됨", "voucher_count": 1, "unit_price": 8000,
+                 "kiwoom_pay_method": "CARD"}
+            )
+
     def test_voucher_name_is_trimmed_and_blank_is_rejected(self):
         payload = VoucherProductCreateRequest.model_validate(
             {"name": "  10장  ", "voucher_count": 10, "unit_price": 8000}

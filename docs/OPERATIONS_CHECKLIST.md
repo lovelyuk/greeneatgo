@@ -14,7 +14,7 @@
 
 - [ ] 적용 전 DB 백업 또는 PITR 정책 확인
 - [ ] `infra/migrations`를 번호순으로 대조
-- [ ] 새 개발 DB에 `0001~0029` 전체 적용 및 0원 카드금액 제약 확인
+- [ ] 새 개발 DB에 `0001~0030` 전체 적용 및 0원 카드금액 제약 확인
 - [ ] RLS 활성화와 anon/authenticated 직접 쓰기 차단 확인
 - [ ] service role 전용 RPC 실행권 확인
 - [ ] `process_meal_pay`가 최신 함수인지 확인
@@ -27,7 +27,7 @@
 - [ ] `SUPABASE_ANON_KEY`
 - [ ] `SUPABASE_SERVICE_ROLE_KEY`
 - [ ] `KIWOOMPAY_CPID`
-- [ ] `KIWOOMPAY_AUTHORIZATION_KEY`
+- [ ] 자동 취소/환불 API를 사용할 때만 `KIWOOMPAY_AUTHORIZATION_KEY`
 - [ ] `KIWOOMPAY_BASE_URL`
 - [ ] `KIWOOMPAY_NOTIFICATION_IPS`
 - [ ] `PUBLIC_API_BASE_URL=https://greeneatgo-api.onrender.com/v1`

@@ -36,3 +36,6 @@ services:
         sync: false
       - key: INVITE_EMAIL_FROM
         sync: false
+      # Firebase Admin SDK: store the service-account JSON as Base64 in Render Secret.
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON_BASE64
+        sync: false

@@ -1,40 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-const firebaseEnabled =
-    bool.fromEnvironment('FIREBASE_ENABLED', defaultValue: false);
-const firebaseApiKey = String.fromEnvironment('FIREBASE_API_KEY');
-const firebaseAppId = String.fromEnvironment('FIREBASE_APP_ID');
-const firebaseMessagingSenderId =
-    String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID');
-const firebaseProjectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
-
-FirebaseOptions get appFirebaseOptions => const FirebaseOptions(
-      apiKey: firebaseApiKey,
-      appId: firebaseAppId,
-      messagingSenderId: firebaseMessagingSenderId,
-      projectId: firebaseProjectId,
-    );
-
-bool get hasCompleteFirebaseOptions =>
-    firebaseApiKey.isNotEmpty &&
-    firebaseAppId.isNotEmpty &&
-    firebaseMessagingSenderId.isNotEmpty &&
-    firebaseProjectId.isNotEmpty;
+import 'firebase_config.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (!firebaseEnabled || !hasCompleteFirebaseOptions) return;
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(options: appFirebaseOptions);
-  }
+  await ensureFirebaseInitialized();
 }
 
 class PushNotifications {
@@ -67,7 +45,7 @@ class PushNotifications {
       return;
     }
     try {
-      await Firebase.initializeApp(options: appFirebaseOptions);
+      await ensureFirebaseInitialized();
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
       await _localNotifications.initialize(
         settings: const InitializationSettings(
@@ -79,7 +57,8 @@ class PushNotifications {
           .resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(_announcementChannel);
-      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+      await FirebaseMessaging.instance
+          .setForegroundNotificationPresentationOptions(
         alert: true,
         badge: true,
         sound: true,
@@ -93,8 +72,9 @@ class PushNotifications {
   Stream<RemoteMessage> get foregroundMessages =>
       _initialized ? FirebaseMessaging.onMessage : const Stream.empty();
 
-  Stream<RemoteMessage> get openedMessages =>
-      _initialized ? FirebaseMessaging.onMessageOpenedApp : const Stream.empty();
+  Stream<RemoteMessage> get openedMessages => _initialized
+      ? FirebaseMessaging.onMessageOpenedApp
+      : const Stream.empty();
 
   Future<RemoteMessage?> initialMessage() async =>
       _initialized ? FirebaseMessaging.instance.getInitialMessage() : null;
@@ -154,7 +134,8 @@ class PushNotifications {
     try {
       await _register(token);
     } catch (error) {
-      debugPrint('FCM refreshed token synchronization failed: ${error.runtimeType}');
+      debugPrint(
+          'FCM refreshed token synchronization failed: ${error.runtimeType}');
     }
   }
 
@@ -175,8 +156,10 @@ class PushNotifications {
 
   Future<void> _register(String fcmToken) async {
     final accountId = _accountId;
-    final session = Supabase.instance.client.auth.currentSession;
-    if (accountId == null || session == null) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (accountId == null || user == null) return;
+    final idToken = await user.getIdToken();
+    if (idToken == null || idToken.isEmpty) return;
     final platform = defaultTargetPlatform == TargetPlatform.iOS
         ? 'ios'
         : defaultTargetPlatform == TargetPlatform.android
@@ -186,7 +169,7 @@ class PushNotifications {
     final response = await http.post(
       Uri.parse('$_apiBaseUrl/device-tokens'),
       headers: {
-        'Authorization': 'Bearer ${session.accessToken}',
+        'Authorization': 'Bearer $idToken',
         'Content-Type': 'application/json',
       },
       body: jsonEncode({
@@ -201,12 +184,14 @@ class PushNotifications {
   }
 
   Future<void> _unregister(String fcmToken) async {
-    final session = Supabase.instance.client.auth.currentSession;
-    if (session == null) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final idToken = await user.getIdToken();
+    if (idToken == null || idToken.isEmpty) return;
     final response = await http.delete(
       Uri.parse('$_apiBaseUrl/device-tokens'),
       headers: {
-        'Authorization': 'Bearer ${session.accessToken}',
+        'Authorization': 'Bearer $idToken',
         'Content-Type': 'application/json',
       },
       body: jsonEncode({'fcm_token': fcmToken}),

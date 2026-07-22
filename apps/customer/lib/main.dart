@@ -1,23 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'auth_helpers.dart';
+import 'firebase_config.dart';
 import 'push_notifications.dart';
 
-const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
-const authEmailRedirectTo = String.fromEnvironment('AUTH_EMAIL_REDIRECT_TO',
-    defaultValue: 'https://greeneatgo-api.onrender.com/v1/auth/confirmed');
 const defaultMerchantQrToken = String.fromEnvironment('MERCHANT_QR_TOKEN',
     defaultValue: 'QR-PILOT-KIMCHI');
 
@@ -35,11 +34,11 @@ const kGold = Color(0xFFF3AE26);
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  await PushNotifications.instance.initialize(apiBaseUrl: apiBaseUrl);
-  if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
-    await Supabase.initialize(
-        url: supabaseUrl, publishableKey: supabaseAnonKey);
+  if (hasCompleteFirebaseOptions) {
+    await ensureFirebaseInitialized();
+    await FirebaseAuth.instance.setLanguageCode('ko');
   }
+  await PushNotifications.instance.initialize(apiBaseUrl: apiBaseUrl);
   runApp(const GreeneatGoApp());
 }
 
@@ -139,8 +138,33 @@ class GreeneatGoApp extends StatelessWidget {
 }
 
 class ApiClient {
-  ApiClient(this.session);
-  final Session session;
+  ApiClient(this.user);
+  final User user;
+
+  Future<String> _freshIdToken() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null || !currentUser.emailVerified) {
+      throw const ApiException(statusCode: 401, message: '로그인이 필요해요.');
+    }
+    if (user.uid != currentUser.uid) {
+      throw const ApiException(
+          statusCode: 401, message: '계정이 변경됐어요. 다시 시도해 주세요.');
+    }
+    final token = await currentUser.getIdToken();
+    if (token == null || token.isEmpty) {
+      throw const ApiException(
+          statusCode: 401, message: '로그인 정보를 확인할 수 없어요. 다시 로그인해 주세요.');
+    }
+    final latestUser = FirebaseAuth.instance.currentUser;
+    if (latestUser == null ||
+        !latestUser.emailVerified ||
+        latestUser.uid != user.uid ||
+        latestUser.uid != currentUser.uid) {
+      throw const ApiException(
+          statusCode: 401, message: '계정이 변경됐어요. 다시 시도해 주세요.');
+    }
+    return token;
+  }
 
   Future<Map<String, dynamic>> getMe() async => _request('/me');
 
@@ -162,19 +186,21 @@ class ApiClient {
         'image_urls': images
       });
   Future<String> uploadReviewImage(XFile file) async {
+    final token = await _freshIdToken();
     final request =
         http.MultipartRequest('POST', Uri.parse('$apiBaseUrl/reviews/images'))
-          ..headers['Authorization'] = 'Bearer ${session.accessToken}'
+          ..headers['Authorization'] = 'Bearer $token'
           ..files.add(await http.MultipartFile.fromPath('file', file.path,
               filename: file.name));
     final response = await request.send();
     final decoded = jsonDecode(await response.stream.bytesToString())
         as Map<String, dynamic>;
-    if (response.statusCode < 200 || response.statusCode >= 300)
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(
           statusCode: response.statusCode,
           message: ((decoded['detail'] as Map?)?['message'] ?? '사진을 올리지 못했어요')
               .toString());
+    }
     return ((decoded['data'] as Map)['image_url']).toString();
   }
 
@@ -206,10 +232,14 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> requestJoin(
-      {required String inviteCode, required String displayName}) {
-    return _request('/join/request',
-        method: 'POST',
-        body: {'invite_code': inviteCode, 'display_name': displayName});
+      {required String inviteCode,
+      required String displayName,
+      required String phone}) {
+    return _request('/join/request', method: 'POST', body: {
+      'invite_code': inviteCode,
+      'display_name': displayName,
+      'phone': normalizeEmployeePhone(phone),
+    });
   }
 
   Future<Map<String, dynamic>> registerConsumer({required String displayName}) {
@@ -225,10 +255,8 @@ class ApiClient {
 
   Future<Map<String, dynamic>> confirmPayment(
       {required String orderId, required int amount}) {
-    return _request('/payments/confirm', method: 'POST', body: {
-      'order_id': orderId,
-      'amount': amount
-    });
+    return _request('/payments/confirm',
+        method: 'POST', body: {'order_id': orderId, 'amount': amount});
   }
 
   Future<Map<String, dynamic>> payProduct(
@@ -238,7 +266,7 @@ class ApiClient {
       'amount': product.price,
       'product_id': product.id,
       'idempotency_key':
-          '${session.user.id}-${product.id}-${DateTime.now().millisecondsSinceEpoch}',
+          '${user.uid}-${product.id}-${DateTime.now().millisecondsSinceEpoch}',
     });
   }
 
@@ -250,7 +278,7 @@ class ApiClient {
     final request = http.Request(method, uri)
       ..headers['Content-Type'] = 'application/json';
     if (authenticated) {
-      request.headers['Authorization'] = 'Bearer ${session.accessToken}';
+      request.headers['Authorization'] = 'Bearer ${await _freshIdToken()}';
     }
     if (body != null) request.body = jsonEncode(body);
     final streamed = await request.send();
@@ -500,29 +528,38 @@ class AppGate extends StatefulWidget {
 }
 
 class _AppGateState extends State<AppGate> {
-  Session? _session;
+  User? _session;
   Map<String, dynamic>? _me;
   bool _loading = true;
   String? _error;
-  StreamSubscription<AuthState>? _authSubscription;
+  StreamSubscription<User?>? _authSubscription;
   StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
   StreamSubscription<RemoteMessage>? _openedMessageSubscription;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
     super.initState();
-    if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty || apiBaseUrl.isEmpty) {
-      _error =
-          '앱 환경값이 누락됐어요. SUPABASE_URL, SUPABASE_ANON_KEY, API_BASE_URL을 확인해 주세요.';
+    if (!hasCompleteFirebaseOptions || apiBaseUrl.isEmpty) {
+      _error = '앱 환경값이 누락됐어요. Firebase 클라이언트 설정과 API_BASE_URL을 확인해 주세요.';
       _loading = false;
       return;
     }
-    _session = Supabase.instance.client.auth.currentSession;
-    _authSubscription =
-        Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+    final initialUser = FirebaseAuth.instance.currentUser;
+    _session = initialUser?.emailVerified == true ? initialUser : null;
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
       if (!mounted) return;
-      setState(() => _session = event.session);
-      _loadMe();
+      // An unverified identity may briefly exist while sign-up sends its
+      // verification email. Withhold it instead of racing sign-up by signing
+      // it out from this global listener.
+      final verifiedUser = user?.emailVerified == true ? user : null;
+      _loadGeneration++;
+      setState(() {
+        _session = verifiedUser;
+        _me = null;
+        _error = null;
+      });
+      unawaited(_loadMe());
     });
     _foregroundMessageSubscription = PushNotifications
         .instance.foregroundMessages
@@ -546,6 +583,7 @@ class _AppGateState extends State<AppGate> {
 
   @override
   void dispose() {
+    _loadGeneration++;
     _authSubscription?.cancel();
     _foregroundMessageSubscription?.cancel();
     _openedMessageSubscription?.cancel();
@@ -554,13 +592,17 @@ class _AppGateState extends State<AppGate> {
 
   Future<void> _loadMe({bool showLoading = true}) async {
     final session = _session;
+    final generation = ++_loadGeneration;
     if (session == null) {
+      if (!mounted) return;
       setState(() {
         _me = null;
         _loading = false;
+        _error = null;
       });
       return;
     }
+    final uid = session.uid;
     if (showLoading) {
       setState(() {
         _loading = true;
@@ -571,27 +613,48 @@ class _AppGateState extends State<AppGate> {
     }
     try {
       final me = await ApiClient(session).getMe();
-      if (!mounted) return;
+      if (!_isCurrentLoad(generation, uid)) return;
       setState(() => _me = me);
       final accountId = me['user_id'] as String?;
-      if (me['status'] == 'active' && accountId != null) {
+      if (me['status'] == 'active' &&
+          accountId != null &&
+          _isCurrentLoad(generation, uid)) {
         unawaited(PushNotifications.instance.activateForAccount(accountId));
       }
     } catch (error) {
-      if (!mounted) return;
+      if (!_isCurrentLoad(generation, uid)) return;
       setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (_isCurrentLoad(generation, uid)) {
+        setState(() => _loading = false);
+      }
     }
   }
 
+  bool _isCurrentLoad(int generation, String uid) {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    return mounted &&
+        generation == _loadGeneration &&
+        _session?.uid == uid &&
+        firebaseUser?.uid == uid &&
+        firebaseUser?.emailVerified == true;
+  }
+
   Future<void> _signOut() async {
-    await PushNotifications.instance.deactivateBeforeLogout();
-    await Supabase.instance.client.auth.signOut();
-    setState(() {
-      _session = null;
-      _me = null;
-    });
+    _loadGeneration++;
+    if (mounted) {
+      setState(() {
+        _session = null;
+        _me = null;
+        _error = null;
+        _loading = false;
+      });
+    }
+    try {
+      await PushNotifications.instance.deactivateBeforeLogout();
+    } finally {
+      await FirebaseAuth.instance.signOut();
+    }
   }
 
   @override
@@ -629,6 +692,12 @@ class _AppGateState extends State<AppGate> {
 String normalizeEmployeePhone(String value) =>
     value.trim().replaceAll(RegExp(r'[\s-]'), '');
 
+bool isOperationalPasswordResetError(String code) => const {
+      'network-request-failed',
+      'too-many-requests',
+      'quota-exceeded'
+    }.contains(code);
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.onLoggedIn});
   final Future<void> Function() onLoggedIn;
@@ -648,18 +717,44 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
   String? _info;
 
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    _passwordConfirm.dispose();
+    _displayName.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
   Future<void> _login() async {
     setState(() {
       _busy = true;
       _error = null;
       _info = null;
     });
+    final email = _email.text.trim();
+    if (!isValidEmail(email)) {
+      setState(() {
+        _busy = false;
+        _error = '올바른 이메일 주소를 입력해 주세요.';
+      });
+      return;
+    }
     try {
-      await Supabase.instance.client.auth.signInWithPassword(
-          email: _email.text.trim(), password: _password.text);
+      final credential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: email, password: _password.text);
+      await credential.user?.reload();
+      if (FirebaseAuth.instance.currentUser?.emailVerified != true) {
+        await FirebaseAuth.instance.signOut();
+        if (mounted) {
+          setState(() => _info = '이메일 인증이 필요해요. 받은편지함의 인증 링크를 확인한 뒤 로그인해 주세요.');
+        }
+        return;
+      }
       await widget.onLoggedIn();
     } catch (error) {
-      setState(() => _error = _friendlyAuthError(error));
+      if (mounted) setState(() => _error = friendlyFirebaseAuthError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -676,6 +771,13 @@ class _LoginScreenState extends State<LoginScreen> {
     final displayName = _displayName.text.trim();
     final phone = normalizeEmployeePhone(_phone.text);
 
+    if (!isValidEmail(email)) {
+      setState(() {
+        _busy = false;
+        _error = '올바른 이메일 주소를 입력해 주세요.';
+      });
+      return;
+    }
     if (displayName.isEmpty) {
       setState(() {
         _busy = false;
@@ -705,40 +807,110 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    User? createdUser;
     try {
-      final response = await Supabase.instance.client.auth.signUp(
-        email: email,
-        password: password,
-        emailRedirectTo: authEmailRedirectTo,
-        data: {'display_name': displayName, 'phone': phone},
-      );
-      if (response.session != null) {
-        await widget.onLoggedIn();
-      } else {
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(email: email, password: password);
+      final currentUser = FirebaseAuth.instance.currentUser;
+      createdUser = credential.user ??
+          (currentUser?.email?.toLowerCase() == email.toLowerCase()
+              ? currentUser
+              : null);
+    } catch (error) {
+      if (mounted) setState(() => _error = friendlyFirebaseAuthError(error));
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
+
+    final newUser = createdUser;
+    if (newUser == null) {
+      if (mounted) {
         setState(() {
-          _signupMode = false;
-          _info = '회원가입 완료! 이메일 인증을 켠 경우 메일 확인 후 로그인해 주세요.';
+          _error = '회원가입을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.';
+          _busy = false;
         });
       }
+      return;
+    }
+
+    try {
+      await newUser.updateDisplayName(displayName);
+      await newUser.sendEmailVerification();
     } catch (error) {
-      setState(() => _error = _friendlyAuthError(error));
-    } finally {
+      // The Firebase account exists, but sign-up is not usable without all
+      // post-create steps. Remove only this newly-created account; sign-out is
+      // separate so its failure can never trigger deletion of a valid account.
+      await _cleanupFailedSignup(newUser);
+      if (mounted) {
+        setState(() => _error = '회원가입을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.');
+      }
       if (mounted) setState(() => _busy = false);
+      return;
+    }
+
+    try {
+      if (FirebaseAuth.instance.currentUser?.uid == newUser.uid) {
+        await FirebaseAuth.instance.signOut();
+      }
+    } catch (error) {
+      debugPrint('Post-signup sign-out failed: ${error.runtimeType}');
+    }
+    if (mounted) {
+      setState(() {
+        _signupMode = false;
+        _password.clear();
+        _passwordConfirm.clear();
+        _info = '회원가입이 완료됐어요. 이메일로 보낸 인증 링크를 확인한 뒤 로그인해 주세요.';
+        _busy = false;
+      });
     }
   }
 
-  String _friendlyAuthError(Object error) {
-    final text = error.toString();
-    if (text.contains('Invalid login credentials')) {
-      return '이메일 또는 비밀번호가 올바르지 않아요.';
+  Future<void> _cleanupFailedSignup(User? createdUser) async {
+    if (createdUser != null) {
+      try {
+        await createdUser.delete();
+      } catch (error) {
+        debugPrint('Failed sign-up account cleanup: ${error.runtimeType}');
+      }
     }
-    if (text.contains('User already registered')) {
-      return '이미 가입된 이메일이에요. 로그인해 주세요.';
+    try {
+      if (createdUser != null &&
+          FirebaseAuth.instance.currentUser?.uid == createdUser.uid) {
+        await FirebaseAuth.instance.signOut();
+      }
+    } catch (error) {
+      debugPrint('Failed sign-up sign-out: ${error.runtimeType}');
     }
-    if (text.contains('Password should be')) return '비밀번호 조건을 확인해 주세요.';
-    return text
-        .replaceFirst('AuthException(message: ', '')
-        .replaceFirst('Exception: ', '');
+  }
+
+  Future<void> _resetPassword() async {
+    final email = _email.text.trim();
+    if (!isValidEmail(email)) {
+      setState(() => _error = '비밀번호 재설정 링크를 받을 이메일을 올바르게 입력해 주세요.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+      _info = null;
+    });
+    const safeNotice = '가입된 이메일이라면 비밀번호 재설정 메일을 보냈어요. 받은편지함과 스팸함을 확인해 주세요.';
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (mounted) setState(() => _info = safeNotice);
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      // Only operational failures are actionable here. All identity-dependent
+      // outcomes use the same notice so account existence/status is not leaked.
+      if (isOperationalPasswordResetError(error.code)) {
+        setState(() => _error = friendlyFirebaseAuthError(error));
+      } else {
+        setState(() => _info = safeNotice);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _toggleMode() {
@@ -801,6 +973,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         decoration: const InputDecoration(
                             labelText: '비밀번호',
                             prefixIcon: Icon(Icons.lock_outline))),
+                    if (!_signupMode)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _busy ? null : _resetPassword,
+                          child: const Text('비밀번호를 잊으셨나요?'),
+                        ),
+                      ),
                     if (_signupMode) ...[
                       const SizedBox(height: 12),
                       TextField(
@@ -862,7 +1042,7 @@ class InviteCodeScreen extends StatefulWidget {
       required this.me,
       required this.onSubmitted,
       required this.onSignOut});
-  final Session session;
+  final User session;
   final Map<String, dynamic>? me;
   final Future<void> Function() onSubmitted;
   final Future<void> Function() onSignOut;
@@ -874,22 +1054,40 @@ class InviteCodeScreen extends StatefulWidget {
 class _InviteCodeScreenState extends State<InviteCodeScreen> {
   final _name = TextEditingController();
   final _code = TextEditingController();
+  final _phone = TextEditingController();
   bool _busy = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _name.dispose();
+    _code.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
   Future<void> _submit() async {
+    final phone = normalizeEmployeePhone(_phone.text);
+    if (!RegExp(r'^010\d{8}$').hasMatch(phone)) {
+      setState(() => _error = '전화번호는 010-XXXX-XXXX 형식으로 입력해 주세요.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       await ApiClient(widget.session).requestJoin(
-          inviteCode: _code.text.trim(), displayName: _name.text.trim());
+          inviteCode: _code.text.trim(),
+          displayName: _name.text.trim(),
+          phone: phone);
       await widget.onSubmitted();
+      if (!mounted) return;
     } catch (error) {
+      if (!mounted) return;
       setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -907,7 +1105,9 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
       await ApiClient(widget.session)
           .registerConsumer(displayName: displayName);
       await widget.onSubmitted();
+      if (!mounted) return;
     } catch (error) {
+      if (!mounted) return;
       setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -949,6 +1149,14 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
             decoration: const InputDecoration(
                 labelText: '회사 초대코드',
                 prefixIcon: Icon(Icons.confirmation_number_outlined))),
+        const SizedBox(height: 12),
+        TextField(
+            controller: _phone,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+                labelText: '전화번호',
+                hintText: '010-1234-5678',
+                prefixIcon: Icon(Icons.phone_outlined))),
         if (_error != null) BrandNotice(text: _error!, kind: NoticeKind.error),
         const SizedBox(height: 16),
         OutlinedButton(
@@ -1019,7 +1227,7 @@ class AccountSettingsScreen extends StatefulWidget {
       required this.session,
       required this.me,
       required this.onSignOut});
-  final Session session;
+  final User session;
   final Map<String, dynamic> me;
   final Future<void> Function() onSignOut;
 
@@ -1029,6 +1237,7 @@ class AccountSettingsScreen extends StatefulWidget {
 
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   late final TextEditingController _name;
+  final _currentPassword = TextEditingController();
   final _password = TextEditingController();
   final _passwordConfirm = TextEditingController();
   bool _savingName = false;
@@ -1045,6 +1254,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   @override
   void dispose() {
     _name.dispose();
+    _currentPassword.dispose();
     _password.dispose();
     _passwordConfirm.dispose();
     super.dispose();
@@ -1075,6 +1285,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 
   Future<void> _savePassword() async {
+    if (_currentPassword.text.isEmpty) {
+      return _message('현재 비밀번호를 입력해 주세요.', error: true);
+    }
     if (_password.text.length < 6) {
       return _message('새 비밀번호는 6자 이상 입력해 주세요.', error: true);
     }
@@ -1083,13 +1296,21 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     }
     setState(() => _savingPassword = true);
     try {
-      await Supabase.instance.client.auth
-          .updateUser(UserAttributes(password: _password.text));
+      final user = FirebaseAuth.instance.currentUser;
+      final email = user?.email;
+      if (user == null || email == null) {
+        throw FirebaseAuthException(code: 'requires-recent-login');
+      }
+      final credential = EmailAuthProvider.credential(
+          email: email, password: _currentPassword.text);
+      await user.reauthenticateWithCredential(credential);
+      await user.updatePassword(_password.text);
+      _currentPassword.clear();
       _password.clear();
       _passwordConfirm.clear();
       if (mounted) _message('비밀번호를 안전하게 변경했어요.');
     } catch (error) {
-      if (mounted) _message('비밀번호를 변경하지 못했어요. 잠시 후 다시 시도해 주세요.', error: true);
+      if (mounted) _message(friendlyFirebaseAuthError(error), error: true);
     } finally {
       if (mounted) setState(() => _savingPassword = false);
     }
@@ -1117,7 +1338,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               leading: const Icon(Icons.email_outlined),
               title: const Text('이메일'),
               subtitle: Text(widget.me['email'] as String? ??
-                  widget.session.user.email ??
+                  widget.session.email ??
                   '-')),
           ListTile(
               leading: const Icon(Icons.phone_outlined),
@@ -1169,8 +1390,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
           const Padding(
               padding: EdgeInsets.only(top: 6, bottom: 12),
-              child: Text('현재 비밀번호는 입력하지 않아도 돼요. 새 비밀번호만 안전하게 변경합니다.',
+              child: Text('보안을 위해 현재 비밀번호로 다시 인증한 뒤 변경합니다.',
                   style: TextStyle(color: Color(0xFF5C7A66)))),
+          TextField(
+              controller: _currentPassword,
+              obscureText: _hidePassword,
+              decoration: const InputDecoration(labelText: '현재 비밀번호')),
+          const SizedBox(height: 12),
           TextField(
               controller: _password,
               obscureText: _hidePassword,
@@ -1208,7 +1434,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen(
       {super.key, required this.session, required this.initialReviews});
-  final Session session;
+  final User session;
   final bool initialReviews;
   @override
   State<CommunityScreen> createState() => _CommunityScreenState();
@@ -1235,9 +1461,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
           ? mapList((await api.getReviewableTransactions())['items'])
           : [];
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -1300,13 +1527,15 @@ class _CommunityScreenState extends State<CommunityScreen> {
                               }
                               await api.createReview((tx['id'] as num).toInt(),
                                   rating, text.text, urls);
-                              if (dialogContext.mounted)
+                              if (dialogContext.mounted) {
                                 Navigator.pop(dialogContext);
+                              }
                               await load();
                             } catch (e) {
-                              if (context.mounted)
+                              if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(content: Text(e.toString())));
+                              }
                             }
                           },
                           child: const Text('등록하기'))
@@ -1443,7 +1672,7 @@ class HomeScreen extends StatelessWidget {
       required this.me,
       required this.onRefresh,
       required this.onSignOut});
-  final Session session;
+  final User session;
   final Map<String, dynamic> me;
   final Future<void> Function() onRefresh;
   final Future<void> Function() onSignOut;
@@ -1526,7 +1755,7 @@ class HomeScreen extends StatelessWidget {
             onTap: () async {
               await Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => UnifiedQrScanScreen(
-                        session: Supabase.instance.client.auth.currentSession!,
+                        session: session,
                         isConsumer: isConsumer,
                       )));
               await onRefresh();
@@ -1536,8 +1765,7 @@ class HomeScreen extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: () async {
               await Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => VoucherPurchaseScreen(
-                      session: Supabase.instance.client.auth.currentSession!)));
+                  builder: (_) => VoucherPurchaseScreen(session: session)));
               await onRefresh();
             },
             icon: const Icon(Icons.add_card_rounded),
@@ -1545,10 +1773,10 @@ class HomeScreen extends StatelessWidget {
           ),
         ] else ...[
           FutureBuilder<SubsidizedPrice>(
-            future: ApiClient(Supabase.instance.client.auth.currentSession!)
-                .getSubsidizedPrice(),
+            future: ApiClient(session).getSubsidizedPrice(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData) return const SizedBox.shrink();
+              final price = snapshot.data;
+              if (price == null) return const SizedBox.shrink();
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1579,13 +1807,11 @@ class HomeScreen extends StatelessWidget {
                     onPressed: () async {
                       await Navigator.of(context).push(MaterialPageRoute(
                           builder: (_) => SubsidizedVoucherPurchaseScreen(
-                              session: Supabase
-                                  .instance.client.auth.currentSession!)));
+                              session: session)));
                       await onRefresh();
                     },
                     icon: const Icon(Icons.add_card_rounded),
-                    label: Text(
-                        '지원 식권 구매하기 · ${won(snapshot.data!.employeePayAmount)}'),
+                    label: Text('지원 식권 구매하기 · ${won(price.employeePayAmount)}'),
                   ),
                 ],
               );
@@ -1926,7 +2152,7 @@ class _TodayMenuCard extends StatelessWidget {
 class UnifiedQrScanScreen extends StatefulWidget {
   const UnifiedQrScanScreen(
       {super.key, required this.session, required this.isConsumer});
-  final Session session;
+  final User session;
   final bool isConsumer;
 
   @override
@@ -2029,7 +2255,7 @@ class UnifiedPaymentResultScreen extends StatefulWidget {
       required this.session,
       required this.isConsumer,
       required this.qrData});
-  final Session session;
+  final User session;
   final bool isConsumer;
   final String qrData;
 
@@ -2053,7 +2279,7 @@ class _UnifiedPaymentResultScreenState
   }
 
   String _key() =>
-      '${widget.session.user.id}-${DateTime.now().microsecondsSinceEpoch}';
+      '${widget.session.uid}-${DateTime.now().microsecondsSinceEpoch}';
 
   Future<void> _pay() async {
     setState(() {
@@ -2236,7 +2462,7 @@ class _UnifiedPaymentResultScreenState
 
 class SubsidizedVoucherPurchaseScreen extends StatefulWidget {
   const SubsidizedVoucherPurchaseScreen({super.key, required this.session});
-  final Session session;
+  final User session;
 
   @override
   State<SubsidizedVoucherPurchaseScreen> createState() =>
@@ -2300,8 +2526,9 @@ class _SubsidizedVoucherPurchaseScreenState
                   onPressed: () async {
                     final paid = await Navigator.of(context).push<bool>(
                         MaterialPageRoute(
-                            builder: (_) => VoucherKiwoomPaymentScreen.subsidized(
-                                session: widget.session, price: price)));
+                            builder: (_) =>
+                                VoucherKiwoomPaymentScreen.subsidized(
+                                    session: widget.session, price: price)));
                     if (paid == true && context.mounted) {
                       Navigator.of(context).pop(true);
                     }
@@ -2315,7 +2542,7 @@ class _SubsidizedVoucherPurchaseScreenState
 
 class VoucherPurchaseScreen extends StatefulWidget {
   const VoucherPurchaseScreen({super.key, required this.session});
-  final Session session;
+  final User session;
 
   @override
   State<VoucherPurchaseScreen> createState() => _VoucherPurchaseScreenState();
@@ -2485,7 +2712,7 @@ class VoucherKiwoomPaymentScreen extends StatefulWidget {
       {super.key, required this.session, required SubsidizedPrice price})
       : product = null,
         subsidizedPrice = price;
-  final Session session;
+  final User session;
   final VoucherProduct? product;
   final SubsidizedPrice? subsidizedPrice;
 
@@ -2498,7 +2725,8 @@ class VoucherKiwoomPaymentScreen extends StatefulWidget {
       _VoucherKiwoomPaymentScreenState();
 }
 
-class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen> {
+class _VoucherKiwoomPaymentScreenState
+    extends State<VoucherKiwoomPaymentScreen> {
   late final WebViewController _controller;
   bool _loading = true;
   bool _confirming = false;
@@ -2615,8 +2843,8 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     });
     try {
       // Vouchers are issued atomically by this confirm response; redirect alone is not success.
-      final confirmed = await ApiClient(widget.session).confirmPayment(
-          orderId: orderId, amount: amount);
+      final confirmed = await ApiClient(widget.session)
+          .confirmPayment(orderId: orderId, amount: amount);
       final fulfillment = confirmed['fulfillment'] is Map
           ? (confirmed['fulfillment'] as Map).cast<String, dynamic>()
           : confirmed;
@@ -2710,7 +2938,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
 class ProductSelectionScreen extends StatefulWidget {
   const ProductSelectionScreen(
       {super.key, required this.session, required this.isConsumer});
-  final Session session;
+  final User session;
   final bool isConsumer;
 
   @override
@@ -2849,7 +3077,7 @@ class KiwoomPaymentScreen extends StatefulWidget {
       required this.session,
       required this.product,
       required this.qrToken});
-  final Session session;
+  final User session;
   final MerchantProduct product;
   final String qrToken;
 
@@ -2949,8 +3177,8 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen> {
       _error = null;
     });
     try {
-      await ApiClient(widget.session).confirmPayment(
-          orderId: orderId, amount: amount);
+      await ApiClient(widget.session)
+          .confirmPayment(orderId: orderId, amount: amount);
       if (mounted) {
         setState(() {
           _completed = true;
@@ -3039,7 +3267,7 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen> {
 class QrScanPaymentScreen extends StatefulWidget {
   const QrScanPaymentScreen(
       {super.key, required this.session, required this.product});
-  final Session session;
+  final User session;
   final MerchantProduct product;
 
   @override
@@ -3140,7 +3368,7 @@ class PaymentCompletePreview extends StatefulWidget {
       required this.session,
       required this.product,
       required this.qrToken});
-  final Session session;
+  final User session;
   final MerchantProduct product;
   final String qrToken;
 

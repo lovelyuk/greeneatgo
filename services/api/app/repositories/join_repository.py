@@ -5,6 +5,7 @@ from typing import Any
 
 from app.repositories.supabase_http import AuthUser, SupabaseHttpClient, SupabaseHttpError
 from app.services.employee_bulk import PHONE_RE, normalize_phone
+from app.services.firebase_auth import is_firebase_token, verify_firebase_auth_user
 from app.services.join_flow import (
     InviteCode,
     JoinErrorCode,
@@ -40,6 +41,8 @@ class JoinRepository:
         self.client = client or SupabaseHttpClient()
 
     def auth_user_from_token(self, access_token: str) -> AuthUser:
+        if is_firebase_token(access_token):
+            return verify_firebase_auth_user(access_token)
         return self.client.auth_get_user(access_token)
 
     def get_profile(self, user_id: str, *, email: str | None = None) -> UserProfile | None:
@@ -61,23 +64,34 @@ class JoinRepository:
             is_active=bool(row.get("is_active")),
         )
 
-    def request_join(self, *, access_token: str, invite_code: str, display_name: str) -> dict[str, Any]:
+    def request_join(
+        self,
+        *,
+        access_token: str,
+        invite_code: str,
+        display_name: str,
+        phone: str | None = None,
+    ) -> dict[str, Any]:
         auth_user = self.auth_user_from_token(access_token)
         existing = self.get_profile(auth_user.id, email=auth_user.email)
         user = existing or UserProfile(id=auth_user.id, email=auth_user.email or "", display_name=display_name)
         invite = self.get_invite(invite_code)
         validated_invite = validate_invite(invite, now=datetime.now(timezone.utc))
 
-        # The phone comes from the authenticated user's signup metadata, never
-        # from this request body. It is a pilot matching key (not SMS-verified),
-        # so the RPC also requires a valid company code and no existing profile.
-        metadata_phone = normalize_phone(auth_user.metadata.get("phone") or auth_user.metadata.get("phone_number"))
-        if PHONE_RE.fullmatch(metadata_phone):
+        # A request-body phone is unverified. It may be stored on a pending
+        # profile, but must never select or activate an employee bulk invite.
+        # Only legacy Supabase auth metadata retains that trusted auto-match path.
+        metadata_phone = normalize_phone(
+            auth_user.metadata.get("phone") or auth_user.metadata.get("phone_number")
+        )
+        join_phone = normalize_phone(phone) or metadata_phone
+        activation_phone = "" if is_firebase_token(access_token) else metadata_phone
+        if PHONE_RE.fullmatch(activation_phone):
             try:
                 activated = self.client.rpc("activate_employee_bulk_invite", {
                     "p_user_id": auth_user.id,
                     "p_company_id": validated_invite.company_id,
-                    "p_phone": metadata_phone,
+                    "p_phone": activation_phone,
                     "p_invite_code": invite_code,
                 })
             except SupabaseHttpError as exc:
@@ -94,7 +108,7 @@ class JoinRepository:
             "company_id": result.company_id,
             "group_id": result.group_id,
             "display_name": display_name,
-            "phone": metadata_phone if PHONE_RE.fullmatch(metadata_phone) else None,
+            "phone": join_phone if PHONE_RE.fullmatch(join_phone) else None,
             "role": "employee",
             "status": "pending",
             "rejected_at": None,

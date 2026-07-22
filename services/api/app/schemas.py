@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+import re
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -178,6 +179,24 @@ class ApiResponse(BaseModel):
 class JoinRequest(BaseModel):
     invite_code: str = Field(min_length=4, max_length=64)
     display_name: str = Field(min_length=1, max_length=80)
+    phone: str | None = Field(default=None, pattern=r"^010\d{8}$")
+
+    @field_validator("invite_code", "display_name", mode="before")
+    @classmethod
+    def trim_join_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_join_phone(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = re.sub(r"[\s-]", "", value.strip())
+            return normalized or None
+        return value
+
+    model_config = {"extra": "forbid"}
 
 
 class JoinDecisionRequest(BaseModel):

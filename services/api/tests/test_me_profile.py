@@ -4,12 +4,27 @@ from unittest.mock import patch
 
 from pydantic import ValidationError
 
-from app.routers.me import update_admin_name
+from app.routers.me import me, update_admin_name
 from app.schemas import ProfileNameUpdateRequest
 from app.services.join_flow import UserProfile
 
 
 class AdminProfileNameTests(unittest.TestCase):
+    @patch("app.routers.me.JoinRepository")
+    def test_me_includes_profile_phone(self, repo_class):
+        repo = repo_class.return_value
+        repo.auth_user_from_token.return_value = SimpleNamespace(
+            id="customer-1", email="customer@example.com"
+        )
+        repo.get_profile.return_value = UserProfile(
+            id="customer-1", email="customer@example.com", display_name="고객",
+            phone="01012345678", role="merchant_admin", status="active",
+        )
+
+        result = me("token")
+
+        self.assertEqual(result["data"]["phone"], "01012345678")
+
     def test_name_is_trimmed_and_blank_name_is_rejected(self):
         self.assertEqual(ProfileNameUpdateRequest(display_name="  김관리  ").display_name, "김관리")
         with self.assertRaises(ValidationError):

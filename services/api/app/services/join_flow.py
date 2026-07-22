@@ -35,6 +35,7 @@ class UserProfile:
     id: str
     email: str
     display_name: str
+    phone: str | None = None
     company_id: str | None = None
     merchant_id: str | None = None
     group_id: str | None = None

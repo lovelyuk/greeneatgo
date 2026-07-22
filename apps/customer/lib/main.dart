@@ -1120,6 +1120,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   widget.session.user.email ??
                   '-')),
           ListTile(
+              leading: const Icon(Icons.phone_outlined),
+              title: const Text('연락처'),
+              subtitle: Text(widget.me['phone'] as String? ?? '-')),
+          ListTile(
               leading: const Icon(Icons.badge_outlined),
               title: const Text('계정 유형'),
               subtitle: Text(_roleLabel)),

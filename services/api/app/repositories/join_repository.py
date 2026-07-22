@@ -26,6 +26,7 @@ def _profile_from_row(row: dict[str, Any], *, email: str | None = None) -> UserP
         id=row["id"],
         email=email or row.get("email") or "",
         display_name=row.get("display_name") or "",
+        phone=row.get("phone"),
         company_id=row.get("company_id"),
         merchant_id=row.get("merchant_id"),
         group_id=row.get("group_id"),

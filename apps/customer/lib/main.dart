@@ -168,9 +168,6 @@ class ApiClient {
 
   Future<Map<String, dynamic>> getMe() async => _request('/me');
 
-  Future<Map<String, dynamic>> updateDisplayName(String displayName) =>
-      _request('/me', method: 'PATCH', body: {'display_name': displayName});
-
   Future<Map<String, dynamic>> getAnnouncements() =>
       _request('/announcements', authenticated: false);
   Future<Map<String, dynamic>> getReviews() =>
@@ -242,9 +239,12 @@ class ApiClient {
     });
   }
 
-  Future<Map<String, dynamic>> registerConsumer({required String displayName}) {
-    return _request('/consumer/register',
-        method: 'POST', body: {'display_name': displayName});
+  Future<Map<String, dynamic>> registerConsumer(
+      {required String displayName, required String phone}) {
+    return _request('/consumer/register', method: 'POST', body: {
+      'display_name': displayName,
+      'phone': normalizeEmployeePhone(phone),
+    });
   }
 
   Future<Map<String, dynamic>> createPaymentOrder(
@@ -672,6 +672,7 @@ class _AppGateState extends State<AppGate> {
     final status = _me?['status'] as String? ?? 'no_profile';
     if (status == 'no_profile' || status == 'rejected') {
       return InviteCodeScreen(
+          key: ValueKey(_session!.uid),
           session: _session!,
           me: _me,
           onSubmitted: _loadMe,
@@ -835,11 +836,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await newUser.updateDisplayName(displayName);
+      await savePendingSignupProfile(
+          uid: newUser.uid,
+          email: email,
+          displayName: displayName,
+          phone: phone);
       await newUser.sendEmailVerification();
     } catch (error) {
       // The Firebase account exists, but sign-up is not usable without all
       // post-create steps. Remove only this newly-created account; sign-out is
       // separate so its failure can never trigger deletion of a valid account.
+      try {
+        await clearPendingSignupProfile(email);
+      } catch (_) {
+        // Best effort only: account cleanup remains the safety-critical step.
+      }
       await _cleanupFailedSignup(newUser);
       if (mounted) {
         setState(() => _error = '회원가입을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.');
@@ -1005,29 +1016,28 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     if (_info != null)
-                      BrandNotice(text: _info!, kind: NoticeKind.success),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(_info!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(color: const Color(0xFF5C7A66))),
+                      ),
                     const SizedBox(height: 18),
                     FilledButton(
                         onPressed:
                             _busy ? null : (_signupMode ? _signup : _login),
                         child: Text(_busy
                             ? '처리 중...'
-                            : (_signupMode ? '직원 계정 만들기' : '그린한 한 끼 시작하기'))),
+                            : (_signupMode ? '계정 만들기' : '그린한 한 끼 시작하기'))),
                     const SizedBox(height: 10),
                     TextButton(
                         onPressed: _busy ? null : _toggleMode,
-                        child:
-                            Text(_signupMode ? '이미 계정이 있어요' : '처음 사용하는 직원이에요')),
+                        child: Text(
+                            _signupMode ? '이미 계정이 있어요' : '처음 이용하시나요? 신규 등록')),
                   ]),
             ),
-            const SizedBox(height: 16),
-            const Text('회원가입 후 회사 초대코드 입력과 관리자 승인을 거쳐 식대 사용이 가능해요.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Color(0xFF5C7A66),
-                    fontSize: 13,
-                    height: 1.5,
-                    fontWeight: FontWeight.w700)),
           ]),
         ),
       ),
@@ -1052,26 +1062,117 @@ class InviteCodeScreen extends StatefulWidget {
 }
 
 class _InviteCodeScreenState extends State<InviteCodeScreen> {
-  final _name = TextEditingController();
   final _code = TextEditingController();
-  final _phone = TextEditingController();
+  final _recoveryPhone = TextEditingController();
   bool _busy = false;
+  bool _loadingProfile = true;
+  PendingSignupProfile? _pendingProfile;
   String? _error;
+  int _profileLoadGeneration = 0;
+
+  bool get _rejected => widget.me?['status'] == 'rejected';
+
+  String get _displayName {
+    return signupDisplayName(
+      sessionDisplayName: widget.session.displayName,
+      meDisplayName: widget.me?['display_name'] as String?,
+      pendingDisplayName: _pendingProfile?.displayName,
+    );
+  }
+
+  String get _reusedPhone {
+    final mePhone = widget.me?['phone'] as String? ?? '';
+    if (isValidSignupPhone(mePhone)) return normalizeSignupPhone(mePhone);
+    return normalizeSignupPhone(_pendingProfile?.phone ?? '');
+  }
+
+  bool get _needsPhoneRecovery =>
+      !_loadingProfile && !isValidSignupPhone(_reusedPhone);
+
+  String get _phone => _needsPhoneRecovery
+      ? normalizeSignupPhone(_recoveryPhone.text)
+      : _reusedPhone;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPendingProfile();
+  }
+
+  @override
+  void didUpdateWidget(covariant InviteCodeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session.uid != widget.session.uid ||
+        normalizeSignupEmail(oldWidget.session.email ?? '') !=
+            normalizeSignupEmail(widget.session.email ?? '')) {
+      _profileLoadGeneration++;
+      _pendingProfile = null;
+      _recoveryPhone.clear();
+      _error = null;
+      _loadingProfile = true;
+      _loadPendingProfile();
+    }
+  }
+
+  Future<void> _loadPendingProfile() async {
+    final expectedUid = widget.session.uid;
+    final expectedEmail = normalizeSignupEmail(widget.session.email ?? '');
+    final generation = ++_profileLoadGeneration;
+    PendingSignupProfile? profile;
+    try {
+      if (expectedEmail.isNotEmpty) {
+        profile = await loadPendingSignupProfile(
+            uid: expectedUid, email: expectedEmail);
+      }
+    } catch (error) {
+      debugPrint('Pending sign-up profile load failed: ${error.runtimeType}');
+    }
+    if (!mounted ||
+        generation != _profileLoadGeneration ||
+        widget.session.uid != expectedUid ||
+        normalizeSignupEmail(widget.session.email ?? '') != expectedEmail) {
+      return;
+    }
+    setState(() {
+      _pendingProfile = profile;
+      _loadingProfile = false;
+    });
+  }
 
   @override
   void dispose() {
-    _name.dispose();
+    _profileLoadGeneration++;
     _code.dispose();
-    _phone.dispose();
+    _recoveryPhone.dispose();
     super.dispose();
   }
 
-  Future<void> _submit() async {
-    final phone = normalizeEmployeePhone(_phone.text);
-    if (!RegExp(r'^010\d{8}$').hasMatch(phone)) {
-      setState(() => _error = '전화번호는 010-XXXX-XXXX 형식으로 입력해 주세요.');
-      return;
+  bool _validateReusedProfile() {
+    if (_loadingProfile) return false;
+    if (_displayName.isEmpty) {
+      setState(() => _error = '가입할 때 입력한 이름을 확인할 수 없어요. 다시 로그인해 주세요.');
+      return false;
     }
+    if (!isValidSignupPhone(_phone)) {
+      setState(() => _error = '전화번호는 010-XXXX-XXXX 형식으로 입력해 주세요.');
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _clearPendingProfileBestEffort() async {
+    final email = widget.session.email;
+    if (email == null) return;
+    try {
+      await clearPendingSignupProfile(email);
+    } catch (error) {
+      debugPrint(
+          'Pending sign-up profile cleanup failed: ${error.runtimeType}');
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_validateReusedProfile()) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -1079,8 +1180,9 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
     try {
       await ApiClient(widget.session).requestJoin(
           inviteCode: _code.text.trim(),
-          displayName: _name.text.trim(),
-          phone: phone);
+          displayName: _displayName,
+          phone: _phone);
+      await _clearPendingProfileBestEffort();
       await widget.onSubmitted();
       if (!mounted) return;
     } catch (error) {
@@ -1092,18 +1194,15 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
   }
 
   Future<void> _registerConsumer() async {
-    final displayName = _name.text.trim();
-    if (displayName.isEmpty) {
-      setState(() => _error = '이름을 입력해 주세요.');
-      return;
-    }
+    if (!_validateReusedProfile()) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       await ApiClient(widget.session)
-          .registerConsumer(displayName: displayName);
+          .registerConsumer(displayName: _displayName, phone: _phone);
+      await _clearPendingProfileBestEffort();
       await widget.onSubmitted();
       if (!mounted) return;
     } catch (error) {
@@ -1116,21 +1215,40 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final rejected = widget.me?['status'] == 'rejected';
     return AppScaffold(
-      title: rejected ? '이용 유형을 다시 선택해요' : '이용 유형 선택',
+      title: _rejected ? '이용 유형을 다시 선택해요' : '이용 유형 선택',
       subtitle: '장부업체 직원은 초대코드로, 일반 사용자는 키움페이로 이용할 수 있어요.',
       onSignOut: widget.onSignOut,
       child: BrandPanel(children: [
         const MiniSnackRow(),
         const SizedBox(height: 20),
-        TextField(
-            controller: _name,
-            decoration: const InputDecoration(
-                labelText: '이름', prefixIcon: Icon(Icons.person_outline))),
+        ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: const Text('이름'),
+            subtitle: Text(_displayName.isEmpty ? '-' : _displayName)),
+        if (_loadingProfile)
+          const ListTile(
+              leading: Icon(Icons.phone_outlined),
+              title: Text('연락처'),
+              subtitle: Text('확인 중...'))
+        else if (_needsPhoneRecovery) ...[
+          const Text('가입할 때 입력한 전화번호를 확인할 수 없어요. 이용을 계속하려면 전화번호를 입력해 주세요.'),
+          const SizedBox(height: 12),
+          TextField(
+              controller: _recoveryPhone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                  labelText: '전화번호',
+                  hintText: '010-1234-5678',
+                  prefixIcon: Icon(Icons.phone_outlined))),
+        ] else
+          ListTile(
+              leading: const Icon(Icons.phone_outlined),
+              title: const Text('연락처'),
+              subtitle: Text(_phone)),
         const SizedBox(height: 16),
         FilledButton.icon(
-            onPressed: _busy ? null : _registerConsumer,
+            onPressed: _busy || _loadingProfile ? null : _registerConsumer,
             icon: const Icon(Icons.credit_card_rounded),
             label: Text(_busy ? '처리 중...' : '일반 사용자로 시작하기')),
         const SizedBox(height: 10),
@@ -1149,18 +1267,10 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
             decoration: const InputDecoration(
                 labelText: '회사 초대코드',
                 prefixIcon: Icon(Icons.confirmation_number_outlined))),
-        const SizedBox(height: 12),
-        TextField(
-            controller: _phone,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-                labelText: '전화번호',
-                hintText: '010-1234-5678',
-                prefixIcon: Icon(Icons.phone_outlined))),
         if (_error != null) BrandNotice(text: _error!, kind: NoticeKind.error),
         const SizedBox(height: 16),
         OutlinedButton(
-            onPressed: _busy ? null : _submit,
+            onPressed: _busy || _loadingProfile ? null : _submit,
             child: Text(_busy ? '요청 중...' : '회사 장부 가입 요청')),
       ]),
     );
@@ -1236,24 +1346,14 @@ class AccountSettingsScreen extends StatefulWidget {
 }
 
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
-  late final TextEditingController _name;
   final _currentPassword = TextEditingController();
   final _password = TextEditingController();
   final _passwordConfirm = TextEditingController();
-  bool _savingName = false;
   bool _savingPassword = false;
   bool _hidePassword = true;
 
   @override
-  void initState() {
-    super.initState();
-    _name =
-        TextEditingController(text: widget.me['display_name'] as String? ?? '');
-  }
-
-  @override
   void dispose() {
-    _name.dispose();
     _currentPassword.dispose();
     _password.dispose();
     _passwordConfirm.dispose();
@@ -1264,24 +1364,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(text),
         backgroundColor: error ? Colors.red.shade700 : kCocoa));
-  }
-
-  Future<void> _saveName() async {
-    final value = _name.text.trim();
-    if (value.isEmpty) return _message('이름을 입력해 주세요.', error: true);
-    setState(() => _savingName = true);
-    try {
-      await ApiClient(widget.session).updateDisplayName(value);
-      if (!mounted) return;
-      _message('이름을 변경했어요.');
-      Navigator.of(context).pop(true);
-    } catch (error) {
-      if (mounted) {
-        _message(error.toString().replaceFirst('Exception: ', ''), error: true);
-      }
-    } finally {
-      if (mounted) setState(() => _savingName = false);
-    }
   }
 
   Future<void> _savePassword() async {
@@ -1373,18 +1455,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   MaterialPageRoute(
                       builder: (_) => CommunityScreen(
                           session: widget.session, initialReviews: true)))),
-          const Divider(height: 36),
-          const Text('이름 변경',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 12),
-          TextField(
-              controller: _name,
-              maxLength: 80,
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(labelText: '표시 이름')),
-          FilledButton(
-              onPressed: _savingName ? null : _saveName,
-              child: Text(_savingName ? '저장 중...' : '이름 저장')),
           const Divider(height: 40),
           const Text('비밀번호 변경',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),

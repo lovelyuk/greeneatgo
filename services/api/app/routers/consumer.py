@@ -24,6 +24,7 @@ def register_consumer(payload: ConsumerRegisterRequest, token: str = Depends(bea
             if profile.role == "employee" and profile.status == "rejected":
                 rows = repo.client.rest_patch("app_users", {"id": f"eq.{profile.id}"}, {
                     "display_name": payload.display_name.strip(),
+                    "phone": payload.phone,
                     "role": "customer",
                     "status": "active",
                     "company_id": None,
@@ -35,6 +36,7 @@ def register_consumer(payload: ConsumerRegisterRequest, token: str = Depends(bea
         rows = repo.client.rest_post("app_users", {
             "id": auth.id,
             "display_name": payload.display_name.strip(),
+            "phone": payload.phone,
             "role": "customer",
             "status": "active",
             "company_id": None,

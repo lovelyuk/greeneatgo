@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _defaultAuthError = '인증 처리 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.';
 
@@ -29,3 +32,105 @@ String friendlyFirebaseAuthError(Object error) {
 
 bool isValidEmail(String value) =>
     RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim());
+
+String normalizeSignupEmail(String email) => email.trim().toLowerCase();
+
+String pendingSignupProfileKey(String email) =>
+    'pending_signup_profile:${normalizeSignupEmail(email)}';
+
+String signupDisplayName({
+  String? sessionDisplayName,
+  String? meDisplayName,
+  String? pendingDisplayName,
+}) {
+  for (final candidate in [
+    sessionDisplayName,
+    meDisplayName,
+    pendingDisplayName,
+  ]) {
+    final value = candidate?.trim() ?? '';
+    if (value.isNotEmpty) return value;
+  }
+  return '';
+}
+
+String normalizeSignupPhone(String phone) =>
+    phone.trim().replaceAll(RegExp(r'[\s-]'), '');
+
+bool isValidSignupPhone(String phone) =>
+    RegExp(r'^010\d{8}$').hasMatch(normalizeSignupPhone(phone));
+
+class PendingSignupProfile {
+  const PendingSignupProfile(
+      {required this.uid, required this.displayName, required this.phone});
+
+  final String uid;
+  final String displayName;
+  final String phone;
+
+  String toJson() => jsonEncode({
+        'uid': uid.trim(),
+        'display_name': displayName.trim(),
+        'phone': normalizeSignupPhone(phone),
+      });
+
+  static PendingSignupProfile? fromJson(String value) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is! Map<String, dynamic>) return null;
+      final uid = decoded['uid'];
+      final displayName = decoded['display_name'];
+      final phone = decoded['phone'];
+      if (uid is! String ||
+          displayName is! String ||
+          (phone != null && phone is! String)) {
+        return null;
+      }
+      final normalizedUid = uid.trim();
+      final normalizedName = displayName.trim();
+      if (normalizedUid.isEmpty || normalizedName.isEmpty) return null;
+      return PendingSignupProfile(
+          uid: normalizedUid,
+          displayName: normalizedName,
+          phone: normalizeSignupPhone(phone as String? ?? ''));
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+Future<void> savePendingSignupProfile({
+  required String uid,
+  required String email,
+  required String displayName,
+  required String phone,
+}) async {
+  final preferences = await SharedPreferences.getInstance();
+  final saved = await preferences.setString(
+    pendingSignupProfileKey(email),
+    PendingSignupProfile(uid: uid, displayName: displayName, phone: phone)
+        .toJson(),
+  );
+  if (!saved) throw StateError('Pending sign-up profile could not be saved.');
+}
+
+Future<PendingSignupProfile?> loadPendingSignupProfile(
+    {required String uid, required String email}) async {
+  final preferences = await SharedPreferences.getInstance();
+  final key = pendingSignupProfileKey(email);
+  final value = preferences.getString(key);
+  if (value == null) return null;
+  final profile = PendingSignupProfile.fromJson(value);
+  if (profile?.uid == uid) return profile;
+  await preferences.remove(key);
+  return null;
+}
+
+Future<void> clearPendingSignupProfile(String email) async {
+  final preferences = await SharedPreferences.getInstance();
+  final key = pendingSignupProfileKey(email);
+  final removed = await preferences.remove(key);
+  if (!removed && preferences.containsKey(key)) {
+    throw StateError('Pending sign-up profile could not be cleared.');
+  }
+}

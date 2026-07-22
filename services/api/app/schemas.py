@@ -18,6 +18,21 @@ class PayRequest(BaseModel):
 
 class ConsumerRegisterRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=80)
+    phone: str = Field(pattern=r"^010\d{8}$")
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def trim_consumer_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_consumer_phone(cls, value: object) -> object:
+        if isinstance(value, str):
+            return re.sub(r"[\s-]", "", value.strip())
+        return value
+
+    model_config = {"extra": "forbid"}
 
 
 class ProfileNameUpdateRequest(BaseModel):

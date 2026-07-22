@@ -91,4 +91,51 @@ void main() {
     expect(isValidEmail('not-an-email'), isFalse);
     expect(normalizeEmployeePhone('010-1234 5678'), '01012345678');
   });
+
+  test('pending sign-up profile key and JSON contain only reusable fields', () {
+    expect(pendingSignupProfileKey(' Employee@Example.COM '),
+        'pending_signup_profile:employee@example.com');
+
+    const profile = PendingSignupProfile(
+        uid: 'firebase-user-1', displayName: ' 홍길동 ', phone: '010-1234 5678');
+    final serialized = profile.toJson();
+    final restored = PendingSignupProfile.fromJson(serialized);
+
+    expect(serialized, contains('firebase-user-1'));
+    expect(serialized, contains('display_name'));
+    expect(serialized, contains('phone'));
+    expect(serialized, isNot(contains('password')));
+    expect(serialized, isNot(contains('token')));
+    expect(restored?.uid, 'firebase-user-1');
+    expect(restored?.displayName, '홍길동');
+    expect(restored?.phone, '01012345678');
+    expect(PendingSignupProfile.fromJson('{"phone":"invalid"}'), isNull);
+  });
+
+  test(
+      'profile fallback prefers trusted account data and permits phone recovery',
+      () {
+    expect(
+        signupDisplayName(
+          sessionDisplayName: ' Firebase 이름 ',
+          meDisplayName: 'API 이름',
+          pendingDisplayName: '기기 이름',
+        ),
+        'Firebase 이름');
+    expect(
+        signupDisplayName(
+          sessionDisplayName: ' ',
+          meDisplayName: ' API 이름 ',
+          pendingDisplayName: '기기 이름',
+        ),
+        'API 이름');
+    expect(signupDisplayName(pendingDisplayName: ' 기기 이름 '), '기기 이름');
+
+    final missingPhone = PendingSignupProfile.fromJson(
+        '{"uid":"firebase-user-1","display_name":"홍길동","phone":"corrupt"}');
+    expect(missingPhone?.displayName, '홍길동');
+    expect(isValidSignupPhone(missingPhone?.phone ?? ''), isFalse);
+    expect(isValidSignupPhone('010-1234 5678'), isTrue);
+    expect(normalizeSignupPhone('010-1234 5678'), '01012345678');
+  });
 }

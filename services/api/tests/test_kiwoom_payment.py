@@ -111,6 +111,9 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertIn('name="KIWOOM_ENC" value="secure-hash"', html)
         self.assertIn('name="PAYMETHOD" value="TOTAL"', html)
         self.assertIn('name="PRODUCTTYPE" value="2"', html)
+        self.assertIn('accept-charset="EUC-KR"', html)
+        self.assertIn('<script type="text/javascript" charset="EUC-KR">', html)
+        self.assertIn("document.charset='EUC-KR'", html)
         self.assertIn("document.getElementById('payment').submit()", html)
 
     def test_bank_checkout_binds_hash_and_form_to_bank(self):

@@ -153,8 +153,8 @@ def checkout(checkout_token: str):
     return HTMLResponse(f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>그린잇 결제</title>
 <style>body{{margin:0;background:#f3fbf4;color:#14351f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}main{{max-width:560px;margin:auto;padding:32px 18px;text-align:center}}.card{{background:#fff;border:1px solid #cdebd5;border-radius:22px;padding:24px}}button{{width:100%;border:0;border-radius:16px;padding:17px;background:#2fb865;color:#fff;font-size:17px;font-weight:800}}</style></head>
-<body><main><section class="card"><h1>{escape(str(order['merchant_name']))}</h1><p>{escape(str(order['product_name']))}</p><strong>{int(amount):,}원</strong><form id="payment" method="post" action="{action}" accept-charset="UTF-8">{hidden}<button type="submit">결제하기</button></form></section></main>
-<script>document.getElementById('payment').submit();</script></body></html>""")
+<body><main><section class="card"><h1>{escape(str(order['merchant_name']))}</h1><p>{escape(str(order['product_name']))}</p><strong>{int(amount):,}원</strong><form id="payment" method="post" action="{action}" accept-charset="EUC-KR">{hidden}<button type="submit">결제하기</button></form></section></main>
+<script type="text/javascript" charset="EUC-KR">document.charset='EUC-KR';document.getElementById('payment').submit();</script></body></html>""")
 
 
 def _decode_form(raw: bytes) -> dict[str, str]:

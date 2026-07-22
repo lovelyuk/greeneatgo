@@ -102,6 +102,7 @@ def test_card_refund_uses_claimed_amount_and_order_provider_payment_key(repo_cla
         "id": "internal-order", "order_id": "GE-V-order123", "user_id": "account-123",
         "merchant_id": "merchant-1", "pay_type": "voucher", "status": "done",
         "amount": 80000, "point_amount": 0, "provider_payment_key": "pay-key",
+        "payment_method": "CARD",
     }]
     repo.client.rpc.side_effect = [
         {"refund_request_id": "refund-1", "refund_amount": 72000, "provider_payment_key": "pay-key"},
@@ -119,6 +120,7 @@ def test_card_refund_uses_claimed_amount_and_order_provider_payment_key(repo_cla
     assert cancel.call_args.args == (
         "https://apitest.kiwoompay.co.kr", "auth-key", "CPID", "pay-key", 72000,
     )
+    assert cancel.call_args.kwargs["pay_method"] == "CARD"
     finalize = repo.client.rpc.call_args_list[1].args[1]
     assert finalize["p_pg_response"]["RESULTCODE"] == "0000"
 
@@ -153,6 +155,38 @@ def test_bank_refund_uses_bank_cancel_method(repo_class, settings, cancel):
     ), "token")
 
     assert cancel.call_args.kwargs["pay_method"] == "BANK"
+
+
+@patch("app.routers.merchant_admin.cancel_payment")
+@patch("app.routers.merchant_admin.get_settings")
+@patch("app.routers.merchant_admin.JoinRepository")
+def test_naverpay_refund_preserves_original_cancel_method(repo_class, settings, cancel):
+    repo = repo_class.return_value
+    repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
+    repo.get_profile.return_value = SimpleNamespace(
+        id="admin-123", role="merchant_admin", status="active", merchant_id="merchant-1"
+    )
+    repo.client.rest_get.return_value = [{
+        "id": "internal-order", "order_id": "GE-V-naver123", "user_id": "account-123",
+        "merchant_id": "merchant-1", "pay_type": "voucher", "status": "done",
+        "amount": 8000, "point_amount": 0, "provider_payment_key": "naver-trx",
+        "payment_method": "NAVERPAY",
+    }]
+    repo.client.rpc.side_effect = [
+        {"refund_request_id": "refund-naver", "refund_amount": 8000,
+         "provider_payment_key": "naver-trx"},
+        {"status": "completed", "refund_amount": 8000},
+    ]
+    settings.return_value.kiwoompay_base_url = "https://apitest.kiwoompay.co.kr"
+    settings.return_value.kiwoompay_authorization_key = "auth-key"
+    settings.return_value.kiwoompay_cpid = "CPID"
+    cancel.return_value = {"RESULTCODE": "0000", "AMOUNT": "8000"}
+
+    refund_purchase_order(MerchantRefundRequest(
+        account_id="account-123", order_id="GE-V-naver123"
+    ), "token")
+
+    assert cancel.call_args.kwargs["pay_method"] == "NAVERPAY"
 
 
 @patch("app.routers.merchant_admin.JoinRepository")

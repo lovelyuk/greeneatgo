@@ -1004,6 +1004,13 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
             "merchant_id": f"eq.{merchant_id}", "status": "eq.completed",
             "and": f"(completed_at.gte.{start_iso},completed_at.lt.{end_iso})", "order": "completed_at.desc",
         })
+        refund_order_ids = sorted({str(row["order_id"]) for row in refunds if row.get("order_id")})
+        refund_orders = repo.client.rest_get(
+            "payment_orders", {"select": "id,pay_type", "id": f"in.({','.join(refund_order_ids)})"}
+        ) if refund_order_ids else []
+        refund_pay_types = {row["id"]: row.get("pay_type") or "direct" for row in refund_orders}
+        for row in refunds:
+            row["pay_type"] = refund_pay_types.get(row.get("order_id"), "direct")
         _decorate_transaction_people(repo, txs, payments, refunds)
         series: dict[str, dict[str, int]] = {}
         for row in txs:

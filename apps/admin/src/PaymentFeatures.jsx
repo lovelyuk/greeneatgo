@@ -11,10 +11,21 @@ function Rows({ items, kind }) {
   return <div className="history-rows">{rows.map((item, index) => {
     const refunded = item.kind === 'refund' || item.status === 'refunded' || Number(item.refund_amount ?? 0) > 0;
     const person = item.customer_name ?? item.employee_name ?? '-';
-    const context = kind === 'transaction'
-      ? `${item.company_name ?? '일반 고객'}, ${person}, ${item.payment_type_label ?? '일반'}`
-      : person;
-    return <div className={`history-row${refunded ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}><div><strong>{item.product_name ?? item.name ?? item.description ?? (refunded ? '환불' : kind === 'transaction' ? '거래' : '결제')}</strong><span>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : item.time ?? item.date ?? '-'}</span></div><div className="history-row-meta"><span>{context}</span><b>{money(Math.abs(Number(item.amount ?? item.total ?? item.payment_amount ?? item.refund_amount ?? 0)))}</b></div></div>;
+    const amount = money(Math.abs(Number(item.amount ?? item.total ?? item.payment_amount ?? item.refund_amount ?? 0)));
+    if (kind === 'transaction') {
+      return <div className="history-row history-row-columns history-row-transaction" key={item.id ?? `${kind}-${index}`}>
+        <span className="history-company">{item.company_name ?? '일반 고객'}</span>
+        <strong className="history-person">{person}</strong>
+        <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{item.payment_type_label ?? '일반'}</span>
+        <b>{amount}</b>
+      </div>;
+    }
+    const paymentType = item.pay_type === 'subsidized' ? '보조금' : '일반';
+    return <div className={`history-row history-row-columns history-row-payment${refunded ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}>
+      <strong className="history-person">{person}</strong>
+      <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{paymentType}</span>
+      <b>{amount}</b>
+    </div>;
   })}</div>;
 }
 

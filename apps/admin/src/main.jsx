@@ -1826,7 +1826,8 @@ function Dashboard({ session, onLogout }) {
             const paymentType = item.payment_type_label ?? (item.pay_type === 'ledger' ? '장부' : item.pay_type === 'subsidized' ? '보조금' : '일반');
             return <div className="payment-alert-row" key={item.id}>
               <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false })}</time>
-              <strong>{item.company_name ?? '일반 고객'}, {item.employee_name ?? '-'}</strong>
+              <strong className="payment-alert-company">{item.company_name ?? '일반 고객'}</strong>
+              <span className="payment-alert-person">{item.employee_name ?? '-'}</span>
               <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{paymentType}</span>
               <b>{krw(Math.abs(Number(item.amount ?? 0)))}</b>
             </div>;

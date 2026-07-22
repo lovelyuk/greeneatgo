@@ -17,7 +17,7 @@ function Rows({ items, kind }) {
   const rows = Array.isArray(items) ? items : [];
   if (!rows.length) return <p className="history-list-empty">선택한 날짜의 내역이 없어요.</p>;
   return <div className="history-rows">{rows.map((item, index) => {
-    const refunded = item.kind === 'refund' || item.status === 'refunded' || Number(item.refund_amount ?? 0) > 0;
+    const refunded = item.kind === 'refund' || Number(item.refund_amount ?? 0) > 0;
     const person = item.customer_name ?? item.employee_name ?? '-';
     const amount = money(Math.abs(Number(item.amount ?? item.total ?? item.payment_amount ?? item.refund_amount ?? 0)));
     if (kind === 'transaction') {

@@ -1006,11 +1006,13 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
         })
         refund_order_ids = sorted({str(row["order_id"]) for row in refunds if row.get("order_id")})
         refund_orders = repo.client.rest_get(
-            "payment_orders", {"select": "id,pay_type", "id": f"in.({','.join(refund_order_ids)})"}
+            "payment_orders", {"select": "id,pay_type,product_name", "id": f"in.({','.join(refund_order_ids)})"}
         ) if refund_order_ids else []
-        refund_pay_types = {row["id"]: row.get("pay_type") or "direct" for row in refund_orders}
+        refund_order_details = {row["id"]: row for row in refund_orders}
         for row in refunds:
-            row["pay_type"] = refund_pay_types.get(row.get("order_id"), "direct")
+            order = refund_order_details.get(row.get("order_id"), {})
+            row["pay_type"] = order.get("pay_type") or "direct"
+            row["product_name"] = order.get("product_name") or "환불"
         _decorate_transaction_people(repo, txs, payments, refunds)
         series: dict[str, dict[str, int]] = {}
         for row in txs:

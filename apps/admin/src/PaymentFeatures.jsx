@@ -3,6 +3,14 @@ import { CalendarDays, CheckCircle2, ChevronDown, RotateCcw, Search, X } from 'l
 
 const money = (value) => `₩${Number(value ?? 0).toLocaleString('ko-KR')}`;
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+const dateTime = (value) => {
+  if (!value) return '-';
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul', year: '2-digit', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(value)).map((part) => [part.type, part.value]));
+  return `${parts.year}.${parts.month}.${parts.day} ${parts.hour}:${parts.minute}`;
+};
 const periodModes = [['year', '올해'], ['month', '이번달'], ['date', '날짜'], ['range', '기간']];
 
 function Rows({ items, kind }) {
@@ -14,6 +22,7 @@ function Rows({ items, kind }) {
     const amount = money(Math.abs(Number(item.amount ?? item.total ?? item.payment_amount ?? item.refund_amount ?? 0)));
     if (kind === 'transaction') {
       return <div className="history-row history-row-columns history-row-transaction" key={item.id ?? `${kind}-${index}`}>
+        <time dateTime={item.created_at}>{dateTime(item.created_at)}</time>
         <span className="history-company">{item.company_name ?? '일반 고객'}</span>
         <strong className="history-person">{person}</strong>
         <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{item.payment_type_label ?? '일반'}</span>
@@ -22,6 +31,8 @@ function Rows({ items, kind }) {
     }
     const paymentType = item.pay_type === 'subsidized' ? '보조금' : '일반';
     return <div className={`history-row history-row-columns history-row-payment${refunded ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}>
+      <time dateTime={item.created_at}>{dateTime(item.created_at)}</time>
+      <span className="history-product">{item.product_name ?? (refunded ? '환불' : '상품')}</span>
       <strong className="history-person">{person}</strong>
       <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{paymentType}</span>
       <b>{amount}</b>

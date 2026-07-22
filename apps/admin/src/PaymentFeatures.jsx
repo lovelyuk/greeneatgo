@@ -10,7 +10,11 @@ function Rows({ items, kind }) {
   if (!rows.length) return <p className="history-list-empty">선택한 날짜의 내역이 없어요.</p>;
   return <div className="history-rows">{rows.map((item, index) => {
     const refunded = item.kind === 'refund' || item.status === 'refunded' || Number(item.refund_amount ?? 0) > 0;
-    return <div className={`history-row${refunded ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}><div><strong>{item.product_name ?? item.name ?? item.description ?? (refunded ? '환불' : kind === 'transaction' ? '거래' : '결제')}</strong><span>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : item.time ?? item.date ?? '-'}</span></div><div className="history-row-meta"><span>{item.customer_name ?? item.employee_name ?? item.pay_type ?? item.payment_method ?? ''}</span><b>{money(Math.abs(Number(item.amount ?? item.total ?? item.payment_amount ?? item.refund_amount ?? 0)))}</b></div></div>;
+    const person = item.customer_name ?? item.employee_name ?? '-';
+    const context = kind === 'transaction'
+      ? `${item.company_name ?? '일반 고객'}, ${person}, ${item.payment_type_label ?? '일반'}`
+      : person;
+    return <div className={`history-row${refunded ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}><div><strong>{item.product_name ?? item.name ?? item.description ?? (refunded ? '환불' : kind === 'transaction' ? '거래' : '결제')}</strong><span>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : item.time ?? item.date ?? '-'}</span></div><div className="history-row-meta"><span>{context}</span><b>{money(Math.abs(Number(item.amount ?? item.total ?? item.payment_amount ?? item.refund_amount ?? 0)))}</b></div></div>;
   })}</div>;
 }
 

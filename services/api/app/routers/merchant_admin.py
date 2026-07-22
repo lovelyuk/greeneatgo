@@ -943,6 +943,37 @@ def _bucket(value: object, pattern: str) -> str:
     return parsed.astimezone(KST).strftime(pattern)
 
 
+def _payment_type_label(value: object) -> str:
+    return {"ledger": "장부", "subsidized": "보조금"}.get(str(value or ""), "일반")
+
+
+def _decorate_transaction_people(repo: JoinRepository, *groups: list[dict]) -> dict[str, dict]:
+    rows = [row for group in groups for row in group]
+    user_ids = sorted({str(row["user_id"]) for row in rows if row.get("user_id")})
+    user_rows = repo.client.rest_get(
+        "app_users",
+        {"select": "id,display_name,company_id,employee_no,department", "id": f"in.({','.join(user_ids)})"},
+    ) if user_ids else []
+    users = {row["id"]: row for row in user_rows}
+    company_ids = sorted({
+        str(company_id)
+        for row in rows
+        for company_id in (row.get("company_id") or users.get(row.get("user_id"), {}).get("company_id"),)
+        if company_id
+    })
+    company_rows = repo.client.rest_get(
+        "companies", {"select": "id,name", "id": f"in.({','.join(company_ids)})"}
+    ) if company_ids else []
+    companies = {row["id"]: row.get("name") or row["id"] for row in company_rows}
+    for row in rows:
+        user = users.get(row.get("user_id"), {})
+        company_id = row.get("company_id") or user.get("company_id")
+        row["employee_name"] = user.get("display_name") or "-"
+        row["company_name"] = companies.get(company_id, "일반 고객")
+        row["payment_type_label"] = _payment_type_label(row.get("pay_type"))
+    return users
+
+
 @router.get("/payment-history")
 def payment_history(date_: str = Query(alias="date"), granularity: str = Query(pattern="^(year|month|day|hour|range)$"), token: str = Depends(bearer_token), end_date: str | None = Query(default=None)):
     repo = JoinRepository()
@@ -960,11 +991,11 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
             start, end, pattern = _analytics_bounds(selected, granularity)
         start_iso, end_iso = start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
         txs = _paged_get(repo, "meal_transactions", {
-            "select": "id,user_id,amount,kind,pay_type,created_at", "merchant_id": f"eq.{merchant_id}",
+            "select": "id,user_id,company_id,amount,kind,pay_type,created_at", "merchant_id": f"eq.{merchant_id}",
             "and": f"(created_at.gte.{start_iso},created_at.lt.{end_iso})", "order": "created_at.desc",
         })
         payments = _paged_get(repo, "payment_orders", {
-            "select": "id,order_id,user_id,amount,point_amount,status,pay_type,product_name,payment_method,approved_at,created_at",
+            "select": "id,order_id,user_id,company_id,amount,point_amount,status,pay_type,product_name,payment_method,approved_at,created_at",
             "merchant_id": f"eq.{merchant_id}", "status": "in.(done,refunded)",
             "and": f"(approved_at.gte.{start_iso},approved_at.lt.{end_iso})", "order": "approved_at.desc",
         })
@@ -973,6 +1004,7 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
             "merchant_id": f"eq.{merchant_id}", "status": "eq.completed",
             "and": f"(completed_at.gte.{start_iso},completed_at.lt.{end_iso})", "order": "completed_at.desc",
         })
+        _decorate_transaction_people(repo, txs, payments, refunds)
         series: dict[str, dict[str, int]] = {}
         for row in txs:
             key = _bucket(row["created_at"], pattern)
@@ -1051,17 +1083,13 @@ def list_transactions(token: str = Depends(bearer_token)):
             "flags": {"payment_provider": "kiwoompay"},
             "product_name": item.get("product_name"),
             "product_price": int(item.get("amount") or 0),
+            "pay_type": item.get("pay_type") or "direct",
             "created_at": item.get("approved_at") or item.get("created_at"),
         } for item in payment_rows)
         rows.sort(key=lambda item: item.get("created_at") or "", reverse=True)
-        user_ids = sorted({str(item["user_id"]) for item in rows if item.get("user_id")})
-        users = {}
-        if user_ids:
-            user_rows = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no,department", "id": f"in.({','.join(user_ids)})"})
-            users = {item["id"]: item for item in user_rows}
+        users = _decorate_transaction_people(repo, rows)
         for item in rows:
-            user = users.get(item.get("user_id"), {})
-            item["employee_name"] = user.get("display_name") or "직원"
+            user = users.get(str(item.get("user_id") or ""), {})
             item["employee_no"] = user.get("employee_no") or str(item.get("user_id") or "")[:8] or "-"
             item["department"] = user.get("department") or "-"
         total_count = repo.client.rpc("merchant_transaction_count", {"p_merchant_id": merchant_id})

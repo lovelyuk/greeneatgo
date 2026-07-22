@@ -1823,11 +1823,11 @@ function Dashboard({ session, onLogout }) {
         <div className="panel-title payment-alert-heading"><div><h2><Bell size={21}/> 오늘의 결제 알림</h2><p className="panel-note">오늘 승인된 최근 결제 10건을 실시간으로 표시합니다.</p></div><span className="badge">{recentPaymentAlerts.length}건</span></div>
         {recentPaymentAlerts.length === 0 ? <p className="empty-state">오늘 들어온 결제가 아직 없어요.</p> : <div className="payment-alert-list">
           {recentPaymentAlerts.map((item) => {
-            const paymentType = item.pay_type === 'voucher' ? '식권' : item.pay_type === 'subsidized' ? '보조금' : '장부';
+            const paymentType = item.payment_type_label ?? (item.pay_type === 'ledger' ? '장부' : item.pay_type === 'subsidized' ? '보조금' : '일반');
             return <div className="payment-alert-row" key={item.id}>
               <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false })}</time>
-              <strong>{item.employee_name ?? '직원'}</strong>
-              <span className={`payment-type-badge ${item.pay_type ?? 'ledger'}`}>{paymentType}</span>
+              <strong>{item.company_name ?? '일반 고객'}, {item.employee_name ?? '-'}</strong>
+              <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{paymentType}</span>
               <b>{krw(Math.abs(Number(item.amount ?? 0)))}</b>
             </div>;
           })}

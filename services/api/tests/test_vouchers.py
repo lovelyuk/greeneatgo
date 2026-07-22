@@ -40,6 +40,39 @@ class VoucherCoreTests(unittest.TestCase):
         self.assertEqual(payment_params["pay_type"], "eq.direct")
         self.assertIn("pay_type", payment_params["select"])
 
+    @patch("app.routers.merchant_admin.JoinRepository")
+    def test_merchant_transactions_include_company_person_and_three_type_labels(self, repo_class):
+        repo = repo_class.return_value
+        repo.auth_user_from_token.return_value = SimpleNamespace(id="admin", email="admin@example.com")
+        repo.get_profile.return_value = SimpleNamespace(
+            id="admin", role="merchant_admin", status="active", merchant_id="merchant-1"
+        )
+        repo.client.rest_get.side_effect = [
+            [
+                {"id": "ledger", "user_id": "user-1", "company_id": "company-1", "amount": -8000,
+                 "kind": "spend", "pay_type": "ledger", "created_at": "2026-07-22T01:03:00Z"},
+                {"id": "subsidized", "user_id": "user-1", "company_id": "company-1", "amount": -8000,
+                 "kind": "spend", "pay_type": "subsidized", "created_at": "2026-07-22T01:02:00Z"},
+                {"id": "voucher", "user_id": "user-2", "company_id": None, "amount": -8000,
+                 "kind": "spend", "pay_type": "voucher", "created_at": "2026-07-22T01:01:00Z"},
+            ],
+            [],
+            [
+                {"id": "user-1", "display_name": "김직원", "company_id": "company-1", "employee_no": "E001", "department": "영업"},
+                {"id": "user-2", "display_name": "이일반", "company_id": None, "employee_no": None, "department": None},
+            ],
+            [{"id": "company-1", "name": "테스트업체"}],
+        ]
+        repo.client.rpc.return_value = 3
+
+        items = list_transactions("bearer")["data"]["items"]
+
+        self.assertEqual(
+            [(item["company_name"], item["employee_name"], item["payment_type_label"]) for item in items],
+            [("테스트업체", "김직원", "장부"), ("테스트업체", "김직원", "보조금"),
+             ("일반 고객", "이일반", "일반")],
+        )
+
     def test_discount_and_bonus_price_snapshots(self):
         sale = calculate_sale_price(8000, 10, 10)
         self.assertEqual(sale, Decimal("72000.00"))

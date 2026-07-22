@@ -197,13 +197,20 @@ def test_payment_history_separates_usage_payments_and_refunds(repo_class):
         id="admin-123", role="merchant_admin", status="active", merchant_id="merchant-1"
     )
     repo.client.rest_get.side_effect = [
-        [{"id": "tx", "amount": -8000, "kind": "spend", "created_at": "2026-07-18T01:00:00Z"}],
-        [{"id": "order", "amount": 80000, "point_amount": 0, "approved_at": "2026-07-18T02:00:00Z"}],
-        [{"id": "refund", "refund_amount": 72000, "point_amount": 0, "completed_at": "2026-07-18T03:00:00Z"}],
+        [{"id": "tx", "user_id": "customer-1", "amount": -8000, "kind": "spend", "pay_type": "voucher", "created_at": "2026-07-18T01:00:00Z"}],
+        [{"id": "order", "user_id": "customer-1", "amount": 80000, "point_amount": 0, "pay_type": "voucher", "approved_at": "2026-07-18T02:00:00Z"}],
+        [{"id": "refund", "user_id": "customer-1", "refund_amount": 72000, "point_amount": 0, "completed_at": "2026-07-18T03:00:00Z"}],
+        [{"id": "customer-1", "display_name": "홍고객", "company_id": None}],
     ]
 
     result = payment_history("2026-07-18", "day", "token")
 
+    assert [item["employee_name"] for item in result["data"]["payment"]["items"]] == ["홍고객", "홍고객"]
+    assert result["data"]["transaction"]["items"][0] == {
+        "id": "tx", "user_id": "customer-1", "amount": -8000, "kind": "spend", "pay_type": "voucher",
+        "created_at": "2026-07-18T01:00:00Z", "employee_name": "홍고객", "company_name": "일반 고객",
+        "payment_type_label": "일반",
+    }
     assert result["data"]["totals"] == {
         "transaction_count": 1, "transaction_amount": 8000,
         "payment_count": 1, "payment_amount": 80000,

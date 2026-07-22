@@ -32,7 +32,7 @@ function Rows({ items, kind }) {
     const paymentType = item.pay_type === 'subsidized' ? '보조금' : '일반';
     return <div className={`history-row history-row-columns history-row-payment${refunded ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}>
       <time dateTime={item.created_at}>{dateTime(item.created_at)}</time>
-      <span className="history-product">{item.product_name ?? (refunded ? '환불' : '상품')}</span>
+      <span className="history-product">{refunded ? '환불' : item.product_name ?? '상품'}</span>
       <strong className="history-person">{person}</strong>
       <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{paymentType}</span>
       <b>{amount}</b>

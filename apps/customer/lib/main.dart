@@ -2511,7 +2511,10 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) {
+        onPageFinished: (url) {
+          if (Uri.tryParse(url)?.path.contains('/payments/checkout/') == true) {
+            return;
+          }
           if (mounted) setState(() => _loading = false);
         },
         onWebResourceError: (error) {
@@ -2863,7 +2866,10 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen> {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) {
+        onPageFinished: (url) {
+          if (Uri.tryParse(url)?.path.contains('/payments/checkout/') == true) {
+            return;
+          }
           if (mounted) setState(() => _loading = false);
         },
         onWebResourceError: (error) {

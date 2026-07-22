@@ -138,7 +138,7 @@ def checkout(checkout_token: str):
     close_url = f"{settings.public_api_base_url}/payments/redirect/close?orderId={order_id}"
     fields = {
         "PAYMETHOD": pay_method, "TYPE": "W", "CPID": settings.kiwoompay_cpid,
-        "ORDERNO": order_id, "PRODUCTTYPE": "1", "AMOUNT": amount,
+        "ORDERNO": order_id, "PRODUCTTYPE": "2", "AMOUNT": amount,
         "PRODUCTNAME": _safe_text(order["product_name"], 50),
         "PRODUCTCODE": _safe_text(order.get("product_id") or order.get("voucher_product_id") or "GE", 10),
         "USERID": _safe_text(order["user_id"], 30), "KIWOOM_ENC": secure_hash,

@@ -115,6 +115,11 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertIn('<script type="text/javascript" charset="EUC-KR">', html)
         self.assertIn("document.charset='EUC-KR'", html)
         self.assertIn("document.getElementById('payment').submit()", html)
+        self.assertIn("form{display:none}", html)
+        self.assertNotIn("<main", html)
+        self.assertNotIn("<section", html)
+        self.assertNotIn("<button", html)
+        self.assertNotIn("결제하기", html)
 
     def test_bank_checkout_binds_hash_and_form_to_bank(self):
         order = {

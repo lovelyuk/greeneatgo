@@ -3,11 +3,16 @@ package com.greeneat.greeneatgo
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        private const val MVACCINE_PACKAGE = "com.TouchEn.mVaccine.webs"
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(
@@ -43,6 +48,15 @@ class MainActivity : FlutterActivity() {
             return false
         }
 
+        val isMVaccine = normalizedUrl.startsWith("intent://mvaccine?") ||
+            intent.data?.scheme == "mvaccine"
+        if (isMVaccine) intent.setPackage(MVACCINE_PACKAGE)
+        Log.i(
+            "GreenEatPaymentIntent",
+            "scheme=${intent.data?.scheme}, host=${intent.data?.host}, " +
+                "package=${intent.`package`}, hasIntentFragment=${url.contains("#Intent;")}"
+        )
+
         return try {
             startActivity(intent)
             true
@@ -62,7 +76,15 @@ class MainActivity : FlutterActivity() {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")))
                     true
                 } catch (_: ActivityNotFoundException) {
-                    false
+                    try {
+                        startActivity(Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
+                        ))
+                        true
+                    } catch (_: ActivityNotFoundException) {
+                        false
+                    }
                 }
             }
         }

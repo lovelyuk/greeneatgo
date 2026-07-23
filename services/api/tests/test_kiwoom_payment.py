@@ -6,7 +6,7 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.routers.payments import checkout, router
+from app.routers.payments import checkout, router, short_redirect_router
 from app.services.kiwoom_payment import (
     KiwoomHashInput,
     KiwoomPaymentError,
@@ -112,13 +112,15 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertIn('name="PAYMETHOD" value="TOTAL"', html)
         self.assertIn('name="PRODUCTTYPE" value="2"', html)
         self.assertIn(
-            'name="RETURNURL" value="https://api.example.com/v1/payments/redirect/success?orderId=GE-order-123&amp;amount=8000"',
+            'name="RETURNURL" value="https://api.example.com/p"',
             html,
         )
         self.assertIn(
-            'name="HOMEURL" value="https://api.example.com/v1/payments/redirect/success?orderId=GE-order-123&amp;amount=8000"',
+            'name="HOMEURL" value="https://api.example.com/p"',
             html,
         )
+        self.assertIn('name="FAILURL" value="https://api.example.com/f"', html)
+        self.assertIn('name="CLOSEURL" value="https://api.example.com/c"', html)
         self.assertIn('accept-charset="EUC-KR"', html)
         self.assertIn('<script type="text/javascript" charset="EUC-KR">', html)
         self.assertIn("document.charset='EUC-KR'", html)
@@ -128,6 +130,16 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertNotIn("<section", html)
         self.assertNotIn("<button", html)
         self.assertNotIn("결제하기", html)
+
+    def test_short_payment_redirects_are_available_at_origin_root(self):
+        app = FastAPI()
+        app.include_router(short_redirect_router)
+        client = TestClient(app)
+
+        for path in ("/p", "/f", "/c"):
+            response = client.get(path)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("앱으로 돌아가", response.text)
 
     def test_bank_checkout_binds_hash_and_form_to_bank(self):
         order = {

@@ -2811,8 +2811,8 @@ class VoucherKiwoomPaymentScreen extends StatefulWidget {
       _VoucherKiwoomPaymentScreenState();
 }
 
-class _VoucherKiwoomPaymentScreenState
-    extends State<VoucherKiwoomPaymentScreen> {
+class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
+    with WidgetsBindingObserver {
   late final WebViewController _controller;
   bool _loading = true;
   bool _confirming = false;
@@ -2822,20 +2822,34 @@ class _VoucherKiwoomPaymentScreenState
   int? _pointAmount;
   int? _cardAmount;
   String? _error;
+  String? _lastExternalUrl;
+  String? _orderId;
+  int? _orderAmount;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (url) {
-          if (Uri.tryParse(url)?.path.contains('/payments/checkout/') == true) {
+          final uri = Uri.tryParse(url);
+          if (uri?.scheme == 'intent') {
+            unawaited(_recoverExternalNavigation(uri!));
+            return;
+          }
+          if (uri?.path.contains('/payments/checkout/') == true) {
             return;
           }
           if (mounted) setState(() => _loading = false);
         },
         onWebResourceError: (error) {
+          final uri = Uri.tryParse(error.url ?? '');
+          if (uri != null && uri.scheme == 'intent') {
+            unawaited(_recoverExternalNavigation(uri));
+            return;
+          }
           if (error.isForMainFrame == true && mounted) {
             setState(() {
               _loading = false;
@@ -2843,9 +2857,33 @@ class _VoucherKiwoomPaymentScreenState
             });
           }
         },
+        onUrlChange: (change) {
+          final uri = Uri.tryParse(change.url ?? '');
+          if (uri?.scheme == 'intent') {
+            unawaited(_recoverExternalNavigation(uri!));
+          }
+        },
         onNavigationRequest: _navigate,
       ));
     _createOrder();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_recoverCurrentExternalNavigation());
+    }
+  }
+
+  Future<void> _recoverCurrentExternalNavigation() async {
+    final uri = Uri.tryParse(await _controller.currentUrl() ?? '');
+    if (uri?.scheme == 'intent') await _recoverExternalNavigation(uri!);
   }
 
   Future<void> _createOrder() async {
@@ -2859,6 +2897,8 @@ class _VoucherKiwoomPaymentScreenState
           : await ApiClient(widget.session)
               .createVoucherOrder(productId: widget.product!.id);
       final checkoutUrl = order['checkout_url'] as String?;
+      _orderId = order['order_id'] as String?;
+      _orderAmount = (order['amount'] as num?)?.round();
       _pointAmount = (order['point_amount'] as num?)?.round() ?? 0;
       _cardAmount = (order['card_amount'] as num?)?.round() ??
           (order['amount'] as num?)?.round();
@@ -2892,11 +2932,13 @@ class _VoucherKiwoomPaymentScreenState
   FutureOr<NavigationDecision> _navigate(NavigationRequest request) async {
     final uri = Uri.tryParse(request.url);
     if (uri == null) return NavigationDecision.prevent;
-    if (uri.path.endsWith('/payments/redirect/success')) {
+    if (uri.path == '/p' || uri.path.endsWith('/payments/redirect/success')) {
       await _confirm(uri);
       return NavigationDecision.prevent;
     }
-    if (uri.path.endsWith('/payments/redirect/fail') ||
+    if (uri.path == '/f' ||
+        uri.path == '/c' ||
+        uri.path.endsWith('/payments/redirect/fail') ||
         uri.path.endsWith('/payments/redirect/close')) {
       if (mounted) {
         setState(() {
@@ -2914,10 +2956,25 @@ class _VoucherKiwoomPaymentScreenState
     return NavigationDecision.navigate;
   }
 
+  Future<void> _recoverExternalNavigation(Uri uri) async {
+    if (_lastExternalUrl == uri.toString()) return;
+    _lastExternalUrl = uri.toString();
+    final opened = await _openExternalPaymentUri(uri);
+    if (opened) {
+      if (await _controller.canGoBack()) await _controller.goBack();
+    } else if (mounted) {
+      setState(() {
+        _loading = false;
+        _error = '결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.';
+      });
+    }
+  }
+
   Future<void> _confirm(Uri uri) async {
     if (_confirming || _completed) return;
-    final orderId = uri.queryParameters['orderId'];
-    final amount = int.tryParse(uri.queryParameters['amount'] ?? '');
+    final orderId = uri.queryParameters['orderId'] ?? _orderId;
+    final amount =
+        int.tryParse(uri.queryParameters['amount'] ?? '') ?? _orderAmount;
     if (orderId == null || amount == null) {
       setState(() => _error = '결제 승인 정보가 올바르지 않아요.');
       return;
@@ -3171,26 +3228,41 @@ class KiwoomPaymentScreen extends StatefulWidget {
   State<KiwoomPaymentScreen> createState() => _KiwoomPaymentScreenState();
 }
 
-class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen> {
+class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen>
+    with WidgetsBindingObserver {
   late final WebViewController _controller;
   bool _loading = true;
   bool _confirming = false;
   bool _completed = false;
   String? _error;
+  String? _lastExternalUrl;
+  String? _orderId;
+  int? _orderAmount;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (url) {
-          if (Uri.tryParse(url)?.path.contains('/payments/checkout/') == true) {
+          final uri = Uri.tryParse(url);
+          if (uri?.scheme == 'intent') {
+            unawaited(_recoverExternalNavigation(uri!));
+            return;
+          }
+          if (uri?.path.contains('/payments/checkout/') == true) {
             return;
           }
           if (mounted) setState(() => _loading = false);
         },
         onWebResourceError: (error) {
+          final uri = Uri.tryParse(error.url ?? '');
+          if (uri != null && uri.scheme == 'intent') {
+            unawaited(_recoverExternalNavigation(uri));
+            return;
+          }
           if (error.isForMainFrame == true && mounted) {
             setState(() {
               _loading = false;
@@ -3198,9 +3270,33 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen> {
             });
           }
         },
+        onUrlChange: (change) {
+          final uri = Uri.tryParse(change.url ?? '');
+          if (uri?.scheme == 'intent') {
+            unawaited(_recoverExternalNavigation(uri!));
+          }
+        },
         onNavigationRequest: _onNavigationRequest,
       ));
     _createOrder();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_recoverCurrentExternalNavigation());
+    }
+  }
+
+  Future<void> _recoverCurrentExternalNavigation() async {
+    final uri = Uri.tryParse(await _controller.currentUrl() ?? '');
+    if (uri?.scheme == 'intent') await _recoverExternalNavigation(uri!);
   }
 
   Future<void> _createOrder() async {
@@ -3211,6 +3307,8 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen> {
     try {
       final order = await ApiClient(widget.session)
           .createPaymentOrder(qrToken: widget.qrToken, product: widget.product);
+      _orderId = order['order_id'] as String?;
+      _orderAmount = (order['amount'] as num?)?.round();
       await _controller.loadRequest(Uri.parse(order['checkout_url'] as String));
     } catch (error) {
       if (mounted) {
@@ -3225,11 +3323,13 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen> {
   FutureOr<NavigationDecision> _onNavigationRequest(
       NavigationRequest request) async {
     final uri = Uri.parse(request.url);
-    if (uri.path.endsWith('/payments/redirect/success')) {
+    if (uri.path == '/p' || uri.path.endsWith('/payments/redirect/success')) {
       await _confirm(uri);
       return NavigationDecision.prevent;
     }
-    if (uri.path.endsWith('/payments/redirect/fail') ||
+    if (uri.path == '/f' ||
+        uri.path == '/c' ||
+        uri.path.endsWith('/payments/redirect/fail') ||
         uri.path.endsWith('/payments/redirect/close')) {
       if (mounted) {
         setState(() {
@@ -3249,10 +3349,25 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen> {
     return NavigationDecision.navigate;
   }
 
+  Future<void> _recoverExternalNavigation(Uri uri) async {
+    if (_lastExternalUrl == uri.toString()) return;
+    _lastExternalUrl = uri.toString();
+    final opened = await _openExternalPaymentUri(uri);
+    if (opened) {
+      if (await _controller.canGoBack()) await _controller.goBack();
+    } else if (mounted) {
+      setState(() {
+        _loading = false;
+        _error = '결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.';
+      });
+    }
+  }
+
   Future<void> _confirm(Uri uri) async {
     if (_confirming || _completed) return;
-    final orderId = uri.queryParameters['orderId'];
-    final amount = int.tryParse(uri.queryParameters['amount'] ?? '');
+    final orderId = uri.queryParameters['orderId'] ?? _orderId;
+    final amount =
+        int.tryParse(uri.queryParameters['amount'] ?? '') ?? _orderAmount;
     if (orderId == null || amount == null) {
       setState(() => _error = '결제 승인 정보가 올바르지 않아요.');
       return;

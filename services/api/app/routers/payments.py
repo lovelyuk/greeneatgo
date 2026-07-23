@@ -6,7 +6,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from html import escape
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -20,6 +20,7 @@ from app.schemas import PaymentConfirmRequest, PaymentOrderCreateRequest
 from app.services.kiwoom_payment import KiwoomHashInput, KiwoomPaymentError, request_payment_hash
 
 router = APIRouter(prefix="/payments", tags=["payments"])
+short_redirect_router = APIRouter(include_in_schema=False)
 
 ORDER_SELECT = (
     "id,order_id,checkout_token,user_id,merchant_id,product_id,merchant_name,"
@@ -133,9 +134,11 @@ def checkout(checkout_token: str):
 
     order_id = _safe_text(order["order_id"], 50)
     amount = str(int(order["amount"]))
-    success_url = f"{settings.public_api_base_url}/payments/redirect/success?orderId={order_id}&amount={amount}"
-    fail_url = f"{settings.public_api_base_url}/payments/redirect/fail?orderId={order_id}"
-    close_url = f"{settings.public_api_base_url}/payments/redirect/close?orderId={order_id}"
+    public_base = urlsplit(settings.public_api_base_url)
+    public_origin = f"{public_base.scheme}://{public_base.netloc}"
+    success_url = f"{public_origin}/p"
+    fail_url = f"{public_origin}/f"
+    close_url = f"{public_origin}/c"
     fields = {
         "PAYMETHOD": pay_method, "TYPE": "W", "CPID": settings.kiwoompay_cpid,
         "ORDERNO": order_id, "PRODUCTTYPE": "2", "AMOUNT": amount,
@@ -277,6 +280,21 @@ def confirm(payload: PaymentConfirmRequest, token: str = Depends(bearer_token)):
 @router.get("/redirect/success", response_class=HTMLResponse)
 def redirect_success():
     return HTMLResponse("<h1>결제 승인 확인 중입니다. 앱으로 돌아가 주세요.</h1>")
+
+
+@short_redirect_router.get("/p", response_class=HTMLResponse)
+def short_redirect_success():
+    return redirect_success()
+
+
+@short_redirect_router.get("/f", response_class=HTMLResponse)
+def short_redirect_fail():
+    return HTMLResponse("<h1>결제에 실패했습니다. 앱으로 돌아가 주세요.</h1>")
+
+
+@short_redirect_router.get("/c", response_class=HTMLResponse)
+def short_redirect_close():
+    return HTMLResponse("<h1>결제가 취소되었습니다. 앱으로 돌아가 주세요.</h1>")
 
 
 @router.get("/redirect/fail", response_class=HTMLResponse)

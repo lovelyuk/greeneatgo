@@ -32,6 +32,12 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="greeneatgo" android:host="payment"/>
+            </intent-filter>
         </activity>
         <!-- Used by Flutter to generate GeneratedPluginRegistrant.java. -->
         <meta-data

@@ -67,7 +67,7 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
     <div className="history-heading"><div><span className="eyebrow">PAYMENT HISTORY</span><p>조회 기간을 선택해 거래와 결제·환불 상세 내역을 확인합니다.</p></div></div>
     <div className="history-period-filter">
       <div className="history-period-modes">{periodModes.map(([id, label]) => <button type="button" key={id} className={mode === id ? 'active' : ''} aria-pressed={mode === id} onClick={() => setMode(id)}>{label}</button>)}</div>
-      <div className="history-period-inputs">
+      <div className={`history-period-inputs ${mode === 'range' ? 'is-range' : 'is-single'}`}>
         {mode === 'date' && <label>조회 날짜<input type="date" value={date} onChange={(event) => setDate(event.target.value)}/></label>}
         {mode === 'range' && <><label>시작일<input type="date" value={range.from} max={range.to} onChange={(event) => setRange((state) => ({ ...state, from: event.target.value }))}/></label><span>~</span><label>종료일<input type="date" value={range.to} min={range.from} onChange={(event) => setRange((state) => ({ ...state, to: event.target.value }))}/></label></>}
         <div className="history-period-label"><CalendarDays size={19}/><strong>{filterLabel}</strong></div>

@@ -21,18 +21,27 @@ const defaultMerchantQrToken = String.fromEnvironment('MERCHANT_QR_TOKEN',
     defaultValue: 'QR-PILOT-KIMCHI');
 const _paymentAppChannel = MethodChannel('com.greeneat.greeneatgo/payment_app');
 
-Future<bool> _openExternalPaymentUri(Uri uri) async {
+enum ExternalPaymentOpenResult { app, fallback, failed }
+
+Future<ExternalPaymentOpenResult> _openExternalPaymentUri(Uri uri) async {
   try {
     if (uri.scheme == 'intent') {
-      return await _paymentAppChannel.invokeMethod<bool>(
-            'openIntentUrl',
-            {'url': uri.toString()},
-          ) ??
-          false;
+      final result = await _paymentAppChannel.invokeMethod<String>(
+        'openIntentUrl',
+        {'url': uri.toString()},
+      );
+      return switch (result) {
+        'app' => ExternalPaymentOpenResult.app,
+        'fallback' => ExternalPaymentOpenResult.fallback,
+        _ => ExternalPaymentOpenResult.failed,
+      };
     }
-    return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    return opened
+        ? ExternalPaymentOpenResult.app
+        : ExternalPaymentOpenResult.failed;
   } catch (_) {
-    return false;
+    return ExternalPaymentOpenResult.failed;
   }
 }
 
@@ -2825,6 +2834,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   String? _lastExternalUrl;
   String? _orderId;
   int? _orderAmount;
+  bool _externalAppOpened = false;
 
   @override
   void initState() {
@@ -2877,7 +2887,12 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_recoverCurrentExternalNavigation());
+      if (_externalAppOpened) {
+        _externalAppOpened = false;
+        unawaited(_confirm(Uri()));
+      } else {
+        unawaited(_recoverCurrentExternalNavigation());
+      }
     }
   }
 
@@ -2890,6 +2905,8 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     setState(() {
       _loading = true;
       _error = null;
+      _lastExternalUrl = null;
+      _externalAppOpened = false;
     });
     try {
       final order = widget.isSubsidized
@@ -2949,8 +2966,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       return NavigationDecision.prevent;
     }
     if (uri.scheme != 'http' && uri.scheme != 'https') {
-      final opened = await _openExternalPaymentUri(uri);
-      if (!opened && mounted) setState(() => _error = '결제 앱을 열 수 없어요.');
+      await _recoverExternalNavigation(uri);
       return NavigationDecision.prevent;
     }
     return NavigationDecision.navigate;
@@ -2959,14 +2975,30 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   Future<void> _recoverExternalNavigation(Uri uri) async {
     if (_lastExternalUrl == uri.toString()) return;
     _lastExternalUrl = uri.toString();
-    final opened = await _openExternalPaymentUri(uri);
-    if (opened) {
-      if (await _controller.canGoBack()) await _controller.goBack();
-    } else if (mounted) {
+    if (mounted) {
       setState(() {
-        _loading = false;
-        _error = '결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.';
+        _loading = true;
+        _error = null;
       });
+    }
+    final result = await _openExternalPaymentUri(uri);
+    if (!mounted) return;
+    switch (result) {
+      case ExternalPaymentOpenResult.app:
+        _externalAppOpened = true;
+        break;
+      case ExternalPaymentOpenResult.fallback:
+        setState(() {
+          _loading = false;
+          _error = '결제 앱이 설치되어 있지 않아 설치 화면을 열었어요. 설치를 마친 뒤 다시 결제해 주세요.';
+        });
+        break;
+      case ExternalPaymentOpenResult.failed:
+        setState(() {
+          _loading = false;
+          _error = '결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.';
+        });
+        break;
     }
   }
 
@@ -3238,6 +3270,7 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen>
   String? _lastExternalUrl;
   String? _orderId;
   int? _orderAmount;
+  bool _externalAppOpened = false;
 
   @override
   void initState() {
@@ -3290,7 +3323,12 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_recoverCurrentExternalNavigation());
+      if (_externalAppOpened) {
+        _externalAppOpened = false;
+        unawaited(_confirm(Uri()));
+      } else {
+        unawaited(_recoverCurrentExternalNavigation());
+      }
     }
   }
 
@@ -3303,6 +3341,8 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen>
     setState(() {
       _loading = true;
       _error = null;
+      _lastExternalUrl = null;
+      _externalAppOpened = false;
     });
     try {
       final order = await ApiClient(widget.session)
@@ -3340,10 +3380,7 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen>
       return NavigationDecision.prevent;
     }
     if (uri.scheme != 'http' && uri.scheme != 'https') {
-      final opened = await _openExternalPaymentUri(uri);
-      if (!opened && mounted) {
-        setState(() => _error = '결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.');
-      }
+      await _recoverExternalNavigation(uri);
       return NavigationDecision.prevent;
     }
     return NavigationDecision.navigate;
@@ -3352,14 +3389,30 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen>
   Future<void> _recoverExternalNavigation(Uri uri) async {
     if (_lastExternalUrl == uri.toString()) return;
     _lastExternalUrl = uri.toString();
-    final opened = await _openExternalPaymentUri(uri);
-    if (opened) {
-      if (await _controller.canGoBack()) await _controller.goBack();
-    } else if (mounted) {
+    if (mounted) {
       setState(() {
-        _loading = false;
-        _error = '결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.';
+        _loading = true;
+        _error = null;
       });
+    }
+    final result = await _openExternalPaymentUri(uri);
+    if (!mounted) return;
+    switch (result) {
+      case ExternalPaymentOpenResult.app:
+        _externalAppOpened = true;
+        break;
+      case ExternalPaymentOpenResult.fallback:
+        setState(() {
+          _loading = false;
+          _error = '결제 앱이 설치되어 있지 않아 설치 화면을 열었어요. 설치를 마친 뒤 다시 결제해 주세요.';
+        });
+        break;
+      case ExternalPaymentOpenResult.failed:
+        setState(() {
+          _loading = false;
+          _error = '결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.';
+        });
+        break;
     }
   }
 

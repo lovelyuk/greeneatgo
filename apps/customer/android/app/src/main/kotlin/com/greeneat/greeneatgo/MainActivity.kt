@@ -25,14 +25,14 @@ class MainActivity : FlutterActivity() {
             }
             val url = call.argument<String>("url")
             if (url.isNullOrBlank()) {
-                result.success(false)
+                result.success("failed")
                 return@setMethodCallHandler
             }
             result.success(openIntentUrl(url))
         }
     }
 
-    private fun openIntentUrl(url: String): Boolean {
+    private fun openIntentUrl(url: String): String {
         val normalizedUrl = if (url.startsWith("intent://mvaccine?") && !url.contains("#Intent;")) {
             "$url#Intent;scheme=mvaccine;package=com.TouchEn.mVaccine.webs;end"
         } else {
@@ -45,7 +45,7 @@ class MainActivity : FlutterActivity() {
                 selector = null
             }
         } catch (_: Exception) {
-            return false
+            return "failed"
         }
 
         val isMVaccine = normalizedUrl.startsWith("intent://mvaccine?") ||
@@ -59,31 +59,31 @@ class MainActivity : FlutterActivity() {
 
         return try {
             startActivity(intent)
-            true
+            "app"
         } catch (_: ActivityNotFoundException) {
             val fallbackUrl = intent.getStringExtra("browser_fallback_url")
             if (!fallbackUrl.isNullOrBlank() &&
                 (fallbackUrl.startsWith("https://") || fallbackUrl.startsWith("http://"))) {
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl)))
-                    true
+                    "fallback"
                 } catch (_: ActivityNotFoundException) {
-                    false
+                    "failed"
                 }
             } else {
-                val packageName = intent.`package` ?: return false
+                val packageName = intent.`package` ?: return "failed"
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")))
-                    true
+                    "fallback"
                 } catch (_: ActivityNotFoundException) {
                     try {
                         startActivity(Intent(
                             Intent.ACTION_VIEW,
                             Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
                         ))
-                        true
+                        "fallback"
                     } catch (_: ActivityNotFoundException) {
-                        false
+                        "failed"
                     }
                 }
             }

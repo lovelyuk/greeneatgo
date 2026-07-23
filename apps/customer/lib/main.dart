@@ -19,6 +19,22 @@ import 'push_notifications.dart';
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 const defaultMerchantQrToken = String.fromEnvironment('MERCHANT_QR_TOKEN',
     defaultValue: 'QR-PILOT-KIMCHI');
+const _paymentAppChannel = MethodChannel('com.greeneat.greeneatgo/payment_app');
+
+Future<bool> _openExternalPaymentUri(Uri uri) async {
+  try {
+    if (uri.scheme == 'intent') {
+      return await _paymentAppChannel.invokeMethod<bool>(
+            'openIntentUrl',
+            {'url': uri.toString()},
+          ) ??
+          false;
+    }
+    return await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    return false;
+  }
+}
 
 // greeneat_logo.png의 실제 대표색(#68813C)을 사용하는 브랜드 토큰.
 const kInk = Color(0xFF18382A);
@@ -2891,7 +2907,7 @@ class _VoucherKiwoomPaymentScreenState
       return NavigationDecision.prevent;
     }
     if (uri.scheme != 'http' && uri.scheme != 'https') {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final opened = await _openExternalPaymentUri(uri);
       if (!opened && mounted) setState(() => _error = '결제 앱을 열 수 없어요.');
       return NavigationDecision.prevent;
     }
@@ -3224,7 +3240,7 @@ class _KiwoomPaymentScreenState extends State<KiwoomPaymentScreen> {
       return NavigationDecision.prevent;
     }
     if (uri.scheme != 'http' && uri.scheme != 'https') {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final opened = await _openExternalPaymentUri(uri);
       if (!opened && mounted) {
         setState(() => _error = '결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.');
       }

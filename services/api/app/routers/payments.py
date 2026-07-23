@@ -142,7 +142,8 @@ def checkout(checkout_token: str):
         "PRODUCTNAME": _safe_text(order["product_name"], 50),
         "PRODUCTCODE": _safe_text(order.get("product_id") or order.get("voucher_product_id") or "GE", 10),
         "USERID": _safe_text(order["user_id"], 30), "KIWOOM_ENC": secure_hash,
-        "HOMEURL": success_url, "FAILURL": fail_url, "CLOSEURL": close_url,
+        "RETURNURL": success_url, "HOMEURL": success_url,
+        "FAILURL": fail_url, "CLOSEURL": close_url,
         "APPURL": settings.kiwoompay_app_url, "DIRECTRESULTFLAG": "Y",
     }
     hidden = "".join(

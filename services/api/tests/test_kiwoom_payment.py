@@ -111,6 +111,14 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertIn('name="KIWOOM_ENC" value="secure-hash"', html)
         self.assertIn('name="PAYMETHOD" value="TOTAL"', html)
         self.assertIn('name="PRODUCTTYPE" value="2"', html)
+        self.assertIn(
+            'name="RETURNURL" value="https://api.example.com/v1/payments/redirect/success?orderId=GE-order-123&amp;amount=8000"',
+            html,
+        )
+        self.assertIn(
+            'name="HOMEURL" value="https://api.example.com/v1/payments/redirect/success?orderId=GE-order-123&amp;amount=8000"',
+            html,
+        )
         self.assertIn('accept-charset="EUC-KR"', html)
         self.assertIn('<script type="text/javascript" charset="EUC-KR">', html)
         self.assertIn("document.charset='EUC-KR'", html)

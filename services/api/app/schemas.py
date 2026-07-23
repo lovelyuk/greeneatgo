@@ -46,6 +46,17 @@ class ProfileNameUpdateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class MerchantProfileUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def trim_merchant_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
 class DeviceTokenRegisterRequest(BaseModel):
     account_id: str = Field(min_length=8, max_length=80)
     fcm_token: str = Field(min_length=20, max_length=4096)

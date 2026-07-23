@@ -17,7 +17,7 @@ from app.auth import bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
+from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, MerchantProfileUpdateRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
 from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
@@ -446,6 +446,33 @@ def merchant_qr(token: str = Depends(bearer_token)):
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "매장 QR 정보를 불러오는 중 오류가 발생했어요") from exc
+
+
+@router.patch("/profile")
+def update_merchant_profile(payload: MerchantProfileUpdateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        rows = repo.client.rest_patch(
+            "merchants", {"id": f"eq.{merchant_id}"}, {"name": payload.name}
+        )
+        if not rows:
+            raise _error(404, "MERCHANT_NOT_FOUND", "식당 정보를 찾을 수 없어요")
+        merchant = rows[0]
+        return {
+            "ok": True,
+            "data": {
+                "id": merchant.get("id", merchant_id),
+                "name": merchant.get("name", payload.name),
+            },
+            "error": None,
+        }
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "식당 이름을 변경하는 중 오류가 발생했어요") from exc
 
 
 @router.get("/companies/search")

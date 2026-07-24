@@ -2,21 +2,69 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from fastapi import HTTPException
+
 from app.routers.merchant_admin import _ensure_settlements
 from app.routers.payments import confirm
 from app.routers.transactions import scan
-from app.routers.voucher_products import purchase_subsidized, subsidized_price
-from app.schemas import PaymentConfirmRequest, TransactionScanRequest
+from app.routers.voucher_products import active_products, purchase_subsidized, subsidized_price
+from app.schemas import PaymentConfirmRequest, TransactionScanRequest, VoucherPurchaseRequest
 
 
 class SubsidizedLedgerTests(unittest.TestCase):
+    @patch("app.routers.voucher_products.get_settings")
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_legacy_empty_purchase_body_resolves_unique_contract_product(self, repo_class, settings):
+        repo = repo_class.return_value
+        self._employee_repo(repo)
+        settings.return_value.pilot_merchant_id = "merchant-1"
+        settings.return_value.public_api_base_url = "https://api.example.com"
+        merchant = {"id": "merchant-1", "name": "돈토"}
+        contract = {"unit_price": 8000, "subsidy_enabled": True,
+                    "company_subsidy_amount": 1000, "restaurant_subsidy_amount": 1000, "status": "active"}
+        product = {"id": "legacy-product", "name": "1장", "voucher_count": 1,
+                   "bonus_count": 0, "sale_price": 8000, "status": "active",
+                   "kiwoom_pay_method": "TOTAL", "is_event": False}
+        repo.client.rest_get.side_effect = [[merchant], [contract], [product]]
+        repo.client.rest_post.return_value = [{"id": "db-order", "amount": 6000}]
+        repo.client.rpc.side_effect = [
+            {"expired_count": 0}, {"point_amount": 0, "card_amount": 6000},
+        ]
+
+        data = purchase_subsidized(None, "bearer")["data"]
+
+        self.assertEqual(data["product_id"], "legacy-product")
+        self.assertEqual(data["card_amount"], 6000)
+
+    @patch("app.routers.voucher_products.get_settings")
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_legacy_empty_purchase_body_rejects_ambiguous_products(self, repo_class, settings):
+        repo = repo_class.return_value
+        self._employee_repo(repo)
+        settings.return_value.pilot_merchant_id = "merchant-1"
+        merchant = {"id": "merchant-1", "name": "돈토"}
+        contract = {"unit_price": 8000, "subsidy_enabled": True,
+                    "company_subsidy_amount": 1000, "restaurant_subsidy_amount": 1000, "status": "active"}
+        products = [{"id": f"legacy-{i}", "name": "1장", "voucher_count": 1,
+                     "bonus_count": 0, "sale_price": 8000, "status": "active",
+                     "kiwoom_pay_method": "TOTAL", "is_event": False} for i in range(2)]
+        repo.client.rest_get.side_effect = [[merchant], [contract], products]
+
+        with self.assertRaises(HTTPException) as ctx:
+            purchase_subsidized(None, "bearer")
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertEqual(ctx.exception.detail, {
+            "code": "UPGRADE_REQUIRED", "message": "상품을 안전하게 선택할 수 없어 앱 업데이트가 필요해요",
+        })
+
     def _employee_repo(self, repo):
         repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="employee@example.com")
         repo.get_profile.return_value = SimpleNamespace(id="user-1", role="employee", status="active", company_id="company-1")
 
     @patch("app.routers.voucher_products.get_settings")
     @patch("app.routers.voucher_products.JoinRepository")
-    def test_price_and_purchase_use_bearer_identity_and_contract_snapshot(self, repo_class, settings):
+    def test_product_purchase_uses_bearer_identity_and_package_snapshots(self, repo_class, settings):
         repo = repo_class.return_value
         self._employee_repo(repo)
         settings.return_value.pilot_merchant_id = "merchant-1"
@@ -28,10 +76,13 @@ class SubsidizedLedgerTests(unittest.TestCase):
         price = subsidized_price("bearer")
         self.assertEqual(price["data"]["employee_pay_amount"], 6000)
 
-        repo.client.rest_get.side_effect = [[merchant], [contract]]
-        repo.client.rest_post.return_value = [{"id": "db-order", "amount": 6000}]
+        product = {"id": "product-123", "merchant_id": "merchant-1", "name": "10+1", "voucher_count": 10,
+                   "bonus_count": 1, "sale_price": 72000, "status": "active", "kiwoom_pay_method": "BANK",
+                   "is_event": False}
+        repo.client.rest_get.side_effect = [[merchant], [contract], [product]]
+        repo.client.rest_post.return_value = [{"id": "db-order", "amount": 52000}]
         repo.client.rpc.return_value = {"point_amount": 2000, "card_amount": 4000}
-        order = purchase_subsidized("bearer")
+        order = purchase_subsidized(VoucherPurchaseRequest(product_id="product-123"), "bearer")
         values = repo.client.rest_post.call_args.args[1]
         self.assertEqual(order["data"]["amount"], 4000)
         self.assertEqual(order["data"]["point_amount"], 2000)
@@ -39,6 +90,14 @@ class SubsidizedLedgerTests(unittest.TestCase):
         self.assertEqual(values["company_id"], "company-1")
         self.assertEqual(values["pay_type"], "subsidized")
         self.assertEqual(values["company_subsidy_amount"], 1000)
+        self.assertEqual(values["restaurant_subsidy_amount"], 1000)
+        self.assertEqual(values["voucher_product_id"], "product-123")
+        self.assertEqual(values["voucher_count"], 11)
+        self.assertEqual(values["paid_voucher_count"], 10)
+        self.assertEqual(values["bonus_voucher_count"], 1)
+        self.assertEqual(values["total_employee_burden"], 52000)
+        self.assertEqual(values["voucher_purchase_price"], "5200.0000")
+        self.assertEqual(values["requested_payment_method"], "BANK")
 
     @patch("app.routers.voucher_products.get_settings")
     @patch("app.routers.voucher_products.JoinRepository")
@@ -48,14 +107,81 @@ class SubsidizedLedgerTests(unittest.TestCase):
         settings.return_value.pilot_merchant_id = "merchant-1"
         merchant = {"id": "merchant-1", "name": "돈토"}
         contract = {"unit_price": 8000, "subsidy_enabled": True, "company_subsidy_amount": 1000, "restaurant_subsidy_amount": 1000, "status": "active"}
-        repo.client.rest_get.side_effect = [[merchant], [contract]]
+        product = {"id": "product-123", "merchant_id": "merchant-1", "name": "1장", "voucher_count": 1,
+                   "bonus_count": 0, "sale_price": 8000, "status": "active", "kiwoom_pay_method": "TOTAL",
+                   "is_event": False}
+        repo.client.rest_get.side_effect = [[merchant], [contract], [product]]
         repo.client.rest_post.return_value = [{"id": "db-order", "amount": 6000}]
-        repo.client.rpc.side_effect = [{"point_amount": 6000, "card_amount": 0}, {"issued_count": 1}]
-        result = purchase_subsidized("bearer")["data"]
+        repo.client.rpc.side_effect = [
+            {"expired_count": 0, "released_point_amount": 0},
+            {"point_amount": 6000, "card_amount": 0},
+            {"issued_count": 1},
+        ]
+        result = purchase_subsidized(VoucherPurchaseRequest(product_id="product-123"), "bearer")["data"]
         self.assertTrue(result["point_only"])
         self.assertIsNone(result["checkout_url"])
-        self.assertEqual(repo.client.rpc.call_args_list[1].args[0], "fulfill_subsidized_order")
-        self.assertIsNone(repo.client.rpc.call_args_list[1].args[1]["p_provider_payment_key"])
+        self.assertEqual(repo.client.rpc.call_args_list[0].args, (
+            "expire_stale_subsidized_orders", {"p_user_id": "user-1"}))
+        self.assertEqual(repo.client.rpc.call_args_list[2].args[0], "fulfill_subsidized_order")
+        self.assertIsNone(repo.client.rpc.call_args_list[2].args[1]["p_provider_payment_key"])
+
+    @patch("app.routers.voucher_products.get_settings")
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_ledger_employee_catalog_has_no_products(self, repo_class, settings):
+        repo = repo_class.return_value
+        self._employee_repo(repo)
+        settings.return_value.pilot_merchant_id = "merchant-1"
+        merchant = {"id": "merchant-1", "name": "돈토"}
+        contract = {"company_id": "company-1", "unit_price": 8000, "subsidy_enabled": False, "status": "active"}
+        repo.client.rest_get.side_effect = [[merchant], [contract]]
+        self.assertEqual(active_products("bearer")["data"], {"purchase_mode": "none", "items": []})
+        self.assertEqual(repo.client.rest_get.call_count, 2)
+
+    @patch("app.routers.voucher_products.get_settings")
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_subsidy_employee_catalog_prices_each_active_product(self, repo_class, settings):
+        repo = repo_class.return_value
+        self._employee_repo(repo)
+        settings.return_value.pilot_merchant_id = "merchant-1"
+        merchant = {"id": "merchant-1", "name": "돈토"}
+        contract = {"company_id": "company-1", "unit_price": 8000, "subsidy_enabled": True,
+                    "company_subsidy_amount": 1000, "restaurant_subsidy_amount": 500, "status": "active"}
+        product = {"id": "product-123", "merchant_id": "merchant-1", "name": "10+1", "voucher_count": 10,
+                   "bonus_count": 1, "sale_price": 72000, "status": "active", "kiwoom_pay_method": "BANK",
+                   "is_event": False}
+        repo.client.rest_get.side_effect = [[merchant], [contract], [product]]
+        data = active_products("bearer")["data"]
+        self.assertEqual(repo.client.rpc.call_args.args, (
+            "expire_stale_subsidized_orders", {"p_user_id": "user-1"}))
+        self.assertEqual(data["purchase_mode"], "subsidized")
+        self.assertEqual(data["items"][0]["employee_pay_amount"], 57000)
+        self.assertEqual(data["items"][0]["per_voucher_company_subsidy_amount"], 1000)
+        self.assertEqual(data["items"][0]["per_voucher_restaurant_subsidy_amount"], 500)
+        self.assertEqual(data["items"][0]["company_subsidy_amount"], 1000)
+        self.assertEqual(data["items"][0]["restaurant_subsidy_amount"], 500)
+        # Bonus vouchers are excluded: package totals use paid voucher_count=10.
+        self.assertEqual(data["items"][0]["total_company_subsidy_amount"], 10000)
+        self.assertEqual(data["items"][0]["total_restaurant_subsidy_amount"], 5000)
+
+    @patch("app.routers.voucher_products.get_settings")
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_nonpositive_subsidized_product_price_is_hidden_and_rejected(self, repo_class, settings):
+        repo = repo_class.return_value
+        self._employee_repo(repo)
+        settings.return_value.pilot_merchant_id = "merchant-1"
+        merchant = {"id": "merchant-1", "name": "돈토"}
+        contract = {"company_id": "company-1", "unit_price": 8000, "subsidy_enabled": True,
+                    "company_subsidy_amount": 3500, "restaurant_subsidy_amount": 3500, "status": "active"}
+        product = {"id": "product-123", "merchant_id": "merchant-1", "name": "1장", "voucher_count": 1,
+                   "bonus_count": 0, "sale_price": 6000, "status": "active", "kiwoom_pay_method": "TOTAL",
+                   "is_event": False}
+        repo.client.rest_get.side_effect = [[merchant], [contract], [product]]
+        self.assertEqual(active_products("bearer")["data"]["items"], [])
+        repo.client.rest_get.side_effect = [[merchant], [contract], [product]]
+        with self.assertRaises(Exception) as ctx:
+            purchase_subsidized(VoucherPurchaseRequest(product_id="product-123"), "bearer")
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertEqual(ctx.exception.detail["code"], "INVALID_SUBSIDIZED_PRICE")
 
     @patch("app.routers.transactions.get_settings")
     @patch("app.routers.transactions.JoinRepository")

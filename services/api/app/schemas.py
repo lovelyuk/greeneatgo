@@ -170,6 +170,10 @@ class VoucherPurchaseRequest(BaseModel):
     product_id: str = Field(min_length=8, max_length=80)
 
 
+class LegacyCompatibleVoucherPurchaseRequest(BaseModel):
+    product_id: str | None = Field(default=None, min_length=8, max_length=80)
+
+
 class RefundReceiveAccount(BaseModel):
     bank: str = Field(min_length=2, max_length=20)
     accountNumber: str = Field(min_length=5, max_length=40)

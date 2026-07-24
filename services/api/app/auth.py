@@ -10,3 +10,10 @@ def bearer_token(authorization: str | None = Header(default=None)) -> str:
     if not token:
         raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "로그인이 필요해요"})
     return token
+
+
+def optional_bearer_token(authorization: str | None = Header(default=None)) -> str | None:
+    """Allow absent credentials, but never downgrade malformed credentials."""
+    if authorization is None:
+        return None
+    return bearer_token(authorization)

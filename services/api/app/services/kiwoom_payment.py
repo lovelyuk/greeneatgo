@@ -16,6 +16,14 @@ class KiwoomPaymentError(Exception):
         self.message = message
 
 
+class KiwoomCancellationOutcomeUnknown(KiwoomPaymentError):
+    """The cancel POST was sent, so retrying could issue a duplicate refund."""
+
+    def __init__(self, status: int, code: str, message: str, *, details: dict[str, Any] | None = None):
+        super().__init__(status, code, message)
+        self.details = details or {}
+
+
 @dataclass(frozen=True)
 class KiwoomHashInput:
     cpid: str
@@ -146,20 +154,52 @@ def cancel_payment(
     }
     if tax_free_amount is not None:
         body["TAXFREEAMT"] = str(tax_free_amount)
-    result = _request_json(
-        return_url,
-        body,
-        headers={"Authorization": authorization_key, "TOKEN": token},
-        encoding="euc-kr",
-    )
-    if str(result.get("RESULTCODE")) != "0000":
+    try:
+        result = _request_json(
+            return_url,
+            body,
+            headers={"Authorization": authorization_key, "TOKEN": token},
+            encoding="euc-kr",
+        )
+    except KiwoomPaymentError as exc:
+        # Kiwoom has neither an idempotency key nor a cancellation-status lookup.
+        # Once this POST is attempted, these failures cannot prove no refund occurred.
+        raise KiwoomCancellationOutcomeUnknown(
+            502,
+            "KIWOOMPAY_CANCEL_OUTCOME_UNKNOWN",
+            "키움페이 취소 결과를 확인할 수 없어 수동 거래 대사가 필요해요",
+            details={
+                "cause_code": exc.code,
+                "cause_message": exc.message,
+                "transaction_id": transaction_id,
+                "cancel_amount": cancel_amount,
+                "return_url": return_url,
+            },
+        ) from exc
+    result_code = result.get("RESULTCODE")
+    if result_code is None or isinstance(result_code, (dict, list)) or not str(result_code).strip():
+        raise KiwoomCancellationOutcomeUnknown(
+            502, "KIWOOMPAY_CANCEL_INVALID_RESPONSE", "키움페이 취소 응답을 확인할 수 없어 수동 거래 대사가 필요해요",
+            details={"transaction_id": transaction_id, "cancel_amount": cancel_amount, "provider_response": result},
+        )
+    if str(result_code) != "0000":
         raise KiwoomPaymentError(
             502,
-            str(result.get("RESULTCODE") or "KIWOOMPAY_CANCEL_FAILED"),
+            str(result_code),
             str(result.get("ERRORMESSAGE") or "키움페이 환불에 실패했어요"),
         )
     if str(result.get("TOKEN") or "") != token:
-        raise KiwoomPaymentError(502, "KIWOOMPAY_TOKEN_MISMATCH", "키움페이 취소 응답 검증에 실패했어요")
-    if int(result.get("AMOUNT") or 0) != cancel_amount:
-        raise KiwoomPaymentError(502, "KIWOOMPAY_CANCEL_AMOUNT_MISMATCH", "키움페이 실제 환불 금액이 요청과 달라요")
+        raise KiwoomCancellationOutcomeUnknown(
+            502, "KIWOOMPAY_TOKEN_MISMATCH", "키움페이 취소 응답 검증에 실패해 수동 거래 대사가 필요해요",
+            details={"transaction_id": transaction_id, "cancel_amount": cancel_amount, "provider_response": result},
+        )
+    try:
+        response_amount = int(result.get("AMOUNT") or 0)
+    except (TypeError, ValueError):
+        response_amount = None
+    if response_amount != cancel_amount:
+        raise KiwoomCancellationOutcomeUnknown(
+            502, "KIWOOMPAY_CANCEL_AMOUNT_MISMATCH", "키움페이 실제 환불 금액을 검증할 수 없어 수동 거래 대사가 필요해요",
+            details={"transaction_id": transaction_id, "cancel_amount": cancel_amount, "provider_response": result},
+        )
     return result

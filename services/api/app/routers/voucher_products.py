@@ -7,12 +7,12 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth import bearer_token
+from app.auth import bearer_token, optional_bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.merchant_admin import _merchant_admin
-from app.schemas import VoucherProductCreateRequest, VoucherProductUpdateRequest, VoucherPurchaseRequest
+from app.schemas import LegacyCompatibleVoucherPurchaseRequest, VoucherProductCreateRequest, VoucherProductUpdateRequest, VoucherPurchaseRequest
 from app.services.join_flow import JoinFlowError
 from app.services.product_images import managed_image_path
 from app.services.vouchers import calculate_sale_price, krw_amount, per_voucher_price, resolve_voucher_merchant
@@ -21,6 +21,12 @@ router = APIRouter(tags=["voucher-products"])
 logger = logging.getLogger(__name__)
 _PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,kiwoom_pay_method,image_url,is_event,event_start_at,event_end_at,created_at,updated_at"
 _LEGACY_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,image_url,created_at,updated_at"
+
+
+def _expire_stale_subsidized_orders(repo: JoinRepository, user_id: str) -> None:
+    """Recover reservations only after the server-enforced 30-minute window."""
+    repo.client.rpc("expire_stale_subsidized_orders", {"p_user_id": user_id})
+
 
 def _subsidized_context(repo: JoinRepository, token: str):
     auth = repo.auth_user_from_token(token)
@@ -62,23 +68,58 @@ def cancel_subsidized_order(order_id: str, token: str = Depends(bearer_token)):
         result = repo.client.rpc("release_subsidized_order_points", {"p_order_id": rows[0]["id"], "p_user_id": auth.id})
         return {"ok": True, "data": result, "error": None}
     except HTTPException: raise
-    except SupabaseHttpError as exc: raise _error(502, "ORDER_CANCEL_FAILED", "포인트 예약을 해제하지 못했어요") from exc
+    except SupabaseHttpError as exc:
+        if "CHECKOUT_ALREADY_STARTED" in exc.body:
+            raise _error(409, "CHECKOUT_ALREADY_STARTED", "결제가 시작된 주문은 자동 취소할 수 없어요. 결제 상태를 다시 확인해 주세요") from exc
+        raise _error(502, "ORDER_CANCEL_FAILED", "포인트 예약을 해제하지 못했어요") from exc
 
 
 @router.post("/vouchers/purchase-subsidized", status_code=201)
-def purchase_subsidized(token: str = Depends(bearer_token)):
+def purchase_subsidized(payload: LegacyCompatibleVoucherPurchaseRequest | None = None, token: str = Depends(bearer_token)):
     repo, settings = JoinRepository(), get_settings()
     try:
         profile, merchant, contract = _subsidized_context(repo, token)
-        unit, company, restaurant = int(contract["unit_price"]), int(contract["company_subsidy_amount"]), int(contract["restaurant_subsidy_amount"])
-        employee_due, order_id, checkout_token = unit-company-restaurant, f"GE-S-{uuid.uuid4().hex}", secrets.token_urlsafe(32)
-        order = repo.client.rest_post("payment_orders", {"order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id, "merchant_id": merchant["id"], "company_id": profile.company_id, "merchant_name": merchant["name"], "product_name": "보조금 식권", "amount": employee_due, "status": "ready", "pay_type": "subsidized", "requested_payment_method": "TOTAL", "voucher_count": 1, "paid_voucher_count": 1, "bonus_voucher_count": 0, "voucher_purchase_price": str(employee_due), "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant})[0]
+        _expire_stale_subsidized_orders(repo, profile.id)
+        company, restaurant = int(contract["company_subsidy_amount"]), int(contract["restaurant_subsidy_amount"])
+        if payload is not None and payload.product_id:
+            products, _ = _load_products(repo, {"id": f"eq.{payload.product_id}", "merchant_id": f"eq.{merchant['id']}", "status": "eq.active", "limit": "1"})
+        else:
+            # Temporary compatibility for deployed clients which POSTed no body.
+            candidates, _ = _load_products(repo, {
+                "merchant_id": f"eq.{merchant['id']}", "status": "eq.active",
+                "order": "display_order.asc,created_at.asc",
+            })
+            unit_price = int(contract["unit_price"])
+            products = [
+                product for product in candidates
+                if _is_exposed(product)
+                and int(product.get("voucher_count") or 0) == 1
+                and int(product.get("bonus_count") or 0) == 0
+                and krw_amount(str(product.get("sale_price") or 0)) == unit_price
+            ]
+            # Prefer the historical TOTAL flow, but never guess among matches.
+            total_products = [product for product in products if str(product.get("kiwoom_pay_method") or "TOTAL") == "TOTAL"]
+            if len(total_products) == 1:
+                products = total_products
+            if len(products) != 1:
+                raise _error(409, "UPGRADE_REQUIRED", "상품을 안전하게 선택할 수 없어 앱 업데이트가 필요해요")
+        if not products:
+            raise _error(404, "VOUCHER_PRODUCT_NOT_FOUND", "판매 중인 식권 상품을 찾을 수 없어요")
+        product = products[0]
+        if not _is_exposed(product):
+            raise _error(404, "VOUCHER_PRODUCT_NOT_EXPOSED", "현재 판매 기간이 아닌 식권 상품이에요")
+        paid, bonus = int(product["voucher_count"]), int(product.get("bonus_count") or 0)
+        employee_due = krw_amount(product["sale_price"]) - (company + restaurant) * paid
+        if employee_due <= 0:
+            raise _error(409, "INVALID_SUBSIDIZED_PRICE", "직원 결제 금액이 올바르지 않아요")
+        order_id, checkout_token = f"GE-S-{uuid.uuid4().hex}", secrets.token_urlsafe(32)
+        order = repo.client.rest_post("payment_orders", {"order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id, "merchant_id": merchant["id"], "company_id": profile.company_id, "product_id": None, "voucher_product_id": product["id"], "merchant_name": merchant["name"], "product_name": product["name"], "amount": employee_due, "total_employee_burden": employee_due, "status": "ready", "pay_type": "subsidized", "requested_payment_method": product.get("kiwoom_pay_method") or "TOTAL", "voucher_count": paid + bonus, "paid_voucher_count": paid, "bonus_voucher_count": bonus, "voucher_purchase_price": str(per_voucher_price(employee_due, paid)), "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant})[0]
         split = repo.client.rpc("reserve_subsidized_order_points", {"p_order_id": order["id"]})
         point_amount, card_amount = int(split["point_amount"]), int(split["card_amount"])
         fulfilled = None
         if card_amount == 0:
             fulfilled = repo.client.rpc("fulfill_subsidized_order", {"p_order_id": order["id"], "p_provider_payment_key": None, "p_payment_method": "POINT", "p_provider_response": None, "p_approved_at": datetime.now(timezone.utc).isoformat()})
-        return {"ok": True, "data": {"order_id": order_id, "amount": card_amount, "employee_pay_amount": employee_due, "point_amount": point_amount, "card_amount": card_amount, "point_only": card_amount == 0, "checkout_url": None if card_amount == 0 else f"{settings.public_api_base_url}/payments/checkout/{checkout_token}", "fulfillment": fulfilled}, "error": None}
+        return {"ok": True, "data": {"order_id": order_id, "amount": card_amount, "employee_pay_amount": employee_due, "point_amount": point_amount, "card_amount": card_amount, "point_only": card_amount == 0, "product_id": product["id"], "product_name": product["name"], "total_count": paid + bonus, "paid_voucher_count": paid, "bonus_voucher_count": bonus, "payment_method": product.get("kiwoom_pay_method") or "TOTAL", "checkout_url": None if card_amount == 0 else f"{settings.public_api_base_url}/payments/checkout/{checkout_token}", "fulfillment": fulfilled}, "error": None}
     except HTTPException: raise
     except SupabaseHttpError as exc: raise _error(502, "SUPABASE_ERROR", "보조금 식권 주문을 만들지 못했어요") from exc
 
@@ -248,18 +289,63 @@ def admin_update_product(product_id: str, payload: VoucherProductUpdateRequest, 
 
 
 @router.get("/vouchers/products")
-def active_products():
+def active_products(token: str | None = Depends(optional_bearer_token)):
     repo = JoinRepository()
     try:
+        profile = None
+        if token is not None:
+            # Invalid presented credentials propagate; only an absent header gets
+            # the temporary public legacy catalog.
+            auth = repo.auth_user_from_token(token)
+            profile = repo.get_profile(auth.id, email=auth.email)
+            if profile is None or profile.status != "active" or profile.role not in {"customer", "employee"}:
+                raise _error(403, "VOUCHER_ACCOUNT_ONLY", "식권 계정만 상품을 조회할 수 있어요")
+        if profile is not None and profile.role == "employee":
+            _expire_stale_subsidized_orders(repo, profile.id)
         merchant = resolve_voucher_merchant(repo, get_settings().pilot_merchant_id)
         if not merchant:
-            return {"ok": True, "data": {"items": []}, "error": None}
+            return {"ok": True, "data": {"purchase_mode": "none", "items": []}, "error": None}
+        contract = None
+        if profile is not None and profile.role == "employee":
+            links = repo.client.rest_get("merchant_companies", {"select": "company_id,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,status", "merchant_id": f"eq.{merchant['id']}", "company_id": f"eq.{profile.company_id}", "status": "eq.active", "limit": "1"})
+            if not links or not links[0].get("subsidy_enabled"):
+                return {"ok": True, "data": {"purchase_mode": "none", "items": []}, "error": None}
+            contract = links[0]
         rows, _ = _load_products(repo, {
             "merchant_id": f"eq.{merchant['id']}",
             "status": "eq.active", "order": "display_order.asc,created_at.asc",
         })
-        return {"ok": True, "data": {"items": [_present(row) for row in rows if _is_exposed(row)]}, "error": None}
+        items = [_present(row) for row in rows if _is_exposed(row)]
+        mode = "voucher"
+        if contract is not None:
+            mode = "subsidized"
+            company, restaurant = int(contract.get("company_subsidy_amount") or 0), int(contract.get("restaurant_subsidy_amount") or 0)
+            priced = []
+            for item in items:
+                paid_count = int(item["voucher_count"])
+                employee_due = krw_amount(item["sale_price"]) - (company + restaurant) * paid_count
+                if employee_due > 0:
+                    priced.append({
+                        **item,
+                        "employee_pay_amount": employee_due,
+                        # Explicit per-voucher names prevent clients from confusing
+                        # contract snapshots with package totals. Keep the original
+                        # names during the API transition for older app versions.
+                        "per_voucher_company_subsidy_amount": company,
+                        "per_voucher_restaurant_subsidy_amount": restaurant,
+                        "company_subsidy_amount": company,
+                        "restaurant_subsidy_amount": restaurant,
+                        # Subsidies apply only to paid vouchers; bonuses are free.
+                        "total_company_subsidy_amount": company * paid_count,
+                        "total_restaurant_subsidy_amount": restaurant * paid_count,
+                    })
+            items = priced
+        return {"ok": True, "data": {"purchase_mode": mode, "items": items}, "error": None}
+    except HTTPException:
+        raise
     except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요") from exc
         raise _error(502, "SUPABASE_ERROR", "판매 중인 식권 상품을 불러오지 못했어요") from exc
 
 

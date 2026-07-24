@@ -15,7 +15,7 @@ from app.auth import bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.routers.voucher_products import _is_exposed, _load_products
+from app.routers.voucher_products import _expire_stale_subsidized_orders, _is_exposed, _load_products
 from app.schemas import PaymentConfirmRequest, PaymentOrderCreateRequest
 from app.services.kiwoom_payment import KiwoomHashInput, KiwoomPaymentError, request_payment_hash
 
@@ -27,7 +27,7 @@ ORDER_SELECT = (
     "product_name,amount,status,provider_payment_key,payment_method,approved_at,created_at,"
     "pay_type,voucher_product_id,voucher_count,voucher_purchase_price,fulfilled_at,provider_response,"
     "company_id,company_subsidy_amount,restaurant_subsidy_amount,point_amount,point_reserved,"
-    "requested_payment_method"
+    "requested_payment_method,paid_voucher_count,bonus_voucher_count,total_employee_burden,checkout_started_at"
 )
 
 
@@ -47,9 +47,21 @@ def _customer(repo: JoinRepository, token: str, *, allow_employee: bool = False)
 
 
 def _ensure_voucher_order_available(repo: JoinRepository, order: dict) -> None:
-    if order.get("pay_type") != "voucher":
+    if order.get("pay_type") not in {"voucher", "subsidized"}:
         return
     product_id, merchant_id = order.get("voucher_product_id"), order.get("merchant_id")
+    legacy_subsidized = (
+        order.get("pay_type") == "subsidized"
+        and product_id is None
+        and int(order.get("voucher_count") or 0) == 1
+        and int(order.get("paid_voucher_count") or 0) == 1
+        and int(order.get("bonus_voucher_count") or 0) == 0
+    )
+    if legacy_subsidized:
+        # Orders created before migration 0032 had no voucher product. Their
+        # one-paid/no-bonus snapshot is the compatibility marker; do not weaken
+        # product availability checks for any package-shaped order.
+        return
     if not product_id or not merchant_id:
         raise _error(409, "INVALID_VOUCHER_ORDER", "식권 상품 정보가 없는 주문이에요")
     products, _ = _load_products(repo, {
@@ -58,6 +70,29 @@ def _ensure_voucher_order_available(repo: JoinRepository, order: dict) -> None:
     })
     if not products or not _is_exposed(products[0]):
         raise _error(409, "VOUCHER_PRODUCT_NOT_EXPOSED", "이벤트가 종료되었거나 판매가 중지된 상품이에요")
+
+
+def _enforce_subsidized_order_expiry(repo: JoinRepository, order: dict) -> dict:
+    """Let PostgreSQL expire ready subsidized orders, then return fresh state.
+
+    The RPC uses database ``now()`` and the inclusive 30-minute boundary. It is
+    called for every ready subsidized order rather than trusting a client time or
+    risking clock skew between API and database.
+    """
+    if order.get("pay_type") != "subsidized" or order.get("status") != "ready":
+        return order
+    _expire_stale_subsidized_orders(repo, str(order["user_id"]))
+    rows = repo.client.rest_get("payment_orders", {
+        "select": ORDER_SELECT, "id": f"eq.{order['id']}", "limit": "1",
+    })
+    if not rows:
+        raise _error(404, "ORDER_NOT_FOUND", "결제 주문을 찾을 수 없어요")
+    refreshed = rows[0]
+    if refreshed.get("status") == "canceled":
+        raise _error(409, "ORDER_EXPIRED", "결제 가능 시간이 만료된 주문이에요")
+    if refreshed.get("status") != "ready":
+        raise _error(409, "ORDER_NOT_READY", "이미 처리되었거나 결제할 수 없는 주문이에요")
+    return refreshed
 
 
 def _safe_text(value: object, limit: int) -> str:
@@ -119,7 +154,7 @@ def checkout(checkout_token: str):
         raise _error(502, "SUPABASE_ERROR", "결제 주문을 불러오지 못했어요") from exc
     if not rows:
         raise _error(404, "ORDER_NOT_FOUND", "결제할 주문이 없거나 이미 처리됐어요")
-    order = rows[0]
+    order = _enforce_subsidized_order_expiry(repo, rows[0])
     _ensure_voucher_order_available(repo, order)
     pay_method = str(order.get("requested_payment_method") or "TOTAL")
     if pay_method not in {"TOTAL", "BANK"}:
@@ -131,6 +166,14 @@ def checkout(checkout_token: str):
         ))
     except KiwoomPaymentError as exc:
         raise _error(exc.status if 400 <= exc.status < 500 else 502, exc.code, exc.message) from exc
+
+    if order.get("pay_type") == "subsidized":
+        try:
+            # Durable provider-entry boundary: started checkouts are never
+            # wall-clock expired or canceled merely because a client disappears.
+            repo.client.rpc("mark_subsidized_checkout_started", {"p_order_id": order["id"]})
+        except SupabaseHttpError as exc:
+            raise _error(409, "ORDER_NOT_READY", "이미 처리되었거나 결제할 수 없는 주문이에요") from exc
 
     order_id = _safe_text(order["order_id"], 50)
     amount = str(int(order["amount"]))
@@ -211,6 +254,18 @@ async def _notification(request: Request) -> Response:
             return _ack(False, 409)
         if order.get("status") == "done":
             return _ack(order.get("provider_payment_key") == transaction_id, 200 if order.get("provider_payment_key") == transaction_id else 409)
+        if order.get("status") != "ready":
+            return _ack(False, 409)
+        # Availability/event state gates order creation and checkout only. Once
+        # checkout starts, settlement uses immutable order/provider snapshots.
+        legacy_subsidized = (
+            order.get("voucher_product_id") is None
+            and int(order.get("voucher_count") or 0) == 1
+            and int(order.get("paid_voucher_count") or 0) == 1
+            and int(order.get("bonus_voucher_count") or 0) == 0
+        )
+        if order.get("pay_type") == "subsidized" and int(order.get("amount") or 0) > 0 and not order.get("checkout_started_at") and not legacy_subsidized:
+            return _ack(False, 409)
         approved_at = datetime.now(timezone.utc).isoformat()
         provider_response = {**values, "source_ip": source_ip}
         if order.get("pay_type") in {"voucher", "subsidized"}:
@@ -230,6 +285,8 @@ async def _notification(request: Request) -> Response:
             if not updated:
                 return _ack(False, 409)
         return _ack(True)
+    except HTTPException as exc:
+        return _ack(False, exc.status_code)
     except (SupabaseHttpError, ValueError, TypeError):
         return _ack(False, 500)
 

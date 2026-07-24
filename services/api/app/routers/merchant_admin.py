@@ -21,7 +21,7 @@ from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCre
 from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
-from app.services.kiwoom_payment import KiwoomPaymentError, cancel_payment
+from app.services.kiwoom_payment import KiwoomCancellationOutcomeUnknown, KiwoomPaymentError, cancel_payment
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
 KST = ZoneInfo("Asia/Seoul")
@@ -808,7 +808,7 @@ def export_vendor_transactions(company_id: str, format: str = Query(pattern="^(x
         raise _error(502, "SUPABASE_ERROR", "내보내기 파일을 만드는 중 오류가 발생했어요") from exc
 
 
-_REFUND_ORDER_SELECT = "id,order_id,user_id,merchant_id,company_id,product_name,amount,status,pay_type,provider_payment_key,payment_method,refund_account,approved_at,created_at,voucher_count,paid_voucher_count,bonus_voucher_count,point_amount"
+_REFUND_ORDER_SELECT = "id,order_id,user_id,merchant_id,company_id,product_name,amount,status,pay_type,provider_payment_key,payment_method,refund_account,approved_at,created_at,voucher_count,paid_voucher_count,bonus_voucher_count,point_amount,total_employee_burden"
 
 
 def _order_quotes(repo: JoinRepository, orders: list[dict]) -> list[dict]:
@@ -883,6 +883,7 @@ def refundable_orders(account_id: str, token: str = Depends(bearer_token)):
 def refund_purchase_order(payload: MerchantRefundRequest, token: str = Depends(bearer_token)):
     repo = JoinRepository()
     claim = None
+    merchant_id = None
     try:
         actor, merchant_id = _merchant_admin(repo, token)
         # Re-read ownership and current state immediately before the locked claim.
@@ -905,20 +906,58 @@ def refund_purchase_order(payload: MerchantRefundRequest, token: str = Depends(b
         })
         pg_response = None
         amount = int(claim.get("refund_amount") or 0)
-        if amount > 0:
-            transaction_id = claim.get("provider_payment_key")
-            if not transaction_id:
-                raise _error(409, "PAYMENT_KEY_MISSING", "결제 거래번호가 없어 자동 환불할 수 없어요")
-            settings = get_settings()
-            pg_response = cancel_payment(
-                settings.kiwoompay_base_url,
-                settings.kiwoompay_authorization_key,
-                settings.kiwoompay_cpid,
-                transaction_id,
-                amount,
-                pay_method=payment_method,
-                cancel_reason="식권구매환불",
+        provider_succeeded = bool(claim.get("provider_succeeded"))
+        acquired = bool(claim.get("acquired", not provider_succeeded))
+        processing_token = claim.get("processing_token")
+        if not provider_succeeded and not acquired:
+            claim_code = str(claim.get("error_code") or "REFUND_IN_PROGRESS")
+            message = (
+                "키움페이 거래를 수동으로 확인해야 하는 환불이에요"
+                if claim_code in {
+                    "REFUND_RECONCILIATION_REQUIRED", "REFUND_PROVIDER_ATTEMPT_IN_FLIGHT"
+                }
+                else "다른 환불 요청이 처리 중이에요"
             )
+            raise _error(409, claim_code, message)
+        if not provider_succeeded:
+            transaction_id = claim.get("provider_payment_key")
+            settings = None
+            if amount > 0:
+                if not transaction_id:
+                    raise _error(409, "PAYMENT_KEY_MISSING", "결제 거래번호가 없어 자동 환불할 수 없어요")
+                settings = get_settings()
+
+            # Persist the non-reclaimable point-of-no-return synchronously before
+            # Kiwoom's non-idempotent cancellation call. A failed or malformed
+            # persistence response must never be followed by a provider request.
+            attempt = repo.client.rpc("mark_purchase_order_refund_provider_attempt_started", {
+                "p_refund_request_id": claim["refund_request_id"],
+                "p_merchant_id": merchant_id,
+                "p_processing_token": processing_token,
+            })
+            if not isinstance(attempt, dict) or attempt.get("status") != "provider_in_flight":
+                raise _error(502, "REFUND_PROVIDER_ATTEMPT_START_FAILED", "환불 시도 상태를 저장하지 못했어요")
+
+            if amount > 0:
+                assert settings is not None
+                pg_response = cancel_payment(
+                    settings.kiwoompay_base_url,
+                    settings.kiwoompay_authorization_key,
+                    settings.kiwoompay_cpid,
+                    transaction_id,
+                    amount,
+                    pay_method=payment_method,
+                    cancel_reason="식권구매환불",
+                )
+
+            # This durable write intentionally precedes DB finalization. A retry
+            # can now skip provider cancellation and idempotently finish vouchers.
+            repo.client.rpc("record_purchase_order_refund_provider_success", {
+                "p_refund_request_id": claim["refund_request_id"],
+                "p_merchant_id": merchant_id,
+                "p_processing_token": processing_token,
+                "p_pg_response": pg_response or {"point_only": True},
+            })
         result = repo.client.rpc("finalize_purchase_order_refund", {
             "p_refund_request_id": claim["refund_request_id"],
             "p_merchant_id": merchant_id, "p_pg_response": pg_response,
@@ -926,12 +965,31 @@ def refund_purchase_order(payload: MerchantRefundRequest, token: str = Depends(b
         return {"ok": True, "data": result, "error": None}
     except HTTPException:
         raise
-    except KiwoomPaymentError as exc:
-        if claim:
+    except KiwoomCancellationOutcomeUnknown as exc:
+        if claim and merchant_id:
             try:
-                repo.client.rest_patch("refund_requests", {"id": f"eq.{claim['refund_request_id']}", "status": "eq.processing"}, {
-                    "status": "failed", "failure_code": exc.code, "failure_message": exc.message,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                repo.client.rpc("mark_purchase_order_refund_reconciliation_required", {
+                    "p_refund_request_id": claim["refund_request_id"],
+                    "p_merchant_id": merchant_id,
+                    "p_processing_token": claim.get("processing_token"),
+                    "p_failure_code": exc.code,
+                    "p_failure_message": exc.message,
+                    "p_reconciliation_details": exc.details,
+                })
+            except SupabaseHttpError:
+                # An uncertain provider result must never be released for retry,
+                # even if persisting the safety state needs operator intervention.
+                pass
+        raise _error(502, exc.code, exc.message) from exc
+    except KiwoomPaymentError as exc:
+        if claim and merchant_id:
+            try:
+                repo.client.rpc("fail_purchase_order_refund", {
+                    "p_refund_request_id": claim["refund_request_id"],
+                    "p_merchant_id": merchant_id,
+                    "p_processing_token": claim.get("processing_token"),
+                    "p_failure_code": exc.code,
+                    "p_failure_message": exc.message,
                 })
             except SupabaseHttpError:
                 pass
@@ -943,6 +1001,7 @@ def refund_purchase_order(payload: MerchantRefundRequest, token: str = Depends(b
             "ORDER_ALREADY_USED": (409, "ORDER_ALREADY_USED", "이미 사용한 보조금 식권은 환불할 수 없어요"),
             "PAID_VOUCHERS_EXHAUSTED": (409, "PAID_VOUCHERS_EXHAUSTED", "유료 식권을 모두 사용해 환불할 금액이 없어요"),
             "REFUND_ALREADY_REQUESTED": (409, "REFUND_ALREADY_REQUESTED", "이미 처리 중이거나 완료된 환불이에요"),
+            "REFUND_IN_PROGRESS": (409, "REFUND_IN_PROGRESS", "다른 환불 요청이 처리 중이에요"),
         }
         for marker, detail in code_map.items():
             if marker in exc.body:

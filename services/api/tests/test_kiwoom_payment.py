@@ -1,13 +1,17 @@
 import json
 import unittest
+from email.message import Message
+from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError, URLError
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from app.routers.payments import checkout, router, short_redirect_router
+from app.routers.payments import _ensure_voucher_order_available, checkout, router, short_redirect_router
 from app.services.kiwoom_payment import (
+    KiwoomCancellationOutcomeUnknown,
     KiwoomHashInput,
     KiwoomPaymentError,
     cancel_payment,
@@ -33,6 +37,11 @@ class _Response:
 
     def read(self):
         return json.dumps(self.payload, ensure_ascii=False).encode("utf-8")
+
+
+class _RawResponse(_Response):
+    def read(self):
+        return self.payload
 
 
 class KiwoomPaymentServiceTests(unittest.TestCase):
@@ -89,6 +98,57 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         with self.assertRaises(KiwoomPaymentError) as ctx:
             cancel_payment("https://apitest.kiwoompay.co.kr", "auth", "CPID", "trx", 1000)
         self.assertEqual(ctx.exception.code, "KIWOOMPAY_INVALID_CANCEL_URL")
+
+    @patch("app.services.kiwoom_payment.urlopen")
+    def test_cancel_transport_failures_after_actual_post_are_outcome_unknown(self, mocked_urlopen):
+        ready = _Response({"RETURNURL": "https://apitest.kiwoompay.co.kr/pay/cancel", "TOKEN": "token-1"})
+        failures = (
+            URLError("timeout"),
+            HTTPError("https://apitest.kiwoompay.co.kr/pay/cancel", 500, "error", Message(), BytesIO(b"bad gateway")),
+            _RawResponse(b"not-json"),
+        )
+        for failure in failures:
+            mocked_urlopen.reset_mock()
+            mocked_urlopen.side_effect = [ready, failure]
+            with self.assertRaises(KiwoomCancellationOutcomeUnknown) as ctx:
+                cancel_payment("https://apitest.kiwoompay.co.kr", "auth", "CPID", "trx-unknown", 1000)
+            self.assertEqual(ctx.exception.code, "KIWOOMPAY_CANCEL_OUTCOME_UNKNOWN")
+            self.assertEqual(ctx.exception.details["transaction_id"], "trx-unknown")
+
+    @patch("app.services.kiwoom_payment.urlopen")
+    def test_cancel_structured_malformed_response_is_outcome_unknown(self, mocked_urlopen):
+        mocked_urlopen.side_effect = [
+            _Response({"RETURNURL": "https://apitest.kiwoompay.co.kr/pay/cancel", "TOKEN": "token-1"}),
+            _Response({"TOKEN": "token-1", "AMOUNT": "1000"}),
+        ]
+        with self.assertRaises(KiwoomCancellationOutcomeUnknown) as ctx:
+            cancel_payment("https://apitest.kiwoompay.co.kr", "auth", "CPID", "trx", 1000)
+        self.assertEqual(ctx.exception.code, "KIWOOMPAY_CANCEL_INVALID_RESPONSE")
+
+    @patch("app.services.kiwoom_payment.urlopen")
+    def test_explicit_cancel_result_failure_is_safe_payment_error(self, mocked_urlopen):
+        mocked_urlopen.side_effect = [
+            _Response({"RETURNURL": "https://apitest.kiwoompay.co.kr/pay/cancel", "TOKEN": "token-1"}),
+            _Response({"RESULTCODE": "9999", "ERRORMESSAGE": "rejected"}),
+        ]
+        with self.assertRaises(KiwoomPaymentError) as ctx:
+            cancel_payment("https://apitest.kiwoompay.co.kr", "auth", "CPID", "trx", 1000)
+        self.assertNotIsInstance(ctx.exception, KiwoomCancellationOutcomeUnknown)
+        self.assertEqual(ctx.exception.code, "9999")
+
+    @patch("app.services.kiwoom_payment.urlopen")
+    def test_success_with_token_or_amount_mismatch_is_outcome_unknown(self, mocked_urlopen):
+        for response in (
+            {"RESULTCODE": "0000", "TOKEN": "wrong", "AMOUNT": "1000"},
+            {"RESULTCODE": "0000", "TOKEN": "token-1", "AMOUNT": "999"},
+        ):
+            mocked_urlopen.reset_mock()
+            mocked_urlopen.side_effect = [
+                _Response({"RETURNURL": "https://apitest.kiwoompay.co.kr/pay/cancel", "TOKEN": "token-1"}),
+                _Response(response),
+            ]
+            with self.assertRaises(KiwoomCancellationOutcomeUnknown):
+                cancel_payment("https://apitest.kiwoompay.co.kr", "auth", "CPID", "trx", 1000)
 
     def test_checkout_posts_hash_bound_form_without_external_sdk(self):
         order = {
@@ -164,6 +224,80 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertIn('name="PAYMETHOD" value="BANK"', html)
         self.assertIn('name="PRODUCTTYPE" value="2"', html)
 
+    def test_checkout_expires_stale_ready_subsidized_order_before_hash(self):
+        ready = {
+            "id": "stale-order", "user_id": "user-1", "amount": 6000,
+            "order_id": "GE-S-stale", "created_at": "2020-01-01T00:00:00Z",
+            "status": "ready", "pay_type": "subsidized",
+        }
+        settings = SimpleNamespace(
+            public_api_base_url="https://api.example.com", kiwoompay_cpid="CPID",
+            kiwoompay_base_url="https://apitest.kiwoompay.co.kr",
+            kiwoompay_app_url="greeneatgo://payment",
+        )
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ), patch("app.routers.payments.request_payment_hash") as request_hash:
+            repo = repo_class.return_value
+            repo.client.rest_get.side_effect = [[ready], [{**ready, "status": "canceled"}]]
+            with self.assertRaises(HTTPException) as ctx:
+                checkout("checkout-token")
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertEqual(ctx.exception.detail, {
+            "code": "ORDER_EXPIRED", "message": "결제 가능 시간이 만료된 주문이에요",
+        })
+        repo.client.rpc.assert_called_once_with(
+            "expire_stale_subsidized_orders", {"p_user_id": "user-1"})
+        request_hash.assert_not_called()
+
+    def test_checkout_keeps_fresh_subsidized_order_available(self):
+        order = {
+            "id": "fresh-order", "user_id": "user-1", "amount": 6000,
+            "order_id": "GE-S-fresh", "status": "ready", "pay_type": "subsidized",
+            "product_name": "보조금 식권", "merchant_name": "돈토",
+            "merchant_id": "merchant-1", "product_id": None,
+            "voucher_product_id": "voucher-product-1", "requested_payment_method": "TOTAL",
+        }
+        settings = SimpleNamespace(
+            public_api_base_url="https://api.example.com", kiwoompay_cpid="CPID",
+            kiwoompay_base_url="https://apitest.kiwoompay.co.kr",
+            kiwoompay_app_url="greeneatgo://payment",
+        )
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ), patch("app.routers.payments._ensure_voucher_order_available"), patch(
+            "app.routers.payments.request_payment_hash", return_value="secure-hash",
+        ) as request_hash:
+            repo = repo_class.return_value
+            repo.client.rest_get.return_value = [order]
+            response = checkout("checkout-token")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item.args[0] for item in repo.client.rpc.call_args_list], [
+            "expire_stale_subsidized_orders", "mark_subsidized_checkout_started",
+        ])
+        request_hash.assert_called_once()
+
+    def test_legacy_single_subsidized_order_skips_product_availability_lookup(self):
+        repo = MagicMock()
+        _ensure_voucher_order_available(repo, {
+            "pay_type": "subsidized", "voucher_product_id": None,
+            "merchant_id": "merchant-1", "voucher_count": 1,
+            "paid_voucher_count": 1, "bonus_voucher_count": 0,
+        })
+        repo.client.rest_get.assert_not_called()
+
+    def test_null_product_subsidized_package_is_not_treated_as_legacy(self):
+        repo = MagicMock()
+        with self.assertRaises(HTTPException) as ctx:
+            _ensure_voucher_order_available(repo, {
+                "pay_type": "subsidized", "voucher_product_id": None,
+                "merchant_id": "merchant-1", "voucher_count": 2,
+                "paid_voucher_count": 2, "bonus_voucher_count": 0,
+            })
+        self.assertEqual(ctx.exception.status_code, 409)
+
     def test_notification_validates_order_and_persists_daou_transaction(self):
         app = FastAPI()
         app.include_router(router)
@@ -193,6 +327,118 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         update = repo.client.rest_patch.call_args.args[2]
         self.assertEqual(update["provider_payment_key"], "daou-trx-1")
         self.assertEqual(update["provider_response"]["ORDERNO"], "GE-order-123")
+
+    def test_notification_completes_ready_legacy_subsidized_order(self):
+        app = FastAPI()
+        app.include_router(router)
+        order = {
+            "id": "legacy-order", "user_id": "user-1", "order_id": "GE-S-legacy", "amount": 6000,
+            "status": "ready", "pay_type": "subsidized", "provider_payment_key": None,
+            "requested_payment_method": "TOTAL", "voucher_product_id": None,
+            "merchant_id": "merchant-1", "voucher_count": 1,
+            "paid_voucher_count": 1, "bonus_voucher_count": 0,
+        }
+        settings = SimpleNamespace(
+            kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",),
+        )
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ):
+            repo = repo_class.return_value
+            repo.client.rest_get.return_value = [order]
+            response = TestClient(app).get("/payments/notification", params={
+                "CPID": "CPID", "PAYMETHOD": "CARD", "ORDERNO": "GE-S-legacy",
+                "DAOUTRX": "legacy-trx", "AMOUNT": "6000",
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("<RESULT>SUCCESS</RESULT>", response.text)
+        self.assertEqual([call.args[0] for call in repo.client.rpc.call_args_list], ["fulfill_subsidized_order"])
+
+    def test_notification_completes_fresh_product_subsidized_order(self):
+        app = FastAPI()
+        app.include_router(router)
+        order = {
+            "id": "fresh-order", "user_id": "user-1", "order_id": "GE-S-fresh", "amount": 57000,
+            "status": "ready", "pay_type": "subsidized", "provider_payment_key": None,
+            "requested_payment_method": "BANK", "voucher_product_id": "product-1",
+            "merchant_id": "merchant-1", "voucher_count": 11,
+            "paid_voucher_count": 10, "bonus_voucher_count": 1,
+            "checkout_started_at": "2026-07-24T00:00:00Z",
+        }
+        settings = SimpleNamespace(
+            kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",),
+        )
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ):
+            repo = repo_class.return_value
+            repo.client.rest_get.return_value = [order]
+            response = TestClient(app).get("/payments/notification", params={
+                "CPID": "CPID", "PAYMETHOD": "BANK", "ORDERNO": "GE-S-fresh",
+                "DAOUTRX": "fresh-trx", "AMOUNT": "57000",
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("<RESULT>SUCCESS</RESULT>", response.text)
+        self.assertEqual([call.args[0] for call in repo.client.rpc.call_args_list], ["fulfill_subsidized_order"])
+        self.assertEqual(repo.client.rest_get.call_count, 1)
+
+    def test_notification_fulfills_started_order_after_catalog_event_ends(self):
+        app = FastAPI()
+        app.include_router(router)
+        ready = {
+            "id": "stale-order", "user_id": "user-1", "order_id": "GE-S-stale", "amount": 6000,
+            "created_at": "2020-01-01T00:00:00Z", "status": "ready", "pay_type": "subsidized", "provider_payment_key": None,
+            "requested_payment_method": "TOTAL", "voucher_product_id": "product-1",
+            "merchant_id": "merchant-1", "voucher_count": 1,
+            "paid_voucher_count": 1, "bonus_voucher_count": 0,
+            "checkout_started_at": "2026-07-24T00:00:00Z",
+        }
+        settings = SimpleNamespace(
+            kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",),
+        )
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ):
+            repo = repo_class.return_value
+            repo.client.rest_get.return_value = [ready]
+            response = TestClient(app).get("/payments/notification", params={
+                "CPID": "CPID", "PAYMETHOD": "CARD", "ORDERNO": "GE-S-stale",
+                "DAOUTRX": "late-trx", "AMOUNT": "6000",
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("<RESULT>SUCCESS</RESULT>", response.text)
+        self.assertEqual(repo.client.rpc.call_args.args[0], "fulfill_subsidized_order")
+        self.assertEqual(repo.client.rest_get.call_count, 1)
+
+    def test_notification_rejects_expired_subsidized_order(self):
+        app = FastAPI()
+        app.include_router(router)
+        order = {
+            "id": "expired-order", "order_id": "GE-S-expired", "amount": 6000,
+            "status": "canceled", "pay_type": "subsidized", "provider_payment_key": None,
+            "requested_payment_method": "TOTAL", "voucher_product_id": "product-1",
+            "merchant_id": "merchant-1", "voucher_count": 1,
+            "paid_voucher_count": 1, "bonus_voucher_count": 0,
+        }
+        settings = SimpleNamespace(
+            kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",),
+        )
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ):
+            repo = repo_class.return_value
+            repo.client.rest_get.return_value = [order]
+            response = TestClient(app).get("/payments/notification", params={
+                "CPID": "CPID", "PAYMETHOD": "CARD", "ORDERNO": "GE-S-expired",
+                "DAOUTRX": "late-trx", "AMOUNT": "6000",
+            })
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("<RESULT>FAIL</RESULT>", response.text)
+        repo.client.rpc.assert_not_called()
 
     def test_bank_order_rejects_non_bank_notification(self):
         app = FastAPI()

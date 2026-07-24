@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
@@ -22,6 +23,32 @@ from app.services.vouchers import calculate_sale_price, krw_amount, parse_qr_dat
 
 
 class VoucherCoreTests(unittest.TestCase):
+    @patch("app.routers.voucher_products.get_settings")
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_legacy_public_catalog_remains_available_without_auth(self, repo_class, settings):
+        repo = repo_class.return_value
+        settings.return_value.pilot_merchant_id = "merchant-pilot"
+        product = {"id": "public-product", "name": "식권", "voucher_count": 1,
+                   "bonus_count": 0, "sale_price": 8000, "status": "active", "is_event": False}
+        repo.client.rest_get.side_effect = [[{"id": "merchant-pilot", "name": "돈토"}], [product]]
+
+        data = active_products(None)["data"]
+
+        self.assertEqual(data["purchase_mode"], "voucher")
+        self.assertEqual(data["items"][0]["id"], "public-product")
+        repo.auth_user_from_token.assert_not_called()
+
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_invalid_presented_catalog_token_never_downgrades_to_public(self, repo_class):
+        repo = repo_class.return_value
+        repo.auth_user_from_token.side_effect = SupabaseHttpError(401, "invalid jwt")
+
+        with self.assertRaises(HTTPException) as ctx:
+            active_products("bad-token")
+
+        self.assertEqual(ctx.exception.status_code, 401)
+        repo.client.rest_get.assert_not_called()
+
     @patch("app.routers.merchant_admin.JoinRepository")
     def test_merchant_transactions_exclude_voucher_purchase_orders(self, repo_class):
         repo = repo_class.return_value
@@ -231,13 +258,32 @@ class VoucherCoreTests(unittest.TestCase):
     def test_product_listing_is_constrained_to_resolved_pilot_merchant(self, repo_class, settings):
         repo = repo_class.return_value
         settings.return_value.pilot_merchant_id = "merchant-pilot"
+        repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="a@example.com")
+        repo.get_profile.return_value = SimpleNamespace(id="user-1", role="customer", status="active", company_id=None)
         repo.client.rest_get.side_effect = [[{"id": "merchant-pilot", "name": "돈토"}], []]
 
-        result = active_products()
+        result = active_products("bearer")
 
         self.assertEqual(result["data"]["items"], [])
+        repo.auth_user_from_token.assert_called_once_with("bearer")
         product_params = repo.client.rest_get.call_args_list[1].args[1]
         self.assertEqual(product_params["merchant_id"], "eq.merchant-pilot")
+
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_product_catalog_requires_an_active_voucher_account(self, repo_class):
+        repo = repo_class.return_value
+        repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="a@example.com")
+        repo.get_profile.return_value = SimpleNamespace(
+            id="admin-1", role="merchant_admin", status="active", company_id=None,
+        )
+
+        with self.assertRaises(HTTPException) as ctx:
+            active_products("bearer")
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIsInstance(ctx.exception.detail, dict)
+        self.assertEqual(cast(dict, ctx.exception.detail)["code"], "VOUCHER_ACCOUNT_ONLY")
+        repo.client.rest_get.assert_not_called()
 
     @patch("app.routers.voucher_products.get_settings")
     @patch("app.routers.voucher_products.JoinRepository")
@@ -261,10 +307,13 @@ class VoucherCoreTests(unittest.TestCase):
              "event_start_at": (now - timedelta(days=2)).isoformat(), "event_end_at": (now - timedelta(days=1)).isoformat()},
         ]
         repo.client.rest_get.side_effect = [[{"id": "merchant-pilot", "name": "돈토"}], rows]
+        repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="a@example.com")
+        repo.get_profile.return_value = SimpleNamespace(id="user-1", role="customer", status="active", company_id=None)
 
-        result = active_products()
+        result = active_products("bearer")
 
         self.assertEqual([item["id"] for item in result["data"]["items"]], ["normal", "ongoing"])
+        self.assertEqual(result["data"]["purchase_mode"], "voucher")
         self.assertTrue(result["data"]["items"][1]["is_event"])
 
     def test_customer_usage_keeps_direct_payment_history_and_exact_rpc_balance(self):

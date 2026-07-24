@@ -226,9 +226,9 @@ class ApiClient {
     return ((decoded['data'] as Map)['image_url']).toString();
   }
 
-  Future<List<VoucherProduct>> getVoucherProducts() async {
-    final data = await _request('/vouchers/products', authenticated: false);
-    return mapList(data['items']).map(VoucherProduct.fromJson).toList();
+  Future<VoucherCatalog> getVoucherProducts() async {
+    final data = await _request('/vouchers/products');
+    return VoucherCatalog.fromJson(data);
   }
 
   Future<Map<String, dynamic>> createVoucherOrder({required String productId}) {
@@ -236,11 +236,10 @@ class ApiClient {
         method: 'POST', body: {'product_id': productId});
   }
 
-  Future<SubsidizedPrice> getSubsidizedPrice() async =>
-      SubsidizedPrice.fromJson(await _request('/vouchers/subsidized-price'));
-
-  Future<Map<String, dynamic>> createSubsidizedVoucherOrder() =>
-      _request('/vouchers/purchase-subsidized', method: 'POST');
+  Future<Map<String, dynamic>> createSubsidizedVoucherOrder(
+          {required String productId}) =>
+      _request('/vouchers/purchase-subsidized',
+          method: 'POST', body: {'product_id': productId});
 
   Future<Map<String, dynamic>> cancelSubsidizedVoucherOrder(String orderId) =>
       _request('/vouchers/subsidized-orders/$orderId/cancel', method: 'POST');
@@ -386,19 +385,26 @@ class TodayMenu {
 }
 
 class VoucherProduct {
-  const VoucherProduct(
-      {required this.id,
-      required this.name,
-      required this.voucherCount,
-      required this.bonusCount,
-      required this.unitPrice,
-      required this.discountRate,
-      required this.salePrice,
-      required this.totalCount,
-      required this.kiwoomPayMethod,
-      required this.isEvent,
-      this.eventEndAt,
-      this.imageUrl});
+  const VoucherProduct({
+    required this.id,
+    required this.name,
+    required this.voucherCount,
+    required this.bonusCount,
+    required this.unitPrice,
+    required this.discountRate,
+    required this.salePrice,
+    required this.totalCount,
+    required this.kiwoomPayMethod,
+    required this.isEvent,
+    this.employeePayAmount,
+    this.companySubsidyAmount,
+    this.restaurantSubsidyAmount,
+    this.totalCompanySubsidyAmount,
+    this.totalRestaurantSubsidyAmount,
+    this.eventEndAt,
+    this.imageUrl,
+  });
+
   final String id;
   final String name;
   final int voucherCount;
@@ -409,6 +415,11 @@ class VoucherProduct {
   final int totalCount;
   final String kiwoomPayMethod;
   final bool isEvent;
+  final int? employeePayAmount;
+  final int? companySubsidyAmount;
+  final int? restaurantSubsidyAmount;
+  final int? totalCompanySubsidyAmount;
+  final int? totalRestaurantSubsidyAmount;
   final DateTime? eventEndAt;
   final String? imageUrl;
 
@@ -427,6 +438,14 @@ class VoucherProduct {
 
   factory VoucherProduct.fromJson(Map<String, dynamic> json) {
     int integer(String key) => (json[key] as num?)?.round() ?? 0;
+    int? optional(List<String> keys) {
+      for (final key in keys) {
+        final value = json[key];
+        if (value is num) return value.round();
+      }
+      return null;
+    }
+
     return VoucherProduct(
       id: json['id'] as String,
       name: json['name'] as String? ?? '식권 상품',
@@ -436,8 +455,18 @@ class VoucherProduct {
       discountRate: json['discount_rate'] as num? ?? 0,
       salePrice: integer('sale_price'),
       totalCount: integer('total_count'),
-      kiwoomPayMethod: json['kiwoom_pay_method'] as String? ?? 'TOTAL',
+      kiwoomPayMethod:
+          (json['kiwoom_pay_method'] as String? ?? 'TOTAL').toUpperCase(),
       isEvent: json['is_event'] as bool? ?? false,
+      employeePayAmount: optional(const ['employee_pay_amount']),
+      companySubsidyAmount:
+          optional(const ['per_voucher_company_subsidy_amount']),
+      restaurantSubsidyAmount:
+          optional(const ['per_voucher_restaurant_subsidy_amount']),
+      totalCompanySubsidyAmount:
+          optional(const ['total_company_subsidy_amount']),
+      totalRestaurantSubsidyAmount:
+          optional(const ['total_restaurant_subsidy_amount']),
       eventEndAt: json['event_end_at'] == null
           ? null
           : DateTime.tryParse(json['event_end_at'] as String),
@@ -446,29 +475,46 @@ class VoucherProduct {
   }
 }
 
-class SubsidizedPrice {
-  const SubsidizedPrice({
-    required this.merchantName,
-    required this.unitPrice,
-    required this.employeePayAmount,
-    required this.companySubsidyAmount,
-    required this.restaurantSubsidyAmount,
-  });
+enum VoucherPurchaseMode { voucher, subsidized, none }
 
-  final String merchantName;
-  final int unitPrice;
-  final int employeePayAmount;
-  final int companySubsidyAmount;
-  final int restaurantSubsidyAmount;
+bool shouldReleaseSubsidizedReservation({
+  required bool isSubsidized,
+  required bool hasOrder,
+  required bool completed,
+  required bool cancellationAttempted,
+  required bool externalPaymentActive,
+  required bool approvalPending,
+  required bool checkoutStarted,
+  bool explicitCheckoutTermination = false,
+}) {
+  if (!isSubsidized || !hasOrder || completed || cancellationAttempted) {
+    return false;
+  }
+  // Disposal is safe only before provider checkout was presented. Explicit
+  // provider termination may request cancellation, but the server remains the
+  // authority and refuses it after its durable checkout boundary.
+  return explicitCheckoutTermination ||
+      (!checkoutStarted && !externalPaymentActive && !approvalPending);
+}
 
-  factory SubsidizedPrice.fromJson(Map<String, dynamic> json) {
-    int amount(String key) => (json[key] as num?)?.round() ?? 0;
-    return SubsidizedPrice(
-      merchantName: displayMerchantName(json['merchant_name'] as String?),
-      unitPrice: amount('unit_price'),
-      employeePayAmount: amount('employee_pay_amount'),
-      companySubsidyAmount: amount('company_subsidy_amount'),
-      restaurantSubsidyAmount: amount('restaurant_subsidy_amount'),
+class VoucherCatalog {
+  const VoucherCatalog({required this.purchaseMode, required this.items});
+
+  final VoucherPurchaseMode purchaseMode;
+  final List<VoucherProduct> items;
+
+  factory VoucherCatalog.fromJson(Map<String, dynamic> json) {
+    final mode =
+        switch ((json['purchase_mode'] ?? '').toString().toLowerCase()) {
+      'voucher' => VoucherPurchaseMode.voucher,
+      'subsidized' => VoucherPurchaseMode.subsidized,
+      _ => VoucherPurchaseMode.none,
+    };
+    return VoucherCatalog(
+      purchaseMode: mode,
+      items: mode == VoucherPurchaseMode.none
+          ? const []
+          : mapList(json['items']).map(VoucherProduct.fromJson).toList(),
     );
   }
 }
@@ -1867,50 +1913,11 @@ class HomeScreen extends StatelessWidget {
             label: const Text('식권 구매하기'),
           ),
         ] else ...[
-          FutureBuilder<SubsidizedPrice>(
-            future: ApiClient(session).getSubsidizedPrice(),
-            builder: (context, snapshot) {
-              final price = snapshot.data;
-              if (price == null) return const SizedBox.shrink();
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(18),
-                    decoration: brandCardDecoration(radius: 22),
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('포인트',
-                              style: TextStyle(
-                                  color: Color(0xFF5C7A66),
-                                  fontWeight: FontWeight.w800)),
-                          Text('${won(pointBalance)} P',
-                              style: const TextStyle(
-                                  color: kCocoa,
-                                  fontSize: 27,
-                                  fontWeight: FontWeight.w900)),
-                          if (pointTransactions.isNotEmpty)
-                            Text(
-                                '최근 ${pointTransactions.first['reason'] ?? '포인트 변경'} · ${pointTransactions.first['amount']}P',
-                                style: const TextStyle(
-                                    fontSize: 12, color: Color(0xFF5C7A66))),
-                        ]),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      await Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => SubsidizedVoucherPurchaseScreen(
-                              session: session)));
-                      await onRefresh();
-                    },
-                    icon: const Icon(Icons.add_card_rounded),
-                    label: Text('지원 식권 구매하기 · ${won(price.employeePayAmount)}'),
-                  ),
-                ],
-              );
-            },
+          _EmployeeVoucherActions(
+            session: session,
+            pointBalance: pointBalance,
+            pointTransactions: pointTransactions,
+            onRefresh: onRefresh,
           ),
         ],
         const SizedBox(height: 24),
@@ -1958,6 +1965,78 @@ class HomeScreen extends StatelessWidget {
       ]),
     );
   }
+}
+
+class _EmployeeVoucherActions extends StatefulWidget {
+  const _EmployeeVoucherActions({
+    required this.session,
+    required this.pointBalance,
+    required this.pointTransactions,
+    required this.onRefresh,
+  });
+
+  final User session;
+  final int pointBalance;
+  final List<Map<String, dynamic>> pointTransactions;
+  final Future<void> Function() onRefresh;
+
+  @override
+  State<_EmployeeVoucherActions> createState() =>
+      _EmployeeVoucherActionsState();
+}
+
+class _EmployeeVoucherActionsState extends State<_EmployeeVoucherActions> {
+  late final Future<VoucherCatalog> _catalog =
+      ApiClient(widget.session).getVoucherProducts();
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<VoucherCatalog>(
+        future: _catalog,
+        builder: (context, snapshot) {
+          if (snapshot.data?.purchaseMode != VoucherPurchaseMode.subsidized) {
+            return const SizedBox.shrink();
+          }
+          return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(18),
+                  decoration: brandCardDecoration(radius: 22),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('포인트',
+                            style: TextStyle(
+                                color: Color(0xFF5C7A66),
+                                fontWeight: FontWeight.w800)),
+                        Text('${won(widget.pointBalance)} P',
+                            style: const TextStyle(
+                                color: kCocoa,
+                                fontSize: 27,
+                                fontWeight: FontWeight.w900)),
+                        if (widget.pointTransactions.isNotEmpty)
+                          Text(
+                              '최근 ${widget.pointTransactions.first['reason'] ?? '포인트 변경'} · ${widget.pointTransactions.first['amount']}P',
+                              style: const TextStyle(
+                                  fontSize: 12, color: Color(0xFF5C7A66))),
+                      ]),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => VoucherPurchaseScreen(
+                              session: widget.session,
+                              initialCatalog: snapshot.data,
+                            )));
+                    await widget.onRefresh();
+                  },
+                  icon: const Icon(Icons.add_card_rounded),
+                  label: const Text('지원 식권 상품 보기'),
+                ),
+              ]);
+        },
+      );
 }
 
 class _CommunityShortcut extends StatelessWidget {
@@ -2366,6 +2445,7 @@ class _UnifiedPaymentResultScreenState
   bool _loading = true;
   bool _noVoucher = false;
   bool _purchaseOpened = false;
+  VoucherPurchaseMode? _recoveryPurchaseMode;
 
   @override
   void initState() {
@@ -2389,11 +2469,28 @@ class _UnifiedPaymentResultScreenState
       if (mounted) setState(() => _result = result);
     } on ApiException catch (error) {
       if (!mounted) return;
+      VoucherCatalog? recoveryCatalog;
+      if (error.isNoVoucher) {
+        try {
+          recoveryCatalog =
+              await ApiClient(widget.session).getVoucherProducts();
+        } catch (_) {
+          // A failed catalog lookup must not expose a purchase action to a
+          // ledger employee whose server-side mode is unknown.
+        }
+      }
+      if (!mounted) return;
+      final recoveryMode = recoveryCatalog?.purchaseMode ??
+          (widget.isConsumer ? VoucherPurchaseMode.voucher : null);
       setState(() {
         _noVoucher = error.isNoVoucher;
         _error = error.message;
+        _recoveryPurchaseMode = recoveryMode;
       });
-      if (error.isNoVoucher && !_purchaseOpened) {
+      if (error.isNoVoucher &&
+          recoveryMode != null &&
+          recoveryMode != VoucherPurchaseMode.none &&
+          !_purchaseOpened) {
         _purchaseOpened = true;
         WidgetsBinding.instance.addPostFrameCallback(
             (_) => _openPurchase(retryAfterPurchase: true));
@@ -2411,9 +2508,7 @@ class _UnifiedPaymentResultScreenState
   Future<void> _openPurchase({bool retryAfterPurchase = false}) async {
     if (!mounted) return;
     final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(
-        builder: (_) => widget.isConsumer
-            ? VoucherPurchaseScreen(session: widget.session)
-            : SubsidizedVoucherPurchaseScreen(session: widget.session)));
+        builder: (_) => VoucherPurchaseScreen(session: widget.session)));
     if (paid == true && mounted && retryAfterPurchase) await _pay();
   }
 
@@ -2488,17 +2583,27 @@ class _UnifiedPaymentResultScreenState
                                 fontSize: 34, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 12),
                         if (_noVoucher) ...[
-                          const Text('식권을 구매한 뒤 같은 QR 결제를 바로 다시 시도할 수 있어요.',
+                          Text(
+                              _recoveryPurchaseMode == VoucherPurchaseMode.none
+                                  ? '현재 계정은 식권 상품을 구매할 수 없어요.'
+                                  : '식권을 구매한 뒤 같은 QR 결제를 바로 다시 시도할 수 있어요.',
                               textAlign: TextAlign.center,
-                              style: TextStyle(
+                              style: const TextStyle(
                                   color: Color(0xFF5C7A66),
                                   height: 1.5,
                                   fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 18),
-                          FilledButton(
-                              onPressed: () =>
-                                  _openPurchase(retryAfterPurchase: true),
-                              child: const Text('지금 식권 구매하기')),
+                          if (_recoveryPurchaseMode != null &&
+                              _recoveryPurchaseMode !=
+                                  VoucherPurchaseMode.none) ...[
+                            const SizedBox(height: 18),
+                            FilledButton(
+                                onPressed: () =>
+                                    _openPurchase(retryAfterPurchase: true),
+                                child: Text(_recoveryPurchaseMode ==
+                                        VoucherPurchaseMode.subsidized
+                                    ? '지원 식권 상품 보기'
+                                    : '지금 식권 구매하기')),
+                          ],
                         ] else if (_error != null) ...[
                           BrandNotice(text: _error!, kind: NoticeKind.error),
                           const SizedBox(height: 14),
@@ -2555,108 +2660,35 @@ class _UnifiedPaymentResultScreenState
   }
 }
 
-class SubsidizedVoucherPurchaseScreen extends StatefulWidget {
-  const SubsidizedVoucherPurchaseScreen({super.key, required this.session});
-  final User session;
-
-  @override
-  State<SubsidizedVoucherPurchaseScreen> createState() =>
-      _SubsidizedVoucherPurchaseScreenState();
-}
-
-class _SubsidizedVoucherPurchaseScreenState
-    extends State<SubsidizedVoucherPurchaseScreen> {
-  late Future<SubsidizedPrice> _price =
-      ApiClient(widget.session).getSubsidizedPrice();
-
-  void _reload() =>
-      setState(() => _price = ApiClient(widget.session).getSubsidizedPrice());
-
-  @override
-  Widget build(BuildContext context) => AppScaffold(
-        showBrand: false,
-        title: '지원 식권 구매',
-        subtitle: '회사와 식당의 지원이 적용된 직원 전용 식권이에요.',
-        child: FutureBuilder<SubsidizedPrice>(
-          future: _price,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const BrandPanel(
-                  children: [Center(child: CircularProgressIndicator())]);
-            }
-            if (snapshot.hasError) {
-              return BrandPanel(children: [
-                BrandNotice(
-                    text: snapshot.error.toString(), kind: NoticeKind.error),
-                const SizedBox(height: 12),
-                OutlinedButton(
-                    onPressed: _reload, child: const Text('다시 불러오기')),
-              ]);
-            }
-            final price = snapshot.data!;
-            return BrandPanel(children: [
-              const Icon(Icons.confirmation_number_rounded,
-                  color: kOrange, size: 72),
-              const SizedBox(height: 12),
-              Text('${price.merchantName} 식권',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 10),
-              Text(won(price.employeePayAmount),
-                  style: const TextStyle(
-                      color: kOrange,
-                      fontSize: 34,
-                      fontWeight: FontWeight.w900)),
-              const SizedBox(height: 8),
-              Text(
-                  '정상가 ${won(price.unitPrice)} · 회사 지원 ${won(price.companySubsidyAmount)} · 식당 지원 ${won(price.restaurantSubsidyAmount)}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: Color(0xFF5C7A66),
-                      height: 1.5,
-                      fontWeight: FontWeight.w800)),
-              const SizedBox(height: 18),
-              FilledButton(
-                  onPressed: () async {
-                    final paid = await Navigator.of(context).push<bool>(
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                VoucherKiwoomPaymentScreen.subsidized(
-                                    session: widget.session, price: price)));
-                    if (paid == true && context.mounted) {
-                      Navigator.of(context).pop(true);
-                    }
-                  },
-                  child: const Text('구매하기')),
-            ]);
-          },
-        ),
-      );
-}
-
 class VoucherPurchaseScreen extends StatefulWidget {
-  const VoucherPurchaseScreen({super.key, required this.session});
+  const VoucherPurchaseScreen({
+    super.key,
+    required this.session,
+    this.initialCatalog,
+  });
+
   final User session;
+  final VoucherCatalog? initialCatalog;
 
   @override
   State<VoucherPurchaseScreen> createState() => _VoucherPurchaseScreenState();
 }
 
 class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
-  late Future<List<VoucherProduct>> _products =
-      ApiClient(widget.session).getVoucherProducts();
+  late Future<VoucherCatalog> _catalog = widget.initialCatalog == null
+      ? ApiClient(widget.session).getVoucherProducts()
+      : Future.value(widget.initialCatalog!);
 
-  void _reload() => setState(
-      () => _products = ApiClient(widget.session).getVoucherProducts());
+  void _reload() =>
+      setState(() => _catalog = ApiClient(widget.session).getVoucherProducts());
 
   @override
   Widget build(BuildContext context) => AppScaffold(
         showBrand: false,
         title: '돈토 식권 구매',
         subtitle: '원하는 식권 패키지를 고르고 키움페이에서 결제해요.',
-        child: FutureBuilder<List<VoucherProduct>>(
-          future: _products,
+        child: FutureBuilder<VoucherCatalog>(
+          future: _catalog,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
               return const BrandPanel(
@@ -2670,8 +2702,17 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
                 OutlinedButton(onPressed: _reload, child: const Text('다시 불러오기'))
               ]);
             }
-            final products = snapshot.data ?? const <VoucherProduct>[];
-            if (products.isEmpty) {
+            final catalog = snapshot.data ??
+                const VoucherCatalog(
+                    purchaseMode: VoucherPurchaseMode.none, items: []);
+            if (catalog.purchaseMode == VoucherPurchaseMode.none) {
+              return const BrandPanel(children: [
+                Text('구매할 수 있는 식권 상품이 없어요.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.w900))
+              ]);
+            }
+            if (catalog.items.isEmpty) {
               return const BrandPanel(children: [
                 Text('현재 판매 중인 식권 상품이 없어요.',
                     textAlign: TextAlign.center,
@@ -2679,15 +2720,17 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
               ]);
             }
             return Column(
-                children: products
-                    .map((product) => _VoucherProductCard(
+                children: catalog.items
+                    .map((product) => VoucherProductCard(
                         product: product,
+                        purchaseMode: catalog.purchaseMode,
                         onBuy: () async {
                           final paid = await Navigator.of(context).push<bool>(
                               MaterialPageRoute(
                                   builder: (_) => VoucherKiwoomPaymentScreen(
                                       session: widget.session,
-                                      product: product)));
+                                      product: product,
+                                      purchaseMode: catalog.purchaseMode)));
                           if (paid == true && context.mounted) {
                             Navigator.of(context).pop(true);
                           }
@@ -2712,14 +2755,24 @@ Widget _productImage(String? imageUrl, IconData fallbackIcon) {
   );
 }
 
-class _VoucherProductCard extends StatelessWidget {
-  const _VoucherProductCard({required this.product, required this.onBuy});
+class VoucherProductCard extends StatelessWidget {
+  const VoucherProductCard({
+    super.key,
+    required this.product,
+    required this.purchaseMode,
+    required this.onBuy,
+  });
+
   final VoucherProduct product;
+  final VoucherPurchaseMode purchaseMode;
   final VoidCallback onBuy;
 
   @override
   Widget build(BuildContext context) {
     final hasDiscount = product.discountRate > 0 || product.saving > 0;
+    final subsidized = purchaseMode == VoucherPurchaseMode.subsidized;
+    final companyTotal = product.totalCompanySubsidyAmount;
+    final restaurantTotal = product.totalRestaurantSubsidyAmount;
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(18),
@@ -2752,7 +2805,7 @@ class _VoucherProductCard extends StatelessWidget {
                 icon: Icons.card_giftcard_rounded),
           if (product.kiwoomPayMethod == 'BANK')
             const _PromoBadge(
-                text: '계좌이체 전용', icon: Icons.account_balance_rounded),
+                text: 'BANK · 계좌이체 전용', icon: Icons.account_balance_rounded),
         ]),
         const SizedBox(height: 10),
         Text(
@@ -2760,19 +2813,45 @@ class _VoucherProductCard extends StatelessWidget {
             style: const TextStyle(
                 color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
-        if (hasDiscount)
-          Text(won(product.regularPrice),
+        if (subsidized) ...[
+          Text('정상 판매가 ${won(product.salePrice)}',
               style: const TextStyle(
-                  color: Color(0xFF879D8D),
-                  decoration: TextDecoration.lineThrough,
-                  fontWeight: FontWeight.w700)),
-        Text(won(product.salePrice),
-            style: const TextStyle(
-                color: kOrange, fontSize: 28, fontWeight: FontWeight.w900)),
-        if (product.saving > 0)
-          Text('${won(product.saving)} 절약',
-              style:
-                  const TextStyle(color: kCocoa, fontWeight: FontWeight.w800)),
+                  color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
+          if (companyTotal != null)
+            Text('회사 총 지원 ${won(companyTotal)}',
+                style: const TextStyle(
+                    color: kCocoa, fontWeight: FontWeight.w800)),
+          if (restaurantTotal != null)
+            Text('식당 총 지원 ${won(restaurantTotal)}',
+                style: const TextStyle(
+                    color: kCocoa, fontWeight: FontWeight.w800)),
+          if (product.companySubsidyAmount != null ||
+              product.restaurantSubsidyAmount != null)
+            Text(
+                '1장당 회사 ${won(product.companySubsidyAmount)} · 식당 ${won(product.restaurantSubsidyAmount)}',
+                style: const TextStyle(
+                    color: Color(0xFF5C7A66),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Text('직원 부담 ${won(product.employeePayAmount)}',
+              style: const TextStyle(
+                  color: kOrange, fontSize: 28, fontWeight: FontWeight.w900)),
+        ] else ...[
+          if (hasDiscount)
+            Text(won(product.regularPrice),
+                style: const TextStyle(
+                    color: Color(0xFF879D8D),
+                    decoration: TextDecoration.lineThrough,
+                    fontWeight: FontWeight.w700)),
+          Text(won(product.salePrice),
+              style: const TextStyle(
+                  color: kOrange, fontSize: 28, fontWeight: FontWeight.w900)),
+          if (product.saving > 0)
+            Text('${won(product.saving)} 절약',
+                style: const TextStyle(
+                    color: kCocoa, fontWeight: FontWeight.w800)),
+        ],
         const SizedBox(height: 14),
         FilledButton(onPressed: onBuy, child: const Text('구매하기')),
       ]),
@@ -2800,20 +2879,20 @@ class _PromoBadge extends StatelessWidget {
 }
 
 class VoucherKiwoomPaymentScreen extends StatefulWidget {
-  const VoucherKiwoomPaymentScreen(
-      {super.key, required this.session, required this.product})
-      : subsidizedPrice = null;
-  const VoucherKiwoomPaymentScreen.subsidized(
-      {super.key, required this.session, required SubsidizedPrice price})
-      : product = null,
-        subsidizedPrice = price;
-  final User session;
-  final VoucherProduct? product;
-  final SubsidizedPrice? subsidizedPrice;
+  const VoucherKiwoomPaymentScreen({
+    super.key,
+    required this.session,
+    required this.product,
+    required this.purchaseMode,
+  });
 
-  bool get isSubsidized => subsidizedPrice != null;
-  String get paymentTitle => isSubsidized ? '지원 식권' : product!.name;
-  int get expectedIssued => isSubsidized ? 1 : product!.totalCount;
+  final User session;
+  final VoucherProduct product;
+  final VoucherPurchaseMode purchaseMode;
+
+  bool get isSubsidized => purchaseMode == VoucherPurchaseMode.subsidized;
+  String get paymentTitle => product.name;
+  int get expectedIssued => product.totalCount;
 
   @override
   State<VoucherKiwoomPaymentScreen> createState() =>
@@ -2835,6 +2914,9 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   String? _orderId;
   int? _orderAmount;
   bool _externalAppOpened = false;
+  bool _approvalPending = false;
+  bool _cancellationAttempted = false;
+  bool _checkoutStarted = false;
 
   @override
   void initState() {
@@ -2881,7 +2963,44 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (shouldReleaseSubsidizedReservation(
+      isSubsidized: widget.isSubsidized,
+      hasOrder: _orderId != null,
+      completed: _completed,
+      cancellationAttempted: _cancellationAttempted,
+      externalPaymentActive: _externalAppOpened,
+      approvalPending: _approvalPending || _confirming,
+      checkoutStarted: _checkoutStarted,
+    )) {
+      unawaited(_releaseReservation());
+    }
     super.dispose();
+  }
+
+  Future<void> _releaseReservation({
+    bool explicitCheckoutTermination = false,
+  }) async {
+    final orderId = _orderId;
+    if (!shouldReleaseSubsidizedReservation(
+      isSubsidized: widget.isSubsidized,
+      hasOrder: orderId != null,
+      completed: _completed,
+      cancellationAttempted: _cancellationAttempted,
+      externalPaymentActive: _externalAppOpened,
+      approvalPending: _approvalPending || _confirming,
+      checkoutStarted: _checkoutStarted,
+      explicitCheckoutTermination: explicitCheckoutTermination,
+    )) {
+      return;
+    }
+    // Claim the attempt before awaiting so dispose/retry cannot race a second
+    // cancellation. This endpoint is intentionally best effort.
+    _cancellationAttempted = true;
+    try {
+      await ApiClient(widget.session).cancelSubsidizedVoucherOrder(orderId!);
+    } catch (_) {
+      // Releasing reserved points must not replace the checkout's UI outcome.
+    }
   }
 
   @override
@@ -2902,30 +3021,47 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   }
 
   Future<void> _createOrder() async {
+    // A retry must release the previous subsidized reservation before creating
+    // its replacement. Ordinary voucher orders never enter this branch.
+    await _releaseReservation();
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
       _lastExternalUrl = null;
       _externalAppOpened = false;
+      _approvalPending = false;
+      _checkoutStarted = false;
     });
+    _orderId = null;
+    _orderAmount = null;
+    _cancellationAttempted = false;
     try {
       final order = widget.isSubsidized
-          ? await ApiClient(widget.session).createSubsidizedVoucherOrder()
+          ? await ApiClient(widget.session)
+              .createSubsidizedVoucherOrder(productId: widget.product.id)
           : await ApiClient(widget.session)
-              .createVoucherOrder(productId: widget.product!.id);
+              .createVoucherOrder(productId: widget.product.id);
       final checkoutUrl = order['checkout_url'] as String?;
       _orderId = order['order_id'] as String?;
       _orderAmount = (order['amount'] as num?)?.round();
       _pointAmount = (order['point_amount'] as num?)?.round() ?? 0;
       _cardAmount = (order['card_amount'] as num?)?.round() ??
           (order['amount'] as num?)?.round();
+      // The route can be popped while order creation is in flight. Release the
+      // newly-created reservation instead of loading checkout on a dead State.
+      if (!mounted) {
+        await _releaseReservation();
+        return;
+      }
       if (order['point_only'] == true) {
         final fulfillment = order['fulfillment'] is Map
             ? (order['fulfillment'] as Map).cast<String, dynamic>()
             : <String, dynamic>{};
         if (mounted) {
           setState(() {
-            _issued = (fulfillment['issued_count'] as num?)?.round() ?? 1;
+            _issued = (fulfillment['issued_count'] as num?)?.round() ??
+                widget.expectedIssued;
             _completed = true;
             _loading = false;
           });
@@ -2935,8 +3071,12 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       if (checkoutUrl == null || checkoutUrl.isEmpty) {
         throw const ApiException(statusCode: 502, message: '결제 주소를 받지 못했어요.');
       }
+      // The checkout GET atomically records provider entry. Set this before
+      // navigation so disposal can never race an automatic cancellation.
+      _checkoutStarted = true;
       await _controller.loadRequest(Uri.parse(checkoutUrl));
     } catch (error) {
+      await _releaseReservation(explicitCheckoutTermination: true);
       if (mounted) {
         setState(() {
           _loading = false;
@@ -2957,6 +3097,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
         uri.path == '/c' ||
         uri.path.endsWith('/payments/redirect/fail') ||
         uri.path.endsWith('/payments/redirect/close')) {
+      await _releaseReservation(explicitCheckoutTermination: true);
       if (mounted) {
         setState(() {
           _loading = false;
@@ -3013,6 +3154,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     }
     setState(() {
       _confirming = true;
+      _approvalPending = true;
       _loading = true;
       _error = null;
     });
@@ -3028,6 +3170,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
           _issued = (fulfillment['issued_count'] as num?)?.round();
           _balance = (fulfillment['voucher_balance'] as num?)?.round();
           _completed = true;
+          _approvalPending = false;
           _loading = false;
         });
       }
@@ -3100,8 +3243,12 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
                           BrandNotice(text: _error!, kind: NoticeKind.error),
                           const SizedBox(height: 14),
                           FilledButton(
-                              onPressed: _createOrder,
-                              child: const Text('다시 결제하기')),
+                              onPressed: _approvalPending
+                                  ? () => _confirm(Uri())
+                                  : _createOrder,
+                              child: Text(_approvalPending
+                                  ? '결제 상태 다시 확인'
+                                  : '다시 결제하기')),
                           TextButton(
                               onPressed: () => Navigator.of(context).pop(false),
                               child: const Text('상품 목록으로 돌아가기')),

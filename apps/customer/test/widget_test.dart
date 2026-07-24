@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:greeneatgo_customer/auth_helpers.dart';
@@ -32,6 +33,140 @@ void main() {
     expect(product.totalCount, 11);
     expect(product.imageUrl, isNotNull);
     expect(product.kiwoomPayMethod, 'BANK');
+  });
+
+  test('subsidized 10+1 catalog uses server-provided prices and mode', () {
+    final catalog = VoucherCatalog.fromJson({
+      'purchase_mode': 'subsidized',
+      'items': [
+        {
+          'id': 'subsidized-10-plus-1',
+          'name': '지원 식권 10+1',
+          'voucher_count': 10,
+          'bonus_count': 1,
+          'unit_price': 8000,
+          'discount_rate': 0,
+          'sale_price': 80000,
+          'total_count': 11,
+          'employee_pay_amount': 50000,
+          'per_voucher_company_subsidy_amount': 2000,
+          'per_voucher_restaurant_subsidy_amount': 1000,
+          'total_company_subsidy_amount': 20000,
+          'total_restaurant_subsidy_amount': 10000,
+          'kiwoom_pay_method': 'bank',
+        }
+      ],
+    });
+
+    expect(catalog.purchaseMode, VoucherPurchaseMode.subsidized);
+    expect(catalog.items, hasLength(1));
+    final product = catalog.items.single;
+    expect(product.voucherCount, 10);
+    expect(product.bonusCount, 1);
+    expect(product.totalCount, 11);
+    expect(product.salePrice, 80000);
+    expect(product.employeePayAmount, 50000);
+    expect(product.companySubsidyAmount, 2000);
+    expect(product.restaurantSubsidyAmount, 1000);
+    expect(product.totalCompanySubsidyAmount, 20000);
+    expect(product.totalRestaurantSubsidyAmount, 10000);
+    expect(product.kiwoomPayMethod, 'BANK');
+  });
+
+  test('none purchase mode never exposes products', () {
+    final catalog = VoucherCatalog.fromJson({
+      'purchase_mode': 'none',
+      'items': [
+        {
+          'id': 'must-not-be-exposed',
+          'name': '숨겨진 상품',
+        }
+      ],
+    });
+
+    expect(catalog.purchaseMode, VoucherPurchaseMode.none);
+    expect(catalog.items, isEmpty);
+  });
+
+  test('subsidized reservation release policy protects settling payments', () {
+    bool release({
+      bool subsidized = true,
+      bool hasOrder = true,
+      bool completed = false,
+      bool attempted = false,
+      bool external = false,
+      bool approval = false,
+      bool checkoutStarted = false,
+      bool explicit = false,
+    }) =>
+        shouldReleaseSubsidizedReservation(
+          isSubsidized: subsidized,
+          hasOrder: hasOrder,
+          completed: completed,
+          cancellationAttempted: attempted,
+          externalPaymentActive: external,
+          approvalPending: approval,
+          checkoutStarted: checkoutStarted,
+          explicitCheckoutTermination: explicit,
+        );
+
+    expect(release(), isTrue, reason: 'plain screen abandonment releases');
+    expect(release(subsidized: false), isFalse,
+        reason: 'ordinary voucher orders are untouched');
+    expect(release(completed: true), isFalse);
+    expect(release(attempted: true), isFalse);
+    expect(release(external: true), isFalse,
+        reason: 'an external payment app may still settle');
+    expect(release(approval: true), isFalse,
+        reason: 'an uncertain confirmation may still settle');
+    expect(release(checkoutStarted: true), isFalse,
+        reason: 'disposing a presented provider checkout is conservative');
+    expect(release(external: true, approval: true, explicit: true), isTrue,
+        reason: 'provider fail/cancel/close is authoritative');
+  });
+
+  testWidgets('subsidized product card shows server totals and BANK mode',
+      (tester) async {
+    final product = VoucherCatalog.fromJson({
+      'purchase_mode': 'subsidized',
+      'items': [
+        {
+          'id': 'subsidized-10-plus-1',
+          'name': '지원 식권 10+1',
+          'voucher_count': 10,
+          'bonus_count': 1,
+          'unit_price': 8000,
+          'discount_rate': 0,
+          'sale_price': 80000,
+          'total_count': 11,
+          'employee_pay_amount': 50000,
+          'per_voucher_company_subsidy_amount': 2000,
+          'per_voucher_restaurant_subsidy_amount': 1000,
+          'total_company_subsidy_amount': 20000,
+          'total_restaurant_subsidy_amount': 10000,
+          'kiwoom_pay_method': 'BANK',
+        }
+      ],
+    }).items.single;
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: VoucherProductCard(
+            product: product,
+            purchaseMode: VoucherPurchaseMode.subsidized,
+            onBuy: () {},
+          ),
+        ),
+      ),
+    ));
+
+    expect(find.text('10장 + 보너스 1장 · 총 11장 지급'), findsOneWidget);
+    expect(find.text('정상 판매가 80,000원'), findsOneWidget);
+    expect(find.text('회사 총 지원 20,000원'), findsOneWidget);
+    expect(find.text('식당 총 지원 10,000원'), findsOneWidget);
+    expect(find.text('직원 부담 50,000원'), findsOneWidget);
+    expect(find.text('BANK · 계좌이체 전용'), findsOneWidget);
   });
 
   test('event voucher exposes event flag and D-day label', () {

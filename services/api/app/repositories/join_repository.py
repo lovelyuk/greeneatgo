@@ -78,14 +78,34 @@ class JoinRepository:
         invite = self.get_invite(invite_code)
         validated_invite = validate_invite(invite, now=datetime.now(timezone.utc))
 
-        # A request-body phone is unverified. It may be stored on a pending
-        # profile, but must never select or activate an employee bulk invite.
-        # Only legacy Supabase auth metadata retains that trusted auto-match path.
+        # Firebase email/password signup does not produce a verified phone claim.
+        # For the bulk-registration workflow, accept the submitted phone only
+        # when the same company already staged the exact name+phone pair and the
+        # user supplied that company's valid invite code. Unmatched submissions
+        # remain pending for explicit company-admin approval.
         metadata_phone = normalize_phone(
             auth_user.metadata.get("phone") or auth_user.metadata.get("phone_number")
         )
         join_phone = normalize_phone(phone) or metadata_phone
-        activation_phone = "" if is_firebase_token(access_token) else metadata_phone
+        firebase_token = is_firebase_token(access_token)
+        activation_phone = "" if firebase_token else metadata_phone
+        if (
+            firebase_token
+            and existing is None
+            and PHONE_RE.fullmatch(join_phone)
+            and self.client.rest_get(
+                "employee_bulk_invites",
+                {
+                    "select": "id",
+                    "company_id": f"eq.{validated_invite.company_id}",
+                    "display_name": f"eq.{display_name}",
+                    "phone": f"eq.{join_phone}",
+                    "status": "eq.invited",
+                    "limit": "1",
+                },
+            )
+        ):
+            activation_phone = join_phone
         if PHONE_RE.fullmatch(activation_phone):
             try:
                 activated = self.client.rpc("activate_employee_bulk_invite", {

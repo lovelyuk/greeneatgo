@@ -261,24 +261,76 @@ class FirebasePhoneJoinTests(unittest.TestCase):
         posted_profile = client.rest_post.call_args_list[0].args[1]
         self.assertEqual(posted_profile["phone"], "01012345678")
 
-    def test_firebase_body_phone_is_stored_but_never_used_for_bulk_activation(self):
+    def test_firebase_exact_bulk_profile_match_activates_staged_employee(self):
         auth_user = AuthUser(
             id="8c966c67-1644-4f12-bb78-d7a14572d643",
             email="person@example.com",
-            metadata={"phone": "01099998888"},
+            metadata={},
         )
         client, repository = self._repository(auth_user=auth_user)
+        client.rest_get.side_effect = lambda table, _params: (
+            [{"id": "staged-1"}]
+            if table == "employee_bulk_invites"
+            else [{"used_count": 0}]
+        )
+        client.rpc.return_value = {"status": "active", "bulk_invite_claimed": True}
 
-        repository.request_join(
+        result = repository.request_join(
             access_token=_token("https://securetoken.google.com/greeneatgo"),
             invite_code="PILOT",
             display_name="Person",
             phone="01012345678",
         )
 
+        self.assertEqual(result["status"], "active")
+        bulk_lookup = next(
+            call for call in client.rest_get.call_args_list
+            if call.args[0] == "employee_bulk_invites"
+        )
+        self.assertEqual(
+            bulk_lookup.args[1],
+            {
+                "select": "id",
+                "company_id": "eq.c1",
+                "display_name": "eq.Person",
+                "phone": "eq.01012345678",
+                "status": "eq.invited",
+                "limit": "1",
+            },
+        )
+        client.rpc.assert_called_once_with(
+            "activate_employee_bulk_invite",
+            {
+                "p_user_id": auth_user.id,
+                "p_company_id": "c1",
+                "p_phone": "01012345678",
+                "p_invite_code": "PILOT",
+            },
+        )
+        client.rest_post.assert_not_called()
+
+    def test_firebase_unmatched_body_profile_stays_pending(self):
+        auth_user = AuthUser(
+            id="8c966c67-1644-4f12-bb78-d7a14572d643",
+            email="person@example.com",
+            metadata={},
+        )
+        client, repository = self._repository(auth_user=auth_user)
+        client.rest_get.side_effect = lambda table, _params: (
+            [] if table == "employee_bulk_invites" else [{"used_count": 0}]
+        )
+
+        repository.request_join(
+            access_token=_token("https://securetoken.google.com/greeneatgo"),
+            invite_code="PILOT",
+            display_name="Different Person",
+            phone="01012345678",
+        )
+
         client.rpc.assert_not_called()
         posted_profile = client.rest_post.call_args_list[0].args[1]
         self.assertEqual(posted_profile["phone"], "01012345678")
+        self.assertEqual(posted_profile["status"], "pending")
 
 
 if __name__ == "__main__":

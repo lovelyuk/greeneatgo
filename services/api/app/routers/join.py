@@ -13,7 +13,14 @@ def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
 
 
-@router.post("/join/request")
+@router.post(
+    "/join/request",
+    summary="회사 초대코드로 직원 가입",
+    description=(
+        "일괄등록된 직원의 이름과 연락처가 모두 일치하면 기존 직원 슬롯을 즉시 연결하고, "
+        "일치하지 않으면 회사관리자 승인 대기 상태로 등록합니다."
+    ),
+)
 def request_join(payload: JoinRequest, token: str = Depends(bearer_token)):
     try:
         data = JoinRepository().request_join(

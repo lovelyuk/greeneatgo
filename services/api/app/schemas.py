@@ -367,3 +367,18 @@ class MerchantCompanyContractUpdateRequest(BaseModel):
     settlement_cycle: str = Field(pattern='^(month_end|day)$')
     settlement_day: int | None = Field(default=None, ge=1, le=31)
     unit_price: int | None = Field(default=None, ge=0)
+    subsidy_enabled: bool | None = None
+    company_subsidy_amount: int | None = Field(default=None, ge=0)
+    restaurant_subsidy_amount: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_subsidy_contract(self):
+        if self.subsidy_enabled:
+            unit_price = self.unit_price or 0
+            company_amount = self.company_subsidy_amount or 0
+            restaurant_amount = self.restaurant_subsidy_amount or 0
+            if unit_price <= 0:
+                raise ValueError("보조금 계약은 0원보다 큰 단가가 필요해요")
+            if company_amount + restaurant_amount >= unit_price:
+                raise ValueError("지원금 합계는 단가보다 작아야 해요")
+        return self

@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
 import { PaymentHistoryDashboard, RefundModal } from './PaymentFeatures.jsx';
+import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -1487,14 +1488,7 @@ function Dashboard({ session, onLogout }) {
 
   function openContractModal(item) {
     setContractModal(item);
-    setContractForm({
-      settlement_cycle: item.settlement_cycle ?? item.contract?.settlement_cycle ?? 'month_end',
-      settlement_day: String(item.settlement_day ?? item.contract?.settlement_day ?? 25),
-      unit_price: item.unit_price == null ? '' : String(item.unit_price),
-      subsidy_enabled: !!(item.subsidy_enabled ?? item.contract?.subsidy_enabled),
-      company_subsidy_amount: String(item.company_subsidy_amount ?? item.contract?.company_subsidy_amount ?? 0),
-      restaurant_subsidy_amount: String(item.restaurant_subsidy_amount ?? item.contract?.restaurant_subsidy_amount ?? 0),
-    });
+    setContractForm(contractFormFromItem(item));
   }
 
   async function saveContract(event) {
@@ -1504,7 +1498,7 @@ function Dashboard({ session, onLogout }) {
     const companySubsidy = Number(contractForm.company_subsidy_amount);
     const restaurantSubsidy = Number(contractForm.restaurant_subsidy_amount);
     if (contractForm.subsidy_enabled && (!contractForm.unit_price || unitPrice <= 0)) { setError('보조금 계약은 0원보다 큰 단가가 필요해요.'); return; }
-    if (contractForm.subsidy_enabled && (companySubsidy < 0 || restaurantSubsidy < 0 || companySubsidy + restaurantSubsidy > unitPrice)) { setError('회사 부담액과 식당 부담액의 합계는 단가를 초과할 수 없어요.'); return; }
+    if (subsidyContractInvalid(contractForm)) { setError('회사 부담액과 식당 부담액의 합계는 단가보다 작아야 해요.'); return; }
     setBusy(true);
     setError('');
     setMessage('');
@@ -1761,11 +1755,11 @@ function Dashboard({ session, onLogout }) {
           {contractForm.subsidy_enabled && <div className="subsidy-fields">
             <label>회사 부담액<input type="number" min="0" step="1" value={contractForm.company_subsidy_amount} onChange={(event) => setContractForm((form) => ({ ...form, company_subsidy_amount: event.target.value }))} required /></label>
             <label>식당 부담액<input type="number" min="0" step="1" value={contractForm.restaurant_subsidy_amount} onChange={(event) => setContractForm((form) => ({ ...form, restaurant_subsidy_amount: event.target.value }))} required /></label>
-            <div className={`employee-pay-preview ${Number(contractForm.company_subsidy_amount || 0) + Number(contractForm.restaurant_subsidy_amount || 0) > Number(contractForm.unit_price || 0) ? 'invalid' : ''}`}><span>직원 실부담액</span><strong>{krw(Math.max(0, Number(contractForm.unit_price || 0) - Number(contractForm.company_subsidy_amount || 0) - Number(contractForm.restaurant_subsidy_amount || 0)))}</strong></div>
-            {Number(contractForm.company_subsidy_amount || 0) + Number(contractForm.restaurant_subsidy_amount || 0) > Number(contractForm.unit_price || 0) && <div className="alert error subsidy-validation">회사 부담액과 식당 부담액의 합계는 단가를 초과할 수 없어요.</div>}
+            <div className={`employee-pay-preview ${subsidyContractInvalid(contractForm) ? 'invalid' : ''}`}><span>직원 실부담액</span><strong>{krw(Math.max(0, Number(contractForm.unit_price || 0) - Number(contractForm.company_subsidy_amount || 0) - Number(contractForm.restaurant_subsidy_amount || 0)))}</strong></div>
+            {subsidyContractInvalid(contractForm) && <div className="alert error subsidy-validation">회사 부담액과 식당 부담액의 합계는 단가보다 작아야 해요.</div>}
           </div>}
           <div className="row-actions invite-modal-actions">
-            <button className="primary" disabled={busy || (contractForm.subsidy_enabled && Number(contractForm.company_subsidy_amount || 0) + Number(contractForm.restaurant_subsidy_amount || 0) > Number(contractForm.unit_price || 0))}>저장</button>
+            <button className="primary" disabled={busy || subsidyContractInvalid(contractForm)}>저장</button>
             <button className="ghost" type="button" onClick={() => setContractModal(null)}>닫기</button>
           </div>
         </form>

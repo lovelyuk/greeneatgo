@@ -171,7 +171,7 @@ def _paged_get(repo: JoinRepository, table: str, params: dict[str, str], page_si
 def _require_company_link(repo: JoinRepository, merchant_id: str, company_id: str) -> dict:
     links = repo.client.rest_get(
         "merchant_companies",
-        {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,created_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "limit": "1"},
+        {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,created_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "limit": "1"},
     )
     if not links:
         raise JoinFlowError(JoinErrorCode.FORBIDDEN, "연결된 장부업체가 아니에요")
@@ -197,6 +197,9 @@ def _contract_from_link(link: dict | None) -> dict | None:
         "settlement_cycle": cycle or "month_end",
         "settlement_day": day,
         "unit_price": unit_price,
+        "subsidy_enabled": bool(link.get("subsidy_enabled")),
+        "company_subsidy_amount": int(link.get("company_subsidy_amount") or 0),
+        "restaurant_subsidy_amount": int(link.get("restaurant_subsidy_amount") or 0),
         "cycle_label": "월말" if (cycle or "month_end") == "month_end" else f"매월 {day}일",
     }
 
@@ -498,7 +501,7 @@ def list_companies(token: str = Depends(bearer_token)):
         _, merchant_id = _merchant_admin(repo, token)
         links = repo.client.rest_get(
             "merchant_companies",
-            {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,created_at", "merchant_id": f"eq.{merchant_id}", "order": "created_at.desc"},
+            {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,created_at", "merchant_id": f"eq.{merchant_id}", "order": "created_at.desc"},
         )
         company_ids = [link["company_id"] for link in links]
         companies = {row["id"]: row for row in _company_rows(repo, company_ids)}
@@ -631,6 +634,21 @@ def update_company_contract(company_id: str, payload: MerchantCompanyContractUpd
             "settlement_day": payload.settlement_day if payload.settlement_cycle == "day" else None,
             "unit_price": payload.unit_price,
         }
+        if payload.subsidy_enabled is not None:
+            values.update({
+                "subsidy_enabled": payload.subsidy_enabled,
+                "company_subsidy_amount": (payload.company_subsidy_amount or 0) if payload.subsidy_enabled else 0,
+                "restaurant_subsidy_amount": (payload.restaurant_subsidy_amount or 0) if payload.subsidy_enabled else 0,
+            })
+        effective_subsidy_enabled = values.get("subsidy_enabled", bool(link.get("subsidy_enabled")))
+        effective_company_amount = int(values.get("company_subsidy_amount", link.get("company_subsidy_amount") or 0))
+        effective_restaurant_amount = int(values.get("restaurant_subsidy_amount", link.get("restaurant_subsidy_amount") or 0))
+        effective_unit_price = int(values.get("unit_price") or 0)
+        if effective_subsidy_enabled and (
+            effective_unit_price <= 0
+            or effective_company_amount + effective_restaurant_amount >= effective_unit_price
+        ):
+            raise _error(422, "INVALID_SUBSIDY_CONTRACT", "지원금 합계는 단가보다 작아야 해요")
         updated = repo.client.rest_patch("merchant_companies", {"id": f"eq.{link['id']}"}, values)[0]
         return {"ok": True, "data": {"link": updated, "contract": _contract_from_link(updated), "contract_label": _contract_label(updated)}, "error": None}
     except JoinFlowError as exc:

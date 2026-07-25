@@ -931,6 +931,63 @@ function AnnouncementReviewPanel({ token, section }) {
   return <section className="panel"><div className="panel-title"><div><h2>리뷰 관리</h2><p className="panel-note">평균 별점 ⭐ {data.average_rating ?? 0} ({data.review_count ?? 0}개)</p></div><select value={sort} onChange={e=>setSort(e.target.value)}><option value="latest">최신순</option><option value="rating_asc">낮은 별점순</option></select></div>{error && <div className="alert error">{error}</div>}<div className="list">{data.items.map(item=><article className={`card ${item.status==='hidden'?'muted':''}`} key={item.id}><h3>{item.author_name} {'⭐'.repeat(item.rating)} {item.status==='hidden'&&'(숨김)'}</h3><p>{item.content || '내용 없이 별점만 남긴 리뷰예요.'}</p>{item.image_urls?.length>0&&<div className="review-images">{item.image_urls.map(url=><img src={url} key={url} alt="리뷰"/>)}</div>}<label>사장님 답글<textarea defaultValue={item.owner_reply ?? ''} id={`reply-${item.id}`}/></label><div className="actions"><button className="primary" onClick={()=>patchItem(item.id,{owner_reply:document.getElementById(`reply-${item.id}`).value})}>답글 저장</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'visible':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김 처리'}</button></div></article>)}</div></section>;
 }
 
+function AdminMockPage({ title, description, children }) {
+  return <section className="admin-mock-page">
+    <div className="panel-title admin-mock-page-title"><div><span className="eyebrow">PREVIEW</span><h2>{title}</h2><p className="panel-note">{description}</p></div><span className="badge">목업</span></div>
+    {children ?? <article className="panel"><p className="empty-state">화면 구성을 준비 중입니다.</p></article>}
+  </section>;
+}
+
+function MerchantDashboardMock() { return <AdminMockPage title="대시보드" description="오늘 매출과 정산·발행 현황을 한눈에 확인합니다." />; }
+function MerchantRealtimeSalesMock() { return <AdminMockPage title="실시간 매출" description="결제 발생 현황과 최근 결제를 실시간 형태로 확인합니다." />; }
+function MerchantSalesStatsMock() { return <AdminMockPage title="매출 통계" description="기간별 매출과 결제수단 구성을 비교합니다." />; }
+function MerchantPaymentLedgerMock() { return <AdminMockPage title="결제 내역" description="카드·장부·보조금·식권 결제를 건별로 확인합니다." />; }
+function MerchantSettlementMock() { return <AdminMockPage title="업체별 정산" description="업체별 공급가액과 미정산 잔액을 집계합니다." />; }
+function MerchantTaxInvoiceMock() { return <AdminMockPage title="세금계산서" description="월 합계 세금계산서 발행 대상을 검토합니다." />; }
+function MerchantPrepurchaseMock() { return <AdminMockPage title="선구매 관리" description="선구매 배치 잔량과 미사용 부채를 확인합니다." />; }
+function MerchantCompanyListMock() { return <AdminMockPage title="업체 목록" description="연결 업체의 유형과 이용·정산 현황을 확인합니다." />; }
+function MerchantCompanyFormMock() { return <AdminMockPage title="업체 등록/수정" description="세금계산서 발행에 필요한 공급받는자 정보를 관리합니다." />; }
+function MerchantSupplierInfoMock() { return <AdminMockPage title="공급자 정보" description="세금계산서에 사용할 식당 사업자정보를 검토합니다." />; }
+
+function MerchantMockScreen({ section }) {
+  const screens = {
+    'merchant-dashboard': MerchantDashboardMock,
+    'realtime-sales': MerchantRealtimeSalesMock,
+    'sales-stats': MerchantSalesStatsMock,
+    'payment-ledger': MerchantPaymentLedgerMock,
+    'settlements-by-company': MerchantSettlementMock,
+    'tax-invoices': MerchantTaxInvoiceMock,
+    'prepurchase': MerchantPrepurchaseMock,
+    'company-list': MerchantCompanyListMock,
+    'company-form': MerchantCompanyFormMock,
+    'supplier-info': MerchantSupplierInfoMock,
+  };
+  const Screen = screens[section];
+  return Screen ? <Screen /> : null;
+}
+
+function CompanyDashboardMock() { return <AdminMockPage title="대시보드" description="이번달 사용액과 미납·세금계산서 현황을 확인합니다." />; }
+function CompanyMonthlyUsageMock() { return <AdminMockPage title="월별 이용" description="우리 회사의 일별 식대 이용 현황을 확인합니다." />; }
+function CompanyEmployeeUsageMock() { return <AdminMockPage title="사원별 사용" description="사원별 끼수와 사용액을 비교합니다." />; }
+function CompanyBillingMock() { return <AdminMockPage title="청구 내역" description="월별 청구 금액과 납부 상태를 확인합니다." />; }
+function CompanyTaxInvoiceMock() { return <AdminMockPage title="세금계산서" description="수신한 세금계산서를 조회하고 내려받습니다." />; }
+function CompanyEmployeeListMock() { return <AdminMockPage title="사원 목록" description="우리 회사 사원 등록 현황을 확인합니다." />; }
+function CompanyInfoMock() { return <AdminMockPage title="회사 정보" description="사업자정보와 세금계산서 수신 정보를 관리합니다." />; }
+
+function CompanyMockScreen({ section }) {
+  const screens = {
+    'company-dashboard': CompanyDashboardMock,
+    'monthly-usage': CompanyMonthlyUsageMock,
+    'employee-usage': CompanyEmployeeUsageMock,
+    'company-billing': CompanyBillingMock,
+    'company-tax-invoices': CompanyTaxInvoiceMock,
+    'company-employee-list': CompanyEmployeeListMock,
+    'company-info': CompanyInfoMock,
+  };
+  const Screen = screens[section];
+  return Screen ? <Screen /> : null;
+}
+
 function Dashboard({ session, onLogout }) {
   const token = session.access_token;
   const [me, setMe] = useState(null);
@@ -953,6 +1010,7 @@ function Dashboard({ session, onLogout }) {
   const [dailyMenuForm, setDailyMenuForm] = useState({ service_date: todayInput(), title: '오늘 뷔페 메뉴', menu_text: '', image_url: '' });
   const [merchantCompanies, setMerchantCompanies] = useState(null);
   const [merchantSection, setMerchantSection] = useState('main');
+  const [companySection, setCompanySection] = useState('legacy-employees');
   const [refundOpen, setRefundOpen] = useState(false);
   const [paymentHistoryRefreshKey, setPaymentHistoryRefreshKey] = useState(0);
   const [newCompanyForm, setNewCompanyForm] = useState({ name: '', contact_email: '', contact_phone: '' });
@@ -979,6 +1037,8 @@ function Dashboard({ session, onLogout }) {
 
   const isMerchantAdmin = me?.role === 'merchant_admin';
   const isPlatformAdmin = me?.role === 'platform_admin';
+  const isCompanyAdmin = me?.role === 'company_admin';
+  const showCompanyLegacy = isCompanyAdmin && companySection === 'legacy-employees';
   const merchantRequest = useMemo(() => (path, options) => apiFetch(path, token, options), [token]);
   const inviteLink = (invite) => invite?.token ? `${window.location.origin}/?invite=${invite.token}` : '';
 
@@ -1576,20 +1636,25 @@ function Dashboard({ session, onLogout }) {
 
   if (!me) return <main className="loading"><BrandMark /><div className="alert error">권한 정보를 불러오지 못했어요. {error}</div><button className="ghost" onClick={onLogout}>로그아웃</button></main>;
 
-  const merchantNavItems = [
-    ['main', '메인', Home],
-    ['companies', '업체 관리', Building2],
-    ['vouchers', '판매 상품(일반)', Package],
-    ['notifications', '알림', Bell],
-    ['announcements', '공지사항', FileText],
-    ['reviews', '리뷰', CheckCircle2],
-    ['daily-menu', '오늘 뷔페 메뉴', Coffee],
-    ['payment-history', '결제내역', CreditCard],
+  const merchantNavGroups = [
+    ['대시보드', [['merchant-dashboard', '대시보드', BarChart3], ['main', '메인', Home]]],
+    ['매출', [['realtime-sales', '실시간 매출', Bell], ['sales-stats', '매출 통계', BarChart3], ['payment-ledger', '결제 내역', FileSpreadsheet], ['payment-history', '결제내역', CreditCard]]],
+    ['정산·세금', [['settlements-by-company', '업체별 정산', WalletCards], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]]],
+    ['업체', [['companies', '업체 관리', Building2], ['company-list', '업체 목록', Building2], ['company-form', '업체 등록/수정', FileText]]],
+    ['상품·운영', [['vouchers', '판매 상품(일반)', Package], ['daily-menu', '오늘 뷔페 메뉴', Coffee], ['notifications', '알림', Bell], ['announcements', '공지사항', FileText], ['reviews', '리뷰', CheckCircle2]]],
+    ['설정', [['supplier-info', '공급자 정보', Settings]]],
+  ];
+  const companyNavGroups = [
+    ['대시보드', [['company-dashboard', '대시보드']]],
+    ['이용 내역', [['monthly-usage', '월별 이용'], ['employee-usage', '사원별 사용']]],
+    ['정산', [['company-billing', '청구 내역'], ['company-tax-invoices', '세금계산서']]],
+    ['사원 관리', [['legacy-employees', '사원 관리'], ['company-employee-list', '사원 목록']]],
+    ['설정', [['company-info', '회사 정보']]],
   ];
 
-  return <main className={`shell${isMerchantAdmin ? ' merchant-shell' : ''}`}>
+  return <main className={`shell${isMerchantAdmin ? ' merchant-shell' : ''}${isCompanyAdmin ? ' company-shell' : ''}`}>
     <ImageCropModal request={cropRequest} onCancel={() => finishImageCrop(null)} onApply={finishImageCrop} />
-    <header className={`topbar${isMerchantAdmin ? ' merchant-topbar' : ''}`}>
+    <header className={`topbar${isMerchantAdmin ? ' merchant-topbar' : ''}${isCompanyAdmin ? ' company-topbar' : ''}`}>
       <div className="top-copy">
         <div className="brand-row">
           <BrandMark />
@@ -1604,7 +1669,7 @@ function Dashboard({ session, onLogout }) {
     </header>
 
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
-      {merchantNavItems.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}
+      {merchantNavGroups.map(([group, items]) => <React.Fragment key={group}><div className="merchant-nav-group">{group}</div>{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
       <div className="merchant-sidebar-account">
         <div className="merchant-sidebar-identity">
           <span title={session.user.email}>{session.user.email}</span>
@@ -1614,8 +1679,14 @@ function Dashboard({ session, onLogout }) {
       </div>
     </nav>}
 
-    <div className={isMerchantAdmin ? 'merchant-content' : undefined}>
+    {isCompanyAdmin && <nav className="company-tabs" aria-label="업체 관리자 메뉴">
+      {companyNavGroups.map(([group, items]) => <React.Fragment key={group}><div className="company-nav-group">{group}</div>{items.map(([id, label]) => <button key={id} type="button" className={companySection === id ? 'active' : ''} onClick={() => setCompanySection(id)} aria-current={companySection === id ? 'page' : undefined}><span>{label}</span></button>)}</React.Fragment>)}
+    </nav>}
+
+    <div className={isMerchantAdmin ? 'merchant-content' : isCompanyAdmin ? 'company-content' : undefined}>
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantSection) && <AnnouncementReviewPanel token={token} section={merchantSection}/>}
+    {isMerchantAdmin && <MerchantMockScreen section={merchantSection} />}
+    {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companySection} />}
 
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}
@@ -1704,7 +1775,7 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
 
-    {(!isMerchantAdmin || merchantSection === 'main') && <section className={`grid${isMerchantAdmin ? ' merchant-kpi-grid' : ''}`}>
+    {(isPlatformAdmin || showCompanyLegacy || (isMerchantAdmin && merchantSection === 'main')) && <section className={`grid${isMerchantAdmin ? ' merchant-kpi-grid' : ''}`}>
       {cards.map(([label, value, Icon, tone]) => <article className={`card ${tone}${isMerchantAdmin ? ' merchant-kpi-card' : ''}`} key={label}>
         <Icon size={28}/><span>{label}</span><strong>{value}</strong>
       </article>)}
@@ -1770,7 +1841,7 @@ function Dashboard({ session, onLogout }) {
 
     {isMerchantAdmin && merchantSection === 'payment-history' && <PaymentHistoryDashboard request={merchantRequest} refreshKey={paymentHistoryRefreshKey}/>}
 
-    {!isMerchantAdmin && <section className="two-col">
+    {(isPlatformAdmin || showCompanyLegacy) && <section className="two-col">
       <article className="panel profile-panel">
         <div className="panel-title"><h2>로그인 정보</h2><span className="badge">secure</span></div>
         <div className="profile-grid">
@@ -1792,7 +1863,7 @@ function Dashboard({ session, onLogout }) {
       </article>
     </section>}
 
-    {!isPlatformAdmin && !isMerchantAdmin && <section className="panel meal-policy-panel">
+    {showCompanyLegacy && <section className="panel meal-policy-panel">
       <div className="panel-title">
         <div><h2>식대 사용시간 설정</h2><p className="panel-note">기본은 사용제한없음입니다. 제한을 켜면 중식/석식 시간에만 결제됩니다.</p></div>
         <span className="badge">{mealPolicyForm.enabled ? '제한 사용' : '제한없음'}</span>
@@ -1809,7 +1880,7 @@ function Dashboard({ session, onLogout }) {
       </form>
     </section>}
 
-    {!isPlatformAdmin && !isMerchantAdmin && <section className="panel employee-panel">
+    {showCompanyLegacy && <section className="panel employee-panel">
       <div className="panel-title">
         <div><h2>등록된 직원목록</h2><p className="panel-note">직원 정보, 포인트 잔액과 이번 달 이용 현황을 확인합니다.</p></div>
         <div className="employee-panel-actions"><button className="primary bulk-open-button" onClick={() => setEmployeeBulkOpen(true)} disabled={employees?.bulk_migration_required}>+ 직원 일괄등록</button><span className="badge">{employees?.items?.length ?? 0}명</span></div>
@@ -1873,7 +1944,7 @@ function Dashboard({ session, onLogout }) {
 
 
 
-    {!isPlatformAdmin && !isMerchantAdmin && <section className="panel">
+    {showCompanyLegacy && <section className="panel">
       <div className="panel-title">
         <h2>가입 요청 승인</h2>
         <span className="badge">pending {requests.length}</span>

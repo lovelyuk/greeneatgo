@@ -1071,7 +1071,13 @@ function CompanyMonthlyUsageMock() {
     <article className="panel"><div className="panel-title"><div><h3>2026년 7월</h3><p className="panel-note">일별 이용 사원수·끼수·금액</p></div><span className="badge">목업 데이터</span></div><div className="table-wrap"><table><thead><tr><th>날짜</th><th className="money">이용 사원수</th><th className="money">끼수</th><th className="money">금액</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td>{row[0]}</td><td className="money">{row[1]}명</td><td className="money">{row[2]}끼</td><td className="money">{krw(row[3])}</td></tr>)}<tr className="mock-total-row"><td>합계</td><td className="money">-</td><td className="money">{total[0]}끼</td><td className="money">{krw(total[1])}</td></tr></tbody></table></div></article>
   </AdminMockPage>;
 }
-function CompanyEmployeeUsageMock() { return <AdminMockPage title="사원별 사용" description="사원별 끼수와 사용액을 비교합니다." />; }
+function CompanyEmployeeUsageMock() {
+  // TODO: company_id 스코프 사원별 사용 집계 API로 교체합니다.
+  const rows = [['김민지', '개발팀', 18, 162000, 0], ['박준호', '기획팀', 17, 153000, 18000], ['이서연', '디자인팀', 16, 144000, 0], ['정우진', '영업팀', 15, 135000, 15000], ['최하늘', '개발팀', 14, 126000, 0]];
+  return <AdminMockPage title="사원별 사용" description="사원별 끼수와 사용액을 비교합니다.">
+    <article className="panel"><div className="table-wrap"><table><thead><tr><th>사원명</th><th>부서</th><th className="money">끼수</th><th className="money">사용액</th><th className="money">자부담액</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td>{row[1]}</td><td className="money">{row[2]}끼</td><td className="money">{krw(row[3])}</td><td className="money">{row[4] ? krw(row[4]) : '-'}</td></tr>)}</tbody></table></div></article>
+  </AdminMockPage>;
+}
 function CompanyBillingMock() { return <AdminMockPage title="청구 내역" description="월별 청구 금액과 납부 상태를 확인합니다." />; }
 function CompanyTaxInvoiceMock() { return <AdminMockPage title="세금계산서" description="수신한 세금계산서를 조회하고 내려받습니다." />; }
 function CompanyEmployeeListMock() { return <AdminMockPage title="사원 목록" description="우리 회사 사원 등록 현황을 확인합니다." />; }

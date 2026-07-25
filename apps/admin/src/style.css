@@ -643,3 +643,484 @@ input,textarea,select { min-height:46px;border:1px solid var(--line);border-radi
     display: none;
   }
 }
+
+/* Admin visual migration: neutral surfaces + one green brand accent.
+   Presentation only — existing routes, data, handlers and menu actions are unchanged. */
+:root {
+  --bg-page: #FAFAFA;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F3F4F6;
+  --border: #E5E7EB;
+  --border-strong: #D1D5DB;
+  --text-primary: #111827;
+  --text-secondary: #6B7280;
+  --text-label: #9CA3AF;
+  --accent: #2FA76A;
+  --accent-hover: #268A57;
+  --accent-soft: #EAF6F0;
+  --badge-gray-bg: #F3F4F6;
+  --badge-gray-fg: #4B5563;
+  --badge-blue-bg: #EAF0FF;
+  --badge-blue-fg: #2A4BD8;
+  --badge-green-bg: #E7F7EE;
+  --badge-green-fg: #15803D;
+  --badge-red-bg: #FDECEC;
+  --badge-red-fg: #C13333;
+  --ink: var(--text-primary);
+  --soft: var(--text-secondary);
+  --forest: var(--accent);
+  --deep: var(--accent-hover);
+  --leaf: var(--accent);
+  --cream: var(--bg-page);
+  --paper: var(--bg-surface);
+  --line: var(--border);
+  --shadow: none;
+  color: var(--text-primary);
+  background: var(--bg-page);
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html { background: var(--bg-page); }
+body {
+  min-width: 320px;
+  color: var(--text-primary);
+  background: var(--bg-page);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+h1, h2, h3, strong { color: var(--text-primary); }
+h2 { font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
+.muted, .top-copy p, .panel-note, .card span, .profile-grid span, .loading-copy {
+  color: var(--text-secondary);
+}
+
+.shell {
+  width: min(1440px, calc(100% - 48px));
+  max-width: 1440px;
+  min-height: calc(100vh - 48px);
+  margin: 24px auto;
+  padding: 0 32px 44px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-page);
+  box-shadow: none;
+}
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  min-height: 76px;
+  align-items: center;
+  margin: 0 -32px 28px;
+  padding: 14px 32px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,.96);
+  backdrop-filter: blur(12px);
+}
+.top-copy { gap: 18px; }
+.top-copy p { font-size: 13px; font-weight: 400; }
+.brandmark img { width: auto; height: 52px; max-width: 100%; }
+.pill, .eyebrow, .badge {
+  margin: 0;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--badge-green-fg);
+  background: var(--badge-green-bg);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+button {
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: border-color .15s ease, background-color .15s ease, color .15s ease;
+}
+button:not(:disabled):hover { transform: none; box-shadow: none; }
+.primary {
+  width: auto;
+  min-height: 40px;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: none;
+}
+.primary:hover { background: var(--accent-hover); }
+.form > .primary, .login-card .primary { width: 100%; }
+.ghost {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+}
+.ghost:hover { background: var(--bg-subtle); }
+.approve { color: #fff; background: var(--accent); }
+.reject, .refund-open-button { color: var(--badge-red-fg); background: var(--badge-red-bg); box-shadow: none; }
+
+label { color: var(--text-primary); font-size: 13px; font-weight: 500; }
+input, textarea, select {
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  font-size: 14px;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.grid { gap: 16px; margin: 0 0 16px; }
+.card, .panel, .login-card {
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: none;
+}
+.card, .card:first-child, .card:nth-child(2), .card:nth-child(3), .card:nth-child(4) {
+  min-height: 108px;
+  padding: 20px;
+  color: var(--text-primary);
+  border-color: var(--border);
+  background: var(--bg-surface);
+}
+.card:first-child span, .card:first-child strong, .card:first-child svg,
+.card:nth-child(4) span, .card:nth-child(4) strong, .card:nth-child(4) svg {
+  color: inherit;
+}
+.card svg, .card:first-child svg, .card:nth-child(4) svg { color: var(--accent) !important; }
+.card span {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .06em;
+}
+.card strong { font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
+.panel { margin-bottom: 16px; padding: 20px 24px; }
+.two-col { gap: 16px; }
+.panel-title {
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+.panel-title h2 { margin: 0; }
+.empty-state, .vendor-empty {
+  color: var(--text-secondary);
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-subtle);
+}
+.product-item, .settlement-grid div, .invite-code-box, .contract-summary,
+.notification-audience, .voucher-preview, .subsidy-toggle, .subsidy-fields,
+.notification-form fieldset, .history-period-filter, .merchant-refund-dock {
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: none;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 8px;
+}
+thead { background: transparent; }
+th {
+  height: 40px;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+td {
+  height: 56px;
+  padding: 0 12px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+tbody tr:hover td { background: var(--bg-surface); border-color: var(--border-strong); }
+tbody td:first-child { border-left: 1px solid var(--border); border-radius: 12px 0 0 12px; }
+tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12px 12px 0; }
+.money, td.money, .history-row-columns b, .payment-alert-row b { text-align: right; font-variant-numeric: tabular-nums; }
+
+.alert { padding: 12px 14px; border-radius: 8px; box-shadow: none; font-weight: 500; }
+.alert.success { color: var(--badge-green-fg); background: var(--badge-green-bg); border-color: #BDE8CE; }
+.alert.error { color: var(--badge-red-fg); background: var(--badge-red-bg); border-color: #F4CACA; }
+.alert.warning { color: var(--badge-gray-fg); background: var(--badge-gray-bg); border-color: var(--border); }
+.payment-type-badge, .pay-type-badge, .history-target-badge, .exposure-status {
+  color: var(--badge-gray-fg) !important;
+  background: var(--badge-gray-bg);
+}
+.payment-type-badge.subsidized, .pay-type-badge.subsidized, .exposure-status.scheduled {
+  color: var(--badge-blue-fg) !important;
+  background: var(--badge-blue-bg);
+}
+.payment-type-badge.ledger, .settlement-status.입금완료 {
+  color: var(--badge-green-fg) !important;
+  background: var(--badge-green-bg);
+}
+.payment-type-badge.voucher, .payment-type-badge.direct, .pay-type-badge:not(.subsidized) {
+  color: var(--badge-gray-fg) !important;
+  background: var(--badge-gray-bg);
+}
+
+.modal-backdrop, .vendor-modal-backdrop {
+  background: rgba(17,24,39,.4);
+  backdrop-filter: none;
+}
+.invite-modal, .notification-confirm-modal, .notification-history-modal,
+.employee-bulk-modal, .vendor-modal, .image-crop-modal, .refund-modal {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.vendor-modal-header, .vendor-filterbar, .vendor-modal-footer,
+.bulk-header, .bulk-footer, .refund-modal-header, .refund-modal-footer {
+  border-color: var(--border);
+  background: var(--bg-surface);
+}
+.notification-confirm-modal, .refund-modal-header { background: var(--bg-surface); }
+.notification-confirm-icon, .notification-history-icon, .refund-modal-icon,
+.range-chips button.active, .history-period-modes button.active,
+.history-granularity button.active, .history-date-dock {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: none;
+}
+.vendor-summary-grid article, .day-ledger, .notification-preview,
+.notification-history-table, .refund-order-card, .refund-select-row {
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: none;
+}
+.vendor-summary-grid .main-amount, .refund-confirm-amount { background: var(--accent); box-shadow: none; }
+.day-ledger-header, .vendor-tabs button.active, .range-chips button,
+.history-period-modes, .history-granularity, .history-period-label {
+  background: var(--accent-soft);
+}
+.spinner { border-color: var(--border); border-top-color: var(--accent); }
+
+/* Merchant desktop: reuse the existing tab actions as a 240px text sidebar. */
+.merchant-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: 76px minmax(calc(100vh - 76px), auto);
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-page);
+}
+.merchant-topbar {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-height: 76px;
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+}
+.merchant-topbar .top-copy {
+  height: 76px;
+  padding: 12px 20px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.merchant-topbar .top-copy p, .merchant-topbar .pill { display: none; }
+.merchant-topbar .brand-row { margin: 0; }
+.merchant-topbar .brandmark img { height: 50px; max-width: 190px; }
+.merchant-topbar .top-actions {
+  grid-column: 2;
+  align-self: center;
+  justify-self: end;
+  padding: 0 32px;
+}
+.merchant-tabs {
+  position: sticky;
+  top: 76px;
+  z-index: 25;
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  height: calc(100vh - 76px);
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 22px 12px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  border-bottom: 0;
+  background: var(--bg-surface);
+  backdrop-filter: none;
+}
+.merchant-tabs button {
+  position: relative;
+  width: 100%;
+  min-height: 40px;
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  padding: 9px 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 400;
+  text-align: left;
+}
+.merchant-tabs button svg { display: none; }
+.merchant-tabs button:hover { background: var(--bg-subtle); }
+.merchant-tabs button.active {
+  padding-left: 15px;
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  box-shadow: none;
+  font-weight: 500;
+}
+.merchant-tabs button.active::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.merchant-content {
+  grid-column: 2;
+  grid-row: 2;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 32px;
+}
+.merchant-account-corner { right: 28px; bottom: 8px; }
+.merchant-kpi-grid { gap: 16px; }
+.merchant-kpi-card {
+  min-height: 88px;
+  padding: 18px 20px;
+  border-radius: 12px;
+}
+.payment-alert-row { min-height: 56px; padding: 8px 10px; }
+.history-period-filter, .merchant-refund-dock { border-radius: 12px; }
+
+/* Keep the current touch-first bottom navigation while adopting the new palette. */
+@media (max-width: 1024px) and (min-width: 701px) {
+  .merchant-shell {
+    display: block;
+    width: calc(100% - 24px);
+    min-height: calc(100vh - 24px);
+    margin: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .merchant-topbar { display: flex; min-height: 72px; margin: 0; padding: 0 20px; }
+  .merchant-topbar .top-copy { height: auto; padding: 0; border: 0; }
+  .merchant-topbar .top-actions { margin-left: auto; padding: 0; }
+  .merchant-tabs {
+    position: sticky;
+    top: 72px;
+    height: auto;
+    flex-direction: row;
+    gap: 6px;
+    padding: 9px 20px;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .merchant-tabs button { width: auto; min-width: max-content; }
+  .merchant-content { padding: 24px 20px 44px; }
+}
+
+@media (max-width: 700px) {
+  html, body, .auth-page { background: var(--bg-page); }
+  .shell, .merchant-shell {
+    display: block;
+    width: 100%;
+    min-height: 100svh;
+    margin: 0;
+    padding: 0 14px calc(92px + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+  }
+  .topbar, .merchant-topbar {
+    display: flex;
+    min-height: 64px;
+    margin: 0 -14px 16px;
+    padding: calc(8px + env(safe-area-inset-top)) 14px 8px;
+    background: rgba(255,255,255,.97);
+  }
+  .merchant-topbar .top-copy { height: auto; padding: 0; border: 0; }
+  .merchant-topbar .brandmark img { height: 42px; }
+  .merchant-topbar .top-actions { margin-left: auto; padding: 0; }
+  .merchant-tabs {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 100;
+    display: flex;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    gap: 3px;
+    margin: 0;
+    padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+    overflow-x: auto;
+    border-top: 1px solid var(--border);
+    border-right: 0;
+    background: rgba(255,255,255,.98);
+    box-shadow: 0 -1px 2px rgba(0,0,0,.04);
+  }
+  .merchant-tabs button {
+    width: auto;
+    min-width: 68px;
+    min-height: 54px;
+    flex: 0 0 68px;
+    justify-content: center;
+    padding: 7px 4px;
+    border-radius: 8px;
+    font-size: 11px;
+    text-align: center;
+  }
+  .merchant-tabs button.active { padding-left: 4px; }
+  .merchant-tabs button.active::before { display: none; }
+  .merchant-content { width: 100%; padding: 0; }
+  .grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card { min-height: 104px; padding: 14px; }
+  .panel { padding: 18px 14px; border-radius: 12px; }
+  .table-wrap { margin-inline: -4px; }
+  table { min-width: 680px; }
+  input, textarea, select { min-height: 44px; font-size: 16px; }
+  .invite-modal, .notification-confirm-modal, .notification-history-modal,
+  .account-settings-modal, .tx-modal, .refund-modal {
+    border-radius: 12px 12px 0 0;
+  }
+  .merchant-account-corner { right: 14px; bottom: calc(82px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 420px) {
+  .merchant-kpi-grid { grid-template-columns: 1fr; }
+}

@@ -1085,7 +1085,13 @@ function CompanyBillingMock() {
     <article className="panel"><div className="table-wrap"><table><thead><tr><th>청구월</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th>상태</th><th>명세서</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td className="money">{krw(row[1])}</td><td className="money">{krw(row[2])}</td><td className="money">{krw(row[3])}</td><td><span className={`settlement-status ${row[4]}`}>{row[4]}</span></td><td><button type="button" className="ghost"><FileText size={15}/> 명세서</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
-function CompanyTaxInvoiceMock() { return <AdminMockPage title="세금계산서" description="수신한 세금계산서를 조회하고 내려받습니다." />; }
+function CompanyTaxInvoiceMock() {
+  // TODO: company_id 스코프 수신 세금계산서 조회로 교체합니다.
+  const rows = [['2026년 6월', '20260701-41000001-00000123', 4532000, '2026.07.01'], ['2026년 5월', '20260602-41000001-00000098', 4380000, '2026.06.02'], ['2026년 4월', '20260502-41000001-00000074', 4632000, '2026.05.02']];
+  return <AdminMockPage title="세금계산서" description="수신한 세금계산서를 조회하고 내려받습니다.">
+    <article className="panel"><div className="panel-title"><div><h3>수신 세금계산서</h3><p className="panel-note">식당에서 발행한 월 합계 계산서입니다.</p></div><span className="badge">수신 전용</span></div><div className="table-wrap"><table><thead><tr><th>발행월</th><th>승인번호</th><th className="money">합계</th><th>발행일</th><th>파일</th></tr></thead><tbody>{rows.map((row) => <tr key={row[1]}><td><strong>{row[0]}</strong></td><td><code>{row[1]}</code></td><td className="money">{krw(row[2])}</td><td>{row[3]}</td><td><button type="button" className="ghost"><Download size={15}/> PDF 다운로드</button></td></tr>)}</tbody></table></div></article>
+  </AdminMockPage>;
+}
 function CompanyEmployeeListMock() { return <AdminMockPage title="사원 목록" description="우리 회사 사원 등록 현황을 확인합니다." />; }
 function CompanyInfoMock() { return <AdminMockPage title="회사 정보" description="사업자정보와 세금계산서 수신 정보를 관리합니다." />; }
 

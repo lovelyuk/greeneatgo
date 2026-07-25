@@ -1078,7 +1078,13 @@ function CompanyEmployeeUsageMock() {
     <article className="panel"><div className="table-wrap"><table><thead><tr><th>사원명</th><th>부서</th><th className="money">끼수</th><th className="money">사용액</th><th className="money">자부담액</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td>{row[1]}</td><td className="money">{row[2]}끼</td><td className="money">{krw(row[3])}</td><td className="money">{row[4] ? krw(row[4]) : '-'}</td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
-function CompanyBillingMock() { return <AdminMockPage title="청구 내역" description="월별 청구 금액과 납부 상태를 확인합니다." />; }
+function CompanyBillingMock() {
+  // TODO: company_id 스코프 settlements 조회로 교체합니다.
+  const rows = [['2026년 7월', 4374545, 437455, 4812000, '입금대기'], ['2026년 6월', 4120000, 412000, 4532000, '입금완료'], ['2026년 5월', 3981818, 398182, 4380000, '입금완료'], ['2026년 4월', 4210909, 421091, 4632000, '입금완료']];
+  return <AdminMockPage title="청구 내역" description="월별 청구 금액과 납부 상태를 확인합니다.">
+    <article className="panel"><div className="table-wrap"><table><thead><tr><th>청구월</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th>상태</th><th>명세서</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td className="money">{krw(row[1])}</td><td className="money">{krw(row[2])}</td><td className="money">{krw(row[3])}</td><td><span className={`settlement-status ${row[4]}`}>{row[4]}</span></td><td><button type="button" className="ghost"><FileText size={15}/> 명세서</button></td></tr>)}</tbody></table></div></article>
+  </AdminMockPage>;
+}
 function CompanyTaxInvoiceMock() { return <AdminMockPage title="세금계산서" description="수신한 세금계산서를 조회하고 내려받습니다." />; }
 function CompanyEmployeeListMock() { return <AdminMockPage title="사원 목록" description="우리 회사 사원 등록 현황을 확인합니다." />; }
 function CompanyInfoMock() { return <AdminMockPage title="회사 정보" description="사업자정보와 세금계산서 수신 정보를 관리합니다." />; }

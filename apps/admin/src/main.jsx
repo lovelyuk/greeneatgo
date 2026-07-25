@@ -1016,7 +1016,13 @@ function MerchantPrepurchaseMock() {
     <article className="panel"><div className="panel-title"><div><h3>배치별 현황</h3><p className="panel-note">미사용 잔량은 식당의 이행 의무인 부채로 표시합니다.</p></div></div><div className="mock-batch-list">{batches.map((batch) => { const remain = batch.quantity - batch.used; return <article className="card" key={`${batch.company}-${batch.bought}`}><div className="mock-batch-head"><strong>{batch.company}</strong><span className="badge">잔여 {remain}매</span></div><dl><div><dt>구매일</dt><dd>{batch.bought}</dd></div><div><dt>구매수량</dt><dd className="money">{batch.quantity}매</dd></div><div><dt>단가</dt><dd className="money">{krw(batch.price)}</dd></div><div><dt>사용량</dt><dd className="money">{batch.used}매</dd></div><div><dt>유효기간</dt><dd>{batch.expires}</dd></div><div><dt>미사용 부채</dt><dd className="money">{krw(remain * batch.price)}</dd></div></dl></article>; })}</div></article>
   </AdminMockPage>;
 }
-function MerchantCompanyListMock() { return <AdminMockPage title="업체 목록" description="연결 업체의 유형과 이용·정산 현황을 확인합니다." />; }
+function MerchantCompanyListMock() {
+  // TODO: merchant-scoped companies 조회로 교체합니다.
+  const rows = [['가온테크', '후불', 'ledger', 2640000, 2640000, 84], ['새봄복지관', '보조금', 'subsidized', 1232000, 1232000, 41], ['모아산업', '선구매', 'voucher', 1485000, 0, 56], ['한결디자인', '후불', 'ledger', 528000, 528000, 18]];
+  return <AdminMockPage title="업체 목록" description="연결 업체의 유형과 이용·정산 현황을 확인합니다.">
+    <article className="panel"><div className="table-wrap"><table><thead><tr><th>업체명</th><th>유형</th><th className="money">이번달 사용액</th><th className="money">미정산</th><th className="money">사원수</th><th>관리</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td><span className={`payment-type-badge ${row[2]}`}>{row[1]}</span></td><td className="money">{krw(row[3])}</td><td className="money">{krw(row[4])}</td><td className="money">{row[5]}명</td><td><button type="button" className="ghost">상세</button></td></tr>)}</tbody></table></div></article>
+  </AdminMockPage>;
+}
 function MerchantCompanyFormMock() { return <AdminMockPage title="업체 등록/수정" description="세금계산서 발행에 필요한 공급받는자 정보를 관리합니다." />; }
 function MerchantSupplierInfoMock() { return <AdminMockPage title="공급자 정보" description="세금계산서에 사용할 식당 사업자정보를 검토합니다." />; }
 

@@ -987,7 +987,15 @@ function MerchantPaymentLedgerMock() {
     <article className="panel"><div className="mock-filterbar"><div className="mock-segmented">{['전체', '카드', '장부', '보조금', '식권'].map((item) => <button type="button" key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>{item}</button>)}</div><button type="button" className="ghost"><Download size={16}/> 엑셀 다운로드</button></div><div className="table-wrap"><table><thead><tr><th>시각</th><th>고객·업체</th><th>수단</th><th className="money">금액</th><th>증빙</th></tr></thead><tbody>{shown.map((row) => <tr key={`${row[0]}-${row[1]}`}><td>{row[0]}</td><td>{row[1]}</td><td><span className={`payment-type-badge ${row[3]}`}>{row[2]}</span></td><td className="money">{krw(row[4])}</td><td>{row[5]}</td></tr>)}<tr className="mock-total-row"><td colSpan="3">합계</td><td className="money">{krw(total)}</td><td>{shown.length}건</td></tr></tbody></table></div></article>
   </AdminMockPage>;
 }
-function MerchantSettlementMock() { return <AdminMockPage title="업체별 정산" description="업체별 공급가액과 미정산 잔액을 집계합니다." />; }
+function MerchantSettlementMock() {
+  // TODO: settlements와 create_merchant_settlement RPC 연동으로 교체합니다.
+  const rows = [['가온테크', 2400000, 240000, 2640000, '입금대기'], ['모아산업', 1350000, 135000, 1485000, '입금완료'], ['새봄복지관', 1120000, 112000, 1232000, '연체']];
+  const totals = rows.reduce((sum, row) => sum.map((value, index) => value + row[index + 1]), [0, 0, 0]);
+  return <AdminMockPage title="업체별 정산" description="업체별 공급가액과 미정산 잔액을 집계합니다.">
+    <section className="grid mock-kpi-grid"><article className="card"><span>이번달 누적</span><strong className="money">18,400,000원</strong></article><article className="card"><span>미정산 잔액</span><strong className="money">5,357,000원</strong></article><article className="card"><span>발행 대기</span><strong className="money">3건</strong></article><article className="card"><span>발행 기한</span><strong className="money">D-16</strong></article></section>
+    <article className="panel"><div className="table-wrap"><table><thead><tr><th>업체명</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th>상태</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td className="money">{krw(row[1])}</td><td className="money">{krw(row[2])}</td><td className="money">{krw(row[3])}</td><td><span className={`settlement-status ${row[4]}`}>{row[4]}</span></td></tr>)}<tr className="mock-total-row"><td>합계</td>{totals.map((value) => <td className="money" key={value}>{krw(value)}</td>)}<td>3개 업체</td></tr></tbody></table></div></article>
+  </AdminMockPage>;
+}
 function MerchantTaxInvoiceMock() { return <AdminMockPage title="세금계산서" description="월 합계 세금계산서 발행 대상을 검토합니다." />; }
 function MerchantPrepurchaseMock() { return <AdminMockPage title="선구매 관리" description="선구매 배치 잔량과 미사용 부채를 확인합니다." />; }
 function MerchantCompanyListMock() { return <AdminMockPage title="업체 목록" description="연결 업체의 유형과 이용·정산 현황을 확인합니다." />; }

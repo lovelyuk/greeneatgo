@@ -1597,20 +1597,22 @@ function Dashboard({ session, onLogout }) {
         </div>
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
-      <div className="top-actions">
+      {!isMerchantAdmin && <div className="top-actions">
         <button className="ghost" onClick={load} disabled={busy}><RefreshCw size={16}/> 새로고침</button>
         <button className="ghost" onClick={onLogout}><LogOut size={16}/> 로그아웃</button>
-      </div>
+      </div>}
     </header>
 
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
       {merchantNavItems.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}
+      <div className="merchant-sidebar-account">
+        <div className="merchant-sidebar-identity">
+          <span title={session.user.email}>{session.user.email}</span>
+          <button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/><span className="mobile-account-label">설정</span></button>
+        </div>
+        <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
+      </div>
     </nav>}
-
-    {isMerchantAdmin && <div className="merchant-account-corner">
-      <span>{session.user.email}</span>
-      <button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/></button>
-    </div>}
 
     <div className={isMerchantAdmin ? 'merchant-content' : undefined}>
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantSection) && <AnnouncementReviewPanel token={token} section={merchantSection}/>}

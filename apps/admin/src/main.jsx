@@ -1056,7 +1056,13 @@ function MerchantMockScreen({ section }) {
   return Screen ? <Screen /> : null;
 }
 
-function CompanyDashboardMock() { return <AdminMockPage title="대시보드" description="이번달 사용액과 미납·세금계산서 현황을 확인합니다." />; }
+function CompanyDashboardMock() {
+  // TODO: company_id 강제 스코프 대시보드 API로 교체합니다.
+  return <AdminMockPage title="대시보드" description="이번달 사용액과 미납·세금계산서 현황을 확인합니다.">
+    <section className="grid mock-kpi-grid"><article className="card"><span>이번달 사용액</span><strong className="money">4,812,000원</strong></article><article className="card warning-card"><span>미납액</span><strong className="money">1,232,000원</strong></article><article className="card"><span>등록 사원</span><strong className="money">84명</strong></article><article className="card mock-download-card"><span>최근 세금계산서</span><strong>2026년 6월</strong><button type="button" className="ghost"><Download size={16}/> 다운로드</button></article></section>
+    <article className="panel"><div className="panel-title"><div><h3>이번달 이용 요약</h3><p className="panel-note">우리 회사 사원의 식대 이용 현황입니다.</p></div><span className="badge">7월</span></div><div className="mock-summary-strip"><div><span>이용 사원</span><strong className="money">76명</strong></div><div><span>총 끼수</span><strong className="money">542끼</strong></div><div><span>전월 대비</span><strong className="money">+6.8%</strong></div></div></article>
+  </AdminMockPage>;
+}
 function CompanyMonthlyUsageMock() { return <AdminMockPage title="월별 이용" description="우리 회사의 일별 식대 이용 현황을 확인합니다." />; }
 function CompanyEmployeeUsageMock() { return <AdminMockPage title="사원별 사용" description="사원별 끼수와 사용액을 비교합니다." />; }
 function CompanyBillingMock() { return <AdminMockPage title="청구 내역" description="월별 청구 금액과 납부 상태를 확인합니다." />; }

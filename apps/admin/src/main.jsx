@@ -1063,7 +1063,14 @@ function CompanyDashboardMock() {
     <article className="panel"><div className="panel-title"><div><h3>이번달 이용 요약</h3><p className="panel-note">우리 회사 사원의 식대 이용 현황입니다.</p></div><span className="badge">7월</span></div><div className="mock-summary-strip"><div><span>이용 사원</span><strong className="money">76명</strong></div><div><span>총 끼수</span><strong className="money">542끼</strong></div><div><span>전월 대비</span><strong className="money">+6.8%</strong></div></div></article>
   </AdminMockPage>;
 }
-function CompanyMonthlyUsageMock() { return <AdminMockPage title="월별 이용" description="우리 회사의 일별 식대 이용 현황을 확인합니다." />; }
+function CompanyMonthlyUsageMock() {
+  // TODO: company_id 스코프 일별 집계 API로 교체합니다.
+  const rows = [['07.01', 48, 52, 468000], ['07.02', 51, 56, 504000], ['07.03', 46, 49, 441000], ['07.04', 54, 61, 549000], ['07.05', 18, 19, 171000], ['07.06', 12, 13, 117000], ['07.07', 52, 57, 513000]];
+  const total = rows.reduce((sum, row) => [sum[0] + row[2], sum[1] + row[3]], [0, 0]);
+  return <AdminMockPage title="월별 이용" description="우리 회사의 일별 식대 이용 현황을 확인합니다.">
+    <article className="panel"><div className="panel-title"><div><h3>2026년 7월</h3><p className="panel-note">일별 이용 사원수·끼수·금액</p></div><span className="badge">목업 데이터</span></div><div className="table-wrap"><table><thead><tr><th>날짜</th><th className="money">이용 사원수</th><th className="money">끼수</th><th className="money">금액</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td>{row[0]}</td><td className="money">{row[1]}명</td><td className="money">{row[2]}끼</td><td className="money">{krw(row[3])}</td></tr>)}<tr className="mock-total-row"><td>합계</td><td className="money">-</td><td className="money">{total[0]}끼</td><td className="money">{krw(total[1])}</td></tr></tbody></table></div></article>
+  </AdminMockPage>;
+}
 function CompanyEmployeeUsageMock() { return <AdminMockPage title="사원별 사용" description="사원별 끼수와 사용액을 비교합니다." />; }
 function CompanyBillingMock() { return <AdminMockPage title="청구 내역" description="월별 청구 금액과 납부 상태를 확인합니다." />; }
 function CompanyTaxInvoiceMock() { return <AdminMockPage title="세금계산서" description="수신한 세금계산서를 조회하고 내려받습니다." />; }

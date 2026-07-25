@@ -970,7 +970,23 @@ function MerchantSalesStatsMock() {
     <section className="two-col"><article className="panel"><h3>결제수단 구성</h3><div className="mock-progress-list">{methods.map(([label, value, tone]) => <div key={label}><div><span className={`payment-type-badge ${tone}`}>{label}</span><strong>{value}%</strong></div><progress max="100" value={value}/></div>)}</div></article><article className="panel"><h3>현금성 vs 후불</h3><div className="mock-cash-grid"><div><span>즉시 매출</span><strong className="money">42%</strong><small>카드 · 식권</small></div><div><span>월말 정산</span><strong className="money">58%</strong><small>장부 · 보조금</small></div></div></article></section>
   </AdminMockPage>;
 }
-function MerchantPaymentLedgerMock() { return <AdminMockPage title="결제 내역" description="카드·장부·보조금·식권 결제를 건별로 확인합니다." />; }
+function MerchantPaymentLedgerMock() {
+  const [filter, setFilter] = useState('전체');
+  // TODO: meal_transactions 페이지네이션과 기존 export 핸들러로 교체합니다.
+  const rows = [
+    ['07.25 14:32', '김민지 · 가온테크', '장부', 'ledger', 9000, '미발행'],
+    ['07.25 14:18', '박준호 · 개인 고객', '카드', 'consumer', 12000, '전표'],
+    ['07.25 13:54', '이서연 · 새봄복지관', '보조금', 'subsidized', 7500, '계산서'],
+    ['07.25 13:21', '정우진 · 모아산업', '식권', 'voucher', 8000, '차감'],
+    ['07.25 12:47', '최하늘 · 가온테크', '장부', 'ledger', 9000, '미발행'],
+    ['07.25 12:14', '윤서준 · 개인 고객', '카드', 'consumer', 11000, '전표'],
+  ];
+  const shown = filter === '전체' ? rows : rows.filter((row) => row[2] === filter);
+  const total = shown.reduce((sum, row) => sum + row[4], 0);
+  return <AdminMockPage title="결제 내역" description="카드·장부·보조금·식권 결제를 건별로 확인합니다.">
+    <article className="panel"><div className="mock-filterbar"><div className="mock-segmented">{['전체', '카드', '장부', '보조금', '식권'].map((item) => <button type="button" key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>{item}</button>)}</div><button type="button" className="ghost"><Download size={16}/> 엑셀 다운로드</button></div><div className="table-wrap"><table><thead><tr><th>시각</th><th>고객·업체</th><th>수단</th><th className="money">금액</th><th>증빙</th></tr></thead><tbody>{shown.map((row) => <tr key={`${row[0]}-${row[1]}`}><td>{row[0]}</td><td>{row[1]}</td><td><span className={`payment-type-badge ${row[3]}`}>{row[2]}</span></td><td className="money">{krw(row[4])}</td><td>{row[5]}</td></tr>)}<tr className="mock-total-row"><td colSpan="3">합계</td><td className="money">{krw(total)}</td><td>{shown.length}건</td></tr></tbody></table></div></article>
+  </AdminMockPage>;
+}
 function MerchantSettlementMock() { return <AdminMockPage title="업체별 정산" description="업체별 공급가액과 미정산 잔액을 집계합니다." />; }
 function MerchantTaxInvoiceMock() { return <AdminMockPage title="세금계산서" description="월 합계 세금계산서 발행 대상을 검토합니다." />; }
 function MerchantPrepurchaseMock() { return <AdminMockPage title="선구매 관리" description="선구매 배치 잔량과 미사용 부채를 확인합니다." />; }

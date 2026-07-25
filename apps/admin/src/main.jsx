@@ -938,7 +938,14 @@ function AdminMockPage({ title, description, children }) {
   </section>;
 }
 
-function MerchantDashboardMock() { return <AdminMockPage title="대시보드" description="오늘 매출과 정산·발행 현황을 한눈에 확인합니다." />; }
+function MerchantDashboardMock() {
+  // TODO: 실제 매출·정산 집계 API로 교체합니다.
+  const items = [['오늘 매출', '842,000원'], ['이번달 누적', '18,400,000원'], ['미정산 잔액', '5,357,000원'], ['발행 대기 건수', '3건']];
+  return <AdminMockPage title="대시보드" description="오늘 매출과 정산·발행 현황을 한눈에 확인합니다.">
+    <section className="grid mock-kpi-grid">{items.map(([label, value]) => <article className="card mock-kpi-card" key={label}><span>{label}</span><strong className="money">{value}</strong></article>)}</section>
+    <div className="alert warning">8월 10일까지 발행 · 3건</div>
+  </AdminMockPage>;
+}
 function MerchantRealtimeSalesMock() { return <AdminMockPage title="실시간 매출" description="결제 발생 현황과 최근 결제를 실시간 형태로 확인합니다." />; }
 function MerchantSalesStatsMock() { return <AdminMockPage title="매출 통계" description="기간별 매출과 결제수단 구성을 비교합니다." />; }
 function MerchantPaymentLedgerMock() { return <AdminMockPage title="결제 내역" description="카드·장부·보조금·식권 결제를 건별로 확인합니다." />; }

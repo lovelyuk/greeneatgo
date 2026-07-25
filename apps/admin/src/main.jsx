@@ -1031,7 +1031,13 @@ function MerchantCompanyFormMock() {
     <form className="panel mock-business-form" onSubmit={(event) => { event.preventDefault(); setSaved(true); }}><div className="mock-field-with-action"><label>사업자등록번호<input defaultValue="214-86-12345" required /></label><button type="button" className="ghost">진위확인</button></div><label>상호<input defaultValue="가온테크 주식회사" required /></label><label>대표자<input defaultValue="김가온" required /></label><label>업태<input defaultValue="서비스업" /></label><label>종목<input defaultValue="소프트웨어 개발" /></label><label className="wide">사업장주소<input defaultValue="서울특별시 강남구 테헤란로 123" /></label><label>담당자명<input defaultValue="박민지" /></label><label>연락처<input defaultValue="02-1234-5678" /></label><label className="wide">세금계산서 수신 이메일 *<input type="email" defaultValue="tax@gaon.example" required /></label><label>마감일<select defaultValue="말일"><option>말일</option><option>25일</option><option>20일</option></select></label><label>정산 방식<select defaultValue="후불"><option>후불</option><option>보조금</option><option>선구매</option></select></label><div className="row-actions wide"><button type="button" className="ghost" onClick={() => setSaved(false)}>초기화</button><button className="primary">목업 저장</button></div></form>
   </AdminMockPage>;
 }
-function MerchantSupplierInfoMock() { return <AdminMockPage title="공급자 정보" description="세금계산서에 사용할 식당 사업자정보를 검토합니다." />; }
+function MerchantSupplierInfoMock() {
+  const [saved, setSaved] = useState(false);
+  // TODO: merchants 사업자정보 컬럼과 저장 API로 교체합니다.
+  return <AdminMockPage title="공급자 정보" description="세금계산서에 사용할 식당 사업자정보를 검토합니다.">
+    <section className="two-col"><article className="panel"><div className="panel-title"><div><h3>현재 공급자</h3><p className="panel-note">팝빌 발행 시 자동 사용될 정보입니다.</p></div><span className="badge">읽기 전용</span></div><div className="profile-grid"><span>사업자등록번호</span><strong>123-45-67890</strong><span>상호</span><strong>그린잇 식당</strong><span>대표자</span><strong>이용욱</strong><span>주소</span><strong>서울특별시 중구 그린로 25</strong><span>업태</span><strong>음식점업</strong><span>종목</span><strong>한식 뷔페</strong><span>담당 이메일</span><strong>tax@greeneat.example</strong></div></article><form className="panel mock-supplier-form" onSubmit={(event) => { event.preventDefault(); setSaved(true); }}><div className="panel-title"><div><h3>수정 폼</h3><p className="panel-note">현재 단계에서는 화면에만 반영됩니다.</p></div></div><label>상호<input defaultValue="그린잇 식당" /></label><label>대표자<input defaultValue="이용욱" /></label><label>주소<input defaultValue="서울특별시 중구 그린로 25" /></label><label>업태<input defaultValue="음식점업" /></label><label>종목<input defaultValue="한식 뷔페" /></label><label>세금계산서 담당 이메일<input type="email" defaultValue="tax@greeneat.example" /></label>{saved && <div className="alert success">목업 수정 상태를 저장했습니다.</div>}<button className="primary">목업 저장</button></form></section>
+  </AdminMockPage>;
+}
 
 function MerchantMockScreen({ section }) {
   const screens = {

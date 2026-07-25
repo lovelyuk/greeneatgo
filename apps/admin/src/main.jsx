@@ -1092,7 +1092,13 @@ function CompanyTaxInvoiceMock() {
     <article className="panel"><div className="panel-title"><div><h3>수신 세금계산서</h3><p className="panel-note">식당에서 발행한 월 합계 계산서입니다.</p></div><span className="badge">수신 전용</span></div><div className="table-wrap"><table><thead><tr><th>발행월</th><th>승인번호</th><th className="money">합계</th><th>발행일</th><th>파일</th></tr></thead><tbody>{rows.map((row) => <tr key={row[1]}><td><strong>{row[0]}</strong></td><td><code>{row[1]}</code></td><td className="money">{krw(row[2])}</td><td>{row[3]}</td><td><button type="button" className="ghost"><Download size={15}/> PDF 다운로드</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
-function CompanyEmployeeListMock() { return <AdminMockPage title="사원 목록" description="우리 회사 사원 등록 현황을 확인합니다." />; }
+function CompanyEmployeeListMock() {
+  const [items, setItems] = useState([{ name: '김민지', department: '개발팀', no: 'A-1024', status: '사용중' }, { name: '박준호', department: '기획팀', no: 'A-1031', status: '사용중' }, { name: '이서연', department: '디자인팀', no: 'A-1042', status: '초대대기' }, { name: '정우진', department: '영업팀', no: 'A-1057', status: '사용중' }]);
+  // TODO: 기존 사원관리 핸들러 재사용 여부 확인 후 company_id 스코프 API로 교체합니다.
+  return <AdminMockPage title="사원 목록" description="우리 회사 사원 등록 현황을 확인합니다.">
+    <article className="panel"><div className="panel-title"><div><h3>등록 사원</h3><p className="panel-note">기존 사원 관리 화면과 비교하기 위한 신규 목업입니다.</p></div><button type="button" className="primary">+ 사원 등록</button></div><div className="table-wrap"><table><thead><tr><th>이름</th><th>부서</th><th>사번</th><th>상태</th><th>관리</th></tr></thead><tbody>{items.map((item) => <tr key={item.no}><td><strong>{item.name}</strong></td><td>{item.department}</td><td>{item.no}</td><td><span className="badge">{item.status}</span></td><td><button type="button" className="ghost" onClick={() => setItems((current) => current.filter((row) => row.no !== item.no))}>삭제</button></td></tr>)}</tbody></table></div></article>
+  </AdminMockPage>;
+}
 function CompanyInfoMock() { return <AdminMockPage title="회사 정보" description="사업자정보와 세금계산서 수신 정보를 관리합니다." />; }
 
 function CompanyMockScreen({ section }) {

@@ -938,14 +938,6 @@ function AdminMockPage({ title, description, children }) {
   </section>;
 }
 
-function MerchantDashboardMock() {
-  // TODO: 실제 매출·정산 집계 API로 교체합니다.
-  const items = [['오늘 매출', '842,000원'], ['이번달 누적', '18,400,000원'], ['미정산 잔액', '5,357,000원'], ['발행 대기 건수', '3건']];
-  return <AdminMockPage title="대시보드" description="오늘 매출과 정산·발행 현황을 한눈에 확인합니다.">
-    <section className="grid mock-kpi-grid">{items.map(([label, value]) => <article className="card mock-kpi-card" key={label}><span>{label}</span><strong className="money">{value}</strong></article>)}</section>
-    <div className="alert warning">8월 10일까지 발행 · 3건</div>
-  </AdminMockPage>;
-}
 function MerchantRealtimeSalesMock() {
   // TODO: meal_transactions Realtime 구독으로 교체합니다.
   const rows = [
@@ -1041,7 +1033,6 @@ function MerchantSupplierInfoMock() {
 
 function MerchantMockScreen({ section }) {
   const screens = {
-    'merchant-dashboard': MerchantDashboardMock,
     'realtime-sales': MerchantRealtimeSalesMock,
     'sales-stats': MerchantSalesStatsMock,
     'payment-ledger': MerchantPaymentLedgerMock,
@@ -1292,14 +1283,14 @@ function Dashboard({ session, onLogout }) {
     ['권한', '플랫폼 운영자', WalletCards, 'brown'],
     ['식당', platformMerchants ? `${platformMerchants.items.length}곳` : '조회 중', Coffee, 'green'],
   ] : isMerchantAdmin ? [
-    ['권한', '관리자', WalletCards, 'brown'],
-    ['결제 방식', 'QR 즉시결제', QrCode, 'orange'],
-    ['장부업체', merchantCompanies ? `${merchantCompanies.items.length}곳` : '조회 중', Users, 'green'],
-    ['거래내역', transactions ? `${transactions.total_count ?? transactions.items.length}건` : '조회 중', FileSpreadsheet, 'orange'],
+    ['오늘 매출', '842,000원', WalletCards, 'brown'],
+    ['이번달 누적', '18,400,000원', BarChart3, 'orange'],
+    ['미정산 잔액', '5,357,000원', CreditCard, 'green'],
+    ['발행 대기 건수', '3건', FileText, 'orange'],
   ] : [
     ['가입 요청', `${requests.length}명`, Users, 'orange'],
     ['직원', employees ? `${employees.items.length}명` : '조회 중', WalletCards, 'brown'],
-  ], [isPlatformAdmin, isMerchantAdmin, requests.length, merchantCompanies, transactions, platformMerchants, employees]);
+  ], [isPlatformAdmin, isMerchantAdmin, requests.length, platformMerchants, employees]);
 
   const recentPaymentAlerts = useMemo(() => (transactions?.items ?? [])
     .filter((item) => !['refund', 'cancel'].includes(item.kind) && item.created_at && new Date(item.created_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) === paymentAlertDay)
@@ -1773,7 +1764,7 @@ function Dashboard({ session, onLogout }) {
   if (!me) return <main className="loading"><BrandMark /><div className="alert error">권한 정보를 불러오지 못했어요. {error}</div><button className="ghost" onClick={onLogout}>로그아웃</button></main>;
 
   const merchantNavGroups = [
-    ['대시보드', [['merchant-dashboard', '대시보드', BarChart3], ['main', '메인', Home]]],
+    ['메인', [['main', '메인', Home]]],
     ['매출', [['realtime-sales', '실시간 매출', Bell], ['sales-stats', '매출 통계', BarChart3], ['payment-ledger', '결제 내역', FileSpreadsheet], ['payment-history', '결제내역', CreditCard]]],
     ['정산·세금', [['settlements-by-company', '업체별 정산', WalletCards], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]]],
     ['업체', [['companies', '업체 관리', Building2], ['company-list', '업체 목록', Building2], ['company-form', '업체 등록/수정', FileText]]],

@@ -938,47 +938,7 @@ function AdminMockPage({ title, description, children }) {
   </section>;
 }
 
-function MerchantRealtimeSalesMock() {
-  // TODO: meal_transactions Realtime 구독으로 교체합니다.
-  const rows = [
-    ['14:32', '김민지 · 가온테크', '장부', 'ledger', '9,000원'],
-    ['14:18', '박준호 · 개인 고객', '카드', 'consumer', '12,000원'],
-    ['13:54', '이서연 · 새봄복지관', '보조금', 'subsidized', '7,500원'],
-    ['13:21', '정우진 · 모아산업', '식권', 'voucher', '8,000원'],
-    ['12:47', '최하늘 · 가온테크', '장부', 'ledger', '9,000원'],
-  ];
-  return <AdminMockPage title="실시간 매출" description="결제 발생 현황과 최근 결제를 실시간 형태로 확인합니다.">
-    <section className="grid mock-kpi-grid three"><article className="card"><span>오늘 매출</span><strong className="money">842,000원</strong></article><article className="card"><span>결제 건수</span><strong className="money">96건</strong></article><article className="card"><span>객단가</span><strong className="money">8,771원</strong></article></section>
-    <article className="panel"><div className="panel-title"><div><h3>최근 결제</h3><p className="panel-note">가장 최근 발생한 5건입니다.</p></div><span className="badge">LIVE MOCK</span></div><div className="payment-alert-list">{rows.map(([time, customer, type, tone, amount]) => <div className="payment-alert-row mock-payment-row" key={`${time}-${customer}`}><time>{time}</time><strong>{customer}</strong><span>-</span><span className={`payment-type-badge ${tone}`}>{type}</span><b className="money">{amount}</b></div>)}</div></article>
-  </AdminMockPage>;
-}
-function MerchantSalesStatsMock() {
-  const [period, setPeriod] = useState('월간');
-  // TODO: 기간별 pay_type group by API 결과로 교체합니다.
-  const days = [['1주', 48], ['2주', 72], ['3주', 58], ['4주', 90], ['5주', 64]];
-  const methods = [['카드', 32, 'consumer'], ['장부', 41, 'ledger'], ['보조금', 17, 'subsidized'], ['식권', 10, 'voucher']];
-  return <AdminMockPage title="매출 통계" description="기간별 매출과 결제수단 구성을 비교합니다.">
-    <article className="panel"><div className="panel-title"><div><h3>기간별 매출</h3><p className="panel-note">2026년 7월 목업 집계</p></div><div className="mock-segmented">{['월간', '주간', '일간'].map((item) => <button type="button" key={item} className={period === item ? 'active' : ''} onClick={() => setPeriod(item)}>{item}</button>)}</div></div><div className="mock-sales-bars" aria-label={`${period} 매출 차트`}>{days.map(([label, value]) => <div key={label}><span style={{ height: `${value}%` }}/><small>{label}</small></div>)}</div></article>
-    <section className="two-col"><article className="panel"><h3>결제수단 구성</h3><div className="mock-progress-list">{methods.map(([label, value, tone]) => <div key={label}><div><span className={`payment-type-badge ${tone}`}>{label}</span><strong>{value}%</strong></div><progress max="100" value={value}/></div>)}</div></article><article className="panel"><h3>현금성 vs 후불</h3><div className="mock-cash-grid"><div><span>즉시 매출</span><strong className="money">42%</strong><small>카드 · 식권</small></div><div><span>월말 정산</span><strong className="money">58%</strong><small>장부 · 보조금</small></div></div></article></section>
-  </AdminMockPage>;
-}
-function MerchantPaymentLedgerMock() {
-  const [filter, setFilter] = useState('전체');
-  // TODO: meal_transactions 페이지네이션과 기존 export 핸들러로 교체합니다.
-  const rows = [
-    ['07.25 14:32', '김민지 · 가온테크', '장부', 'ledger', 9000, '미발행'],
-    ['07.25 14:18', '박준호 · 개인 고객', '카드', 'consumer', 12000, '전표'],
-    ['07.25 13:54', '이서연 · 새봄복지관', '보조금', 'subsidized', 7500, '계산서'],
-    ['07.25 13:21', '정우진 · 모아산업', '식권', 'voucher', 8000, '차감'],
-    ['07.25 12:47', '최하늘 · 가온테크', '장부', 'ledger', 9000, '미발행'],
-    ['07.25 12:14', '윤서준 · 개인 고객', '카드', 'consumer', 11000, '전표'],
-  ];
-  const shown = filter === '전체' ? rows : rows.filter((row) => row[2] === filter);
-  const total = shown.reduce((sum, row) => sum + row[4], 0);
-  return <AdminMockPage title="결제 내역" description="카드·장부·보조금·식권 결제를 건별로 확인합니다.">
-    <article className="panel"><div className="mock-filterbar"><div className="mock-segmented">{['전체', '카드', '장부', '보조금', '식권'].map((item) => <button type="button" key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>{item}</button>)}</div><button type="button" className="ghost"><Download size={16}/> 엑셀 다운로드</button></div><div className="table-wrap"><table><thead><tr><th>시각</th><th>고객·업체</th><th>수단</th><th className="money">금액</th><th>증빙</th></tr></thead><tbody>{shown.map((row) => <tr key={`${row[0]}-${row[1]}`}><td>{row[0]}</td><td>{row[1]}</td><td><span className={`payment-type-badge ${row[3]}`}>{row[2]}</span></td><td className="money">{krw(row[4])}</td><td>{row[5]}</td></tr>)}<tr className="mock-total-row"><td colSpan="3">합계</td><td className="money">{krw(total)}</td><td>{shown.length}건</td></tr></tbody></table></div></article>
-  </AdminMockPage>;
-}
+
 function MerchantSettlementMock() {
   // TODO: settlements와 create_merchant_settlement RPC 연동으로 교체합니다.
   const rows = [['가온테크', 2400000, 240000, 2640000, '입금대기'], ['모아산업', 1350000, 135000, 1485000, '입금완료'], ['새봄복지관', 1120000, 112000, 1232000, '연체']];
@@ -1033,9 +993,6 @@ function MerchantSupplierInfoMock() {
 
 function MerchantMockScreen({ section }) {
   const screens = {
-    'realtime-sales': MerchantRealtimeSalesMock,
-    'sales-stats': MerchantSalesStatsMock,
-    'payment-ledger': MerchantPaymentLedgerMock,
     'settlements-by-company': MerchantSettlementMock,
     'tax-invoices': MerchantTaxInvoiceMock,
     'prepurchase': MerchantPrepurchaseMock,
@@ -1765,7 +1722,7 @@ function Dashboard({ session, onLogout }) {
 
   const merchantNavGroups = [
     ['메인', [['main', '메인', Home]]],
-    ['매출', [['realtime-sales', '실시간 매출', Bell], ['sales-stats', '매출 통계', BarChart3], ['payment-ledger', '결제 내역', FileSpreadsheet], ['payment-history', '결제내역', CreditCard]]],
+    ['매출', [['payment-history', '실시간 매출', CreditCard]]],
     ['정산·세금', [['settlements-by-company', '업체별 정산', WalletCards], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]]],
     ['업체', [['companies', '업체 관리', Building2], ['company-list', '업체 목록', Building2], ['company-form', '업체 등록/수정', FileText]]],
     ['상품·운영', [['vouchers', '판매 상품(일반)', Package], ['daily-menu', '오늘 뷔페 메뉴', Coffee], ['notifications', '알림', Bell], ['announcements', '공지사항', FileText], ['reviews', '리뷰', CheckCircle2]]],

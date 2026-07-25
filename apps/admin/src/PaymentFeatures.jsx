@@ -21,20 +21,26 @@ function Rows({ items, kind }) {
     const person = item.customer_name ?? item.employee_name ?? '-';
     const amount = money(Math.abs(Number(item.amount ?? item.total ?? item.payment_amount ?? item.refund_amount ?? 0)));
     if (kind === 'transaction') {
+      const transactionType = item.pay_type === 'subsidized'
+        ? { label: '보조금', tone: 'subsidized' }
+        : item.pay_type === 'voucher' || item.company_name === '일반 고객'
+          ? { label: '식권', tone: 'voucher' }
+          : { label: '장부', tone: 'ledger' };
       return <div className="history-row history-row-columns history-row-transaction" key={item.id ?? `${kind}-${index}`}>
         <time dateTime={item.created_at}>{dateTime(item.created_at)}</time>
         <span className="history-company">{item.company_name ?? '일반 고객'}</span>
         <strong className="history-person">{person}</strong>
-        <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{item.payment_type_label ?? '일반'}</span>
+        <span className={`payment-type-badge ${transactionType.tone}`}>{transactionType.label}</span>
         <b>{amount}</b>
       </div>;
     }
-    const paymentType = item.pay_type === 'subsidized' ? '보조금' : '일반';
+    const subsidized = item.pay_type === 'subsidized' || item.payment_type_label === '보조금';
+    const paymentType = subsidized ? '보조금' : '일반';
     return <div className={`history-row history-row-columns history-row-payment${refunded ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}>
       <time dateTime={item.created_at}>{dateTime(item.created_at)}</time>
       <span className="history-product">{refunded ? '환불' : item.product_name ?? '상품'}</span>
       <strong className="history-person">{person}</strong>
-      <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{paymentType}</span>
+      <span className={`payment-type-badge ${subsidized ? 'subsidized' : 'direct'}`}>{paymentType}</span>
       <b>{amount}</b>
     </div>;
   })}</div>;
@@ -63,7 +69,7 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
   }, [mode, date, range.from, range.to, request, refreshKey, current]);
 
   const filterLabel = mode === 'year' ? `${current.slice(0, 4)}년` : mode === 'month' ? `${Number(current.slice(5, 7))}월` : mode === 'range' ? `${range.from} ~ ${range.to}` : new Date(`${date}T00:00:00`).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
-  return <section className="payment-history-dashboard" aria-label="결제내역">
+  return <section className="payment-history-dashboard" aria-label="실시간 매출">
     <div className="history-heading"><div><span className="eyebrow">PAYMENT HISTORY</span><p>조회 기간을 선택해 거래와 결제·환불 상세 내역을 확인합니다.</p></div></div>
     <div className="history-period-filter">
       <div className="history-period-modes">{periodModes.map(([id, label]) => <button type="button" key={id} className={mode === id ? 'active' : ''} aria-pressed={mode === id} onClick={() => setMode(id)}>{label}</button>)}</div>

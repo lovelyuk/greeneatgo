@@ -874,7 +874,11 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   color: var(--badge-green-fg) !important;
   background: var(--badge-green-bg);
 }
-.payment-type-badge.voucher, .payment-type-badge.direct, .pay-type-badge:not(.subsidized) {
+.payment-type-badge.voucher {
+  color: #A85A00 !important;
+  background: #FFF3D6;
+}
+.payment-type-badge.direct, .pay-type-badge:not(.subsidized) {
   color: var(--badge-gray-fg) !important;
   background: var(--badge-gray-bg);
 }

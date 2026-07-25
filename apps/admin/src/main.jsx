@@ -1023,7 +1023,14 @@ function MerchantCompanyListMock() {
     <article className="panel"><div className="table-wrap"><table><thead><tr><th>업체명</th><th>유형</th><th className="money">이번달 사용액</th><th className="money">미정산</th><th className="money">사원수</th><th>관리</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td><span className={`payment-type-badge ${row[2]}`}>{row[1]}</span></td><td className="money">{krw(row[3])}</td><td className="money">{krw(row[4])}</td><td className="money">{row[5]}명</td><td><button type="button" className="ghost">상세</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
-function MerchantCompanyFormMock() { return <AdminMockPage title="업체 등록/수정" description="세금계산서 발행에 필요한 공급받는자 정보를 관리합니다." />; }
+function MerchantCompanyFormMock() {
+  const [saved, setSaved] = useState(false);
+  // TODO: companies 세금계산서 컬럼 마이그레이션 후 저장 API를 연결합니다.
+  return <AdminMockPage title="업체 등록/수정" description="세금계산서 발행에 필요한 공급받는자 정보를 관리합니다.">
+    {saved && <div className="alert success">목업 정보가 화면 상태에 저장됐습니다.</div>}
+    <form className="panel mock-business-form" onSubmit={(event) => { event.preventDefault(); setSaved(true); }}><div className="mock-field-with-action"><label>사업자등록번호<input defaultValue="214-86-12345" required /></label><button type="button" className="ghost">진위확인</button></div><label>상호<input defaultValue="가온테크 주식회사" required /></label><label>대표자<input defaultValue="김가온" required /></label><label>업태<input defaultValue="서비스업" /></label><label>종목<input defaultValue="소프트웨어 개발" /></label><label className="wide">사업장주소<input defaultValue="서울특별시 강남구 테헤란로 123" /></label><label>담당자명<input defaultValue="박민지" /></label><label>연락처<input defaultValue="02-1234-5678" /></label><label className="wide">세금계산서 수신 이메일 *<input type="email" defaultValue="tax@gaon.example" required /></label><label>마감일<select defaultValue="말일"><option>말일</option><option>25일</option><option>20일</option></select></label><label>정산 방식<select defaultValue="후불"><option>후불</option><option>보조금</option><option>선구매</option></select></label><div className="row-actions wide"><button type="button" className="ghost" onClick={() => setSaved(false)}>초기화</button><button className="primary">목업 저장</button></div></form>
+  </AdminMockPage>;
+}
 function MerchantSupplierInfoMock() { return <AdminMockPage title="공급자 정보" description="세금계산서에 사용할 식당 사업자정보를 검토합니다." />; }
 
 function MerchantMockScreen({ section }) {

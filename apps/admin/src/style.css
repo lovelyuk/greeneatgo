@@ -1316,3 +1316,83 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   .company-tabs button.active::before { display: none; }
   .company-content { width: 100%; padding: 0; }
 }
+
+/* Mock admin screens: reuse the existing neutral surface and green accent tokens. */
+.mock-kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.mock-kpi-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mock-kpi-card, .mock-kpi-grid > .card { min-height: 118px; align-content: space-between; }
+.mock-kpi-grid .card span { color: var(--text-secondary); }
+.mock-kpi-grid .card strong { display: block; margin-top: 14px; font-size: clamp(22px, 2vw, 30px); }
+.warning-card { border-color: #F1D4A5; background: #FFF8E8; }
+.warning-card strong { color: #B45309; }
+.mock-download-card button { width: fit-content; margin-top: 12px; }
+.mock-segmented { display: inline-flex; gap: 3px; padding: 4px; border-radius: 10px; background: var(--bg-subtle); }
+.mock-segmented button { min-height: 34px; padding: 7px 11px; color: var(--text-secondary); background: transparent; border-radius: 8px; font-size: 12px; box-shadow: none; }
+.mock-segmented button.active { color: #fff; background: var(--accent); }
+.mock-filterbar, .mock-page-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.mock-page-actions .alert { min-width: 0; flex: 1; margin: 0; }
+.mock-sales-bars { display: flex; height: 220px; align-items: end; justify-content: space-around; gap: 18px; padding: 22px 18px 0; border-bottom: 1px solid var(--border); }
+.mock-sales-bars > div { display: grid; height: 100%; flex: 1; align-items: end; justify-items: center; gap: 8px; }
+.mock-sales-bars span { width: min(54px, 72%); min-height: 12px; border-radius: 8px 8px 2px 2px; background: linear-gradient(180deg, #31B56A, var(--accent)); }
+.mock-sales-bars small { color: var(--text-muted); font-size: 12px; }
+.mock-progress-list { display: grid; gap: 16px; margin-top: 20px; }
+.mock-progress-list > div > div { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+.mock-progress-list progress { width: 100%; height: 9px; overflow: hidden; border: 0; border-radius: 999px; accent-color: var(--accent); }
+.mock-progress-list progress::-webkit-progress-bar { background: var(--bg-subtle); }
+.mock-progress-list progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
+.mock-cash-grid, .mock-summary-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+.mock-cash-grid > div, .mock-summary-strip > div { display: grid; gap: 7px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-subtle); }
+.mock-cash-grid strong, .mock-summary-strip strong { font-size: 24px; }
+.mock-cash-grid small { color: var(--text-muted); }
+.mock-summary-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mock-total-row td { border-top: 2px solid var(--border-strong); background: var(--bg-subtle); font-weight: 700; }
+.mock-tax-status { display: inline-flex; padding: 6px 10px; border-radius: 999px; color: var(--badge-gray-fg); background: var(--badge-gray-bg); font-size: 12px; font-weight: 700; }
+.mock-tax-status.발행완료 { color: var(--badge-green-fg); background: var(--badge-green-bg); }
+.mock-tax-status.국세청전송 { color: var(--badge-blue-fg); background: var(--badge-blue-bg); }
+.mock-tax-status.발행실패 { color: var(--badge-red-fg); background: var(--badge-red-bg); }
+.mock-tax-modal { width: min(720px, calc(100vw - 28px)); }
+.mock-invoice-parties { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.mock-invoice-parties article { display: grid; gap: 6px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-subtle); }
+.mock-invoice-parties span, .mock-invoice-parties small { color: var(--text-muted); }
+.mock-batch-list { display: grid; gap: 12px; }
+.mock-batch-list .card { padding: 18px; }
+.mock-batch-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.mock-batch-list dl { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.mock-batch-list dl div { min-width: 0; padding: 10px; border-radius: 8px; background: var(--bg-subtle); }
+.mock-batch-list dt { margin-bottom: 5px; color: var(--text-muted); font-size: 11px; }
+.mock-batch-list dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; }
+.mock-business-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.mock-business-form label, .mock-supplier-form label, .mock-field-with-action label { display: grid; min-width: 0; gap: 7px; color: var(--text-secondary); font-size: 13px; font-weight: 600; }
+.mock-business-form .wide { grid-column: 1 / -1; }
+.mock-field-with-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
+.mock-field-with-action button { min-height: 46px; }
+.mock-supplier-form { display: grid; gap: 14px; }
+.mock-payment-row { grid-template-columns: 58px minmax(160px, 1fr) 20px auto auto; }
+code { font-size: 12px; }
+
+@media (min-width: 1025px) {
+  .merchant-tabs { padding-bottom: 150px; }
+  .merchant-sidebar-account { position: fixed; z-index: 27; bottom: 18px; left: 12px; width: 216px; margin: 0; background: var(--bg-surface); }
+}
+
+@media (max-width: 900px) {
+  .mock-kpi-grid, .mock-kpi-grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mock-batch-list dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .admin-mock-page { gap: 14px; }
+  .admin-mock-page-title { align-items: flex-start; }
+  .mock-kpi-grid, .mock-kpi-grid.three { grid-template-columns: 1fr; }
+  .mock-kpi-card, .mock-kpi-grid > .card { min-height: 92px; }
+  .mock-filterbar, .mock-page-actions { align-items: stretch; flex-direction: column; }
+  .mock-filterbar .mock-segmented { width: 100%; overflow-x: auto; }
+  .mock-filterbar > button, .mock-page-actions > button { width: 100%; }
+  .mock-sales-bars { height: 180px; gap: 8px; padding-inline: 5px; }
+  .mock-cash-grid, .mock-summary-strip, .mock-invoice-parties { grid-template-columns: 1fr; }
+  .mock-batch-list dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mock-business-form { grid-template-columns: 1fr; }
+  .mock-business-form .wide { grid-column: auto; }
+  .mock-field-with-action { grid-template-columns: 1fr; }
+  .mock-tax-modal { padding: 20px 16px; }
+}

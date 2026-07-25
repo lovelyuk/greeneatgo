@@ -946,7 +946,20 @@ function MerchantDashboardMock() {
     <div className="alert warning">8월 10일까지 발행 · 3건</div>
   </AdminMockPage>;
 }
-function MerchantRealtimeSalesMock() { return <AdminMockPage title="실시간 매출" description="결제 발생 현황과 최근 결제를 실시간 형태로 확인합니다." />; }
+function MerchantRealtimeSalesMock() {
+  // TODO: meal_transactions Realtime 구독으로 교체합니다.
+  const rows = [
+    ['14:32', '김민지 · 가온테크', '장부', 'ledger', '9,000원'],
+    ['14:18', '박준호 · 개인 고객', '카드', 'consumer', '12,000원'],
+    ['13:54', '이서연 · 새봄복지관', '보조금', 'subsidized', '7,500원'],
+    ['13:21', '정우진 · 모아산업', '식권', 'voucher', '8,000원'],
+    ['12:47', '최하늘 · 가온테크', '장부', 'ledger', '9,000원'],
+  ];
+  return <AdminMockPage title="실시간 매출" description="결제 발생 현황과 최근 결제를 실시간 형태로 확인합니다.">
+    <section className="grid mock-kpi-grid three"><article className="card"><span>오늘 매출</span><strong className="money">842,000원</strong></article><article className="card"><span>결제 건수</span><strong className="money">96건</strong></article><article className="card"><span>객단가</span><strong className="money">8,771원</strong></article></section>
+    <article className="panel"><div className="panel-title"><div><h3>최근 결제</h3><p className="panel-note">가장 최근 발생한 5건입니다.</p></div><span className="badge">LIVE MOCK</span></div><div className="payment-alert-list">{rows.map(([time, customer, type, tone, amount]) => <div className="payment-alert-row mock-payment-row" key={`${time}-${customer}`}><time>{time}</time><strong>{customer}</strong><span>-</span><span className={`payment-type-badge ${tone}`}>{type}</span><b className="money">{amount}</b></div>)}</div></article>
+  </AdminMockPage>;
+}
 function MerchantSalesStatsMock() { return <AdminMockPage title="매출 통계" description="기간별 매출과 결제수단 구성을 비교합니다." />; }
 function MerchantPaymentLedgerMock() { return <AdminMockPage title="결제 내역" description="카드·장부·보조금·식권 결제를 건별로 확인합니다." />; }
 function MerchantSettlementMock() { return <AdminMockPage title="업체별 정산" description="업체별 공급가액과 미정산 잔액을 집계합니다." />; }

@@ -1413,26 +1413,46 @@ code { font-size: 12px; }
   justify-content: space-between;
   gap: 14px;
 }
-.settlement-v2-yearbar {
-  display: grid;
-  grid-template-columns: minmax(96px, 1fr) auto minmax(96px, 1fr);
+.settlement-v2-periodbar {
+  display: flex;
+  min-width: 0;
   align-items: center;
-  padding: 11px 16px;
-  border-radius: 12px;
-  color: #fff;
-  background: linear-gradient(135deg, #239654, var(--accent));
+  justify-content: space-between;
+  gap: 10px;
 }
-.settlement-v2-yearbar strong { font-size: 22px; text-align: center; }
-.settlement-v2-yearbar button { color: #fff; background: rgba(255,255,255,.13); box-shadow: none; }
-.settlement-v2-yearbar button:last-child { justify-self: end; }
 .settlement-v2-months {
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   gap: 5px;
   padding: 5px;
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-surface);
+}
+.settlement-v2-year-control {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-primary);
+}
+.settlement-v2-year-control strong {
+  min-width: 44px;
+  text-align: center;
+  font-size: 14px;
+}
+.settlement-v2-year-control button {
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  box-shadow: none;
+  font-size: 16px;
 }
 .settlement-v2-months button, .settlement-v2-tabs button {
   min-width: max-content;
@@ -1542,8 +1562,6 @@ code { font-size: 12px; }
   .settlement-v2-title-actions, .settlement-v2-detailbar { align-items: stretch; flex-direction: column; }
   .settlement-v2-title-actions button, .settlement-v2-detail-actions, .settlement-v2-detail-actions button { width: 100%; }
   .settlement-v2-detail-actions { align-items: stretch; flex-direction: column; }
-  .settlement-v2-yearbar { grid-template-columns: 80px auto 80px; padding: 9px; }
-  .settlement-v2-yearbar strong { font-size: 18px; }
   .settlement-v2-overview-row { display: block; }
   .settlement-v2-overview-row > span { display: block; padding: 12px 14px; }
   .settlement-v2-overview-row > :last-child { padding: 14px; }

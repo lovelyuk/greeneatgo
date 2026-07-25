@@ -1099,7 +1099,14 @@ function CompanyEmployeeListMock() {
     <article className="panel"><div className="panel-title"><div><h3>등록 사원</h3><p className="panel-note">기존 사원 관리 화면과 비교하기 위한 신규 목업입니다.</p></div><button type="button" className="primary">+ 사원 등록</button></div><div className="table-wrap"><table><thead><tr><th>이름</th><th>부서</th><th>사번</th><th>상태</th><th>관리</th></tr></thead><tbody>{items.map((item) => <tr key={item.no}><td><strong>{item.name}</strong></td><td>{item.department}</td><td>{item.no}</td><td><span className="badge">{item.status}</span></td><td><button type="button" className="ghost" onClick={() => setItems((current) => current.filter((row) => row.no !== item.no))}>삭제</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
-function CompanyInfoMock() { return <AdminMockPage title="회사 정보" description="사업자정보와 세금계산서 수신 정보를 관리합니다." />; }
+function CompanyInfoMock() {
+  const [saved, setSaved] = useState(false);
+  // TODO: company_id 강제 스코프 회사정보 조회·수정 API로 교체합니다.
+  return <AdminMockPage title="회사 정보" description="사업자정보와 세금계산서 수신 정보를 관리합니다.">
+    {saved && <div className="alert success">목업 회사 정보를 저장했습니다.</div>}
+    <form className="panel mock-business-form" onSubmit={(event) => { event.preventDefault(); setSaved(true); }}><label>사업자등록번호<input defaultValue="214-86-12345" required /></label><label>상호<input defaultValue="가온테크 주식회사" required /></label><label>대표자<input defaultValue="김가온" required /></label><label>업태<input defaultValue="서비스업" /></label><label>종목<input defaultValue="소프트웨어 개발" /></label><label className="wide">사업장주소<input defaultValue="서울특별시 강남구 테헤란로 123" /></label><label>담당자명<input defaultValue="박민지" /></label><label>연락처<input defaultValue="02-1234-5678" /></label><label className="wide">세금계산서 수신 이메일 *<input type="email" defaultValue="tax@gaon.example" required /></label><div className="row-actions wide"><button type="button" className="ghost" onClick={() => setSaved(false)}>취소</button><button className="primary">목업 저장</button></div></form>
+  </AdminMockPage>;
+}
 
 function CompanyMockScreen({ section }) {
   const screens = {

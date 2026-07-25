@@ -960,7 +960,16 @@ function MerchantRealtimeSalesMock() {
     <article className="panel"><div className="panel-title"><div><h3>최근 결제</h3><p className="panel-note">가장 최근 발생한 5건입니다.</p></div><span className="badge">LIVE MOCK</span></div><div className="payment-alert-list">{rows.map(([time, customer, type, tone, amount]) => <div className="payment-alert-row mock-payment-row" key={`${time}-${customer}`}><time>{time}</time><strong>{customer}</strong><span>-</span><span className={`payment-type-badge ${tone}`}>{type}</span><b className="money">{amount}</b></div>)}</div></article>
   </AdminMockPage>;
 }
-function MerchantSalesStatsMock() { return <AdminMockPage title="매출 통계" description="기간별 매출과 결제수단 구성을 비교합니다." />; }
+function MerchantSalesStatsMock() {
+  const [period, setPeriod] = useState('월간');
+  // TODO: 기간별 pay_type group by API 결과로 교체합니다.
+  const days = [['1주', 48], ['2주', 72], ['3주', 58], ['4주', 90], ['5주', 64]];
+  const methods = [['카드', 32, 'consumer'], ['장부', 41, 'ledger'], ['보조금', 17, 'subsidized'], ['식권', 10, 'voucher']];
+  return <AdminMockPage title="매출 통계" description="기간별 매출과 결제수단 구성을 비교합니다.">
+    <article className="panel"><div className="panel-title"><div><h3>기간별 매출</h3><p className="panel-note">2026년 7월 목업 집계</p></div><div className="mock-segmented">{['월간', '주간', '일간'].map((item) => <button type="button" key={item} className={period === item ? 'active' : ''} onClick={() => setPeriod(item)}>{item}</button>)}</div></div><div className="mock-sales-bars" aria-label={`${period} 매출 차트`}>{days.map(([label, value]) => <div key={label}><span style={{ height: `${value}%` }}/><small>{label}</small></div>)}</div></article>
+    <section className="two-col"><article className="panel"><h3>결제수단 구성</h3><div className="mock-progress-list">{methods.map(([label, value, tone]) => <div key={label}><div><span className={`payment-type-badge ${tone}`}>{label}</span><strong>{value}%</strong></div><progress max="100" value={value}/></div>)}</div></article><article className="panel"><h3>현금성 vs 후불</h3><div className="mock-cash-grid"><div><span>즉시 매출</span><strong className="money">42%</strong><small>카드 · 식권</small></div><div><span>월말 정산</span><strong className="money">58%</strong><small>장부 · 보조금</small></div></div></article></section>
+  </AdminMockPage>;
+}
 function MerchantPaymentLedgerMock() { return <AdminMockPage title="결제 내역" description="카드·장부·보조금·식권 결제를 건별로 확인합니다." />; }
 function MerchantSettlementMock() { return <AdminMockPage title="업체별 정산" description="업체별 공급가액과 미정산 잔액을 집계합니다." />; }
 function MerchantTaxInvoiceMock() { return <AdminMockPage title="세금계산서" description="월 합계 세금계산서 발행 대상을 검토합니다." />; }

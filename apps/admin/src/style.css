@@ -933,9 +933,8 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   background: var(--bg-page);
 }
 .merchant-topbar {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  grid-column: 1 / -1;
+  display: block;
+  grid-column: 1;
   grid-row: 1;
   min-height: 76px;
   margin: 0;
@@ -1010,7 +1009,7 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
 }
 .merchant-content {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 1 / 3;
   width: 100%;
   min-width: 0;
   margin: 0;

@@ -1,4 +1,4 @@
--- 뷔페식 식당의 오늘 메뉴 공지. 직원 앱 상품 선택 화면에 표시한다.
+-- 뷔페식 식당의 오늘 메뉴 공지. 직원 앱 홈의 오늘 메뉴 카드에 표시한다.
 create table if not exists merchant_daily_menus (
   id uuid primary key default gen_random_uuid(),
   merchant_id uuid not null references merchants(id) on delete cascade,

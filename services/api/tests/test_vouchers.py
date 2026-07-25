@@ -230,7 +230,7 @@ class VoucherCoreTests(unittest.TestCase):
     @patch("app.routers.transactions.pay")
     @patch("app.routers.transactions.get_settings")
     @patch("app.routers.transactions.JoinRepository")
-    def test_employee_scan_uses_contract_price_and_drops_product_override(self, repo_class, settings, legacy_pay):
+    def test_employee_scan_uses_contract_price_without_product_selection(self, repo_class, settings, legacy_pay):
         repo = repo_class.return_value
         settings.return_value.pilot_merchant_id = "merchant-1"
         repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="a@example.com")
@@ -245,13 +245,22 @@ class VoucherCoreTests(unittest.TestCase):
 
         result = scan(TransactionScanRequest(
             qr_data="QR-DONTO", idempotency_key="scan-key-employee",
-            product_id="product-override", amount=1,
         ), "bearer")
 
         request = legacy_pay.call_args.args[0]
         self.assertEqual(request.amount, 8300)
-        self.assertIsNone(request.product_id)
+        self.assertNotIn("product_id", request.model_dump())
         self.assertEqual(result["pay_type"], "ledger")
+
+    def test_scan_ignores_removed_product_selection_fields_from_old_clients(self):
+        payload = TransactionScanRequest.model_validate({
+            "qr_data": "QR-DONTO",
+            "idempotency_key": "scan-key-legacy",
+            "product_id": "product-override",
+            "amount": 1,
+        })
+        self.assertNotIn("product_id", payload.model_dump())
+        self.assertNotIn("amount", payload.model_dump())
 
     @patch("app.routers.voucher_products.get_settings")
     @patch("app.routers.voucher_products.JoinRepository")

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-import secrets
 import time
-import uuid
 from datetime import datetime, timezone
 from html import escape
 from urllib.parse import parse_qs, urlsplit
@@ -16,7 +14,7 @@ from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.voucher_products import _expire_stale_subsidized_orders, _is_exposed, _load_products
-from app.schemas import PaymentConfirmRequest, PaymentOrderCreateRequest
+from app.schemas import PaymentConfirmRequest
 from app.services.kiwoom_payment import KiwoomHashInput, KiwoomPaymentError, request_payment_hash
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -98,46 +96,6 @@ def _enforce_subsidized_order_expiry(repo: JoinRepository, order: dict) -> dict:
 def _safe_text(value: object, limit: int) -> str:
     return str(value or "").replace("|", " ")[:limit]
 
-
-@router.post("/orders")
-def create_order(payload: PaymentOrderCreateRequest, token: str = Depends(bearer_token)):
-    repo, settings = JoinRepository(), get_settings()
-    try:
-        _, profile = _customer(repo, token)
-        merchants = repo.client.rest_get("merchants", {
-            "select": "id,name", "qr_token": f"eq.{payload.qr_token}",
-            "status": "eq.active", "limit": "1",
-        })
-        if not merchants:
-            raise _error(404, "MERCHANT_NOT_FOUND", "식당을 찾을 수 없어요")
-        merchant = merchants[0]
-        products = repo.client.rest_get("merchant_products", {
-            "select": "id,name,price,merchant_id,is_active", "id": f"eq.{payload.product_id}",
-            "merchant_id": f"eq.{merchant['id']}", "is_active": "eq.true", "limit": "1",
-        })
-        if not products:
-            raise _error(404, "PRODUCT_NOT_FOUND", "판매 중인 상품을 찾을 수 없어요")
-        product, order_id, checkout_token = products[0], f"GE-{uuid.uuid4().hex}", secrets.token_urlsafe(32)
-        order = repo.client.rest_post("payment_orders", {
-            "order_id": order_id, "checkout_token": checkout_token, "user_id": profile.id,
-            "merchant_id": merchant["id"], "product_id": product["id"],
-            "merchant_name": merchant["name"], "product_name": product["name"],
-            "amount": int(product["price"]), "status": "ready", "pay_type": "direct",
-            "requested_payment_method": "TOTAL",
-        })[0]
-        return {"ok": True, "data": {
-            "order_id": order_id, "amount": order["amount"], "product_name": order["product_name"],
-            "merchant_name": order["merchant_name"],
-            "checkout_url": f"{settings.public_api_base_url}/payments/checkout/{checkout_token}",
-        }, "error": None}
-    except HTTPException:
-        raise
-    except SupabaseHttpError as exc:
-        if exc.status in (401, 403):
-            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
-        if "payment_orders" in exc.body or "PGRST205" in exc.body:
-            raise _error(400, "MIGRATION_REQUIRED", "결제 DB 마이그레이션 적용이 필요해요") from exc
-        raise _error(502, "SUPABASE_ERROR", "결제 주문 생성 중 오류가 발생했어요") from exc
 
 
 @router.get("/checkout/{checkout_token}", response_class=HTMLResponse)

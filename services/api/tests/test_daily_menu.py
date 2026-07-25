@@ -6,10 +6,32 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from app.routers.admin import get_daily_menu, today_kst, upsert_daily_menu
+from app.routers.products import get_public_daily_menu
 from app.schemas import DailyMenuUpsertRequest
 
 
 class DailyMenuScheduleTests(unittest.TestCase):
+    @patch("app.routers.products.SupabaseHttpClient")
+    def test_public_daily_menu_does_not_query_ledger_products(self, client_class):
+        menu = {
+            "id": "today",
+            "merchant_id": "merchant-1",
+            "service_date": today_kst(),
+            "title": "오늘 뷔페 메뉴",
+            "menu_text": "제육볶음",
+            "image_url": None,
+            "is_active": True,
+        }
+        client = client_class.return_value
+        client.rest_get.side_effect = [[{"id": "merchant-1"}], [menu]]
+
+        result = get_public_daily_menu("QR-DONTO")["data"]
+
+        self.assertEqual(result["today_menu"]["id"], "today")
+        self.assertEqual(result["migration_required"], False)
+        queried_tables = [call.args[0] for call in client.rest_get.call_args_list]
+        self.assertEqual(queried_tables, ["merchants", "merchant_daily_menus"])
+
     @patch("app.routers.admin._admin_merchant", return_value={"id": "merchant-1"})
     @patch("app.routers.admin._active_admin", return_value={"id": "admin-1"})
     @patch("app.routers.admin.JoinRepository")

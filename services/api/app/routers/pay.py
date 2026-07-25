@@ -95,16 +95,6 @@ def pay(payload: PayRequest, token: str = Depends(bearer_token)):
         merchant = merchants[0]
 
         amount = payload.amount
-        product = None
-        if payload.product_id:
-            products = repo.client.rest_get(
-                "merchant_products",
-                {"select": "id,name,price,merchant_id,is_active", "id": f"eq.{payload.product_id}", "merchant_id": f"eq.{merchant['id']}", "is_active": "eq.true", "limit": "1"},
-            )
-            if not products:
-                raise _error(404, "PRODUCT_NOT_FOUND", "상품을 찾을 수 없어요")
-            product = products[0]
-            amount = int(product["price"])
 
         policy_rows = repo.client.rest_get(
             "meal_policies",
@@ -156,9 +146,9 @@ def pay(payload: PayRequest, token: str = Depends(bearer_token)):
             "p_meal_window": draft.meal_window,
             "p_flags": draft.flags,
             "p_idempotency_key": payload.idempotency_key,
-            "p_product_id": product["id"] if product else None,
-            "p_product_name": product["name"] if product else None,
-            "p_product_price": product["price"] if product else None,
+            "p_product_id": None,
+            "p_product_name": None,
+            "p_product_price": None,
         })
         return {"ok": True, "data": {"merchant": merchant, "payment": result}, "error": None}
     except HTTPException:

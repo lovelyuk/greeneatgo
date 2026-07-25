@@ -11,7 +11,6 @@ class GPSPoint(BaseModel):
 class PayRequest(BaseModel):
     qr_token: str
     amount: int = Field(gt=0)
-    product_id: str | None = Field(default=None, max_length=80)
     gps: GPSPoint | None = None
     idempotency_key: str
 
@@ -95,11 +94,6 @@ class NotificationCreateRequest(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
     model_config = {"extra": "forbid"}
-
-
-class PaymentOrderCreateRequest(BaseModel):
-    qr_token: str = Field(min_length=1, max_length=120)
-    product_id: str = Field(min_length=8, max_length=80)
 
 
 class PaymentConfirmRequest(BaseModel):
@@ -191,9 +185,6 @@ class MerchantRefundRequest(BaseModel):
 class TransactionScanRequest(BaseModel):
     qr_data: str = Field(min_length=1, max_length=500)
     idempotency_key: str = Field(min_length=8, max_length=120)
-    product_id: str | None = Field(default=None, min_length=8, max_length=80)
-    # Accepted only for old scanner payload compatibility; server contract price always wins.
-    amount: int | None = Field(default=None, gt=0)
     gps: GPSPoint | None = None
 
 class ApiError(BaseModel):
@@ -288,23 +279,6 @@ class MealPolicyUpdateRequest(BaseModel):
     dinner_start: str = Field(default='17:30', pattern=r'^\d{2}:\d{2}$')
     dinner_end: str = Field(default='20:30', pattern=r'^\d{2}:\d{2}$')
 
-
-class ProductCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=80)
-    price: int = Field(gt=0)
-    category: str | None = Field(default=None, max_length=40)
-    image_url: str | None = Field(default=None, max_length=500)
-    is_active: bool = True
-    sort_order: int = 0
-
-
-class ProductUpdateRequest(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=80)
-    price: int | None = Field(default=None, gt=0)
-    category: str | None = Field(default=None, max_length=40)
-    image_url: str | None = Field(default=None, max_length=500)
-    is_active: bool | None = None
-    sort_order: int | None = None
 
 
 class DailyMenuUpsertRequest(BaseModel):

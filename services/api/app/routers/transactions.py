@@ -56,7 +56,7 @@ def scan(payload: TransactionScanRequest, token: str = Depends(bearer_token)):
                 companies = repo.client.rest_get("companies", {"select": "name", "id": f"eq.{profile.company_id}", "limit": "1"})
                 return {"result": "success", "pay_type": "subsidized", "company_name": companies[0]["name"] if companies else None, "remaining": result["remaining"], "transaction": result}
             legacy = pay(PayRequest(
-                qr_token=merchant["qr_token"], amount=amount, product_id=None,
+                qr_token=merchant["qr_token"], amount=amount,
                 gps=GPSPoint(lat=payload.gps.lat, lng=payload.gps.lng) if payload.gps else None,
                 idempotency_key=payload.idempotency_key,
             ), token)

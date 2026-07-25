@@ -10,8 +10,8 @@ from fastapi.responses import Response
 from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.routers.products import FALLBACK_DAILY_MENU, FALLBACK_PRODUCTS, today_kst
-from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeLimitUpdateRequest, EmployeePointAdjustRequest, EmployeePointChargeRequest, EmployeeProfileUpdateRequest, ImageDeleteRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest, ProductCreateRequest, ProductUpdateRequest
+from app.routers.products import FALLBACK_DAILY_MENU, today_kst
+from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeLimitUpdateRequest, EmployeePointAdjustRequest, EmployeePointChargeRequest, EmployeeProfileUpdateRequest, ImageDeleteRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest
 from app.services.employee_bulk import BulkFileError, RawEmployeeRow, build_template, read_employee_file, validate_rows
 from app.services.join_flow import JoinFlowError
 from app.services.product_images import ProductImageError, managed_image_path, normalize_product_image
@@ -560,15 +560,6 @@ def _admin_merchant(repo: JoinRepository, actor) -> dict:
     return merchants[0]
 
 
-def _ensure_product_belongs(repo: JoinRepository, product_id: str, merchant_id: str) -> dict:
-    rows = repo.client.rest_get(
-        "merchant_products",
-        {"select": "*", "id": f"eq.{product_id}", "merchant_id": f"eq.{merchant_id}", "limit": "1"},
-    )
-    if not rows:
-        raise JoinFlowError("PRODUCT_NOT_FOUND", "상품을 찾을 수 없어요")
-    return rows[0]
-
 
 @router.post("/images")
 def upload_merchant_image(payload: ImageUploadRequest, token: str = Depends(bearer_token)):
@@ -663,92 +654,6 @@ def delete_product_image(payload: ImageDeleteRequest, token: str = Depends(beare
     except SupabaseHttpError as exc:
         raise _error(502, "IMAGE_DELETE_FAILED", "상품 이미지 삭제에 실패했어요") from exc
 
-
-def _delete_replaced_product_image(repo: JoinRepository, merchant_id: str, old_url: str | None, new_url: str | None) -> None:
-    if not old_url or old_url == new_url:
-        return
-    object_path = managed_image_path(old_url, repo.client.settings.supabase_url, "merchant-images", merchant_id)
-    if object_path is None:
-        return
-    try:
-        repo.client.delete_public_objects("merchant-images", [object_path])
-    except Exception:  # DB update already committed; never make the client delete the live new image.
-        logger.exception("Failed to delete replaced merchant product image: %s", object_path)
-
-
-@router.get("/products")
-def list_products(token: str = Depends(bearer_token)):
-    repo = JoinRepository()
-    try:
-        actor = _active_admin(repo, token)
-        merchant = _admin_merchant(repo, actor)
-        try:
-            rows = repo.client.rest_get(
-                "merchant_products",
-                {
-                    "select": "id,merchant_id,name,price,category,image_url,is_active,sort_order,created_at,updated_at",
-                    "merchant_id": f"eq.{merchant['id']}",
-                    "order": "sort_order.asc,created_at.asc",
-                },
-            )
-            migration_required = False
-        except SupabaseHttpError as exc:
-            if "PGRST205" not in exc.body:
-                raise
-            rows = [{**item, "merchant_id": merchant["id"]} for item in FALLBACK_PRODUCTS]
-            migration_required = True
-        return {"ok": True, "data": {"merchant": merchant, "items": rows, "migration_required": migration_required}, "error": None}
-    except JoinFlowError as exc:
-        raise _handle_join_error(exc) from exc
-    except SupabaseHttpError as exc:
-        if exc.status in (401, 403):
-            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
-        raise _error(502, "SUPABASE_ERROR", "상품 데이터를 불러오는 중 오류가 발생했어요") from exc
-
-
-@router.post("/products")
-def create_product(payload: ProductCreateRequest, token: str = Depends(bearer_token)):
-    repo = JoinRepository()
-    try:
-        actor = _active_admin(repo, token)
-        merchant = _admin_merchant(repo, actor)
-        row = repo.client.rest_post("merchant_products", {
-            "merchant_id": merchant["id"],
-            "name": payload.name,
-            "price": payload.price,
-            "category": payload.category,
-            "image_url": payload.image_url,
-            "is_active": payload.is_active,
-            "sort_order": payload.sort_order,
-        })[0]
-        return {"ok": True, "data": row, "error": None}
-    except JoinFlowError as exc:
-        raise _handle_join_error(exc) from exc
-    except SupabaseHttpError as exc:
-        raise _error(502, "SUPABASE_ERROR", "상품을 저장하는 중 오류가 발생했어요") from exc
-
-
-@router.patch("/products/{product_id}")
-def update_product(product_id: str, payload: ProductUpdateRequest, token: str = Depends(bearer_token)):
-    repo = JoinRepository()
-    try:
-        actor = _active_admin(repo, token)
-        merchant = _admin_merchant(repo, actor)
-        current = _ensure_product_belongs(repo, product_id, merchant["id"])
-        values = {key: value for key, value in payload.model_dump().items() if value is not None}
-        if not values:
-            raise _error(400, "NO_CHANGES", "수정할 값을 입력해 주세요")
-        values["updated_at"] = datetime.now().isoformat()
-        row = repo.client.rest_patch("merchant_products", {"id": f"eq.{product_id}"}, values)[0]
-        if "image_url" in values:
-            _delete_replaced_product_image(repo, merchant["id"], current.get("image_url"), values.get("image_url"))
-        return {"ok": True, "data": row, "error": None}
-    except HTTPException:
-        raise
-    except JoinFlowError as exc:
-        raise _handle_join_error(exc) from exc
-    except SupabaseHttpError as exc:
-        raise _error(502, "SUPABASE_ERROR", "상품을 수정하는 중 오류가 발생했어요") from exc
 
 
 @router.get("/daily-menu")

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, BarChart3, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Home, LogOut, Package, QrCode, RefreshCw, RotateCcw, Search, Send, Settings, Utensils, Users, WalletCards, X, XCircle } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Home, LogOut, Package, QrCode, RefreshCw, RotateCcw, Search, Send, Settings, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
@@ -938,7 +938,6 @@ function Dashboard({ session, onLogout }) {
   const [accountSettingsForm, setAccountSettingsForm] = useState({ display_name: '', merchant_name: '', password: '', password_confirm: '' });
   const [requests, setRequests] = useState([]);
   const [settlements, setSettlements] = useState(null);
-  const [products, setProducts] = useState(null);
   const [voucherProducts, setVoucherProducts] = useState([]);
   const [voucherProductsMigrationRequired, setVoucherProductsMigrationRequired] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -949,9 +948,6 @@ function Dashboard({ session, onLogout }) {
   const paymentFeedReadyRef = useRef(false);
   const merchantSectionRef = useRef('main');
   const transactionRefreshVersionRef = useRef(0);
-  const [productForm, setProductForm] = useState({ name: '', price: '', category: '' });
-  const [productImageFile, setProductImageFile] = useState(null);
-  const [productImagePreview, setProductImagePreview] = useState('');
   const [cropRequest, setCropRequest] = useState(null);
   const [dailyMenu, setDailyMenu] = useState(null);
   const [dailyMenuForm, setDailyMenuForm] = useState({ service_date: todayInput(), title: '오늘 뷔페 메뉴', menu_text: '', image_url: '' });
@@ -1093,7 +1089,7 @@ function Dashboard({ session, onLogout }) {
       setError('팝업이 차단됐어요. 브라우저 팝업 허용 후 다시 눌러 주세요.');
       return;
     }
-    win.document.write(`<!doctype html><html><head><title>${merchantName} 결제 QR</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:34px;background:#f3fbf4;color:#14351f}.sheet{max-width:520px;margin:0 auto;background:white;border:2px solid #cdebd5;border-radius:28px;padding:34px;text-align:center}.brand{font-size:18px;font-weight:900;color:#2fb865;letter-spacing:.08em}.title{font-size:32px;font-weight:1000;margin:14px 0 6px}.merchant{font-size:22px;font-weight:900;margin-bottom:22px}.qr{width:300px;height:300px;border:12px solid #eaf7ec;border-radius:24px}.help{font-size:17px;font-weight:800;line-height:1.55;color:#5c7a66}.url{word-break:break-all;font-size:12px;color:#5c7a66;margin-top:18px}@media print{body{background:white}.sheet{box-shadow:none;border-color:#14351f}}</style></head><body><section class="sheet"><div class="brand">GREENEATGO PAYMENT</div><div class="title">직원 결제 QR</div><div class="merchant">${merchantName}</div><img class="qr" src="${merchantQrImageUrl}"/><p class="help">직원 앱 또는 휴대폰 카메라로 스캔해<br/>식대 상품을 선택하고 결제하세요.</p><p class="url">${merchantPayUrl}</p></section><script>window.onload=()=>setTimeout(()=>window.print(),500)</script></body></html>`);
+    win.document.write(`<!doctype html><html><head><title>${merchantName} 결제 QR</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:34px;background:#f3fbf4;color:#14351f}.sheet{max-width:520px;margin:0 auto;background:white;border:2px solid #cdebd5;border-radius:28px;padding:34px;text-align:center}.brand{font-size:18px;font-weight:900;color:#2fb865;letter-spacing:.08em}.title{font-size:32px;font-weight:1000;margin:14px 0 6px}.merchant{font-size:22px;font-weight:900;margin-bottom:22px}.qr{width:300px;height:300px;border:12px solid #eaf7ec;border-radius:24px}.help{font-size:17px;font-weight:800;line-height:1.55;color:#5c7a66}.url{word-break:break-all;font-size:12px;color:#5c7a66;margin-top:18px}@media print{body{background:white}.sheet{box-shadow:none;border-color:#14351f}}</style></head><body><section class="sheet"><div class="brand">GREENEATGO PAYMENT</div><div class="title">직원 결제 QR</div><div class="merchant">${merchantName}</div><img class="qr" src="${merchantQrImageUrl}"/><p class="help">직원 앱으로 스캔하면<br/>회사 계약 단가로 바로 결제됩니다.</p><p class="url">${merchantPayUrl}</p></section><script>window.onload=()=>setTimeout(()=>window.print(),500)</script></body></html>`);
     win.document.close();
   }
   const cards = useMemo(() => isPlatformAdmin ? [
@@ -1101,13 +1097,13 @@ function Dashboard({ session, onLogout }) {
     ['식당', platformMerchants ? `${platformMerchants.items.length}곳` : '조회 중', Coffee, 'green'],
   ] : isMerchantAdmin ? [
     ['권한', '관리자', WalletCards, 'brown'],
-    ['상품', products ? `${products.items.filter((item) => item.is_active).length}개` : '조회 중', QrCode, 'orange'],
+    ['결제 방식', 'QR 즉시결제', QrCode, 'orange'],
     ['장부업체', merchantCompanies ? `${merchantCompanies.items.length}곳` : '조회 중', Users, 'green'],
     ['거래내역', transactions ? `${transactions.total_count ?? transactions.items.length}건` : '조회 중', FileSpreadsheet, 'orange'],
   ] : [
     ['가입 요청', `${requests.length}명`, Users, 'orange'],
     ['직원', employees ? `${employees.items.length}명` : '조회 중', WalletCards, 'brown'],
-  ], [isPlatformAdmin, isMerchantAdmin, requests.length, products, merchantCompanies, transactions, platformMerchants, employees]);
+  ], [isPlatformAdmin, isMerchantAdmin, requests.length, merchantCompanies, transactions, platformMerchants, employees]);
 
   const recentPaymentAlerts = useMemo(() => (transactions?.items ?? [])
     .filter((item) => !['refund', 'cancel'].includes(item.kind) && item.created_at && new Date(item.created_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) === paymentAlertDay)
@@ -1120,7 +1116,6 @@ function Dashboard({ session, onLogout }) {
     setMessage('');
     try {
       const meData = await apiFetch('/me', token);
-      let productData = null;
       let dailyMenuData = null;
       let requestData = { items: [] };
       let employeeData = null;
@@ -1133,10 +1128,7 @@ function Dashboard({ session, onLogout }) {
       if (meData.role === 'platform_admin') {
         platformMerchantData = await apiFetch('/admin/platform/merchants', token);
       } else {
-        [productData, dailyMenuData] = await Promise.all([
-          apiFetch('/admin/products', token),
-          apiFetch('/admin/daily-menu', token),
-        ]);
+        dailyMenuData = await apiFetch('/admin/daily-menu', token);
         if (meData.role === 'company_admin') {
           [requestData, settlementData, employeeData, mealPolicyData] = await Promise.all([
             apiFetch('/admin/join-requests', token),
@@ -1179,7 +1171,6 @@ function Dashboard({ session, onLogout }) {
       setTransactions(transactionData);
       setMerchantQr(merchantQrData);
       setPlatformMerchants(platformMerchantData);
-      setProducts(productData);
       setDailyMenu(dailyMenuData);
       setDailyMenuForm({
         service_date: dailyMenuData?.service_date ?? todayInput(),
@@ -1292,11 +1283,6 @@ function Dashboard({ session, onLogout }) {
     setCropRequest(null);
   }
 
-  function setPendingProductImage(file) {
-    if (productImagePreview) URL.revokeObjectURL(productImagePreview);
-    setProductImageFile(file);
-    setProductImagePreview(file ? URL.createObjectURL(file) : '');
-  }
 
   async function uploadImage(file) {
     const dataBase64 = await fileToBase64(file);
@@ -1324,13 +1310,6 @@ function Dashboard({ session, onLogout }) {
     } catch { /* best-effort cleanup after a failed product save */ }
   }
 
-  async function selectNewProductImage(event) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    const cropped = await requestImageCrop(file);
-    if (cropped) setPendingProductImage(cropped);
-  }
 
   async function selectDailyMenuImage(event) {
     const file = event.target.files?.[0];
@@ -1341,73 +1320,6 @@ function Dashboard({ session, onLogout }) {
       setDailyMenuForm((form) => ({ ...form, image_url: imageUrl }));
     } catch (uploadError) { setError(uploadError.message); }
     finally { setBusy(false); event.target.value = ''; }
-  }
-
-  async function updateProductImage(product, event) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    const cropped = await requestImageCrop(file);
-    if (!cropped) return;
-    let imageUrl = '';
-    setBusy(true); setError('');
-    try {
-      imageUrl = await uploadProductImage(cropped);
-      await apiFetch(`/admin/products/${product.id}`, token, { method: 'PATCH', body: JSON.stringify({ image_url: imageUrl }) });
-      setMessage(`${product.name} 이미지를 800×800 WebP로 교체했어요.`);
-      await load();
-    } catch (uploadError) {
-      if (imageUrl) await deleteProductImage(imageUrl);
-      setError(uploadError.message);
-    } finally { setBusy(false); }
-  }
-
-  async function createProduct(event) {
-    event.preventDefault();
-    let uploadedImageUrl = '';
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      if (productImageFile) uploadedImageUrl = await uploadProductImage(productImageFile);
-      await apiFetch('/admin/products', token, {
-        method: 'POST',
-        body: JSON.stringify({
-          name: productForm.name.trim(),
-          price: Number(productForm.price),
-          category: productForm.category.trim() || null,
-          image_url: uploadedImageUrl || null,
-          sort_order: (products?.items?.length ?? 0) + 1,
-        }),
-      });
-      setProductForm({ name: '', price: '', category: '' });
-      setPendingProductImage(null);
-      setMessage('상품을 등록했어요. 직원 앱 상품 선택 화면에 바로 반영됩니다.');
-      await load();
-    } catch (productError) {
-      if (uploadedImageUrl) await deleteProductImage(uploadedImageUrl);
-      setError(productError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function toggleProduct(product) {
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      await apiFetch(`/admin/products/${product.id}`, token, {
-        method: 'PATCH',
-        body: JSON.stringify({ is_active: !product.is_active }),
-      });
-      setMessage(product.is_active ? '상품을 숨겼어요.' : '상품을 다시 판매중으로 바꿨어요.');
-      await load();
-    } catch (productError) {
-      setError(productError.message);
-    } finally {
-      setBusy(false);
-    }
   }
 
 
@@ -1668,7 +1580,6 @@ function Dashboard({ session, onLogout }) {
     ['main', '메인', Home],
     ['companies', '업체 관리', Building2],
     ['vouchers', '판매 상품(일반)', Package],
-    ['products', '식당 상품(장부)', Utensils],
     ['notifications', '알림', Bell],
     ['announcements', '공지사항', FileText],
     ['reviews', '리뷰', CheckCircle2],
@@ -1958,28 +1869,6 @@ function Dashboard({ session, onLogout }) {
       </div>
     </section>}
 
-
-    {isMerchantAdmin && merchantSection === 'products' && <section className="panel product-panel">
-      <div className="panel-title">
-        <div><h2>식당 상품 관리</h2><p className="panel-note">직원 앱은 금액 입력 없이 여기 등록된 상품 중 하나를 선택해 결제합니다.</p></div>
-      </div>
-      {products?.migration_required && <div className="alert error">상품 DB 마이그레이션이 아직 적용되지 않아 기본 상품만 표시 중이에요. 0005_merchant_products.sql 적용 후 등록/수정이 활성화됩니다.</div>}
-      <form className="product-form product-register-form" onSubmit={createProduct}>
-        <input value={productForm.name} onChange={(event) => setProductForm((form) => ({ ...form, name: event.target.value }))} placeholder="상품명" required />
-        <input value={productForm.price} onChange={(event) => setProductForm((form) => ({ ...form, price: event.target.value }))} placeholder="가격" type="number" min="1" required />
-        <input value={productForm.category} onChange={(event) => setProductForm((form) => ({ ...form, category: event.target.value }))} placeholder="카테고리" />
-        <label className="image-picker compact">상품 이미지<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={selectNewProductImage} disabled={busy}/></label>
-        {productImagePreview && <img className="product-image-preview" src={productImagePreview} alt="새 상품 미리보기" />}
-        <button className="primary" disabled={busy || products?.migration_required}>상품 등록</button>
-      </form>
-      {(products?.items?.length ?? 0) === 0
-        ? <p className="empty-state">등록된 상품이 없어요. 첫 상품을 등록하면 직원 앱에 표시됩니다.</p>
-        : <div className="product-list">{products.items.map((product) => <article className={product.is_active ? 'product-item' : 'product-item off'} key={product.id}>
-          {product.image_url ? <img className="product-image-preview" src={product.image_url} alt={`${product.name} 이미지`} /> : <div className="product-image-placeholder">이미지 없음</div>}
-          <div className="product-copy"><strong>{product.name}</strong><span>{product.category ?? '기본'} · {Number(product.price).toLocaleString('ko-KR')}원</span></div>
-          <div className="row-actions"><label className="ghost image-change">이미지 변경<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={(event) => updateProductImage(product, event)} disabled={busy || products?.migration_required}/></label><button className="ghost" onClick={() => toggleProduct(product)} disabled={busy || products?.migration_required}>{product.is_active ? '숨김' : '판매중'}</button></div>
-        </article>)}</div>}
-    </section>}
 
 
     {!isPlatformAdmin && !isMerchantAdmin && <section className="panel">

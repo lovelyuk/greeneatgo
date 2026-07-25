@@ -7,8 +7,8 @@ from unittest.mock import patch
 from PIL import Image
 from fastapi import HTTPException
 
-from app.routers.admin import delete_product_image, update_product, upload_product_image
-from app.schemas import ImageDeleteRequest, ImageUploadRequest, ProductUpdateRequest
+from app.routers.admin import delete_product_image, upload_product_image
+from app.schemas import ImageDeleteRequest, ImageUploadRequest
 
 from app.services.product_images import (
     MAX_PRODUCT_IMAGE_BYTES,
@@ -112,26 +112,6 @@ class ProductImageTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 409)
         repo.client.delete_public_objects.assert_not_called()
-
-    @patch("app.routers.admin._ensure_product_belongs")
-    @patch("app.routers.admin._admin_merchant", return_value={"id": "merchant-1"})
-    @patch("app.routers.admin._active_admin", return_value=SimpleNamespace(id="admin-1"))
-    @patch("app.routers.admin.JoinRepository")
-    def test_replacing_product_image_removes_previous_storage_object(
-        self, repo_class, _active, _merchant, ensure_product
-    ):
-        repo = repo_class.return_value
-        repo.client.settings.supabase_url = "https://sample.supabase.co"
-        old_url = "https://sample.supabase.co/storage/v1/object/public/merchant-images/merchant-1/products/old.webp"
-        new_url = "https://sample.supabase.co/storage/v1/object/public/merchant-images/merchant-1/products/new.webp"
-        ensure_product.return_value = {"id": "product-1", "image_url": old_url}
-        repo.client.rest_patch.return_value = [{"id": "product-1", "image_url": new_url}]
-
-        update_product("product-1", ProductUpdateRequest(image_url=new_url), "token")
-
-        repo.client.delete_public_objects.assert_called_once_with(
-            "merchant-images", ["merchant-1/products/old.webp"]
-        )
 
 
 if __name__ == "__main__":

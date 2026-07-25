@@ -1105,7 +1105,7 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   }
   .merchant-tabs button.active { padding-left: 4px; }
   .merchant-tabs button.active::before { display: none; }
-  .merchant-content { width: 100%; padding: 0; }
+  .merchant-content { width: 100%; padding: 0 0 calc(96px + env(safe-area-inset-bottom)); }
   .grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   .card { min-height: 104px; padding: 14px; }
   .panel { padding: 18px 14px; border-radius: 12px; }
@@ -1239,7 +1239,10 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   text-transform: uppercase;
 }
 .merchant-nav-group:first-child, .company-nav-group:first-child { padding-top: 0; }
-.admin-mock-page { display: grid; gap: 18px; }
+.admin-mock-page { display: grid; width: 100%; max-width: 100%; min-width: 0; gap: 18px; overflow: hidden; }
+.admin-mock-page > * { width: 100%; max-width: 100%; min-width: 0; }
+.admin-mock-page .panel { overflow: hidden; }
+.admin-mock-page .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; }
 .admin-mock-page-title { margin-bottom: 0; }
 
 .company-shell {

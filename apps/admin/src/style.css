@@ -1405,3 +1405,152 @@ code { font-size: 12px; }
   .mock-field-with-action { grid-template-columns: 1fr; }
   .mock-tax-modal { padding: 20px 16px; }
 }
+
+/* Settlement screen v2 mock. */
+.settlement-v2-title-actions, .settlement-v2-detailbar, .settlement-v2-evidence-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.settlement-v2-yearbar {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) auto minmax(96px, 1fr);
+  align-items: center;
+  padding: 11px 16px;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, #239654, var(--accent));
+}
+.settlement-v2-yearbar strong { font-size: 22px; text-align: center; }
+.settlement-v2-yearbar button { color: #fff; background: rgba(255,255,255,.13); box-shadow: none; }
+.settlement-v2-yearbar button:last-child { justify-self: end; }
+.settlement-v2-months {
+  display: flex;
+  gap: 5px;
+  padding: 5px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+.settlement-v2-months button, .settlement-v2-tabs button {
+  min-width: max-content;
+  min-height: 36px;
+  padding: 7px 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border-radius: 8px;
+  box-shadow: none;
+  font-size: 12px;
+}
+.settlement-v2-months button.active, .settlement-v2-tabs button.active { color: #fff; background: var(--accent); }
+.settlement-v2-months button:disabled { color: #B7BEC7; background: #F3F4F6; opacity: 1; cursor: not-allowed; }
+.settlement-v2-guide {
+  display: grid;
+  gap: 5px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  font-size: 13px;
+}
+.settlement-v2-list-panel { padding: 0; }
+.settlement-v2-list-panel .table-wrap { margin: 0; }
+.settlement-v2-table { min-width: 1580px; }
+.settlement-v2-clickable-row { cursor: pointer; }
+.settlement-v2-clickable-row:hover, .settlement-v2-clickable-row:focus-within { background: var(--accent-soft); }
+.settlement-v2-row-link {
+  min-height: 30px;
+  padding: 4px 8px;
+  color: var(--accent);
+  background: transparent;
+  box-shadow: none;
+  font-weight: 800;
+}
+.settlement-v2-row-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.settlement-v2-status {
+  display: inline-flex;
+  min-width: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--badge-gray-fg);
+  background: var(--badge-gray-bg);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.settlement-v2-status.complete { color: #fff; background: var(--accent); }
+.settlement-v2-status.requested { color: #9A5200; background: #FFF0CC; }
+.settlement-v2-detail-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.settlement-v2-overview { padding: 0; overflow: hidden; }
+.settlement-v2-overview-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
+.settlement-v2-overview-row:last-child { border-bottom: 0; }
+.settlement-v2-overview-row > span { padding: 20px; color: var(--text-secondary); background: var(--bg-subtle); font-weight: 700; }
+.settlement-v2-overview-row > :last-child { min-width: 0; padding: 20px; }
+.settlement-v2-options { display: grid; gap: 12px; }
+.settlement-v2-options > div { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.settlement-v2-options small { min-width: 132px; color: var(--text-muted); }
+.settlement-v2-options button {
+  min-height: 32px;
+  padding: 5px 10px;
+  color: var(--badge-gray-fg);
+  background: var(--badge-gray-bg);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  box-shadow: none;
+  font-size: 11px;
+}
+.settlement-v2-options button.selected { color: var(--accent); background: #fff; border-color: var(--accent); }
+.settlement-v2-amounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.settlement-v2-amounts > div { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-subtle); }
+.settlement-v2-amounts small { color: var(--text-muted); }
+.settlement-v2-amounts strong { font-size: 22px; }
+.settlement-v2-business { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.settlement-v2-business div { min-width: 0; padding: 10px; border-radius: 8px; background: var(--bg-subtle); }
+.settlement-v2-business dt { margin-bottom: 5px; color: var(--text-muted); font-size: 11px; }
+.settlement-v2-business dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
+.settlement-v2-tabs { display: flex; gap: 5px; width: fit-content; max-width: 100%; padding: 5px; overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); }
+.settlement-v2-filterbar { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+.settlement-v2-filterbar input { width: auto; min-width: 150px; }
+.settlement-v2-account { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 18px; padding: 14px 16px; border-radius: 10px; color: var(--text-secondary); background: var(--accent-soft); }
+.settlement-v2-account strong { margin-left: 6px; color: var(--text-primary); }
+.settlement-v2-attachments { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding: 16px; border-radius: 10px; background: var(--bg-subtle); }
+.settlement-v2-attachments span { color: var(--text-muted); }
+.settlement-v2-empty { display: grid; min-height: 170px; place-content: center; justify-items: center; gap: 10px; color: var(--text-muted); }
+.settlement-v2-evidence-head { align-items: end; margin-bottom: 16px; }
+.settlement-v2-evidence-filters { display: flex; flex-wrap: wrap; gap: 10px; }
+.settlement-v2-evidence-filters label { display: grid; min-width: 150px; gap: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.settlement-v2-evidence-head + .settlement-v2-guide { margin-bottom: 18px; }
+
+@media (max-width: 900px) {
+  .settlement-v2-overview-row { grid-template-columns: 140px minmax(0, 1fr); }
+  .settlement-v2-business { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settlement-v2-evidence-head { align-items: stretch; flex-direction: column; }
+  .settlement-v2-evidence-head > button { width: 100%; }
+}
+
+@media (max-width: 700px) {
+  .settlement-v2-title-actions, .settlement-v2-detailbar { align-items: stretch; flex-direction: column; }
+  .settlement-v2-title-actions button, .settlement-v2-detail-actions, .settlement-v2-detail-actions button { width: 100%; }
+  .settlement-v2-detail-actions { align-items: stretch; flex-direction: column; }
+  .settlement-v2-yearbar { grid-template-columns: 80px auto 80px; padding: 9px; }
+  .settlement-v2-yearbar strong { font-size: 18px; }
+  .settlement-v2-overview-row { display: block; }
+  .settlement-v2-overview-row > span { display: block; padding: 12px 14px; }
+  .settlement-v2-overview-row > :last-child { padding: 14px; }
+  .settlement-v2-amounts, .settlement-v2-business { grid-template-columns: 1fr; }
+  .settlement-v2-filterbar { align-items: stretch; flex-direction: column; }
+  .settlement-v2-filterbar input, .settlement-v2-filterbar button { width: 100%; min-width: 0; }
+  .settlement-v2-evidence-filters { display: grid; grid-template-columns: 1fr; width: 100%; }
+  .settlement-v2-evidence-filters label { min-width: 0; }
+  .settlement-v2-attachments { align-items: flex-start; flex-direction: column; }
+}

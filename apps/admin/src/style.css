@@ -974,11 +974,14 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
 .merchant-topbar .brand-row { margin: 0; }
 .merchant-topbar .brandmark img { height: 50px; max-width: 190px; }
 .sidebar-entity-name {
+  display: block;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 500;
+  color: #3F4641;
+  font-size: 18px;
+  font-weight: 400;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1186,8 +1189,15 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
 .merchant-nav-divider { display: none; }
 
 @media (min-width: 1025px) {
-  .merchant-topbar .brand-row, .company-topbar .brand-row { flex-wrap: nowrap; gap: 12px; }
+  .merchant-topbar .brand-row, .company-topbar .brand-row {
+    display: grid;
+    width: 100%;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    gap: 0;
+  }
   .merchant-topbar .brandmark, .company-topbar .brandmark { flex: 0 0 auto; }
+  .merchant-topbar .sidebar-entity-name, .company-topbar .sidebar-entity-name { justify-self: center; }
   .merchant-tabs > button { gap: 14px; font-size: 20px; font-weight: 400; }
   .merchant-tabs > button > svg { display: block; width: 20px; height: 20px; }
   .merchant-tabs > .merchant-sidebar-logout { font-size: 20px; font-weight: 400; }

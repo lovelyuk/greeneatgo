@@ -1645,6 +1645,22 @@ code { font-size: 12px; }
 .titleless-guidance, .company-list-page .admin-mock-page-title .panel-note { margin-top: 0; font-weight: 400; }
 .supplier-info-page .admin-mock-page-title .panel-note { margin-top: 0; }
 .merchant-regular-weight, .merchant-regular-weight * { font-weight: 400 !important; }
+.merchant-topbar .sidebar-entity-name { color: var(--accent); font-size: 20px; }
+.merchant-open-table .table-wrap { border: 0; border-radius: 0; background: transparent; }
+.merchant-open-table table { border-collapse: collapse; border-spacing: 0; }
+.merchant-open-table tbody tr { margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.merchant-open-table tbody td,
+.merchant-open-table tbody td:first-child,
+.merchant-open-table tbody td:last-child {
+  height: auto;
+  padding: 18px 12px;
+  border: 0;
+  border-bottom: 1px solid #EEF0F3;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.merchant-open-table tbody tr:hover td { border-bottom-color: #EEF0F3; background: #F7F9FC; }
 
 @media (max-width: 700px) {
   .merchant-section-tabs { margin-bottom: 14px; scroll-snap-type: x proximity; }

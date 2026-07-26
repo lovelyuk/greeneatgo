@@ -6,14 +6,33 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import ProfileNameUpdateRequest
+from app.schemas import CompanyBusinessProfileUpdateRequest, ProfileNameUpdateRequest
 from app.services.join_flow import JoinFlowError
 
 router = APIRouter(tags=["me"])
+COMPANY_PROFILE_SELECT = "id,name,biz_reg_no,status,representative_name,business_type,business_item,address,contact_name,contact_email,contact_phone,tax_invoice_email,created_at"
+COMPANY_PROFILE_OPTIONAL_FIELDS = ("representative_name", "business_type", "business_item", "address", "contact_name", "tax_invoice_email")
 
 
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
+
+
+def _company_profile(repo: JoinRepository, company_id: str) -> dict | None:
+    try:
+        rows = repo.client.rest_get(
+            "companies",
+            {"select": COMPANY_PROFILE_SELECT, "id": f"eq.{company_id}", "limit": "1"},
+        )
+    except SupabaseHttpError as exc:
+        if not any(field in exc.body for field in COMPANY_PROFILE_OPTIONAL_FIELDS) and "PGRST204" not in exc.body:
+            raise
+        rows = repo.client.rest_get(
+            "companies",
+            {"select": "id,name,biz_reg_no,status,contact_email,contact_phone,created_at", "id": f"eq.{company_id}", "limit": "1"},
+        )
+        rows = [{**row, **{field: None for field in COMPANY_PROFILE_OPTIONAL_FIELDS}} for row in rows]
+    return rows[0] if rows else None
 
 
 def _new_invite_code() -> str:
@@ -147,6 +166,30 @@ def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
     }
 
 
+@router.patch("/me/company")
+def update_company_profile(payload: CompanyBusinessProfileUpdateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        auth_user = repo.auth_user_from_token(token)
+        profile = repo.get_profile(auth_user.id, email=auth_user.email)
+        if profile is None or profile.role != "company_admin" or profile.status != "active" or not profile.company_id:
+            raise _error(403, "FORBIDDEN", "회사관리자만 회사 정보를 수정할 수 있어요")
+        rows = repo.client.rest_patch(
+            "companies",
+            {"id": f"eq.{profile.company_id}"},
+            payload.model_dump(),
+        )
+        if not rows:
+            raise _error(404, "COMPANY_NOT_FOUND", "회사 정보를 찾을 수 없어요")
+        return {"ok": True, "data": {"company": _company_profile(repo, profile.company_id)}, "error": None}
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if "representative_name" in exc.body or "tax_invoice_email" in exc.body or "PGRST204" in exc.body:
+            raise _error(400, "MIGRATION_REQUIRED", "0033_company_business_profile.sql 적용 후 회사 정보를 저장할 수 있어요") from exc
+        raise _error(502, "SUPABASE_ERROR", "회사 정보를 저장하는 중 오류가 발생했어요") from exc
+
+
 @router.patch("/me")
 def update_admin_name(payload: ProfileNameUpdateRequest, token: str = Depends(bearer_token)):
     repo = JoinRepository()
@@ -198,11 +241,13 @@ def me(token: str = Depends(bearer_token)):
         }
 
     invite_code = None
+    company = None
     usage = {"balance": None, "monthly_limit": None, "remaining_limit": None, "month_used": None,
              "recent_transactions": [], "voucher_balance": None, "voucher_use_history": []}
     try:
         if profile.role == "company_admin" and profile.company_id:
             invite_code = _ensure_invite_code(repo, profile.company_id)
+            company = _company_profile(repo, profile.company_id)
         if profile.role == "employee":
             usage = _employee_usage(repo, profile.id)
         elif profile.role == "customer":
@@ -224,6 +269,7 @@ def me(token: str = Depends(bearer_token)):
             "account_type": "ledger" if profile.role == "employee" else ("voucher" if profile.role == "customer" else None),
             "status": profile.status,
             "invite_code": invite_code,
+            "company": company,
             "balance": usage["balance"],
             "monthly_limit": usage["monthly_limit"],
             "remaining_limit": usage["remaining_limit"],

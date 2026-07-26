@@ -4,12 +4,50 @@ from unittest.mock import patch
 
 from pydantic import ValidationError
 
-from app.routers.me import me, update_admin_name
-from app.schemas import ProfileNameUpdateRequest
+from app.routers.me import me, update_admin_name, update_company_profile
+from app.schemas import CompanyBusinessProfileUpdateRequest, ProfileNameUpdateRequest
 from app.services.join_flow import UserProfile
 
 
 class AdminProfileNameTests(unittest.TestCase):
+    def test_company_profile_trims_fields_and_rejects_invalid_email(self):
+        payload = CompanyBusinessProfileUpdateRequest(
+            name="  가온테크  ", biz_reg_no=" 214-86-12345 ",
+            tax_invoice_email=" tax@gaon.example ",
+        )
+        self.assertEqual(payload.name, "가온테크")
+        self.assertEqual(payload.biz_reg_no, "214-86-12345")
+        self.assertEqual(payload.tax_invoice_email, "tax@gaon.example")
+        with self.assertRaises(ValidationError):
+            CompanyBusinessProfileUpdateRequest(
+                name="가온테크", biz_reg_no="214-86-12345", tax_invoice_email="not-email"
+            )
+
+    @patch("app.routers.me.JoinRepository")
+    def test_company_admin_updates_only_own_company_profile(self, repo_class):
+        repo = repo_class.return_value
+        repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-1", email="admin@example.com")
+        repo.get_profile.return_value = UserProfile(
+            id="admin-1", email="admin@example.com", display_name="관리자",
+            company_id="company-1", role="company_admin", status="active",
+        )
+        company = {
+            "id": "company-1", "name": "가온테크", "biz_reg_no": "214-86-12345",
+            "representative_name": "김가온", "tax_invoice_email": "tax@gaon.example",
+        }
+        repo.client.rest_patch.return_value = [company]
+        repo.client.rest_get.return_value = [company]
+        payload = CompanyBusinessProfileUpdateRequest(
+            name="가온테크", biz_reg_no="214-86-12345",
+            representative_name="김가온", tax_invoice_email="tax@gaon.example",
+        )
+
+        result = update_company_profile(payload, "token")
+
+        filters = repo.client.rest_patch.call_args.args[1]
+        self.assertEqual(filters, {"id": "eq.company-1"})
+        self.assertEqual(result["data"]["company"]["representative_name"], "김가온")
+
     @patch("app.routers.me.JoinRepository")
     def test_me_includes_profile_phone(self, repo_class):
         repo = repo_class.return_value

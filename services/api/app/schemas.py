@@ -45,6 +45,27 @@ class ProfileNameUpdateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class CompanyBusinessProfileUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    biz_reg_no: str = Field(min_length=1, max_length=40)
+    representative_name: str | None = Field(default=None, max_length=80)
+    business_type: str | None = Field(default=None, max_length=80)
+    business_item: str | None = Field(default=None, max_length=120)
+    address: str | None = Field(default=None, max_length=300)
+    contact_name: str | None = Field(default=None, max_length=80)
+    contact_phone: str | None = Field(default=None, max_length=40)
+    tax_invoice_email: str | None = Field(default=None, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+    @field_validator("name", "biz_reg_no", "representative_name", "business_type", "business_item", "address", "contact_name", "contact_phone", "tax_invoice_email", mode="before")
+    @classmethod
+    def trim_company_profile_field(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    model_config = {"extra": "forbid"}
+
+
 class MerchantProfileUpdateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 

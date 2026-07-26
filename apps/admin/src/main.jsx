@@ -1165,19 +1165,13 @@ function MerchantPrepurchaseMock() {
     <article className="panel"><div className="panel-title"><div><h3>배치별 현황</h3><p className="panel-note">미사용 잔량은 식당의 이행 의무인 부채로 표시합니다.</p></div></div><div className="mock-batch-list">{batches.map((batch) => { const remain = batch.quantity - batch.used; return <article className="card" key={`${batch.company}-${batch.bought}`}><div className="mock-batch-head"><strong>{batch.company}</strong><span className="badge">잔여 {remain}매</span></div><dl><div><dt>구매일</dt><dd>{batch.bought}</dd></div><div><dt>구매수량</dt><dd className="money">{batch.quantity}매</dd></div><div><dt>단가</dt><dd className="money">{krw(batch.price)}</dd></div><div><dt>사용량</dt><dd className="money">{batch.used}매</dd></div><div><dt>유효기간</dt><dd>{batch.expires}</dd></div><div><dt>미사용 부채</dt><dd className="money">{krw(remain * batch.price)}</dd></div></dl></article>; })}</div></article>
   </AdminMockPage>;
 }
-function MerchantCompanyListMock() {
-  // TODO: merchant-scoped companies 조회로 교체합니다.
-  const rows = [['가온테크', '후불', 'ledger', 2640000, 2640000, 84], ['새봄복지관', '보조금', 'subsidized', 1232000, 1232000, 41], ['모아산업', '선구매', 'voucher', 1485000, 0, 56], ['한결디자인', '후불', 'ledger', 528000, 528000, 18]];
-  return <AdminMockPage title="업체 목록" description="연결 업체의 유형과 이용·정산 현황을 확인합니다.">
-    <article className="panel"><div className="table-wrap"><table><thead><tr><th>업체명</th><th>유형</th><th className="money">이번달 사용액</th><th className="money">미정산</th><th className="money">사원수</th><th>관리</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td><span className={`payment-type-badge ${row[2]}`}>{row[1]}</span></td><td className="money">{krw(row[3])}</td><td className="money">{krw(row[4])}</td><td className="money">{row[5]}명</td><td><button type="button" className="ghost">상세</button></td></tr>)}</tbody></table></div></article>
-  </AdminMockPage>;
-}
-function MerchantCompanyFormMock() {
-  const [saved, setSaved] = useState(false);
-  // TODO: companies 세금계산서 컬럼 마이그레이션 후 저장 API를 연결합니다.
-  return <AdminMockPage title="업체 등록/수정" description="세금계산서 발행에 필요한 공급받는자 정보를 관리합니다.">
-    {saved && <div className="alert success">목업 정보가 화면 상태에 저장됐습니다.</div>}
-    <form className="panel mock-business-form" onSubmit={(event) => { event.preventDefault(); setSaved(true); }}><div className="mock-field-with-action"><label>사업자등록번호<input defaultValue="214-86-12345" required /></label><button type="button" className="ghost">진위확인</button></div><label>상호<input defaultValue="가온테크 주식회사" required /></label><label>대표자<input defaultValue="김가온" required /></label><label>업태<input defaultValue="서비스업" /></label><label>종목<input defaultValue="소프트웨어 개발" /></label><label className="wide">사업장주소<input defaultValue="서울특별시 강남구 테헤란로 123" /></label><label>담당자명<input defaultValue="박민지" /></label><label>연락처<input defaultValue="02-1234-5678" /></label><label className="wide">세금계산서 수신 이메일 *<input type="email" defaultValue="tax@gaon.example" required /></label><label>마감일<select defaultValue="말일"><option>말일</option><option>25일</option><option>20일</option></select></label><label>정산 방식<select defaultValue="후불"><option>후불</option><option>보조금</option><option>선구매</option></select></label><div className="row-actions wide"><button type="reset" className="ghost" onClick={() => setSaved(false)}>초기화</button><button className="primary">목업 저장</button></div></form>
+function MerchantCompanyListScreen({ items, onDetail }) {
+  return <AdminMockPage title="업체 목록" description="연결 업체의 회사정보와 계약설정을 확인합니다.">
+    <article className="panel">{items.length === 0 ? <p className="empty-state">연결된 업체가 없어요.</p> : <div className="table-wrap"><table><thead><tr><th>업체명</th><th>사업자등록번호</th><th>계약 유형</th><th>담당자 이메일</th><th>연락처</th><th>관리</th></tr></thead><tbody>{items.map((item) => {
+      const company = item.company ?? {};
+      const subsidy = item.contract?.subsidy_enabled;
+      return <tr key={item.id}><td><strong>{company.name ?? '-'}</strong></td><td>{company.biz_reg_no ?? '-'}</td><td><span className={`payment-type-badge ${subsidy ? 'subsidized' : 'ledger'}`}>{subsidy ? '보조금' : '후불'}</span></td><td>{company.contact_email ?? item.invite?.email ?? '-'}</td><td>{company.contact_phone ?? '-'}</td><td><button type="button" className="ghost" onClick={() => onDetail(item)}>상세</button></td></tr>;
+    })}</tbody></table></div>}</article>
   </AdminMockPage>;
 }
 function MerchantSupplierInfoMock() {
@@ -1188,14 +1182,13 @@ function MerchantSupplierInfoMock() {
   </AdminMockPage>;
 }
 
-function MerchantMockScreen({ section }) {
+function MerchantMockScreen({ section, companyItems, onCompanyDetail }) {
+  if (section === 'company-list') return <MerchantCompanyListScreen items={companyItems} onDetail={onCompanyDetail} />;
   const screens = {
     'settlements-by-company': MerchantSettlementV2Mock,
     'settlement-evidence': SettlementEvidenceV2Mock,
     'tax-invoices': MerchantTaxInvoiceMock,
     'prepurchase': MerchantPrepurchaseMock,
-    'company-list': MerchantCompanyListMock,
-    'company-form': MerchantCompanyFormMock,
     'supplier-info': MerchantSupplierInfoMock,
   };
   const Screen = screens[section];
@@ -1247,16 +1240,20 @@ function CompanyEmployeeListMock() {
     <article className="panel"><div className="panel-title"><div><h3>등록 사원</h3><p className="panel-note">기존 사원 관리 화면과 비교하기 위한 신규 목업입니다.</p></div><button type="button" className="primary">+ 사원 등록</button></div><div className="table-wrap"><table><thead><tr><th>이름</th><th>부서</th><th>사번</th><th>상태</th><th>관리</th></tr></thead><tbody>{items.map((item) => <tr key={item.no}><td><strong>{item.name}</strong></td><td>{item.department}</td><td>{item.no}</td><td><span className="badge">{item.status}</span></td><td><button type="button" className="ghost" onClick={() => setNotice(`${item.name} 삭제는 목업 화면에서 실행되지 않습니다.`)}>삭제 (목업)</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
-function CompanyInfoMock() {
-  const [saved, setSaved] = useState(false);
-  // TODO: company_id 강제 스코프 회사정보 조회·수정 API로 교체합니다.
-  return <AdminMockPage title="회사 정보" description="사업자정보와 세금계산서 수신 정보를 관리합니다.">
-    {saved && <div className="alert success">목업 회사 정보를 저장했습니다.</div>}
-    <form className="panel mock-business-form" onSubmit={(event) => { event.preventDefault(); setSaved(true); }}><label>사업자등록번호<input defaultValue="214-86-12345" required /></label><label>상호<input defaultValue="가온테크 주식회사" required /></label><label>대표자<input defaultValue="김가온" required /></label><label>업태<input defaultValue="서비스업" /></label><label>종목<input defaultValue="소프트웨어 개발" /></label><label className="wide">사업장주소<input defaultValue="서울특별시 강남구 테헤란로 123" /></label><label>담당자명<input defaultValue="박민지" /></label><label>연락처<input defaultValue="02-1234-5678" /></label><label className="wide">세금계산서 수신 이메일 *<input type="email" defaultValue="tax@gaon.example" required /></label><div className="row-actions wide"><button type="reset" className="ghost" onClick={() => setSaved(false)}>취소</button><button className="primary">목업 저장</button></div></form>
+function CompanyInfoScreen({ company, busy, onSave }) {
+  const emptyForm = { name: '', biz_reg_no: '', representative_name: '', business_type: '', business_item: '', address: '', contact_name: '', contact_phone: '', tax_invoice_email: '' };
+  const [form, setForm] = useState(emptyForm);
+  useEffect(() => {
+    setForm(Object.fromEntries(Object.keys(emptyForm).map((key) => [key, company?.[key] ?? (key === 'tax_invoice_email' ? company?.contact_email ?? '' : '')])));
+  }, [company]);
+  const field = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+  return <AdminMockPage title="회사 정보" description="업체 상세에 표시할 사업자정보와 세금계산서 수신 정보를 관리합니다.">
+    <form className="panel mock-business-form" onSubmit={(event) => { event.preventDefault(); onSave(form); }}><label>사업자등록번호<input value={form.biz_reg_no} onChange={field('biz_reg_no')} required /></label><label>상호<input value={form.name} onChange={field('name')} required /></label><label>대표자<input value={form.representative_name} onChange={field('representative_name')} /></label><label>업태<input value={form.business_type} onChange={field('business_type')} /></label><label>종목<input value={form.business_item} onChange={field('business_item')} /></label><label className="wide">사업장주소<input value={form.address} onChange={field('address')} /></label><label>담당자명<input value={form.contact_name} onChange={field('contact_name')} /></label><label>연락처<input value={form.contact_phone} onChange={field('contact_phone')} /></label><label className="wide">세금계산서 수신 이메일<input type="email" value={form.tax_invoice_email} onChange={field('tax_invoice_email')} /></label><div className="row-actions wide"><button type="button" className="ghost" onClick={() => setForm(Object.fromEntries(Object.keys(emptyForm).map((key) => [key, company?.[key] ?? (key === 'tax_invoice_email' ? company?.contact_email ?? '' : '')])))}>취소</button><button className="primary" disabled={busy}>회사 정보 저장</button></div></form>
   </AdminMockPage>;
 }
 
-function CompanyMockScreen({ section }) {
+function CompanyMockScreen({ section, company, busy, onSaveCompany }) {
+  if (section === 'company-info') return <CompanyInfoScreen company={company} busy={busy} onSave={onSaveCompany} />;
   const screens = {
     'company-dashboard': CompanyDashboardMock,
     'monthly-usage': CompanyMonthlyUsageMock,
@@ -1264,7 +1261,6 @@ function CompanyMockScreen({ section }) {
     'company-billing': CompanySettlementV2Mock,
     'company-tax-invoices': CompanyTaxInvoiceMock,
     'company-employee-list': CompanyEmployeeListMock,
-    'company-info': CompanyInfoMock,
   };
   const Screen = screens[section];
   return Screen ? <Screen /> : null;
@@ -1309,7 +1305,6 @@ function Dashboard({ session, onLogout }) {
   const [platformMerchantForm, setPlatformMerchantForm] = useState({ name: '', owner_phone: '', category: '', avg_price: '' });
   const [platformInvitePhone, setPlatformInvitePhone] = useState({});
   const [inviteModal, setInviteModal] = useState(null);
-  const [txModal, setTxModal] = useState(null);
   const [contractModal, setContractModal] = useState(null);
   const [contractForm, setContractForm] = useState({ settlement_cycle: 'month_end', settlement_day: '25', unit_price: '', subsidy_enabled: false, company_subsidy_amount: '0', restaurant_subsidy_amount: '0' });
   const [busy, setBusy] = useState(false);
@@ -1406,6 +1401,18 @@ function Dashboard({ session, onLogout }) {
       setAccountSettingsOpen(false);
       setMessage(password ? '관리자 정보와 비밀번호를 변경했어요.' : '관리자 정보를 변경했어요.');
     } catch (settingsError) { setError(settingsError.message); }
+    finally { setBusy(false); }
+  }
+
+  async function saveCompanyProfile(form) {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const updated = await apiFetch('/me/company', token, {
+        method: 'PATCH', body: JSON.stringify(form),
+      });
+      setMe((current) => ({ ...current, company: updated.company }));
+      setMessage('회사 정보를 저장했어요. 업체 목록 상세에도 동일하게 표시됩니다.');
+    } catch (companyError) { setError(companyError.message); }
     finally { setBusy(false); }
   }
 
@@ -1922,8 +1929,8 @@ function Dashboard({ session, onLogout }) {
     [null, [['main', '대시보드', Home]]],
     [null, [['payment-history', '실시간 매출', CreditCard]]],
     [null, [['settlements-by-company', '업체별 정산', WalletCards], ['settlement-evidence', '증빙 내역', FileSpreadsheet], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]]],
-    [null, [['companies', '업체 관리', Building2], ['company-list', '업체 목록', Building2], ['company-form', '업체 등록/수정', FileText]]],
-    [null, [['vouchers', '판매 상품(일반)', Package], ['daily-menu', '오늘 뷔페 메뉴', Coffee], ['notifications', '알림', Bell], ['announcements', '공지사항', FileText], ['reviews', '리뷰', CheckCircle2]]],
+    [null, [['companies', '업체 관리', Building2], ['company-list', '업체 목록', Building2]]],
+    [null, [['vouchers', '판매 상품', Package], ['daily-menu', '오늘 뷔페 메뉴', Coffee], ['notifications', '알림', Bell], ['announcements', '공지사항', FileText], ['reviews', '리뷰', CheckCircle2]]],
     [null, [['supplier-info', '공급자 정보', Settings]]],
   ];
   const companyNavGroups = [
@@ -1970,8 +1977,8 @@ function Dashboard({ session, onLogout }) {
 
     <div className={isMerchantAdmin ? 'merchant-content' : isCompanyAdmin ? 'company-content' : undefined}>
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantSection) && <AnnouncementReviewPanel token={token} section={merchantSection}/>}
-    {isMerchantAdmin && <MerchantMockScreen section={merchantSection} />}
-    {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companySection} />}
+    {isMerchantAdmin && <MerchantMockScreen section={merchantSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} />}
+    {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companySection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} />}
 
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}
@@ -1988,8 +1995,6 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
 
-    {txModal && <VendorTransactionModal txModal={txModal} token={token} onClose={() => setTxModal(null)} />}
-
     {refundOpen && <RefundModal request={merchantRequest} onClose={() => setRefundOpen(false)} onRefunded={async () => { setPaymentHistoryRefreshKey((key) => key + 1); await load(); }} />}
 
     {employeeBulkOpen && <EmployeeBulkModal token={token} onClose={() => setEmployeeBulkOpen(false)} onConfirmed={async (count) => { setEmployeeBulkOpen(false); setMessage(`직원 ${count}명의 초대를 등록했어요.`); await load(); }} />}
@@ -1998,16 +2003,32 @@ function Dashboard({ session, onLogout }) {
       <section className="invite-modal contract-modal" onClick={(event) => event.stopPropagation()}>
         <div className="panel-title">
           <div>
-            <h2>계약 설정</h2>
-            <p className="panel-note">{contractModal.company?.name ?? contractModal.company_id} 계약 정보를 관리합니다.</p>
+            <h2>업체 상세</h2>
+            <p className="panel-note">회사정보와 계약설정을 함께 확인하고 관리합니다.</p>
           </div>
           <button className="ghost icon-button" onClick={() => setContractModal(null)} aria-label="닫기"><X size={20}/></button>
         </div>
-        <div className="profile-grid contract-summary">
-          <span>업체명</span><strong>{contractModal.company?.name ?? '-'}</strong>
-          <span>연결일</span><strong>{contractModal.created_at ? new Date(contractModal.created_at).toLocaleString('ko-KR') : '-'}</strong>
-        </div>
-        <form className="contract-form" onSubmit={saveContract}>
+        <section className="company-detail-section">
+          <h3>회사 정보</h3>
+          <div className="profile-grid contract-summary">
+            <span>상호</span><strong>{contractModal.company?.name ?? '-'}</strong>
+            <span>사업자등록번호</span><strong>{contractModal.company?.biz_reg_no ?? '-'}</strong>
+            <span>대표자</span><strong>{contractModal.company?.representative_name ?? '-'}</strong>
+            <span>업태</span><strong>{contractModal.company?.business_type ?? '-'}</strong>
+            <span>종목</span><strong>{contractModal.company?.business_item ?? '-'}</strong>
+            <span>사업장주소</span><strong>{contractModal.company?.address ?? '-'}</strong>
+            <span>담당자명</span><strong>{contractModal.company?.contact_name ?? '-'}</strong>
+            <span>담당자 이메일</span><strong>{contractModal.company?.contact_email ?? contractModal.invite?.email ?? '-'}</strong>
+            <span>연락처</span><strong>{contractModal.company?.contact_phone ?? '-'}</strong>
+            <span>세금계산서 이메일</span><strong>{contractModal.company?.tax_invoice_email ?? '-'}</strong>
+            <span>회사 상태</span><strong>{contractModal.company?.status ?? '-'}</strong>
+            <span>연결 상태</span><strong>{contractModal.status ?? '-'}</strong>
+            <span>연결일</span><strong>{contractModal.created_at ? new Date(contractModal.created_at).toLocaleString('ko-KR') : '-'}</strong>
+          </div>
+        </section>
+        <section className="company-detail-section">
+          <h3>계약 설정</h3>
+          <form className="contract-form" onSubmit={saveContract}>
           <label>정산일자
             <select value={contractForm.settlement_cycle} onChange={(event) => setContractForm((form) => ({ ...form, settlement_cycle: event.target.value }))}>
               <option value="month_end">월말</option>
@@ -2031,7 +2052,8 @@ function Dashboard({ session, onLogout }) {
             <button className="primary" disabled={busy || subsidyContractInvalid(contractForm)}>저장</button>
             <button className="ghost" type="button" onClick={() => setContractModal(null)}>닫기</button>
           </div>
-        </form>
+          </form>
+        </section>
       </section>
     </div>}
 
@@ -2187,12 +2209,10 @@ function Dashboard({ session, onLogout }) {
       </form>
       {(merchantCompanies?.items?.length ?? 0) === 0
         ? <p className="empty-state">아직 연결된 장부업체가 없어요.</p>
-        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>담당자 이메일</th><th>회사상태</th><th>연결상태</th><th>거래내역</th><th>계약</th><th>초대 상태</th><th>이메일 전송</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
+        : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>담당자 이메일</th><th>회사상태</th><th>연결상태</th><th>초대 상태</th><th>이메일 전송</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
           const link = inviteLink(item.invite);
           const companyName = item.company?.name ?? item.company_id;
-          const txItems = (transactions?.items ?? []).filter((tx) => tx.company_id === item.company_id);
-          const totalAmount = txItems.reduce((sum, tx) => sum + Math.abs(Number(tx.amount ?? 0)), 0);
-          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.contact_email ?? item.invite?.email ?? '-'}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><button className="ghost" onClick={() => setTxModal({ companyId: item.company_id, companyName, txItems, totalAmount, contract: item.contract })}>{txItems.length}건 보기</button></td><td><button className="ghost" onClick={() => openContractModal(item)}>상세보기</button></td><td><span className="badge">{item.invite?.status === 'pending' ? '대기중' : item.invite?.status === 'accepted' || item.invite?.status === 'claimed' ? '수락완료' : item.invite?.status || '-'}</span>{link && item.invite?.status === 'pending' && <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>링크</button>}</td><td>{item.invite?.email_send_status === 'sent' ? '전송완료' : item.invite?.email_send_status === 'failed' ? '전송실패' : '-'} {item.invite?.status === 'pending' && <button className="ghost" disabled={busy} onClick={() => resendCompanyInvite(item.company_id)}>재전송</button>}</td></tr>;
+          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.contact_email ?? item.invite?.email ?? '-'}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><span className="badge">{item.invite?.status === 'pending' ? '대기중' : item.invite?.status === 'accepted' || item.invite?.status === 'claimed' ? '수락완료' : item.invite?.status || '-'}</span>{link && item.invite?.status === 'pending' && <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>링크</button>}</td><td>{item.invite?.email_send_status === 'sent' ? '전송완료' : item.invite?.email_send_status === 'failed' ? '전송실패' : '-'} {item.invite?.status === 'pending' && <button className="ghost" disabled={busy} onClick={() => resendCompanyInvite(item.company_id)}>재전송</button>}</td></tr>;
         })}</tbody></table></div>}
     </section>}
 

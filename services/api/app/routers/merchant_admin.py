@@ -74,7 +74,14 @@ def _merchant_admin(repo: JoinRepository, token: str):
 def _company_rows(repo: JoinRepository, ids: list[str]) -> list[dict]:
     if not ids:
         return []
-    return repo.client.rest_get("companies", {"select": "id,name,biz_reg_no,status,contact_email,contact_phone,created_at", "id": f"in.({','.join(ids)})"})
+    optional_fields = ("representative_name", "business_type", "business_item", "address", "contact_name", "tax_invoice_email")
+    try:
+        return repo.client.rest_get("companies", {"select": "id,name,biz_reg_no,status,representative_name,business_type,business_item,address,contact_name,contact_email,contact_phone,tax_invoice_email,created_at", "id": f"in.({','.join(ids)})"})
+    except SupabaseHttpError as exc:
+        if not any(field in exc.body for field in optional_fields) and "PGRST204" not in exc.body:
+            raise
+        rows = repo.client.rest_get("companies", {"select": "id,name,biz_reg_no,status,contact_email,contact_phone,created_at", "id": f"in.({','.join(ids)})"})
+        return [{**row, **{field: None for field in optional_fields}} for row in rows]
 
 
 def _merchant_name(repo: JoinRepository, merchant_id: str) -> str:

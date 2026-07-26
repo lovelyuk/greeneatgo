@@ -1906,8 +1906,8 @@ function Dashboard({ session, onLogout }) {
   if (!me) return <main className="loading"><BrandMark /><div className="alert error">권한 정보를 불러오지 못했어요. {error}</div><button className="ghost" onClick={onLogout}>로그아웃</button></main>;
 
   const merchantNavGroups = [
-    [null, [['main', '메인', Home]]],
-    ['매출', [['payment-history', '실시간 매출', CreditCard]]],
+    [null, [['main', '대시보드', Home]]],
+    [null, [['payment-history', '실시간 매출', CreditCard]]],
     [null, [['settlements-by-company', '업체별 정산', WalletCards], ['settlement-evidence', '증빙 내역', FileSpreadsheet], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]]],
     [null, [['companies', '업체 관리', Building2], ['company-list', '업체 목록', Building2], ['company-form', '업체 등록/수정', FileText]]],
     [null, [['vouchers', '판매 상품(일반)', Package], ['daily-menu', '오늘 뷔페 메뉴', Coffee], ['notifications', '알림', Bell], ['announcements', '공지사항', FileText], ['reviews', '리뷰', CheckCircle2]]],

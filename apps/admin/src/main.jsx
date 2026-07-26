@@ -1957,6 +1957,11 @@ function Dashboard({ session, onLogout }) {
         <span title={session.user.email}>{session.user.email}</span>
         <button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/><span className="mobile-account-label">설정</span></button>
       </div>
+      <div className="merchant-sidebar-legal">
+        <a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침</a>
+        <span aria-hidden="true">|</span>
+        <a href="/terms.html" target="_blank" rel="noreferrer">이용약관</a>
+      </div>
     </nav>}
 
     {isCompanyAdmin && <nav className="company-tabs" aria-label="업체 관리자 메뉴">

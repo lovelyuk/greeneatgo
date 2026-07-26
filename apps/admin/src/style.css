@@ -1577,8 +1577,8 @@ code { font-size: 12px; }
   .supplier-info-fields .wide { grid-column: auto; }
 }
 
-/* Restaurant management keeps five existing pages behind one sidebar entry. */
-.restaurant-management-tabs {
+/* Grouped merchant pages share one horizontally scrollable top-tab pattern. */
+.merchant-section-tabs {
   display: flex;
   width: 100%;
   max-width: 100%;
@@ -1590,7 +1590,7 @@ code { font-size: 12px; }
   border-bottom: 1px solid var(--border);
   scrollbar-width: thin;
 }
-.restaurant-management-tabs button {
+.merchant-section-tabs button {
   width: auto;
   min-width: max-content;
   min-height: 44px;
@@ -1605,10 +1605,10 @@ code { font-size: 12px; }
   font-size: 15px;
   font-weight: 500;
 }
-.restaurant-management-tabs button:hover { transform: none; color: var(--text-primary); background: var(--bg-subtle); box-shadow: none; }
-.restaurant-management-tabs button.active { color: var(--accent); background: var(--accent-soft); border-bottom-color: var(--accent); }
+.merchant-section-tabs button:hover { transform: none; color: var(--text-primary); background: var(--bg-subtle); box-shadow: none; }
+.merchant-section-tabs button.active { color: var(--accent); background: var(--accent-soft); border-bottom-color: var(--accent); }
 
 @media (max-width: 700px) {
-  .restaurant-management-tabs { margin-bottom: 14px; scroll-snap-type: x proximity; }
-  .restaurant-management-tabs button { min-height: 42px; padding-inline: 14px; scroll-snap-align: start; font-size: 14px; }
+  .merchant-section-tabs { margin-bottom: 14px; scroll-snap-type: x proximity; }
+  .merchant-section-tabs button { min-height: 42px; padding-inline: 14px; scroll-snap-align: start; font-size: 14px; }
 }

@@ -1336,8 +1336,11 @@ function Dashboard({ session, onLogout }) {
   const [dailyMenuForm, setDailyMenuForm] = useState({ service_date: todayInput(), title: '오늘 뷔페 메뉴', menu_text: '', image_url: '' });
   const [merchantCompanies, setMerchantCompanies] = useState(null);
   const [merchantSection, setMerchantSection] = useState('main');
+  const [companyManagementTab, setCompanyManagementTab] = useState('company-list');
   const [restaurantManagementTab, setRestaurantManagementTab] = useState('daily-menu');
-  const merchantContentSection = merchantSection === 'restaurant-management' ? restaurantManagementTab : merchantSection;
+  const merchantContentSection = merchantSection === 'companies'
+    ? companyManagementTab
+    : merchantSection === 'restaurant-management' ? restaurantManagementTab : merchantSection;
   const [companySection, setCompanySection] = useState('legacy-employees');
   const [refundOpen, setRefundOpen] = useState(false);
   const [paymentHistoryRefreshKey, setPaymentHistoryRefreshKey] = useState(0);
@@ -1994,9 +1997,13 @@ function Dashboard({ session, onLogout }) {
     [null, [['main', '대시보드', Home]]],
     [null, [['payment-history', '실시간 매출', CreditCard]]],
     [null, [['settlements-by-company', '업체별 정산', WalletCards], ['settlement-evidence', '증빙 내역', FileSpreadsheet], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]]],
-    [null, [['companies', '업체 관리', Building2], ['company-list', '업체 목록', Building2]]],
+    [null, [['companies', '업체 관리', Building2]]],
     [null, [['restaurant-management', '식당 관리', Coffee]]],
     [null, [['supplier-info', '공급자 정보', Settings]]],
+  ];
+  const companyManagementTabs = [
+    ['company-list', '업체 목록'],
+    ['companies', '업체 관리'],
   ];
   const restaurantManagementTabs = [
     ['daily-menu', '오늘 뷔페 메뉴'],
@@ -2044,7 +2051,10 @@ function Dashboard({ session, onLogout }) {
     </nav>}
 
     <div className={isMerchantAdmin ? 'merchant-content' : isCompanyAdmin ? 'company-content' : undefined}>
-    {isMerchantAdmin && merchantSection === 'restaurant-management' && <nav className="restaurant-management-tabs" aria-label="식당 관리 페이지">
+    {isMerchantAdmin && merchantSection === 'companies' && <nav className="merchant-section-tabs" aria-label="업체 관리 페이지">
+      {companyManagementTabs.map(([id, label]) => <button key={id} type="button" className={companyManagementTab === id ? 'active' : ''} onClick={() => setCompanyManagementTab(id)} aria-current={companyManagementTab === id ? 'page' : undefined}>{label}</button>)}
+    </nav>}
+    {isMerchantAdmin && merchantSection === 'restaurant-management' && <nav className="merchant-section-tabs" aria-label="식당 관리 페이지">
       {restaurantManagementTabs.map(([id, label]) => <button key={id} type="button" className={restaurantManagementTab === id ? 'active' : ''} onClick={() => setRestaurantManagementTab(id)} aria-current={restaurantManagementTab === id ? 'page' : undefined}>{label}</button>)}
     </nav>}
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantContentSection) && <AnnouncementReviewPanel token={token} section={merchantContentSection}/>}
@@ -2267,7 +2277,7 @@ function Dashboard({ session, onLogout }) {
       {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하거나 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className="badge">{employee.is_staged ? '초대대기' : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.is_staged ? '-' : krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td>{employee.is_staged ? '-' : <button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button>}</td><td>{employee.is_staged ? <span className="muted">최초 가입 대기</span> : <button className="ghost icon-button" disabled={busy} onClick={() => openEmployeeManage(employee)} aria-label={`${employee.display_name ?? '직원'} 관리`} title="직원 관리"><Settings size={18}/></button>}</td></tr>)}</tbody></table></div>}
     </section>}
 
-    {!isPlatformAdmin && isMerchantAdmin && merchantSection === 'companies' && <section className="panel">
+    {!isPlatformAdmin && isMerchantAdmin && merchantContentSection === 'companies' && <section className="panel">
       <div className="panel-title">
         <div><h2>업체 관리</h2><p className="panel-note">현재 연결된 회사를 관리하거나, 새 회사 담당자를 초대합니다.</p></div>
         <span className="badge">{merchantCompanies?.items?.length ?? 0}곳</span>

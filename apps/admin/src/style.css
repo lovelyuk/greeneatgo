@@ -411,7 +411,7 @@ input,textarea,select { min-height:46px;border:1px solid var(--line);border-radi
 .account-settings-button{display:inline-grid;place-items:center;width:42px;height:42px;min-height:42px;padding:0;border:1px solid var(--line);border-radius:12px;color:var(--forest);background:rgba(255,255,255,.72)}
 .account-settings-button svg{width:20px;height:20px;color:var(--forest)!important}.account-settings-backdrop{z-index:1100}.account-settings-modal{width:min(480px,calc(100vw - 28px))}.account-settings-modal .panel-title{align-items:flex-start}.account-settings-form{display:grid;gap:16px}.account-settings-form label{display:grid;gap:7px}.account-settings-form input:disabled{color:var(--soft);background:#eeeade;cursor:not-allowed}.account-settings-form .row-actions{justify-content:flex-end;margin-top:4px}.account-settings-form .primary{width:auto}.account-settings-modal .icon-button{flex:0 0 auto;border:1px solid var(--line);color:var(--forest);background:rgba(255,255,255,.72)}
 
-.merchant-kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.merchant-kpi-card{min-height:120px;grid-template-columns:auto minmax(0,1fr);align-content:center;align-items:center;gap:8px 10px;padding:15px 18px}.merchant-kpi-card svg{width:22px;height:22px}.merchant-kpi-card span{color:var(--soft);font-size:32px;font-weight:850;line-height:1.15;white-space:nowrap}.merchant-kpi-card strong{grid-column:2;justify-self:end;font-size:20px;white-space:nowrap}
+.merchant-kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.merchant-kpi-card{min-height:120px;grid-template-columns:auto minmax(0,1fr);align-content:center;align-items:center;gap:8px 10px;padding:15px 18px}.merchant-kpi-card svg{width:22px;height:22px}.merchant-kpi-card span{color:var(--soft);font-size:20px;font-weight:400;line-height:1.15;white-space:nowrap}.merchant-kpi-card strong{grid-column:2;justify-self:end;font-size:20px;white-space:nowrap}
 .merchant-tabs button{position:relative}.merchant-nav-badge{position:absolute;top:2px;right:2px;display:inline-grid;min-width:21px;height:21px;place-items:center;padding:0 6px;border-radius:999px;color:#fff!important;background:#d84b3e!important;font-size:11px;font-weight:900;line-height:1}
 .payment-alert-panel{min-height:100%}.payment-alert-heading h2{display:flex;align-items:center;gap:8px}.payment-alert-heading h2 svg{color:var(--forest)}.payment-alert-list{display:grid}.payment-alert-row{display:grid;grid-template-columns:58px minmax(90px,1.15fr) minmax(64px,.8fr) auto auto;align-items:center;gap:12px;min-height:49px;padding:8px 4px;border-bottom:1px solid var(--line)}.payment-alert-row:last-child{border-bottom:0}.payment-alert-row time{color:var(--soft);font-size:13px;font-variant-numeric:tabular-nums}.payment-alert-row strong{overflow:visible;text-overflow:clip;white-space:normal;line-height:1.25}.payment-alert-row b{justify-self:end;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}.payment-type-badge{display:inline-flex;justify-content:center;min-width:50px;padding:5px 9px;border-radius:999px;color:#2f6546;background:#dfebd9;font-size:12px;font-weight:850}.payment-type-badge.voucher{color:#8a5200;background:#fff0cf}.payment-type-badge.subsidized{color:#315c9b;background:#e7efff}
 @media(max-width:560px){.account-settings-backdrop{padding:12px}.account-settings-modal{padding:20px 16px}.account-settings-form .row-actions{display:grid;grid-template-columns:1fr 1fr}.account-settings-form .primary,.account-settings-form .ghost{width:100%}}
@@ -803,8 +803,8 @@ input:focus, textarea:focus, select:focus {
 .merchant-kpi-grid .merchant-kpi-card { min-height: 120px; }
 .merchant-kpi-grid .merchant-kpi-card > span {
   color: var(--soft);
-  font-size: 32px;
-  font-weight: 850;
+  font-size: 20px;
+  font-weight: 400;
   line-height: 1.15;
   letter-spacing: 0;
   white-space: normal;
@@ -1003,9 +1003,6 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   font-weight: 400;
   text-align: left;
 }
-@media (min-width: 1025px) {
-  .merchant-tabs button { font-size: 21px; }
-}
 .merchant-tabs button svg { display: none; }
 .merchant-tabs button:hover { background: var(--bg-subtle); }
 .merchant-tabs button.active {
@@ -1189,6 +1186,12 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
 .merchant-tabs .account-settings-button:hover,
 .merchant-tabs .merchant-sidebar-logout:hover { transform: none; background: var(--bg-subtle); box-shadow: none; }
 .mobile-account-label { display: none; }
+
+@media (min-width: 1025px) {
+  .merchant-tabs > button { gap: 10px; font-size: 20px; }
+  .merchant-tabs > button > svg { display: block; width: 20px; height: 20px; }
+  .merchant-tabs > .merchant-sidebar-logout { font-size: 20px; }
+}
 
 @media (max-width: 1024px) and (min-width: 701px) {
   .merchant-sidebar-identity { flex: 0 0 auto; padding: 0 8px; }

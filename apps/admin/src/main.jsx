@@ -702,7 +702,7 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
     } catch (toggleError) { setError(toggleError.message); } finally { setBusy(false); }
   }
   return <section className="panel voucher-panel">
-    <div className="panel-title"><div><h2>판매 상품(일반)</h2><p className="panel-note">삭제하지 않고 숨김/판매 재개합니다. 이벤트 상품은 설정 기간에만 자동 노출됩니다.</p></div><span className="badge">{items.length}개</span></div>
+    <div className="panel-title"><div><p className="panel-note titleless-guidance">삭제하지 않고 숨김/판매 재개합니다. 이벤트 상품은 설정 기간에만 자동 노출됩니다.</p></div><span className="badge">{items.length}개</span></div>
     {migrationRequired && <div className="alert error">상품 DB 마이그레이션이 아직 적용되지 않았어요. 0020과 0030 마이그레이션 적용 후 이벤트·결제방식 설정이 활성화됩니다.</div>}
     <form className="voucher-form" onSubmit={save}>
       <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="패키지명" required />
@@ -800,7 +800,7 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
   }
 
   return <section className="panel notification-panel">
-    <div className="panel-title"><div><h2>알림 발송</h2><p className="panel-note">장부직원과 일반사용자 앱으로 공지·이벤트 알림을 수동 발송합니다.</p></div><button type="button" className="ghost notification-history-button" onClick={() => setHistoryOpen(true)}><CalendarDays size={18}/> 발송 이력</button></div>
+    <div className="panel-title"><div><p className="panel-note titleless-guidance">장부직원과 일반사용자 앱으로 공지·이벤트 알림을 수동 발송합니다.</p></div><button type="button" className="ghost notification-history-button" onClick={() => setHistoryOpen(true)}><CalendarDays size={18}/> 발송 이력</button></div>
     {migrationRequired && <div className="alert error">0022_push_notifications.sql 적용 후 공지 발송을 사용할 수 있어요.</div>}
     {error && <div className="alert error">{error}</div>}
     <form className="notification-form" onSubmit={send}>
@@ -940,13 +940,13 @@ function AnnouncementReviewPanel({ token, section }) {
   useEffect(() => { load(); }, [section, sort]);
   async function publish(e) { e.preventDefault(); try { await apiFetch('/admin/announcements', token, { method: 'POST', body: JSON.stringify(form) }); setForm({ title: '', content: '', pinned: false, send_push: false }); await load(); } catch (ex) { setError(ex.message); } }
   async function patchItem(id, values) { try { await apiFetch(`/admin/${section}/${id}`, token, { method: 'PATCH', body: JSON.stringify(values) }); await load(); } catch (ex) { setError(ex.message); } }
-  if (section === 'announcements') return <section className="panel"><div className="panel-title"><div><h2>공지사항 관리</h2><p className="panel-note">앱에 계속 노출할 소식을 작성하고 관리합니다.</p></div></div>{error && <div className="alert error">{error}</div>}<form className="form" onSubmit={publish}><label>제목<input value={form.title} maxLength="120" onChange={e=>setForm({...form,title:e.target.value})} required/></label><label>내용<textarea rows="5" value={form.content} onChange={e=>setForm({...form,content:e.target.value})} required/></label><label className="checkbox"><input type="checkbox" checked={form.pinned} onChange={e=>setForm({...form,pinned:e.target.checked})}/> 상단 고정</label><label className="checkbox"><input type="checkbox" checked={form.send_push} onChange={e=>setForm({...form,send_push:e.target.checked})}/> 푸시 알림도 함께 발송</label><button className="primary">게시하기</button></form><div className="list">{data.items.map(item=><article className={`card ${item.status === 'hidden' ? 'muted' : ''}`} key={item.id}><h3>{item.pinned && '📌 '}{item.title} {item.status === 'hidden' && '(숨김)'}</h3><p>{item.content}</p><small>{new Date(item.created_at).toLocaleString('ko-KR')}</small><div className="actions"><button className="ghost" onClick={()=>patchItem(item.id,{pinned:!item.pinned})}>{item.pinned?'고정 해제':'상단 고정'}</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'published':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김'}</button></div></article>)}</div></section>;
-  return <section className="panel"><div className="panel-title"><div><h2>리뷰 관리</h2><p className="panel-note">평균 별점 ⭐ {data.average_rating ?? 0} ({data.review_count ?? 0}개)</p></div><select value={sort} onChange={e=>setSort(e.target.value)}><option value="latest">최신순</option><option value="rating_asc">낮은 별점순</option></select></div>{error && <div className="alert error">{error}</div>}<div className="list">{data.items.map(item=><article className={`card ${item.status==='hidden'?'muted':''}`} key={item.id}><h3>{item.author_name} {'⭐'.repeat(item.rating)} {item.status==='hidden'&&'(숨김)'}</h3><p>{item.content || '내용 없이 별점만 남긴 리뷰예요.'}</p>{item.image_urls?.length>0&&<div className="review-images">{item.image_urls.map(url=><img src={url} key={url} alt="리뷰"/>)}</div>}<label>사장님 답글<textarea defaultValue={item.owner_reply ?? ''} id={`reply-${item.id}`}/></label><div className="actions"><button className="primary" onClick={()=>patchItem(item.id,{owner_reply:document.getElementById(`reply-${item.id}`).value})}>답글 저장</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'visible':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김 처리'}</button></div></article>)}</div></section>;
+  if (section === 'announcements') return <section className="panel"><div className="panel-title"><div><p className="panel-note titleless-guidance">앱에 계속 노출할 소식을 작성하고 관리합니다.</p></div></div>{error && <div className="alert error">{error}</div>}<form className="form" onSubmit={publish}><label>제목<input value={form.title} maxLength="120" onChange={e=>setForm({...form,title:e.target.value})} required/></label><label>내용<textarea rows="5" value={form.content} onChange={e=>setForm({...form,content:e.target.value})} required/></label><label className="checkbox"><input type="checkbox" checked={form.pinned} onChange={e=>setForm({...form,pinned:e.target.checked})}/> 상단 고정</label><label className="checkbox"><input type="checkbox" checked={form.send_push} onChange={e=>setForm({...form,send_push:e.target.checked})}/> 푸시 알림도 함께 발송</label><button className="primary">게시하기</button></form><div className="list">{data.items.map(item=><article className={`card ${item.status === 'hidden' ? 'muted' : ''}`} key={item.id}><h3>{item.pinned && '📌 '}{item.title} {item.status === 'hidden' && '(숨김)'}</h3><p>{item.content}</p><small>{new Date(item.created_at).toLocaleString('ko-KR')}</small><div className="actions"><button className="ghost" onClick={()=>patchItem(item.id,{pinned:!item.pinned})}>{item.pinned?'고정 해제':'상단 고정'}</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'published':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김'}</button></div></article>)}</div></section>;
+  return <section className="panel"><div className="panel-title"><div><p className="panel-note titleless-guidance">평균 별점 ⭐️ {data.average_rating ?? 0} ({data.review_count ?? 0}개)</p></div><select value={sort} onChange={e=>setSort(e.target.value)}><option value="latest">최신순</option><option value="rating_asc">낮은 별점순</option></select></div>{error && <div className="alert error">{error}</div>}<div className="list">{data.items.map(item=><article className={`card ${item.status==='hidden'?'muted':''}`} key={item.id}><h3>{item.author_name} {'⭐'.repeat(item.rating)} {item.status==='hidden'&&'(숨김)'}</h3><p>{item.content || '내용 없이 별점만 남긴 리뷰예요.'}</p>{item.image_urls?.length>0&&<div className="review-images">{item.image_urls.map(url=><img src={url} key={url} alt="리뷰"/>)}</div>}<label>사장님 답글<textarea defaultValue={item.owner_reply ?? ''} id={`reply-${item.id}`}/></label><div className="actions"><button className="primary" onClick={()=>patchItem(item.id,{owner_reply:document.getElementById(`reply-${item.id}`).value})}>답글 저장</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'visible':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김 처리'}</button></div></article>)}</div></section>;
 }
 
 function AdminMockPage({ title, description, children, actions = null, preview = true, className = '' }) {
   return <section className={`admin-mock-page${className ? ` ${className}` : ''}`}>
-    <div className="panel-title admin-mock-page-title"><div>{preview && <span className="eyebrow">PREVIEW</span>}<h2>{title}</h2><p className="panel-note">{description}</p></div><div className="admin-page-actions">{actions}{preview && <span className="badge">목업</span>}</div></div>
+    <div className="panel-title admin-mock-page-title"><div>{preview && <span className="eyebrow">PREVIEW</span>}{title && <h2>{title}</h2>}<p className="panel-note">{description}</p></div><div className="admin-page-actions">{actions}{preview && <span className="badge">목업</span>}</div></div>
     {children ?? <article className="panel"><p className="empty-state">화면 구성을 준비 중입니다.</p></article>}
   </section>;
 }
@@ -1166,7 +1166,7 @@ function MerchantPrepurchaseMock() {
   </AdminMockPage>;
 }
 function MerchantCompanyListScreen({ items, onDetail }) {
-  return <AdminMockPage title="업체 목록" description="연결 업체의 회사정보와 계약설정을 확인합니다.">
+  return <AdminMockPage title={null} description="연결 업체의 회사정보와 계약설정을 확인합니다." preview={false} className="company-list-page">
     <article className="panel">{items.length === 0 ? <p className="empty-state">연결된 업체가 없어요.</p> : <div className="table-wrap"><table><thead><tr><th>업체명</th><th>사업자등록번호</th><th>계약 유형</th><th>담당자 이메일</th><th>연락처</th><th>관리</th></tr></thead><tbody>{items.map((item) => {
       const company = item.company ?? {};
       const subsidy = item.contract?.subsidy_enabled;
@@ -2000,7 +2000,7 @@ function Dashboard({ session, onLogout }) {
   ];
   const companyManagementTabs = [
     ['company-list', '업체 목록'],
-    ['companies', '업체 관리'],
+    ['companies', '업체 추가'],
   ];
   const restaurantManagementTabs = [
     ['daily-menu', '오늘 뷔페 메뉴'],
@@ -2278,7 +2278,7 @@ function Dashboard({ session, onLogout }) {
 
     {!isPlatformAdmin && isMerchantAdmin && merchantContentSection === 'companies' && <section className="panel">
       <div className="panel-title">
-        <div><h2>업체 관리</h2><p className="panel-note">현재 연결된 회사를 관리하거나, 새 회사 담당자를 초대합니다.</p></div>
+        <div><p className="panel-note titleless-guidance">새 회사 담당자를 초대합니다.</p></div>
         <span className="badge">{merchantCompanies?.items?.length ?? 0}곳</span>
       </div>
       <form className="product-form" onSubmit={createAndLinkCompany}>
@@ -2303,7 +2303,7 @@ function Dashboard({ session, onLogout }) {
 
     {isMerchantAdmin && merchantContentSection === 'daily-menu' && <section className="panel daily-menu-panel">
       <div className="panel-title">
-        <div><h2>오늘 뷔페 메뉴</h2><p className="panel-note">날짜를 선택해 오늘과 이후의 뷔페 메뉴를 미리 저장할 수 있어요.</p></div>
+        <div><p className="panel-note titleless-guidance">날짜를 선택해 오늘과 이후의 뷔페 메뉴를 미리 저장할 수 있어요.</p></div>
         <span className="badge">{dailyMenuForm.service_date}</span>
       </div>
       {dailyMenu?.migration_required && <div className="alert error">오늘 메뉴 DB 마이그레이션이 아직 적용되지 않아 기본 메뉴만 표시 중이에요. 0006_merchant_daily_menus.sql 적용 후 저장이 활성화됩니다.</div>}

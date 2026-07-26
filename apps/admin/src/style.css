@@ -1576,3 +1576,39 @@ code { font-size: 12px; }
   .supplier-info-fields { grid-template-columns: 1fr; }
   .supplier-info-fields .wide { grid-column: auto; }
 }
+
+/* Restaurant management keeps five existing pages behind one sidebar entry. */
+.restaurant-management-tabs {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  gap: 6px;
+  margin: 0 0 18px;
+  padding: 0 2px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+.restaurant-management-tabs button {
+  width: auto;
+  min-width: max-content;
+  min-height: 44px;
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 12px 12px 0 0;
+  box-shadow: none;
+  font-size: 15px;
+  font-weight: 500;
+}
+.restaurant-management-tabs button:hover { transform: none; color: var(--text-primary); background: var(--bg-subtle); box-shadow: none; }
+.restaurant-management-tabs button.active { color: var(--accent); background: var(--accent-soft); border-bottom-color: var(--accent); }
+
+@media (max-width: 700px) {
+  .restaurant-management-tabs { margin-bottom: 14px; scroll-snap-type: x proximity; }
+  .restaurant-management-tabs button { min-height: 42px; padding-inline: 14px; scroll-snap-align: start; font-size: 14px; }
+}

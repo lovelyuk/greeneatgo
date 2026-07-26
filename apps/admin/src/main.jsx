@@ -1336,6 +1336,8 @@ function Dashboard({ session, onLogout }) {
   const [dailyMenuForm, setDailyMenuForm] = useState({ service_date: todayInput(), title: '오늘 뷔페 메뉴', menu_text: '', image_url: '' });
   const [merchantCompanies, setMerchantCompanies] = useState(null);
   const [merchantSection, setMerchantSection] = useState('main');
+  const [restaurantManagementTab, setRestaurantManagementTab] = useState('daily-menu');
+  const merchantContentSection = merchantSection === 'restaurant-management' ? restaurantManagementTab : merchantSection;
   const [companySection, setCompanySection] = useState('legacy-employees');
   const [refundOpen, setRefundOpen] = useState(false);
   const [paymentHistoryRefreshKey, setPaymentHistoryRefreshKey] = useState(0);
@@ -1993,8 +1995,15 @@ function Dashboard({ session, onLogout }) {
     [null, [['payment-history', '실시간 매출', CreditCard]]],
     [null, [['settlements-by-company', '업체별 정산', WalletCards], ['settlement-evidence', '증빙 내역', FileSpreadsheet], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]]],
     [null, [['companies', '업체 관리', Building2], ['company-list', '업체 목록', Building2]]],
-    [null, [['vouchers', '판매 상품', Package], ['daily-menu', '오늘 뷔페 메뉴', Coffee], ['notifications', '알림', Bell], ['announcements', '공지사항', FileText], ['reviews', '리뷰', CheckCircle2]]],
+    [null, [['restaurant-management', '식당 관리', Coffee]]],
     [null, [['supplier-info', '공급자 정보', Settings]]],
+  ];
+  const restaurantManagementTabs = [
+    ['daily-menu', '오늘 뷔페 메뉴'],
+    ['vouchers', '판매 상품'],
+    ['notifications', '알림'],
+    ['announcements', '공지사항'],
+    ['reviews', '리뷰'],
   ];
   const companyNavGroups = [
     ['대시보드', [['company-dashboard', '대시보드']]],
@@ -2035,8 +2044,11 @@ function Dashboard({ session, onLogout }) {
     </nav>}
 
     <div className={isMerchantAdmin ? 'merchant-content' : isCompanyAdmin ? 'company-content' : undefined}>
-    {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantSection) && <AnnouncementReviewPanel token={token} section={merchantSection}/>}
-    {isMerchantAdmin && <MerchantMockScreen section={merchantSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} />}
+    {isMerchantAdmin && merchantSection === 'restaurant-management' && <nav className="restaurant-management-tabs" aria-label="식당 관리 페이지">
+      {restaurantManagementTabs.map(([id, label]) => <button key={id} type="button" className={restaurantManagementTab === id ? 'active' : ''} onClick={() => setRestaurantManagementTab(id)} aria-current={restaurantManagementTab === id ? 'page' : undefined}>{label}</button>)}
+    </nav>}
+    {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantContentSection) && <AnnouncementReviewPanel token={token} section={merchantContentSection}/>}
+    {isMerchantAdmin && <MerchantMockScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} />}
     {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companySection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} />}
 
     {error && <div className="alert error">{error}</div>}
@@ -2276,11 +2288,11 @@ function Dashboard({ session, onLogout }) {
     </section>}
 
 
-    {isMerchantAdmin && merchantSection === 'vouchers' && <VoucherProductsPanel items={voucherProducts} migrationRequired={voucherProductsMigrationRequired} token={token} busy={busy} cropImage={requestImageCrop} uploadImage={uploadProductImage} deleteImage={deleteProductImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
+    {isMerchantAdmin && merchantContentSection === 'vouchers' && <VoucherProductsPanel items={voucherProducts} migrationRequired={voucherProductsMigrationRequired} token={token} busy={busy} cropImage={requestImageCrop} uploadImage={uploadProductImage} deleteImage={deleteProductImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
 
-    {isMerchantAdmin && merchantSection === 'notifications' && <NotificationPanel token={token} history={notifications} migrationRequired={notificationsMigrationRequired} onSent={load} setMessage={setMessage} />}
+    {isMerchantAdmin && merchantContentSection === 'notifications' && <NotificationPanel token={token} history={notifications} migrationRequired={notificationsMigrationRequired} onSent={load} setMessage={setMessage} />}
 
-    {isMerchantAdmin && merchantSection === 'daily-menu' && <section className="panel daily-menu-panel">
+    {isMerchantAdmin && merchantContentSection === 'daily-menu' && <section className="panel daily-menu-panel">
       <div className="panel-title">
         <div><h2>오늘 뷔페 메뉴</h2><p className="panel-note">날짜를 선택해 오늘과 이후의 뷔페 메뉴를 미리 저장할 수 있어요.</p></div>
         <span className="badge">{dailyMenuForm.service_date}</span>

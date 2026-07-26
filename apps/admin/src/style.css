@@ -1189,15 +1189,21 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
 .merchant-nav-divider { display: none; }
 
 @media (min-width: 1025px) {
+  .merchant-topbar .top-copy, .company-topbar .top-copy { position: relative; }
   .merchant-topbar .brand-row, .company-topbar .brand-row {
-    display: grid;
+    display: flex;
     width: 100%;
-    grid-template-columns: max-content minmax(0, 1fr);
     align-items: center;
     gap: 0;
   }
   .merchant-topbar .brandmark, .company-topbar .brandmark { flex: 0 0 auto; }
-  .merchant-topbar .sidebar-entity-name, .company-topbar .sidebar-entity-name { justify-self: center; }
+  .merchant-topbar .sidebar-entity-name, .company-topbar .sidebar-entity-name {
+    position: absolute;
+    top: 50%;
+    left: calc(50% + 0.5px);
+    max-width: calc(100% - 152px);
+    transform: translate(-50%, -50%);
+  }
   .merchant-tabs > button { gap: 14px; font-size: 20px; font-weight: 400; }
   .merchant-tabs > button > svg { display: block; width: 20px; height: 20px; }
   .merchant-tabs > .merchant-sidebar-logout { font-size: 20px; font-weight: 400; }

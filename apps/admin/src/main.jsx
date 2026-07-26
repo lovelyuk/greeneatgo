@@ -2049,7 +2049,7 @@ function Dashboard({ session, onLogout }) {
       {companyNavGroups.map(([group, items]) => <React.Fragment key={group}><div className="company-nav-group">{group}</div>{items.map(([id, label]) => <button key={id} type="button" className={companySection === id ? 'active' : ''} onClick={() => setCompanySection(id)} aria-current={companySection === id ? 'page' : undefined}><span>{label}</span></button>)}</React.Fragment>)}
     </nav>}
 
-    <div className={isMerchantAdmin ? 'merchant-content' : isCompanyAdmin ? 'company-content' : undefined}>
+    <div className={isMerchantAdmin ? `merchant-content${merchantSection === 'main' || merchantSection === 'payment-history' ? ' merchant-regular-weight' : ''}` : isCompanyAdmin ? 'company-content' : undefined}>
     {isMerchantAdmin && merchantSection === 'companies' && <nav className="merchant-section-tabs" aria-label="업체 관리 페이지">
       {companyManagementTabs.map(([id, label]) => <button key={id} type="button" className={companyManagementTab === id ? 'active' : ''} onClick={() => setCompanyManagementTab(id)} aria-current={companyManagementTab === id ? 'page' : undefined}>{label}</button>)}
     </nav>}

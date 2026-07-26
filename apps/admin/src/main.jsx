@@ -944,9 +944,9 @@ function AnnouncementReviewPanel({ token, section }) {
   return <section className="panel"><div className="panel-title"><div><p className="panel-note titleless-guidance">평균 별점 ⭐️ {data.average_rating ?? 0} ({data.review_count ?? 0}개)</p></div><select value={sort} onChange={e=>setSort(e.target.value)}><option value="latest">최신순</option><option value="rating_asc">낮은 별점순</option></select></div>{error && <div className="alert error">{error}</div>}<div className="list">{data.items.map(item=><article className={`card ${item.status==='hidden'?'muted':''}`} key={item.id}><h3>{item.author_name} {'⭐'.repeat(item.rating)} {item.status==='hidden'&&'(숨김)'}</h3><p>{item.content || '내용 없이 별점만 남긴 리뷰예요.'}</p>{item.image_urls?.length>0&&<div className="review-images">{item.image_urls.map(url=><img src={url} key={url} alt="리뷰"/>)}</div>}<label>사장님 답글<textarea defaultValue={item.owner_reply ?? ''} id={`reply-${item.id}`}/></label><div className="actions"><button className="primary" onClick={()=>patchItem(item.id,{owner_reply:document.getElementById(`reply-${item.id}`).value})}>답글 저장</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'visible':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김 처리'}</button></div></article>)}</div></section>;
 }
 
-function AdminMockPage({ title, description, children, actions = null, preview = true, className = '' }) {
+function AdminMockPage({ title, description, children, actions = null, preview = true, showHeader = true, className = '' }) {
   return <section className={`admin-mock-page${className ? ` ${className}` : ''}`}>
-    <div className="panel-title admin-mock-page-title"><div>{preview && <span className="eyebrow">PREVIEW</span>}{title && <h2>{title}</h2>}<p className="panel-note">{description}</p></div><div className="admin-page-actions">{actions}{preview && <span className="badge">목업</span>}</div></div>
+    {showHeader && <div className="panel-title admin-mock-page-title"><div>{preview && <span className="eyebrow">PREVIEW</span>}{title && <h2>{title}</h2>}<p className="panel-note">{description}</p></div><div className="admin-page-actions">{actions}{preview && <span className="badge">목업</span>}</div></div>}
     {children ?? <article className="panel"><p className="empty-state">화면 구성을 준비 중입니다.</p></article>}
   </section>;
 }
@@ -1091,7 +1091,7 @@ function SettlementV2Screen({ viewer }) {
     setDialog(null);
   }
 
-  if (!selected) return <AdminMockPage title="매출 정산" description={isMerchant ? '업체별 월 정산과 증빙·입금 처리 현황을 확인합니다.' : '우리 회사의 월별 청구와 세금계산서 처리 현황을 확인합니다.'}>
+  if (!selected) return <AdminMockPage title="매출 정산" description={isMerchant ? '업체별 월 정산과 증빙·입금 처리 현황을 확인합니다.' : '우리 회사의 월별 청구와 세금계산서 처리 현황을 확인합니다.'} showHeader={!isMerchant}>
     {notice && <div className="alert success">{notice}</div>}
     <div className="settlement-v2-title-actions"><span className="badge">월별 정산 목록</span></div>
     <div className="settlement-v2-periodbar"><div className="settlement-v2-months" role="tablist" aria-label="정산월"><button type="button" role="tab" aria-selected={month === 'all'} className={month === 'all' ? 'active' : ''} onClick={() => setMonth('all')}>전체</button>{Array.from({ length: 12 }, (_, index) => index + 1).map((value) => <button type="button" role="tab" aria-selected={month === value} key={value} className={month === value ? 'active' : ''} disabled={!availableMonths.has(value)} onClick={() => setMonth(value)}>{value}월</button>)}</div><div className="settlement-v2-year-control" aria-label="정산 연도"><button type="button" className="ghost" onClick={() => { setYear((value) => value - 1); setMonth('all'); }} aria-label="이전 연도">‹</button><strong>{year}</strong><button type="button" className="ghost" onClick={() => { setYear((value) => value + 1); setMonth('all'); }} aria-label="다음 연도">›</button></div></div>

@@ -1489,7 +1489,7 @@ code { font-size: 12px; }
 }
 .settlement-v2-list-panel { padding: 0; }
 .settlement-v2-list-panel .table-wrap { margin: 0; }
-.settlement-v2-table { min-width: 1580px; }
+.settlement-v2-table { width: 100%; min-width: 0; table-layout: fixed; }
 .settlement-v2-clickable-row { cursor: pointer; }
 .settlement-v2-clickable-row:hover, .settlement-v2-clickable-row:focus-within { background: var(--accent-soft); }
 .settlement-v2-row-link {
@@ -1671,6 +1671,36 @@ code { font-size: 12px; }
   box-shadow: none;
 }
 .merchant-open-table tbody tr:hover td { border-bottom-color: #EEF0F3; background: #F7F9FC; }
+
+/* Keep the compact 9-column settlement list inside its panel without hiding overflow. */
+.merchant-open-table .settlement-v2-table th,
+.merchant-open-table .settlement-v2-table td {
+  padding-inline: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settlement-v2-table th:nth-child(1) { width: 7%; }
+.settlement-v2-table th:nth-child(2),
+.settlement-v2-table th:nth-child(3) { width: 12%; }
+.settlement-v2-table th:nth-child(4) { width: 11%; }
+.settlement-v2-table th:nth-child(5) { width: 12%; }
+.settlement-v2-table th:nth-child(6) { width: 17%; }
+.settlement-v2-table th:nth-child(7) { width: 11%; }
+.settlement-v2-table th:nth-child(8),
+.settlement-v2-table th:nth-child(9) { width: 9%; }
+.merchant-open-table .settlement-v2-table th:nth-child(4),
+.merchant-open-table .settlement-v2-table td:nth-child(4) { padding-right: 4px; }
+.merchant-open-table .settlement-v2-table th:nth-child(5),
+.merchant-open-table .settlement-v2-table td:nth-child(5) { padding-left: 4px; }
+.merchant-open-table .settlement-v2-table th:nth-child(6),
+.merchant-open-table .settlement-v2-table td:nth-child(6) { padding-right: 16px; }
+.merchant-open-table .settlement-v2-table th:nth-child(7),
+.merchant-open-table .settlement-v2-table td:nth-child(7) { padding-left: 16px; padding-right: 4px; }
+.merchant-open-table .settlement-v2-table th:nth-child(8),
+.merchant-open-table .settlement-v2-table td:nth-child(8) { padding-inline: 4px; }
+.merchant-open-table .settlement-v2-table th:nth-child(9),
+.merchant-open-table .settlement-v2-table td:nth-child(9) { padding-left: 4px; }
 
 @media (max-width: 700px) {
   .merchant-section-tabs { margin-bottom: 14px; scroll-snap-type: x proximity; }

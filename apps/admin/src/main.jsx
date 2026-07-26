@@ -1994,12 +1994,9 @@ function Dashboard({ session, onLogout }) {
   if (!me) return <main className="loading"><BrandMark /><div className="alert error">권한 정보를 불러오지 못했어요. {error}</div><button className="ghost" onClick={onLogout}>로그아웃</button></main>;
 
   const merchantNavGroups = [
-    [null, [['main', '대시보드', Home]]],
-    [null, [['payment-history', '실시간 매출', CreditCard]]],
-    [null, [['settlements-by-company', '업체별 정산', WalletCards], ['settlement-evidence', '증빙 내역', FileSpreadsheet], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]]],
-    [null, [['companies', '업체 관리', Building2]]],
-    [null, [['restaurant-management', '식당 관리', Coffee]]],
-    [null, [['supplier-info', '공급자 정보', Settings]]],
+    [['main', '대시보드', Home], ['payment-history', '실시간 매출', CreditCard]],
+    [['companies', '업체 관리', Building2], ['settlements-by-company', '업체별 정산', WalletCards], ['settlement-evidence', '증빙 내역', FileSpreadsheet], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]],
+    [['restaurant-management', '식당 관리', Coffee], ['supplier-info', '공급자 정보', Settings]],
   ];
   const companyManagementTabs = [
     ['company-list', '업체 목록'],
@@ -2026,6 +2023,7 @@ function Dashboard({ session, onLogout }) {
       <div className="top-copy">
         <div className="brand-row">
           <BrandMark />
+          {(isMerchantAdmin || isCompanyAdmin) && <strong className="sidebar-entity-name" title={isMerchantAdmin ? merchantQr?.merchant?.name : me?.company?.name}>{isMerchantAdmin ? merchantQr?.merchant?.name : me?.company?.name}</strong>}
           <span className="pill">OPERATIONS</span>
         </div>
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
@@ -2037,7 +2035,8 @@ function Dashboard({ session, onLogout }) {
     </header>
 
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
-      {merchantNavGroups.map(([group, items]) => <React.Fragment key={group ?? items[0][0]}>{group && <div className="merchant-nav-group">{group}</div>}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
+      {merchantNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
+      <div className="merchant-nav-divider merchant-nav-divider-before-logout" role="separator" />
       <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
       <div className="merchant-sidebar-legal">
         <a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침</a>

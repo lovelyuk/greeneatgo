@@ -1126,20 +1126,13 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   .merchant-kpi-grid { grid-template-columns: 1fr; }
 }
 
-/* Merchant account controls live at the bottom of the navigation rail. */
-.merchant-sidebar-account {
-  display: grid;
-  flex: 0 0 auto;
-  gap: 8px;
-  margin-top: auto;
-  padding: 14px 8px 4px;
-  border-top: 1px solid var(--border);
-}
+/* Merchant account controls follow the supplier-info menu item. */
 .merchant-sidebar-identity {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 4px;
+  padding: 0 12px;
 }
 .merchant-sidebar-identity > span {
   min-width: 0;
@@ -1151,11 +1144,11 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.merchant-sidebar-account .account-settings-button,
-.merchant-sidebar-account .merchant-sidebar-logout {
+.merchant-tabs .account-settings-button,
+.merchant-tabs .merchant-sidebar-logout {
   box-shadow: none;
 }
-.merchant-sidebar-account .account-settings-button {
+.merchant-tabs .account-settings-button {
   width: 36px;
   min-width: 36px;
   height: 36px;
@@ -1166,7 +1159,7 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   border: 0;
   background: transparent;
 }
-.merchant-sidebar-account .merchant-sidebar-logout {
+.merchant-tabs .merchant-sidebar-logout {
   width: 100%;
   min-height: 38px;
   justify-content: flex-start;
@@ -1177,45 +1170,23 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   font-size: 13px;
   font-weight: 500;
 }
-.merchant-sidebar-account button svg { display: block; flex: 0 0 auto; }
-.merchant-sidebar-account button:hover { transform: none; background: var(--bg-subtle); box-shadow: none; }
+.merchant-tabs .account-settings-button svg,
+.merchant-tabs .merchant-sidebar-logout svg { display: block; flex: 0 0 auto; }
+.merchant-tabs .account-settings-button:hover,
+.merchant-tabs .merchant-sidebar-logout:hover { transform: none; background: var(--bg-subtle); box-shadow: none; }
 .mobile-account-label { display: none; }
 
 @media (max-width: 1024px) and (min-width: 701px) {
-  .merchant-sidebar-account {
-    position: sticky;
-    right: 0;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    margin: 0 0 0 auto;
-    padding: 0 0 0 10px;
-    border-top: 0;
-    border-left: 1px solid var(--border);
-    background: var(--bg-surface);
-  }
+  .merchant-sidebar-identity { flex: 0 0 auto; padding: 0 8px; }
   .merchant-sidebar-identity > span { max-width: 130px; }
-  .merchant-sidebar-account .merchant-sidebar-logout { width: auto; white-space: nowrap; }
+  .merchant-tabs .merchant-sidebar-logout { width: auto; white-space: nowrap; }
 }
 
 @media (max-width: 700px) {
-  .merchant-sidebar-account {
-    position: sticky;
-    right: 0;
-    display: flex;
-    align-self: stretch;
-    align-items: stretch;
-    gap: 2px;
-    margin: 0 0 0 auto;
-    padding: 0 0 0 6px;
-    border-top: 0;
-    border-left: 1px solid var(--border);
-    background: rgba(255,255,255,.98);
-  }
-  .merchant-sidebar-identity { display: block; }
+  .merchant-sidebar-identity { display: block; flex: 0 0 56px; padding: 0; }
   .merchant-sidebar-identity > span { display: none; }
-  .merchant-sidebar-account .account-settings-button,
-  .merchant-sidebar-account .merchant-sidebar-logout {
+  .merchant-tabs .account-settings-button,
+  .merchant-tabs .merchant-sidebar-logout {
     width: 56px;
     min-width: 56px;
     min-height: 54px;
@@ -1378,11 +1349,6 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
 .mock-supplier-form { display: grid; gap: 14px; }
 .mock-payment-row { grid-template-columns: 58px minmax(160px, 1fr) 20px auto auto; }
 code { font-size: 12px; }
-
-@media (min-width: 1025px) {
-  .merchant-tabs { padding-bottom: 150px; }
-  .merchant-sidebar-account { position: fixed; z-index: 27; bottom: 18px; left: 12px; width: 216px; margin: 0; background: var(--bg-surface); }
-}
 
 @media (max-width: 900px) {
   .mock-kpi-grid, .mock-kpi-grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }

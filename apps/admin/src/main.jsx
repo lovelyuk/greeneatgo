@@ -1906,12 +1906,12 @@ function Dashboard({ session, onLogout }) {
   if (!me) return <main className="loading"><BrandMark /><div className="alert error">권한 정보를 불러오지 못했어요. {error}</div><button className="ghost" onClick={onLogout}>로그아웃</button></main>;
 
   const merchantNavGroups = [
-    ['메인', [['main', '메인', Home]]],
+    [null, [['main', '메인', Home]]],
     ['매출', [['payment-history', '실시간 매출', CreditCard]]],
-    ['정산·세금', [['settlements-by-company', '업체별 정산', WalletCards], ['settlement-evidence', '증빙 내역', FileSpreadsheet], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]]],
-    ['업체', [['companies', '업체 관리', Building2], ['company-list', '업체 목록', Building2], ['company-form', '업체 등록/수정', FileText]]],
-    ['상품·운영', [['vouchers', '판매 상품(일반)', Package], ['daily-menu', '오늘 뷔페 메뉴', Coffee], ['notifications', '알림', Bell], ['announcements', '공지사항', FileText], ['reviews', '리뷰', CheckCircle2]]],
-    ['설정', [['supplier-info', '공급자 정보', Settings]]],
+    [null, [['settlements-by-company', '업체별 정산', WalletCards], ['settlement-evidence', '증빙 내역', FileSpreadsheet], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]]],
+    [null, [['companies', '업체 관리', Building2], ['company-list', '업체 목록', Building2], ['company-form', '업체 등록/수정', FileText]]],
+    [null, [['vouchers', '판매 상품(일반)', Package], ['daily-menu', '오늘 뷔페 메뉴', Coffee], ['notifications', '알림', Bell], ['announcements', '공지사항', FileText], ['reviews', '리뷰', CheckCircle2]]],
+    [null, [['supplier-info', '공급자 정보', Settings]]],
   ];
   const companyNavGroups = [
     ['대시보드', [['company-dashboard', '대시보드']]],
@@ -1938,13 +1938,11 @@ function Dashboard({ session, onLogout }) {
     </header>
 
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
-      {merchantNavGroups.map(([group, items]) => <React.Fragment key={group}><div className="merchant-nav-group">{group}</div>{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
-      <div className="merchant-sidebar-account">
-        <div className="merchant-sidebar-identity">
-          <span title={session.user.email}>{session.user.email}</span>
-          <button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/><span className="mobile-account-label">설정</span></button>
-        </div>
-        <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
+      {merchantNavGroups.map(([group, items]) => <React.Fragment key={group ?? items[0][0]}>{group && <div className="merchant-nav-group">{group}</div>}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
+      <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
+      <div className="merchant-sidebar-identity">
+        <span title={session.user.email}>{session.user.email}</span>
+        <button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/><span className="mobile-account-label">설정</span></button>
       </div>
     </nav>}
 

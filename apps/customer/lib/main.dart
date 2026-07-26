@@ -17,9 +17,24 @@ import 'firebase_config.dart';
 import 'push_notifications.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
+const legalBaseUrl = String.fromEnvironment('LEGAL_BASE_URL',
+    defaultValue: 'https://greeneatgo.vercel.app');
 const defaultMerchantQrToken = String.fromEnvironment('MERCHANT_QR_TOKEN',
     defaultValue: 'QR-PILOT-KIMCHI');
 const _paymentAppChannel = MethodChannel('com.greeneat.greeneatgo/payment_app');
+
+Future<void> openLegalDocument(BuildContext context, String filename) async {
+  try {
+    final opened = await launchUrl(Uri.parse('$legalBaseUrl/$filename'),
+        mode: LaunchMode.externalApplication);
+    if (!opened) throw Exception('문서를 열 수 없습니다.');
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('문서를 열지 못했어요. 잠시 후 다시 시도해 주세요.')));
+    }
+  }
+}
 
 enum ExternalPaymentOpenResult { app, fallback, failed }
 
@@ -1007,6 +1022,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           decoration: const InputDecoration(
                               labelText: '비밀번호 확인',
                               prefixIcon: Icon(Icons.verified_user_outlined))),
+                      const SizedBox(height: 12),
+                      const Text(
+                          '계정을 만들면 이용약관과 개인정보 처리방침에 동의한 것으로 봅니다.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 12, color: Color(0xFF5C7A66))),
+                      Wrap(alignment: WrapAlignment.center, children: [
+                        TextButton(
+                            onPressed: () =>
+                                openLegalDocument(context, 'terms.html'),
+                            child: const Text('이용약관')),
+                        TextButton(
+                            onPressed: () =>
+                                openLegalDocument(context, 'privacy.html'),
+                            child: const Text('개인정보 처리방침')),
+                      ]),
                     ],
                     if (_error != null)
                       Padding(
@@ -1461,6 +1492,16 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   MaterialPageRoute(
                       builder: (_) => CommunityScreen(
                           session: widget.session, initialReviews: true)))),
+          ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('이용약관'),
+              trailing: const Icon(Icons.open_in_new),
+              onTap: () => openLegalDocument(context, 'terms.html')),
+          ListTile(
+              leading: const Icon(Icons.privacy_tip_outlined),
+              title: const Text('개인정보 처리방침'),
+              trailing: const Icon(Icons.open_in_new),
+              onTap: () => openLegalDocument(context, 'privacy.html')),
           const Divider(height: 40),
           const Text('비밀번호 변경',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),

@@ -102,6 +102,17 @@ function AuthLinkNotice() {
   </div>;
 }
 
+function LegalLinks({ consent = false }) {
+  return <div className="legal-links">
+    {consent && <span>가입하면 아래 문서에 동의한 것으로 봅니다.</span>}
+    <nav aria-label="법적 고지">
+      <a href="/terms.html" target="_blank" rel="noreferrer">이용약관</a>
+      <span aria-hidden="true">·</span>
+      <a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침</a>
+    </nav>
+  </div>;
+}
+
 function LoginScreen({ missingEnv, onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -143,6 +154,7 @@ function LoginScreen({ missingEnv, onLogin }) {
         {error && <div className="alert error">{error}</div>}
         <button className="primary" disabled={busy || missingEnv.length > 0}>{busy ? '로그인 중...' : '운영 시작하기'}</button>
       </form>
+      <LegalLinks />
     </section>
   </main>;
 }
@@ -239,6 +251,7 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
         </label>
         <button className="primary" disabled={busy || missingEnv.length > 0 || !invite}>새 계정으로 가입하고 초대 수락</button>
       </form>
+      <LegalLinks consent />
     </section>
   </main>;
 }
@@ -2245,6 +2258,7 @@ function Dashboard({ session, onLogout }) {
           <label>새 비밀번호 확인<input type="password" value={accountSettingsForm.password_confirm} minLength="6" autoComplete="new-password" placeholder="새 비밀번호를 다시 입력" onChange={(event) => setAccountSettingsForm((form) => ({ ...form, password_confirm: event.target.value }))}/></label>
           <div className="row-actions"><button type="button" className="ghost" onClick={() => setAccountSettingsOpen(false)} disabled={busy}>취소</button><button className="primary" disabled={busy}>{busy ? '저장 중...' : '변경사항 저장'}</button></div>
         </form>
+        <LegalLinks />
       </section>
     </div>}
     </div>

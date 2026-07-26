@@ -15,6 +15,20 @@ class MerchantProfileTests(unittest.TestCase):
         self.assertEqual(MerchantProfileUpdateRequest(name="  돈토  ").name, "돈토")
         with self.assertRaises(ValidationError):
             MerchantProfileUpdateRequest(name="   ")
+        with self.assertRaises(ValidationError):
+            MerchantProfileUpdateRequest()
+
+    def test_supplier_profile_trims_optional_fields_and_validates_email(self):
+        payload = MerchantProfileUpdateRequest(
+            representative_name="  이용욱  ", business_type=" 음식점업 ",
+            business_item=" 한식 뷔페 ", tax_invoice_email=" tax@greeneat.example ",
+        )
+        self.assertEqual(payload.representative_name, "이용욱")
+        self.assertEqual(payload.business_type, "음식점업")
+        self.assertEqual(payload.business_item, "한식 뷔페")
+        self.assertEqual(payload.tax_invoice_email, "tax@greeneat.example")
+        with self.assertRaises(ValidationError):
+            MerchantProfileUpdateRequest(tax_invoice_email="not-email")
 
     @patch("app.routers.merchant_admin.JoinRepository")
     def test_merchant_admin_updates_only_linked_merchant_name(self, repo_class):
@@ -36,6 +50,31 @@ class MerchantProfileTests(unittest.TestCase):
             "merchants", {"id": "eq.merchant-1"}, {"name": "돈토"}
         )
         self.assertEqual(result["data"]["name"], "돈토")
+
+    @patch("app.routers.merchant_admin.JoinRepository")
+    def test_merchant_admin_updates_supplier_profile_fields(self, repo_class):
+        repo = repo_class.return_value
+        repo.auth_user_from_token.return_value = SimpleNamespace(
+            id="admin-1", email="owner@example.com"
+        )
+        repo.get_profile.return_value = UserProfile(
+            id="admin-1", email="owner@example.com", display_name="관리자",
+            merchant_id="merchant-1", role="merchant_admin", status="active",
+        )
+        expected = {
+            "name": "그린잇 식당", "biz_reg_no": "123-45-67890",
+            "representative_name": "이용욱", "address": "서울특별시 중구",
+            "business_type": "음식점업", "business_item": "한식 뷔페",
+            "tax_invoice_email": "tax@greeneat.example",
+        }
+        repo.client.rest_patch.return_value = [{"id": "merchant-1", **expected}]
+
+        result = update_merchant_profile(MerchantProfileUpdateRequest(**expected), "token")
+
+        repo.client.rest_patch.assert_called_once_with(
+            "merchants", {"id": "eq.merchant-1"}, expected
+        )
+        self.assertEqual(result["data"]["tax_invoice_email"], "tax@greeneat.example")
 
     @patch("app.routers.merchant_admin.JoinRepository")
     def test_company_admin_cannot_update_merchant_name(self, repo_class):

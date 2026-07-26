@@ -944,9 +944,9 @@ function AnnouncementReviewPanel({ token, section }) {
   return <section className="panel"><div className="panel-title"><div><h2>리뷰 관리</h2><p className="panel-note">평균 별점 ⭐ {data.average_rating ?? 0} ({data.review_count ?? 0}개)</p></div><select value={sort} onChange={e=>setSort(e.target.value)}><option value="latest">최신순</option><option value="rating_asc">낮은 별점순</option></select></div>{error && <div className="alert error">{error}</div>}<div className="list">{data.items.map(item=><article className={`card ${item.status==='hidden'?'muted':''}`} key={item.id}><h3>{item.author_name} {'⭐'.repeat(item.rating)} {item.status==='hidden'&&'(숨김)'}</h3><p>{item.content || '내용 없이 별점만 남긴 리뷰예요.'}</p>{item.image_urls?.length>0&&<div className="review-images">{item.image_urls.map(url=><img src={url} key={url} alt="리뷰"/>)}</div>}<label>사장님 답글<textarea defaultValue={item.owner_reply ?? ''} id={`reply-${item.id}`}/></label><div className="actions"><button className="primary" onClick={()=>patchItem(item.id,{owner_reply:document.getElementById(`reply-${item.id}`).value})}>답글 저장</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'visible':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김 처리'}</button></div></article>)}</div></section>;
 }
 
-function AdminMockPage({ title, description, children }) {
-  return <section className="admin-mock-page">
-    <div className="panel-title admin-mock-page-title"><div><span className="eyebrow">PREVIEW</span><h2>{title}</h2><p className="panel-note">{description}</p></div><span className="badge">목업</span></div>
+function AdminMockPage({ title, description, children, actions = null, preview = true, className = '' }) {
+  return <section className={`admin-mock-page${className ? ` ${className}` : ''}`}>
+    <div className="panel-title admin-mock-page-title"><div>{preview && <span className="eyebrow">PREVIEW</span>}<h2>{title}</h2><p className="panel-note">{description}</p></div><div className="admin-page-actions">{actions}{preview && <span className="badge">목업</span>}</div></div>
     {children ?? <article className="panel"><p className="empty-state">화면 구성을 준비 중입니다.</p></article>}
   </section>;
 }
@@ -1174,22 +1174,70 @@ function MerchantCompanyListScreen({ items, onDetail }) {
     })}</tbody></table></div>}</article>
   </AdminMockPage>;
 }
-function MerchantSupplierInfoMock() {
-  const [saved, setSaved] = useState(false);
-  // TODO: merchants 사업자정보 컬럼과 저장 API로 교체합니다.
-  return <AdminMockPage title="공급자 정보" description="세금계산서에 사용할 식당 사업자정보를 검토합니다.">
-    <section className="two-col"><article className="panel"><div className="panel-title"><div><h3>현재 공급자</h3><p className="panel-note">팝빌 발행 시 자동 사용될 정보입니다.</p></div><span className="badge">읽기 전용</span></div><div className="profile-grid"><span>사업자등록번호</span><strong>123-45-67890</strong><span>상호</span><strong>그린잇 식당</strong><span>대표자</span><strong>이용욱</strong><span>주소</span><strong>서울특별시 중구 그린로 25</strong><span>업태</span><strong>음식점업</strong><span>종목</span><strong>한식 뷔페</strong><span>담당 이메일</span><strong>tax@greeneat.example</strong></div></article><form className="panel mock-supplier-form" onSubmit={(event) => { event.preventDefault(); setSaved(true); }}><div className="panel-title"><div><h3>수정 폼</h3><p className="panel-note">현재 단계에서는 화면에만 반영됩니다.</p></div></div><label>사업자등록번호<input defaultValue="123-45-67890" /></label><label>상호<input defaultValue="그린잇 식당" /></label><label>대표자<input defaultValue="이용욱" /></label><label>주소<input defaultValue="서울특별시 중구 그린로 25" /></label><label>업태<input defaultValue="음식점업" /></label><label>종목<input defaultValue="한식 뷔페" /></label><label>세금계산서 담당 이메일<input type="email" defaultValue="tax@greeneat.example" /></label>{saved && <div className="alert success">목업 수정 상태를 저장했습니다.</div>}<button className="primary">목업 저장</button></form></section>
+function MerchantSupplierInfoScreen({ merchant, busy, onSave, onSettings }) {
+  const emptyForm = { biz_reg_no: '', name: '', representative_name: '', address: '', business_type: '', business_item: '', tax_invoice_email: '' };
+  const valuesFrom = (item) => Object.fromEntries(Object.keys(emptyForm).map((key) => [key, item?.[key] ?? '']));
+  const [values, setValues] = useState(() => valuesFrom(merchant));
+  const [draft, setDraft] = useState(() => valuesFrom(merchant));
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    const next = valuesFrom(merchant);
+    setValues(next);
+    setDraft(next);
+    setEditing(false);
+  }, [merchant]);
+
+  const field = (key) => (event) => setDraft((current) => ({ ...current, [key]: event.target.value }));
+  const beginEdit = () => { setDraft(values); setEditing(true); };
+  const cancelEdit = () => { setDraft(values); setEditing(false); };
+  async function save(event) {
+    event.preventDefault();
+    const updated = await onSave(draft);
+    if (!updated) return;
+    const next = valuesFrom(updated);
+    setValues(next);
+    setDraft(next);
+    setEditing(false);
+  }
+
+  return <AdminMockPage
+    title="공급자 정보"
+    description="세금계산서에 사용할 식당 사업자정보를 관리합니다."
+    className="supplier-info-page"
+    preview={false}
+    actions={<button type="button" className="account-settings-button supplier-settings-button" onClick={onSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/></button>}
+  >
+    <form className="panel supplier-info-card" onSubmit={save}>
+      <div className="panel-title supplier-info-card-title">
+        <div><h3>사업자 정보</h3><p className="panel-note">팝빌 발행 시 자동 사용될 정보입니다.</p></div>
+        <div className="supplier-edit-actions">
+          <button type="button" className="ghost supplier-capsule-button" onClick={beginEdit} disabled={editing || busy}>수정</button>
+          <button type="button" className="ghost supplier-capsule-button" onClick={cancelEdit} disabled={!editing || busy}>취소</button>
+          <button type="submit" className="primary supplier-capsule-button" disabled={!editing || busy}>{busy ? '저장 중' : '저장'}</button>
+        </div>
+      </div>
+      <div className="supplier-info-fields">
+        <label>사업자등록번호<input value={draft.biz_reg_no} onChange={field('biz_reg_no')} disabled={!editing} required /></label>
+        <label>상호<input value={draft.name} onChange={field('name')} disabled={!editing} required /></label>
+        <label>대표자<input value={draft.representative_name} onChange={field('representative_name')} disabled={!editing} /></label>
+        <label>주소<input value={draft.address} onChange={field('address')} disabled={!editing} /></label>
+        <label>업태<input value={draft.business_type} onChange={field('business_type')} disabled={!editing} /></label>
+        <label>종목<input value={draft.business_item} onChange={field('business_item')} disabled={!editing} /></label>
+        <label className="wide">세금계산서 담당 이메일<input type="email" value={draft.tax_invoice_email} onChange={field('tax_invoice_email')} disabled={!editing} /></label>
+      </div>
+    </form>
   </AdminMockPage>;
 }
 
-function MerchantMockScreen({ section, companyItems, onCompanyDetail }) {
+function MerchantMockScreen({ section, companyItems, onCompanyDetail, merchant, busy, onSaveSupplier, onSettings }) {
   if (section === 'company-list') return <MerchantCompanyListScreen items={companyItems} onDetail={onCompanyDetail} />;
+  if (section === 'supplier-info') return <MerchantSupplierInfoScreen merchant={merchant} busy={busy} onSave={onSaveSupplier} onSettings={onSettings} />;
   const screens = {
     'settlements-by-company': MerchantSettlementV2Mock,
     'settlement-evidence': SettlementEvidenceV2Mock,
     'tax-invoices': MerchantTaxInvoiceMock,
     'prepurchase': MerchantPrepurchaseMock,
-    'supplier-info': MerchantSupplierInfoMock,
   };
   const Screen = screens[section];
   return Screen ? <Screen /> : null;
@@ -1402,6 +1450,21 @@ function Dashboard({ session, onLogout }) {
       setMessage(password ? '관리자 정보와 비밀번호를 변경했어요.' : '관리자 정보를 변경했어요.');
     } catch (settingsError) { setError(settingsError.message); }
     finally { setBusy(false); }
+  }
+
+  async function saveMerchantSupplierProfile(form) {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const updated = await apiFetch('/admin/merchant/profile', token, {
+        method: 'PATCH', body: JSON.stringify(form),
+      });
+      setMerchantQr((current) => ({ ...current, merchant: { ...current?.merchant, ...updated } }));
+      setMessage('공급자 정보를 저장했어요.');
+      return updated;
+    } catch (supplierError) {
+      setError(supplierError.message);
+      return null;
+    } finally { setBusy(false); }
   }
 
   async function saveCompanyProfile(form) {
@@ -1960,10 +2023,6 @@ function Dashboard({ session, onLogout }) {
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
       {merchantNavGroups.map(([group, items]) => <React.Fragment key={group ?? items[0][0]}>{group && <div className="merchant-nav-group">{group}</div>}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
       <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
-      <div className="merchant-sidebar-identity">
-        <span title={session.user.email}>{session.user.email}</span>
-        <button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/><span className="mobile-account-label">설정</span></button>
-      </div>
       <div className="merchant-sidebar-legal">
         <a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침</a>
         <span aria-hidden="true">|</span>
@@ -1977,7 +2036,7 @@ function Dashboard({ session, onLogout }) {
 
     <div className={isMerchantAdmin ? 'merchant-content' : isCompanyAdmin ? 'company-content' : undefined}>
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantSection) && <AnnouncementReviewPanel token={token} section={merchantSection}/>}
-    {isMerchantAdmin && <MerchantMockScreen section={merchantSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} />}
+    {isMerchantAdmin && <MerchantMockScreen section={merchantSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} />}
     {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companySection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} />}
 
     {error && <div className="alert error">{error}</div>}

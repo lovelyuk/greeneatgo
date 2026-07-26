@@ -440,16 +440,28 @@ def _safe_filename(value: str) -> str:
 @router.get("/qr")
 def merchant_qr(token: str = Depends(bearer_token)):
     repo = JoinRepository()
+    supplier_fields = ("representative_name", "business_type", "business_item", "tax_invoice_email")
     try:
         _, merchant_id = _merchant_admin(repo, token)
-        rows = repo.client.rest_get(
-            "merchants",
-            {"select": "id,name,category,avg_price,qr_token,status", "id": f"eq.{merchant_id}", "limit": "1"},
-        )
+        try:
+            rows = repo.client.rest_get(
+                "merchants",
+                {"select": "id,name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,category,avg_price,qr_token,status", "id": f"eq.{merchant_id}", "limit": "1"},
+            )
+            migration_required = False
+        except SupabaseHttpError as exc:
+            if "PGRST204" not in exc.body and not any(field in exc.body for field in supplier_fields):
+                raise
+            rows = repo.client.rest_get(
+                "merchants",
+                {"select": "id,name,biz_reg_no,address,category,avg_price,qr_token,status", "id": f"eq.{merchant_id}", "limit": "1"},
+            )
+            rows = [{**row, **{field: None for field in supplier_fields}} for row in rows]
+            migration_required = True
         if not rows:
             raise _error(404, "MERCHANT_NOT_FOUND", "식당 정보를 찾을 수 없어요")
         merchant = rows[0]
-        return {"ok": True, "data": {"merchant": merchant, "qr_token": merchant.get("qr_token")}, "error": None}
+        return {"ok": True, "data": {"merchant": merchant, "qr_token": merchant.get("qr_token"), "migration_required": migration_required}, "error": None}
     except HTTPException:
         raise
     except JoinFlowError as exc:
@@ -463,26 +475,22 @@ def update_merchant_profile(payload: MerchantProfileUpdateRequest, token: str = 
     repo = JoinRepository()
     try:
         _, merchant_id = _merchant_admin(repo, token)
+        values = payload.model_dump(exclude_unset=True)
         rows = repo.client.rest_patch(
-            "merchants", {"id": f"eq.{merchant_id}"}, {"name": payload.name}
+            "merchants", {"id": f"eq.{merchant_id}"}, values
         )
         if not rows:
             raise _error(404, "MERCHANT_NOT_FOUND", "식당 정보를 찾을 수 없어요")
-        merchant = rows[0]
-        return {
-            "ok": True,
-            "data": {
-                "id": merchant.get("id", merchant_id),
-                "name": merchant.get("name", payload.name),
-            },
-            "error": None,
-        }
+        return {"ok": True, "data": rows[0], "error": None}
     except HTTPException:
         raise
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
-        raise _error(502, "SUPABASE_ERROR", "식당 이름을 변경하는 중 오류가 발생했어요") from exc
+        supplier_fields = ("representative_name", "business_type", "business_item", "tax_invoice_email")
+        if "PGRST204" in exc.body or any(field in exc.body for field in supplier_fields):
+            raise _error(400, "MIGRATION_REQUIRED", "0034_merchant_supplier_profile.sql 적용 후 공급자 정보를 저장할 수 있어요") from exc
+        raise _error(502, "SUPABASE_ERROR", "공급자 정보를 저장하는 중 오류가 발생했어요") from exc
 
 
 @router.get("/companies/search")

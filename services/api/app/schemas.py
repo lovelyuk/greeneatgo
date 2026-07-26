@@ -67,12 +67,35 @@ class CompanyBusinessProfileUpdateRequest(BaseModel):
 
 
 class MerchantProfileUpdateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=80)
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    biz_reg_no: str | None = Field(default=None, max_length=40)
+    representative_name: str | None = Field(default=None, max_length=80)
+    address: str | None = Field(default=None, max_length=300)
+    business_type: str | None = Field(default=None, max_length=120)
+    business_item: str | None = Field(default=None, max_length=120)
+    tax_invoice_email: str | None = Field(default=None, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
     @field_validator("name", mode="before")
     @classmethod
     def trim_merchant_name(cls, value: object) -> object:
-        return value.strip() if isinstance(value, str) else value
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise ValueError("식당 이름을 입력해 주세요")
+        return value
+
+    @field_validator("biz_reg_no", "representative_name", "address", "business_type", "business_item", "tax_invoice_email", mode="before")
+    @classmethod
+    def trim_merchant_profile_field(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @model_validator(mode="after")
+    def require_changed_field(self):
+        if not self.model_fields_set:
+            raise ValueError("변경할 공급자 정보를 입력해 주세요")
+        return self
 
     model_config = {"extra": "forbid"}
 

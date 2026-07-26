@@ -1196,8 +1196,17 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
     align-items: center;
     gap: 0;
   }
+  .merchant-topbar .brand-row { gap: 12px; }
   .merchant-topbar .brandmark, .company-topbar .brandmark { flex: 0 0 auto; }
-  .merchant-topbar .sidebar-entity-name, .company-topbar .sidebar-entity-name {
+  .merchant-topbar .brandmark::after {
+    width: 1px;
+    height: 20px;
+    margin-left: 12px;
+    background: #E7E9ED;
+    content: '';
+  }
+  .merchant-topbar .sidebar-entity-name { position: static; min-width: 0; max-width: none; flex: 1 1 auto; transform: none; }
+  .company-topbar .sidebar-entity-name {
     position: absolute;
     top: 50%;
     left: calc(50% + 0.5px);
@@ -1645,7 +1654,7 @@ code { font-size: 12px; }
 .titleless-guidance, .company-list-page .admin-mock-page-title .panel-note { margin-top: 0; font-weight: 400; }
 .supplier-info-page .admin-mock-page-title .panel-note { margin-top: 0; }
 .merchant-regular-weight, .merchant-regular-weight * { font-weight: 400 !important; }
-.merchant-topbar .sidebar-entity-name { color: var(--accent); font-size: 20px; }
+.merchant-topbar .sidebar-entity-name { color: #6B7480; font-size: 18px; font-weight: 400; letter-spacing: -.01em; }
 .merchant-open-table .table-wrap { border: 0; border-radius: 0; background: transparent; }
 .merchant-open-table table { border-collapse: collapse; border-spacing: 0; }
 .merchant-open-table thead th { border-bottom: 1px solid #E7E9ED; }

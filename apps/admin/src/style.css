@@ -1627,6 +1627,8 @@ code { font-size: 12px; }
 .merchant-section-tabs button:hover { transform: none; color: var(--text-primary); background: var(--bg-subtle); box-shadow: none; }
 .merchant-section-tabs button.active { color: var(--accent); background: var(--accent-soft); border-bottom-color: var(--accent); }
 .titleless-guidance, .company-list-page .admin-mock-page-title .panel-note { margin-top: 0; font-weight: 400; }
+.supplier-info-page .admin-mock-page-title .panel-note { margin-top: 0; }
+.merchant-regular-weight, .merchant-regular-weight * { font-weight: 400 !important; }
 
 @media (max-width: 700px) {
   .merchant-section-tabs { margin-bottom: 14px; scroll-snap-type: x proximity; }

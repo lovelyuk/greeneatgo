@@ -1648,6 +1648,7 @@ code { font-size: 12px; }
 .merchant-topbar .sidebar-entity-name { color: var(--accent); font-size: 20px; }
 .merchant-open-table .table-wrap { border: 0; border-radius: 0; background: transparent; }
 .merchant-open-table table { border-collapse: collapse; border-spacing: 0; }
+.merchant-open-table thead th { border-bottom: 1px solid #E7E9ED; }
 .merchant-open-table tbody tr { margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .merchant-open-table tbody td,
 .merchant-open-table tbody td:first-child,

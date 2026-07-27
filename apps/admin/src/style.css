@@ -988,7 +988,7 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   max-width: 100%;
   max-height: 2.6em;
   overflow: hidden;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   color: #3F4641;
   font-size: 18px;
   font-weight: 400;
@@ -996,6 +996,7 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   text-align: center;
   text-overflow: clip;
   white-space: normal;
+  word-break: keep-all;
 }
 .merchant-topbar .top-actions {
   grid-column: 2;

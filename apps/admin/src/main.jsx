@@ -13,18 +13,30 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
 const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
-let paymentAudioContext = null;
+const paymentSuccessAudioUrl = '/audio/payment-success.mp3';
+let paymentSuccessAudio = null;
+let paymentAudioUnlocked = false;
 
-function getPaymentAudioContext() {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return null;
-  paymentAudioContext ??= new AudioContextClass();
-  return paymentAudioContext;
+function getPaymentSuccessAudio() {
+  if (typeof Audio === 'undefined') return null;
+  paymentSuccessAudio ??= new Audio(paymentSuccessAudioUrl);
+  paymentSuccessAudio.preload = 'auto';
+  return paymentSuccessAudio;
 }
 
 function unlockPaymentAudio() {
-  const context = getPaymentAudioContext();
-  if (context?.state === 'suspended') context.resume().catch(() => {});
+  if (paymentAudioUnlocked) return;
+  const audio = getPaymentSuccessAudio();
+  if (!audio) return;
+  audio.volume = 0;
+  const attempt = audio.play();
+  if (!attempt) return;
+  attempt.then(() => {
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = 1;
+    paymentAudioUnlocked = true;
+  }).catch(() => { audio.volume = 1; });
 }
 
 function merchantMealPaymentIds(list) {
@@ -1388,26 +1400,12 @@ function Dashboard({ session, onLogout }) {
   const merchantQrImageUrl = merchantPayUrl ? `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=14&data=${encodeURIComponent(merchantPayUrl)}` : '';
 
   function playPaymentChime() {
-    const context = getPaymentAudioContext();
-    if (!context) return;
-    const play = () => {
-      const start = context.currentTime;
-      const gain = context.createGain();
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(0.24, start + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.58);
-      gain.connect(context.destination);
-      [[880, 0], [1174.66, 0.16]].forEach(([frequency, delay]) => {
-        const oscillator = context.createOscillator();
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(frequency, start + delay);
-        oscillator.connect(gain);
-        oscillator.start(start + delay);
-        oscillator.stop(start + delay + 0.34);
-      });
-    };
-    if (context.state === 'suspended') context.resume().then(play).catch(() => {});
-    else play();
+    const audio = getPaymentSuccessAudio();
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = 1;
+    audio.play().catch(() => {});
   }
 
   async function copyMerchantPayUrl() {

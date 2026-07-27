@@ -19,7 +19,7 @@ from app.services.vouchers import calculate_sale_price, krw_amount, per_voucher_
 
 router = APIRouter(tags=["voucher-products"])
 logger = logging.getLogger(__name__)
-_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,kiwoom_pay_method,image_url,is_event,event_start_at,event_end_at,created_at,updated_at"
+_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,kiwoom_pay_method,image_url,is_event,event_start_at,event_end_at,tax_type,created_at,updated_at"
 _LEGACY_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,image_url,created_at,updated_at"
 
 
@@ -108,6 +108,7 @@ def purchase_subsidized(payload: LegacyCompatibleVoucherPurchaseRequest | None =
         product = products[0]
         if not _is_exposed(product):
             raise _error(404, "VOUCHER_PRODUCT_NOT_EXPOSED", "현재 판매 기간이 아닌 식권 상품이에요")
+        _require_classified_product(product)
         paid, bonus = int(product["voucher_count"]), int(product.get("bonus_count") or 0)
         employee_due = krw_amount(product["sale_price"]) - (company + restaurant) * paid
         if employee_due <= 0:
@@ -164,6 +165,11 @@ def _is_exposed(row: dict, now: datetime | None = None) -> bool:
     return _event_status(row, now)[0] in {"active", "event_active"}
 
 
+def _require_classified_product(row: dict) -> None:
+    if row.get("tax_type") == "unclassified":
+        raise _error(409, "TAX_TYPE_UNCLASSIFIED", "과세 유형이 설정되지 않은 상품은 결제할 수 없어요")
+
+
 def _validate_event_window(row: dict) -> None:
     if not row.get("is_event"):
         return
@@ -197,7 +203,7 @@ def _load_products(repo: JoinRepository, params: dict[str, str], *, allow_legacy
         if not allow_legacy:
             raise _error(503, "MIGRATION_REQUIRED", "0020_voucher_product_events.sql 또는 0030_kiwoom_product_payment_method.sql 적용이 필요해요") from exc
         rows = repo.client.rest_get("voucher_products", {"select": _LEGACY_PRODUCT_SELECT, **params})
-        return [{**row, "kiwoom_pay_method": "TOTAL", "is_event": False, "event_start_at": None, "event_end_at": None} for row in rows], True
+        return [{**row, "kiwoom_pay_method": "TOTAL", "is_event": False, "event_start_at": None, "event_end_at": None, "tax_type": "unclassified"} for row in rows], True
 
 
 def _delete_replaced_image(repo: JoinRepository, merchant_id: str, old_url: str | None, new_url: str | None) -> None:
@@ -370,6 +376,7 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
         product = products[0]
         if not _is_exposed(product):
             raise _error(404, "VOUCHER_PRODUCT_NOT_EXPOSED", "현재 판매 기간이 아닌 식권 상품이에요")
+        _require_classified_product(product)
         total_count = int(product["voucher_count"]) + int(product.get("bonus_count") or 0)
         amount = krw_amount(product["sale_price"])
         if amount <= 0:
@@ -384,8 +391,8 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
             "requested_payment_method": product.get("kiwoom_pay_method") or "TOTAL",
             "paid_voucher_count": int(product["voucher_count"]),
             "bonus_voucher_count": int(product.get("bonus_count") or 0),
-            # KiwoomPay charges integer KRW; snapshot from that exact charged amount, not numeric sale_price.
-            "voucher_purchase_price": str(per_voucher_price(amount, total_count)),
+            # Paid vouchers conserve the exact charged KRW; bonus vouchers carry zero purchase cost.
+            "voucher_purchase_price": str(per_voucher_price(amount, int(product["voucher_count"]))),
         })[0]
         return {"ok": True, "data": {
             "order_id": order_id, "amount": int(order["amount"]), "product_id": product["id"],

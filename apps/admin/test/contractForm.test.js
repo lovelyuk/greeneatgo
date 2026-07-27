@@ -20,6 +20,7 @@ test('persisted nested subsidy contract initializes the form', () => {
     subsidy_enabled: true,
     company_subsidy_amount: '2000',
     restaurant_subsidy_amount: '1000',
+    tax_type: 'unclassified',
   });
 });
 

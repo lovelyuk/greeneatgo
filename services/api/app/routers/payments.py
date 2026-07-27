@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import time
 from datetime import datetime, timezone
@@ -25,7 +26,7 @@ ORDER_SELECT = (
     "product_name,amount,status,provider_payment_key,payment_method,approved_at,created_at,"
     "pay_type,voucher_product_id,voucher_count,voucher_purchase_price,fulfilled_at,provider_response,"
     "company_id,company_subsidy_amount,restaurant_subsidy_amount,point_amount,point_reserved,"
-    "requested_payment_method,paid_voucher_count,bonus_voucher_count,total_employee_burden,checkout_started_at"
+    "requested_payment_method,paid_voucher_count,bonus_voucher_count,total_employee_burden,checkout_started_at,tax_type,tax_review_required"
 )
 
 
@@ -42,6 +43,12 @@ def _customer(repo: JoinRepository, token: str, *, allow_employee: bool = False)
     if not allowed:
         raise _error(403, "CUSTOMER_ONLY", "결제 가능한 사용자 계정이 아니에요")
     return auth, profile
+
+
+def _require_order_tax_classified(order: dict) -> None:
+    """Block every provider-backed order unless its immutable tax snapshot is classified."""
+    if order.get("tax_type") not in {"taxable", "tax_free"}:
+        raise _error(409, "TAX_TYPE_UNCLASSIFIED", "과세 유형이 설정되지 않은 주문은 결제할 수 없어요")
 
 
 def _ensure_voucher_order_available(repo: JoinRepository, order: dict) -> None:
@@ -113,6 +120,7 @@ def checkout(checkout_token: str):
     if not rows:
         raise _error(404, "ORDER_NOT_FOUND", "결제할 주문이 없거나 이미 처리됐어요")
     order = _enforce_subsidized_order_expiry(repo, rows[0])
+    _require_order_tax_classified(order)
     _ensure_voucher_order_available(repo, order)
     pay_method = str(order.get("requested_payment_method") or "TOTAL")
     if pay_method not in {"TOTAL", "BANK"}:
@@ -173,8 +181,15 @@ def _decode_form(raw: bytes) -> dict[str, str]:
 
 
 def _notification_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
-    return forwarded or (request.client.host if request.client else "")
+    # The ingress proxy appends its peer at the right. Taking the rightmost
+    # non-empty XFF value avoids trusting a client-prepended leftmost value.
+    # This remains provisional transport filtering: final Kiwoom callback
+    # authentication is blocked on provider signature/server-inquiry docs.
+    forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+    candidate = forwarded[-1] if forwarded else (request.client.host if request.client else "")
+    if candidate == "testclient":
+        return candidate
+    return str(ipaddress.ip_address(candidate))
 
 
 def _ack(success: bool, status_code: int = 200) -> Response:
@@ -184,7 +199,10 @@ def _ack(success: bool, status_code: int = 200) -> Response:
 
 async def _notification(request: Request) -> Response:
     settings, repo = get_settings(), JoinRepository()
-    source_ip = _notification_ip(request)
+    try:
+        source_ip = _notification_ip(request)
+    except ValueError:
+        return _ack(False, 400)
     if source_ip not in {"127.0.0.1", "::1", "testclient"} and source_ip not in settings.kiwoompay_notification_ips:
         return _ack(False, 403)
     values = dict(request.query_params)
@@ -210,6 +228,20 @@ async def _notification(request: Request) -> Response:
         requested_method = str(order.get("requested_payment_method") or "TOTAL")
         if requested_method == "BANK" and pay_method != "BANK":
             return _ack(False, 409)
+        if not pay_method:
+            return _ack(False, 400)
+        provider_response = {**values, "source_ip": source_ip}
+        if order.get("tax_review_required"):
+            # ACK only after the immutable event has been durably stored. This
+            # branch never fulfills or marks the legacy order done.
+            repo.client.rpc("enqueue_legacy_payment_notification", {
+                "p_order_id": order["id"], "p_provider_order_id": order_id,
+                "p_cpid": values["CPID"], "p_amount": int(order["amount"]),
+                "p_payment_method": pay_method, "p_provider_transaction_id": transaction_id,
+                "p_payload": provider_response, "p_source_ip": source_ip,
+            })
+            return _ack(True)
+        _require_order_tax_classified(order)
         if order.get("status") == "done":
             return _ack(order.get("provider_payment_key") == transaction_id, 200 if order.get("provider_payment_key") == transaction_id else 409)
         if order.get("status") != "ready":
@@ -225,7 +257,6 @@ async def _notification(request: Request) -> Response:
         if order.get("pay_type") == "subsidized" and int(order.get("amount") or 0) > 0 and not order.get("checkout_started_at") and not legacy_subsidized:
             return _ack(False, 409)
         approved_at = datetime.now(timezone.utc).isoformat()
-        provider_response = {**values, "source_ip": source_ip}
         if order.get("pay_type") in {"voucher", "subsidized"}:
             repo.client.rpc("fulfill_voucher_order" if order.get("pay_type") == "voucher" else "fulfill_subsidized_order", {
                 "p_order_id": order["id"], "p_provider_payment_key": transaction_id,
@@ -271,6 +302,7 @@ def confirm(payload: PaymentConfirmRequest, token: str = Depends(bearer_token)):
         if not rows:
             raise _error(404, "ORDER_NOT_FOUND", "결제 주문을 찾을 수 없어요")
         order = rows[0]
+        _require_order_tax_classified(order)
         if int(order["amount"]) != payload.amount:
             raise _error(400, "AMOUNT_MISMATCH", "결제 금액이 주문 금액과 일치하지 않아요")
         if order.get("status") != "done":

@@ -68,6 +68,7 @@ def _map_rpc_error(exc: SupabaseHttpError) -> HTTPException:
         "PRICE_NOT_CONFIGURED": (400, "PRICE_NOT_CONFIGURED", "식당 계약 단가가 설정되지 않았어요"),
         "CONTRACT_PRICE_MISMATCH": (409, "CONTRACT_PRICE_MISMATCH", "계약 단가가 변경되었어요. 다시 시도해 주세요"),
         "IDEMPOTENCY_CONFLICT": (409, "IDEMPOTENCY_CONFLICT", "이미 다른 결제에 사용된 요청 키예요"),
+        "TAX_TYPE_UNCLASSIFIED": (409, "TAX_TYPE_UNCLASSIFIED", "과세 유형이 설정되지 않아 결제할 수 없어요"),
     }
     for key, value in mapping.items():
         if key in body:

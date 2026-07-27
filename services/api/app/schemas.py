@@ -145,6 +145,53 @@ class PaymentConfirmRequest(BaseModel):
     amount: int = Field(gt=0)
 
 
+class MerchantProductCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    price: int = Field(gt=0)
+    category: str | None = Field(default=None, max_length=80)
+    image_url: str | None = Field(default=None, max_length=500)
+    is_active: bool = True
+    sort_order: int = Field(default=0, ge=-100000, le=100000)
+    tax_type: str = Field(default="unclassified", pattern="^(taxable|tax_free|unclassified)$")
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def trim_product_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
+class MerchantProductUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    price: int | None = Field(default=None, gt=0)
+    category: str | None = Field(default=None, max_length=80)
+    image_url: str | None = Field(default=None, max_length=500)
+    is_active: bool | None = None
+    sort_order: int | None = Field(default=None, ge=-100000, le=100000)
+    tax_type: str | None = Field(default=None, pattern="^(taxable|tax_free|unclassified)$")
+
+    @field_validator("name", "price", "is_active", "sort_order", "tax_type", mode="before")
+    @classmethod
+    def reject_required_product_null(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("필드는 null일 수 없어요")
+        return value
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def trim_updated_product_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def require_product_change(self):
+        if not self.model_fields_set:
+            raise ValueError("변경할 상품 정보를 입력해 주세요")
+        return self
+
+    model_config = {"extra": "forbid"}
+
+
 class VoucherProductCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     voucher_count: int = Field(gt=0, le=1000)
@@ -158,6 +205,7 @@ class VoucherProductCreateRequest(BaseModel):
     is_event: bool = False
     event_start_at: datetime | None = None
     event_end_at: datetime | None = None
+    tax_type: str = Field(default="unclassified", pattern="^(taxable|tax_free|unclassified)$")
 
     @field_validator("name", mode="before")
     @classmethod
@@ -176,6 +224,8 @@ class VoucherProductCreateRequest(BaseModel):
             raise ValueError("이벤트 종료일시는 시작일시보다 늦어야 해요")
         return self
 
+    model_config = {"extra": "forbid"}
+
 
 class VoucherProductUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
@@ -190,8 +240,9 @@ class VoucherProductUpdateRequest(BaseModel):
     is_event: bool | None = None
     event_start_at: datetime | None = None
     event_end_at: datetime | None = None
+    tax_type: str | None = Field(default=None, pattern="^(taxable|tax_free|unclassified)$")
 
-    @field_validator("name", "voucher_count", "bonus_count", "unit_price", "discount_rate", "status", "display_order", "kiwoom_pay_method", "is_event", mode="before")
+    @field_validator("name", "voucher_count", "bonus_count", "unit_price", "discount_rate", "status", "display_order", "kiwoom_pay_method", "is_event", "tax_type", mode="before")
     @classmethod
     def reject_explicit_null(cls, value: object) -> object:
         if value is None:
@@ -202,6 +253,38 @@ class VoucherProductUpdateRequest(BaseModel):
     @classmethod
     def trim_name(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def require_voucher_product_change(self):
+        if not self.model_fields_set:
+            raise ValueError("변경할 식권 상품 정보를 입력해 주세요")
+        return self
+
+    model_config = {"extra": "forbid"}
+
+
+class LegacyTaxReviewReleaseRequest(BaseModel):
+    tax_type: str = Field(pattern="^(taxable|tax_free)$")
+    reason: str = Field(min_length=3, max_length=1000)
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def trim_review_reason(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
+class LegacyVoucherClassifyRequest(BaseModel):
+    tax_type: str = Field(pattern="^(taxable|tax_free)$")
+    reason: str = Field(min_length=3, max_length=1000)
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def trim_reason(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
 
 
 class VoucherPurchaseRequest(BaseModel):
@@ -388,6 +471,7 @@ class MerchantCompanyContractUpdateRequest(BaseModel):
     subsidy_enabled: bool | None = None
     company_subsidy_amount: int | None = Field(default=None, ge=0)
     restaurant_subsidy_amount: int | None = Field(default=None, ge=0)
+    tax_type: str | None = Field(default=None, pattern='^(taxable|tax_free|unclassified)$')
 
     @model_validator(mode="after")
     def validate_subsidy_contract(self):

@@ -139,13 +139,12 @@ class VoucherCoreTests(unittest.TestCase):
                 {"name": "   ", "voucher_count": 10, "unit_price": 8000}
             )
 
-    def test_admin_payload_never_accepts_client_sale_price(self):
-        payload = VoucherProductCreateRequest.model_validate({
-            "name": "10장", "voucher_count": 10, "unit_price": 8000,
-            "discount_rate": 10, "sale_price": 1,
-        })
-        values = _values(payload, partial=False)
-        self.assertNotIn("sale_price", values)
+    def test_admin_payload_rejects_client_sale_price(self):
+        with self.assertRaises(ValidationError):
+            VoucherProductCreateRequest.model_validate({
+                "name": "10장", "voucher_count": 10, "unit_price": 8000,
+                "discount_rate": 10, "sale_price": 1,
+            })
 
     def test_event_product_requires_valid_period(self):
         now = datetime.now(timezone.utc)
@@ -202,7 +201,7 @@ class VoucherCoreTests(unittest.TestCase):
         repo.get_profile.return_value = SimpleNamespace(id="user-1", role="customer", status="active")
         repo.client.rest_get.return_value = [{
             "id": "db-order", "order_id": "GE-V-order", "amount": 72000, "status": "done",
-            "pay_type": "voucher", "provider_payment_key": "daou-trx", "approved_at": "2026-07-10T00:00:00Z",
+            "pay_type": "voucher", "provider_payment_key": "daou-trx", "approved_at": "2026-07-10T00:00:00Z", "tax_type": "taxable",
         }]
 
         result = confirm(PaymentConfirmRequest(order_id="GE-V-order", amount=72000), "bearer")

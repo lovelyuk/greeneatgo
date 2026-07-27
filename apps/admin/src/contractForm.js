@@ -7,6 +7,7 @@ export function contractFormFromItem(item) {
     subsidy_enabled: !!(item.subsidy_enabled ?? item.contract?.subsidy_enabled),
     company_subsidy_amount: String(item.company_subsidy_amount ?? item.contract?.company_subsidy_amount ?? 0),
     restaurant_subsidy_amount: String(item.restaurant_subsidy_amount ?? item.contract?.restaurant_subsidy_amount ?? 0),
+    tax_type: item.tax_type ?? item.contract?.tax_type ?? 'unclassified',
   };
 }
 

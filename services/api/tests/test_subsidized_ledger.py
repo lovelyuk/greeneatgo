@@ -203,7 +203,7 @@ class SubsidizedLedgerTests(unittest.TestCase):
         self._employee_repo(repo)
         repo.client.rest_get.return_value = [{
             "id": "db-order", "order_id": "GE-S-order", "amount": 6000,
-            "status": "done", "pay_type": "subsidized", "provider_payment_key": "daou-trx",
+            "status": "done", "pay_type": "subsidized", "provider_payment_key": "daou-trx", "tax_type": "tax_free",
         }]
         result = confirm(PaymentConfirmRequest(order_id="GE-S-order", amount=6000), "bearer")
         self.assertEqual(result["data"]["provider_payment_key"], "daou-trx")

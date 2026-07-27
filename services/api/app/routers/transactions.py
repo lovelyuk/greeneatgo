@@ -30,6 +30,17 @@ def _merchant(repo: JoinRepository, qr_data: str) -> dict:
     return rows[0]
 
 
+def _map_rpc_error(exc: SupabaseHttpError) -> HTTPException:
+    body = exc.body or ""
+    if "NO_VOUCHER" in body:
+        return _error(402, "NO_VOUCHER", "보유 식권이 없습니다", result="fail", reason="no_voucher")
+    if "IDEMPOTENCY_CONFLICT" in body:
+        return _error(409, "IDEMPOTENCY_CONFLICT", "이미 다른 결제에 사용된 요청 키예요")
+    if "TAX_TYPE_UNCLASSIFIED" in body:
+        return _error(409, "TAX_TYPE_UNCLASSIFIED", "과세 유형이 설정되지 않아 결제할 수 없어요")
+    return _error(502, "SUPABASE_ERROR", "QR 결제를 처리하지 못했어요")
+
+
 @router.post("/scan")
 def scan(payload: TransactionScanRequest, token: str = Depends(bearer_token)):
     repo = JoinRepository()
@@ -81,8 +92,4 @@ def scan(payload: TransactionScanRequest, token: str = Depends(bearer_token)):
     except SupabaseHttpError as exc:
         if exc.status in (401, 403):
             raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
-        if "NO_VOUCHER" in (exc.body or ""):
-            raise _error(402, "NO_VOUCHER", "보유 식권이 없습니다", result="fail", reason="no_voucher") from exc
-        if "IDEMPOTENCY_CONFLICT" in (exc.body or ""):
-            raise _error(409, "IDEMPOTENCY_CONFLICT", "이미 다른 결제에 사용된 요청 키예요") from exc
-        raise _error(502, "SUPABASE_ERROR", "QR 결제를 처리하지 못했어요") from exc
+        raise _map_rpc_error(exc) from exc

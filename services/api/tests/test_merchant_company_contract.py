@@ -43,6 +43,7 @@ def test_list_companies_returns_persisted_subsidy_contract(repo_class, _admin, _
         "subsidy_enabled": True,
         "company_subsidy_amount": 2000,
         "restaurant_subsidy_amount": 1000,
+        "tax_type": "unclassified",
         "cycle_label": "월말",
     }
 

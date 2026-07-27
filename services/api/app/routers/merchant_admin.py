@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
+from uuid import UUID
 from zipfile import ZIP_DEFLATED, ZipFile
 from zoneinfo import ZoneInfo
 
@@ -17,7 +18,7 @@ from app.auth import bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, MerchantProfileUpdateRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
+from app.schemas import LegacyTaxReviewReleaseRequest, LegacyVoucherClassifyRequest, MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, MerchantProductCreateRequest, MerchantProductUpdateRequest, MerchantProfileUpdateRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
 from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
@@ -178,7 +179,7 @@ def _paged_get(repo: JoinRepository, table: str, params: dict[str, str], page_si
 def _require_company_link(repo: JoinRepository, merchant_id: str, company_id: str) -> dict:
     links = repo.client.rest_get(
         "merchant_companies",
-        {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,created_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "limit": "1"},
+        {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,tax_type,created_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "limit": "1"},
     )
     if not links:
         raise JoinFlowError(JoinErrorCode.FORBIDDEN, "연결된 장부업체가 아니에요")
@@ -207,6 +208,7 @@ def _contract_from_link(link: dict | None) -> dict | None:
         "subsidy_enabled": bool(link.get("subsidy_enabled")),
         "company_subsidy_amount": int(link.get("company_subsidy_amount") or 0),
         "restaurant_subsidy_amount": int(link.get("restaurant_subsidy_amount") or 0),
+        "tax_type": link.get("tax_type") or "unclassified",
         "cycle_label": "월말" if (cycle or "month_end") == "month_end" else f"매월 {day}일",
     }
 
@@ -509,6 +511,159 @@ def search_companies(q: str = Query(min_length=1, max_length=80), token: str = D
         raise _error(502, "SUPABASE_ERROR", "회사 검색 중 오류가 발생했어요") from exc
 
 
+@router.get("/products")
+def list_merchant_products(token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        rows = repo.client.rest_get("merchant_products", {
+            "select": "id,merchant_id,name,price,category,image_url,is_active,sort_order,tax_type,created_at,updated_at",
+            "merchant_id": f"eq.{merchant_id}", "order": "sort_order.asc,created_at.asc",
+        })
+        return {"ok": True, "data": {"items": rows}, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "상품을 불러오지 못했어요") from exc
+
+
+@router.post("/products", status_code=201)
+def create_merchant_product(payload: MerchantProductCreateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        values = {**payload.model_dump(mode="json"), "merchant_id": merchant_id}
+        rows = repo.client.rest_post("merchant_products", values)
+        if not rows:
+            raise _error(409, "MERCHANT_PRODUCT_CREATE_CONFLICT", "상품이 저장되지 않았어요. 다시 확인해 주세요")
+        row = rows[0]
+        return {"ok": True, "data": row, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "상품을 저장하지 못했어요") from exc
+
+
+@router.patch("/products/{product_id}")
+def update_merchant_product(product_id: UUID, payload: MerchantProductUpdateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        product_key = str(product_id)
+        rows = repo.client.rest_get("merchant_products", {
+            "select": "id", "id": f"eq.{product_key}", "merchant_id": f"eq.{merchant_id}", "limit": "1",
+        })
+        if not rows:
+            raise _error(404, "MERCHANT_PRODUCT_NOT_FOUND", "상품을 찾을 수 없어요")
+        values = payload.model_dump(exclude_unset=True, mode="json")
+        values["updated_at"] = datetime.now(timezone.utc).isoformat()
+        updated = repo.client.rest_patch("merchant_products", {
+            "id": f"eq.{product_key}", "merchant_id": f"eq.{merchant_id}",
+        }, values)
+        if not updated:
+            raise _error(409, "MERCHANT_PRODUCT_UPDATE_CONFLICT", "상품이 동시에 변경되었거나 삭제됐어요")
+        return {"ok": True, "data": updated[0], "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "상품을 수정하지 못했어요") from exc
+
+
+@router.get("/legacy-tax-reviews")
+def list_legacy_tax_reviews(
+    limit: int = Query(default=50, ge=1, le=50),
+    offset: int = Query(default=0, ge=0, le=1000000),
+    token: str = Depends(bearer_token),
+):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        data = repo.client.rpc("list_legacy_tax_reviews", {
+            "p_merchant_id": merchant_id, "p_limit": limit, "p_offset": offset,
+        })
+        fallback = {"items": [], "total": 0, "has_more": False, "limit": limit, "offset": offset}
+        return {"ok": True, "data": data if isinstance(data, dict) else fallback, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "TAX_REVIEW_LOAD_FAILED", "기존 결제 검토 목록을 불러오지 못했어요") from exc
+
+
+@router.post("/legacy-tax-reviews/{inbox_id}/release")
+def release_legacy_tax_review(inbox_id: UUID, payload: LegacyTaxReviewReleaseRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        actor, merchant_id = _merchant_admin(repo, token)
+        result = repo.client.rpc("release_legacy_tax_review", {
+            "p_inbox_id": str(inbox_id), "p_merchant_id": merchant_id, "p_actor_id": actor.id,
+            "p_tax_type": payload.tax_type, "p_reason": payload.reason,
+        })
+        return {"ok": True, "data": result, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        errors = {
+            "TAX_REVIEW_NOT_FOUND": (404, "TAX_REVIEW_NOT_FOUND", "검토할 결제를 찾을 수 없어요"),
+            "TAX_REVIEW_ALREADY_RELEASED": (409, "TAX_REVIEW_ALREADY_RELEASED", "이미 다른 과세 유형으로 처리된 결제예요"),
+            "ORDER_NOT_IN_TAX_REVIEW": (409, "ORDER_NOT_IN_TAX_REVIEW", "현재 검토 대기 상태가 아니에요"),
+        }
+        for marker, detail in errors.items():
+            if marker in exc.body:
+                raise _error(*detail) from exc
+        raise _error(502, "TAX_REVIEW_RELEASE_FAILED", "기존 결제를 처리하지 못했어요") from exc
+
+
+@router.get("/legacy-vouchers")
+def list_active_legacy_vouchers(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=1000000),
+    token: str = Depends(bearer_token),
+):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        data = repo.client.rpc("list_active_legacy_vouchers", {
+            "p_merchant_id": merchant_id, "p_limit": limit, "p_offset": offset,
+        })
+        fallback = {"items": [], "limit": limit, "offset": offset}
+        return {"ok": True, "data": data if isinstance(data, dict) else fallback, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "LEGACY_VOUCHER_LOAD_FAILED", "기존 식권 검토 목록을 불러오지 못했어요") from exc
+
+
+@router.post("/legacy-vouchers/{voucher_id}/classify")
+def classify_active_legacy_voucher(
+    voucher_id: UUID,
+    payload: LegacyVoucherClassifyRequest,
+    token: str = Depends(bearer_token),
+):
+    repo = JoinRepository()
+    try:
+        actor, merchant_id = _merchant_admin(repo, token)
+        result = repo.client.rpc("classify_legacy_voucher", {
+            "p_voucher_id": str(voucher_id), "p_merchant_id": merchant_id,
+            "p_actor_id": actor.id, "p_tax_type": payload.tax_type,
+            "p_reason": payload.reason,
+        })
+        return {"ok": True, "data": result, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        errors = {
+            "VOUCHER_NOT_FOUND": (404, "VOUCHER_NOT_FOUND", "검토할 식권을 찾을 수 없어요"),
+            "VOUCHER_NOT_CLASSIFIABLE": (409, "VOUCHER_NOT_CLASSIFIABLE", "이미 사용되었거나 다른 과세 유형으로 분류된 식권이에요"),
+            "INVALID_TAX_CLASSIFICATION": (422, "INVALID_TAX_CLASSIFICATION", "과세 유형과 3자 이상의 사유를 확인해 주세요"),
+        }
+        for marker, detail in errors.items():
+            if marker in exc.body:
+                raise _error(*detail) from exc
+        raise _error(502, "LEGACY_VOUCHER_CLASSIFY_FAILED", "기존 식권을 분류하지 못했어요") from exc
+
+
 @router.get("/companies")
 def list_companies(token: str = Depends(bearer_token)):
     repo = JoinRepository()
@@ -516,7 +671,7 @@ def list_companies(token: str = Depends(bearer_token)):
         _, merchant_id = _merchant_admin(repo, token)
         links = repo.client.rest_get(
             "merchant_companies",
-            {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,created_at", "merchant_id": f"eq.{merchant_id}", "order": "created_at.desc"},
+            {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,tax_type,created_at", "merchant_id": f"eq.{merchant_id}", "order": "created_at.desc"},
         )
         company_ids = [link["company_id"] for link in links]
         companies = {row["id"]: row for row in _company_rows(repo, company_ids)}
@@ -649,6 +804,8 @@ def update_company_contract(company_id: str, payload: MerchantCompanyContractUpd
             "settlement_day": payload.settlement_day if payload.settlement_cycle == "day" else None,
             "unit_price": payload.unit_price,
         }
+        if payload.tax_type is not None:
+            values["tax_type"] = payload.tax_type
         if payload.subsidy_enabled is not None:
             values.update({
                 "subsidy_enabled": payload.subsidy_enabled,

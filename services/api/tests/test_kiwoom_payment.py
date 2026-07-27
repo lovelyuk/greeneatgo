@@ -155,7 +155,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
             "user_id": "user-1", "amount": 8000, "order_id": "GE-order-123",
             "product_name": "그린잇 식권", "merchant_name": "돈토", "pay_type": "direct",
             "merchant_id": "merchant-1", "product_id": "product-1", "voucher_product_id": None,
-            "requested_payment_method": "TOTAL",
+            "requested_payment_method": "TOTAL", "tax_type": "taxable",
         }
         settings = SimpleNamespace(
             public_api_base_url="https://api.example.com/v1",
@@ -206,7 +206,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
             "user_id": "user-1", "amount": 80000, "order_id": "GE-V-bank",
             "product_name": "식권 10+1", "merchant_name": "돈토", "pay_type": "voucher",
             "merchant_id": "merchant-1", "product_id": None, "voucher_product_id": "voucher-1",
-            "requested_payment_method": "BANK",
+            "requested_payment_method": "BANK", "tax_type": "tax_free",
         }
         settings = SimpleNamespace(
             public_api_base_url="https://api.example.com/v1",
@@ -257,7 +257,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
             "order_id": "GE-S-fresh", "status": "ready", "pay_type": "subsidized",
             "product_name": "보조금 식권", "merchant_name": "돈토",
             "merchant_id": "merchant-1", "product_id": None,
-            "voucher_product_id": "voucher-product-1", "requested_payment_method": "TOTAL",
+            "voucher_product_id": "voucher-product-1", "requested_payment_method": "TOTAL", "tax_type": "taxable",
         }
         settings = SimpleNamespace(
             public_api_base_url="https://api.example.com", kiwoompay_cpid="CPID",
@@ -304,7 +304,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         order = {
             "id": "db-order", "order_id": "GE-order-123", "amount": 8000,
             "status": "ready", "pay_type": "direct", "provider_payment_key": None,
-            "requested_payment_method": "TOTAL",
+            "requested_payment_method": "TOTAL", "tax_type": "taxable",
         }
         settings = SimpleNamespace(
             kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",),
@@ -334,7 +334,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         order = {
             "id": "legacy-order", "user_id": "user-1", "order_id": "GE-S-legacy", "amount": 6000,
             "status": "ready", "pay_type": "subsidized", "provider_payment_key": None,
-            "requested_payment_method": "TOTAL", "voucher_product_id": None,
+            "requested_payment_method": "TOTAL", "tax_type": "taxable", "voucher_product_id": None,
             "merchant_id": "merchant-1", "voucher_count": 1,
             "paid_voucher_count": 1, "bonus_voucher_count": 0,
         }
@@ -361,7 +361,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         order = {
             "id": "fresh-order", "user_id": "user-1", "order_id": "GE-S-fresh", "amount": 57000,
             "status": "ready", "pay_type": "subsidized", "provider_payment_key": None,
-            "requested_payment_method": "BANK", "voucher_product_id": "product-1",
+            "requested_payment_method": "BANK", "tax_type": "tax_free", "voucher_product_id": "product-1",
             "merchant_id": "merchant-1", "voucher_count": 11,
             "paid_voucher_count": 10, "bonus_voucher_count": 1,
             "checkout_started_at": "2026-07-24T00:00:00Z",
@@ -390,7 +390,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         ready = {
             "id": "stale-order", "user_id": "user-1", "order_id": "GE-S-stale", "amount": 6000,
             "created_at": "2020-01-01T00:00:00Z", "status": "ready", "pay_type": "subsidized", "provider_payment_key": None,
-            "requested_payment_method": "TOTAL", "voucher_product_id": "product-1",
+            "requested_payment_method": "TOTAL", "tax_type": "taxable", "voucher_product_id": "product-1",
             "merchant_id": "merchant-1", "voucher_count": 1,
             "paid_voucher_count": 1, "bonus_voucher_count": 0,
             "checkout_started_at": "2026-07-24T00:00:00Z",
@@ -419,7 +419,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         order = {
             "id": "expired-order", "order_id": "GE-S-expired", "amount": 6000,
             "status": "canceled", "pay_type": "subsidized", "provider_payment_key": None,
-            "requested_payment_method": "TOTAL", "voucher_product_id": "product-1",
+            "requested_payment_method": "TOTAL", "tax_type": "taxable", "voucher_product_id": "product-1",
             "merchant_id": "merchant-1", "voucher_count": 1,
             "paid_voucher_count": 1, "bonus_voucher_count": 0,
         }
@@ -440,13 +440,53 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertIn("<RESULT>FAIL</RESULT>", response.text)
         repo.client.rpc.assert_not_called()
 
+    def test_quarantined_notification_is_durably_enqueued_acked_and_duplicate_safe(self):
+        app = FastAPI()
+        app.include_router(router)
+        order = {
+            "id": "legacy-review", "order_id": "GE-review", "amount": 8000,
+            "status": "ready", "pay_type": "voucher", "provider_payment_key": None,
+            "requested_payment_method": "TOTAL", "tax_type": "unclassified",
+            "tax_review_required": True,
+        }
+        settings = SimpleNamespace(
+            kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",),
+        )
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ):
+            repo = repo_class.return_value
+            repo.client.rest_get.return_value = [order]
+            client = TestClient(app)
+            params = {"CPID": "CPID", "PAYMETHOD": "CARD", "ORDERNO": "GE-review", "DAOUTRX": "review-trx", "AMOUNT": "8000"}
+            responses = [client.get("/payments/notification", params=params, headers={"X-Forwarded-For": "198.51.100.4, 123.140.121.205"}) for _ in range(2)]
+
+        self.assertTrue(all(response.status_code == 200 and "<RESULT>SUCCESS</RESULT>" in response.text for response in responses))
+        self.assertEqual([call.args[0] for call in repo.client.rpc.call_args_list], [
+            "enqueue_legacy_payment_notification", "enqueue_legacy_payment_notification",
+        ])
+        self.assertEqual(repo.client.rpc.call_args.args[1]["p_source_ip"], "123.140.121.205")
+        repo.client.rest_patch.assert_not_called()
+        self.assertNotIn("fulfill_voucher_order", [call.args[0] for call in repo.client.rpc.call_args_list])
+
+    def test_notification_rejects_malformed_rightmost_forwarded_ip_before_database_access(self):
+        app = FastAPI(); app.include_router(router)
+        settings = SimpleNamespace(kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",))
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ):
+            response = TestClient(app).get("/payments/notification", headers={"X-Forwarded-For": "123.140.121.205, malformed"})
+        self.assertEqual(response.status_code, 400)
+        repo_class.return_value.client.rest_get.assert_not_called()
+        repo_class.return_value.client.rpc.assert_not_called()
+
     def test_bank_order_rejects_non_bank_notification(self):
         app = FastAPI()
         app.include_router(router)
         order = {
             "id": "db-order", "order_id": "GE-V-bank", "amount": 80000,
             "status": "ready", "pay_type": "voucher", "provider_payment_key": None,
-            "requested_payment_method": "BANK",
+            "requested_payment_method": "BANK", "tax_type": "tax_free",
         }
         settings = SimpleNamespace(
             kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",),

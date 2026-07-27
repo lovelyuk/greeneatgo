@@ -1736,3 +1736,29 @@ code { font-size: 12px; }
   .merchant-section-tabs { margin-bottom: 14px; scroll-snap-type: x proximity; }
   .merchant-section-tabs button { min-height: 42px; padding-inline: 14px; scroll-snap-align: start; font-size: 14px; }
 }
+
+/* Product tax controls live inside Supplier Information, not global navigation. */
+.merchant-product-create-form { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(120px, .7fr) minmax(160px, .8fr) auto; align-items: end; gap: 12px; margin-bottom: 18px; }
+.merchant-product-create-form label, .merchant-product-tax-row label { display: grid; gap: 6px; }
+.merchant-product-tax-list { display: grid; gap: 10px; }
+.merchant-product-tax-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(170px, .45fr) auto; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg-surface); }
+.merchant-product-tax-row > div { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.merchant-product-tax-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.merchant-product-tax-row > div > span:not(.tax-type-badge) { color: var(--text-secondary); }
+.tax-type-badge { display: inline-flex !important; width: fit-content; margin: 0 !important; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.tax-type-badge.taxable { color: var(--badge-blue-fg); background: var(--badge-blue-bg); }
+.tax-type-badge.tax-free { color: var(--badge-green-fg); background: var(--badge-green-bg); }
+.tax-type-badge.unclassified { color: var(--badge-red-fg); background: var(--badge-red-bg); }
+@media (max-width: 800px) {
+  .merchant-product-create-form, .merchant-product-tax-row { grid-template-columns: 1fr; }
+  .merchant-product-tax-row > div { flex-wrap: wrap; }
+}
+.pagination-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.pagination-controls span { color: var(--muted); font-size: 0.9rem; }

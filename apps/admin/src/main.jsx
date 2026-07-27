@@ -1341,7 +1341,9 @@ function Dashboard({ session, onLogout }) {
   const merchantContentSection = merchantSection === 'companies'
     ? companyManagementTab
     : merchantSection === 'restaurant-management' ? restaurantManagementTab : merchantSection;
-  const [companySection, setCompanySection] = useState('legacy-employees');
+  const [companySection, setCompanySection] = useState('company-dashboard');
+  const [companyUsageTab, setCompanyUsageTab] = useState('employee-usage');
+  const companyContentSection = companySection === 'company-usage' ? companyUsageTab : companySection;
   const [refundOpen, setRefundOpen] = useState(false);
   const [paymentHistoryRefreshKey, setPaymentHistoryRefreshKey] = useState(0);
   const [newCompanyForm, setNewCompanyForm] = useState({ name: '', contact_email: '', contact_phone: '' });
@@ -2009,12 +2011,11 @@ function Dashboard({ session, onLogout }) {
     ['reviews', '리뷰'],
   ];
   const companyNavGroups = [
-    ['대시보드', [['company-dashboard', '대시보드', Home]]],
-    ['이용 내역', [['monthly-usage', '월별 이용', CalendarDays], ['employee-usage', '사원별 사용', BarChart3]]],
-    ['정산', [['company-billing', '청구 내역', WalletCards], ['company-tax-invoices', '세금계산서', FileText]]],
-    ['사원 관리', [['legacy-employees', '사원 관리', Users], ['company-employee-list', '사원 목록', Building2]]],
-    ['설정', [['company-info', '회사 정보', Settings]]],
+    [['company-dashboard', '대시보드', Home]],
+    [['company-billing', '청구 내역', WalletCards], ['company-tax-invoices', '세금계산서', FileText], ['company-info', '회사 정보', Settings]],
+    [['legacy-employees', '사원 관리', Users], ['company-usage', '이용 내역', BarChart3]],
   ];
+  const companyUsageTabs = [['employee-usage', '사원별 사용'], ['monthly-usage', '월별 이용']];
 
   return <main className={`shell${isMerchantAdmin ? ' merchant-shell' : ''}${isCompanyAdmin ? ' company-shell' : ''}`}>
     <ImageCropModal request={cropRequest} onCancel={() => finishImageCrop(null)} onApply={finishImageCrop} />
@@ -2045,7 +2046,7 @@ function Dashboard({ session, onLogout }) {
     </nav>}
 
     {isCompanyAdmin && <nav className="company-tabs" aria-label="업체 관리자 메뉴">
-      {companyNavGroups.map(([group, items]) => <React.Fragment key={group}><div className="company-nav-group">{group}</div>{items.map(([id, label, Icon]) => <button key={id} type="button" className={companySection === id ? 'active' : ''} onClick={() => setCompanySection(id)} aria-current={companySection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span></button>)}</React.Fragment>)}
+      {companyNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{items.map(([id, label, Icon]) => <button key={id} type="button" className={companySection === id ? 'active' : ''} onClick={() => setCompanySection(id)} aria-current={companySection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span></button>)}</React.Fragment>)}
       <div className="merchant-nav-divider" role="separator" />
       <button type="button" className="merchant-sidebar-logout" onClick={load} disabled={busy}><RefreshCw size={18}/><span>새로고침</span></button>
       <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
@@ -2057,6 +2058,9 @@ function Dashboard({ session, onLogout }) {
     </nav>}
 
     <div className={isMerchantAdmin ? `merchant-content${merchantSection === 'main' || merchantSection === 'payment-history' ? ' merchant-regular-weight' : ''}` : isCompanyAdmin ? 'company-content merchant-regular-weight' : undefined}>
+    {isCompanyAdmin && companySection === 'company-usage' && <nav className="merchant-section-tabs" aria-label="이용 내역 페이지">
+      {companyUsageTabs.map(([id, label]) => <button key={id} type="button" className={companyUsageTab === id ? 'active' : ''} onClick={() => setCompanyUsageTab(id)} aria-current={companyUsageTab === id ? 'page' : undefined}>{label}</button>)}
+    </nav>}
     {isMerchantAdmin && merchantSection === 'companies' && <nav className="merchant-section-tabs" aria-label="업체 관리 페이지">
       {companyManagementTabs.map(([id, label]) => <button key={id} type="button" className={companyManagementTab === id ? 'active' : ''} onClick={() => setCompanyManagementTab(id)} aria-current={companyManagementTab === id ? 'page' : undefined}>{label}</button>)}
     </nav>}
@@ -2065,7 +2069,7 @@ function Dashboard({ session, onLogout }) {
     </nav>}
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantContentSection) && <AnnouncementReviewPanel token={token} section={merchantContentSection}/>}
     {isMerchantAdmin && <MerchantMockScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} />}
-    {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companySection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} />}
+    {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companyContentSection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} />}
 
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}

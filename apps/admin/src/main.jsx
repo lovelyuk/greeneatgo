@@ -1276,7 +1276,7 @@ function CompanyTaxInvoiceMock() {
   // TODO: company_id 스코프 수신 세금계산서 조회로 교체합니다.
   const rows = [['2026년 6월', '20260701-41000001-00000123', 4532000, '2026.07.01'], ['2026년 5월', '20260602-41000001-00000098', 4380000, '2026.06.02'], ['2026년 4월', '20260502-41000001-00000074', 4632000, '2026.05.02']];
   return <AdminMockPage title={null} description="수신한 세금계산서를 조회하고 내려받습니다." preview={false} className="merchant-regular-weight merchant-open-table">
-    <article className="panel"><div className="panel-title"><div><h3>수신 세금계산서</h3><p className="panel-note">식당에서 발행한 월 합계 계산서입니다.</p></div><span className="badge">수신 전용</span></div><div className="table-wrap"><table><thead><tr><th>발행월</th><th>승인번호</th><th className="money">합계</th><th>발행일</th><th>파일</th></tr></thead><tbody>{rows.map((row) => <tr key={row[1]}><td><strong>{row[0]}</strong></td><td><code>{row[1]}</code></td><td className="money">{krw(row[2])}</td><td>{row[3]}</td><td><button type="button" className="ghost"><Download size={15}/> PDF 다운로드</button></td></tr>)}</tbody></table></div></article>
+    <article className="panel"><div className="panel-title employee-panel-actions"><span className="badge">수신 전용</span></div><div className="table-wrap"><table><thead><tr><th>발행월</th><th>승인번호</th><th className="money">합계</th><th>발행일</th><th>파일</th></tr></thead><tbody>{rows.map((row) => <tr key={row[1]}><td><strong>{row[0]}</strong></td><td><code>{row[1]}</code></td><td className="money">{krw(row[2])}</td><td>{row[3]}</td><td><button type="button" className="ghost"><Download size={15}/> PDF 다운로드</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
 function CompanyEmployeeListMock() {

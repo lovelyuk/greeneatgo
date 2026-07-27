@@ -67,16 +67,18 @@ def test_classified_legacy_direct_checkout_calls_provider():
     request_hash.assert_called_once()
 
 
-def test_unclassified_legacy_direct_notification_does_not_mark_done():
+def _notification_response(repo, *, rpc_error=None):
     app = FastAPI()
     app.include_router(router)
     settings = SimpleNamespace(kiwoompay_cpid="CPID", kiwoompay_notification_ips=())
     with patch("app.routers.payments.JoinRepository") as repo_class, patch(
         "app.routers.payments.get_settings", return_value=settings
     ):
-        repo = repo_class.return_value
+        repo_class.return_value = repo
         repo.client.rest_get.return_value = [_direct_order("unclassified")]
-        response = TestClient(app).get("/payments/notification", params={
+        if rpc_error is not None:
+            repo.client.rpc.side_effect = rpc_error
+        return TestClient(app).get("/payments/notification", params={
             "CPID": "CPID",
             "PAYMETHOD": "CARD",
             "ORDERNO": "GE-DIRECT-1",
@@ -84,10 +86,46 @@ def test_unclassified_legacy_direct_notification_does_not_mark_done():
             "AMOUNT": "8000",
         })
 
+
+def test_legacy_direct_notification_delegates_atomically_to_database():
+    from unittest.mock import MagicMock
+
+    repo = MagicMock()
+    repo.client.rpc.return_value = {"status": "done", "duplicate": False, "tax_type": "taxable"}
+    response = _notification_response(repo)
+
+    assert response.status_code == 200
+    assert "<RESULT>SUCCESS</RESULT>" in response.text
+    repo.client.rpc.assert_called_once_with("complete_kiwoom_payment_notification", {
+        "p_order_id": "direct-order", "p_provider_order_id": "GE-DIRECT-1",
+        "p_cpid": "CPID", "p_amount": 8000, "p_payment_method": "CARD",
+        "p_provider_transaction_id": "provider-trx",
+        "p_payload": {
+            "CPID": "CPID", "PAYMETHOD": "CARD", "ORDERNO": "GE-DIRECT-1",
+            "DAOUTRX": "provider-trx", "AMOUNT": "8000", "source_ip": "testclient",
+        },
+        "p_source_ip": "testclient",
+    })
+    assert all(call.args[0] not in {"fulfill_voucher_order", "fulfill_subsidized_order", "enqueue_legacy_payment_notification"}
+               for call in repo.client.rpc.call_args_list)
+    repo.client.rest_patch.assert_not_called()
+
+
+def test_legacy_direct_notification_maps_database_unclassified_error_to_conflict():
+    from unittest.mock import MagicMock
+
+    repo = MagicMock()
+    response = _notification_response(
+        repo,
+        rpc_error=SupabaseHttpError(400, '{"code":"P0001","message":"TAX_TYPE_UNCLASSIFIED"}'),
+    )
+
     assert response.status_code == 409
     assert "<RESULT>FAIL</RESULT>" in response.text
     repo.client.rest_patch.assert_not_called()
-    repo.client.rpc.assert_not_called()
+    repo.client.rpc.assert_called_once()
+    assert all(call.args[0] not in {"fulfill_voucher_order", "fulfill_subsidized_order", "enqueue_legacy_payment_notification"}
+               for call in repo.client.rpc.call_args_list)
 
 
 def test_unclassified_direct_result_is_not_reported_as_completed():

@@ -9,7 +9,13 @@ from urllib.error import HTTPError, URLError
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from app.routers.payments import _ensure_voucher_order_available, checkout, router, short_redirect_router
+from app.routers.payments import (
+    _ensure_voucher_order_available,
+    _is_successful_notification_outcome,
+    checkout,
+    router,
+    short_redirect_router,
+)
 from app.services.kiwoom_payment import (
     KiwoomCancellationOutcomeUnknown,
     KiwoomHashInput,
@@ -298,6 +304,40 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
             })
         self.assertEqual(ctx.exception.status_code, 409)
 
+    def test_notification_outcome_predicate_accepts_explicit_success_and_legacy_absence(self):
+        self.assertTrue(_is_successful_notification_outcome({"PAYMETHOD": "CARD", "RESULTCODE": "0000"}))
+        self.assertTrue(_is_successful_notification_outcome({"PAYMETHOD": "CARD"}))
+        self.assertFalse(_is_successful_notification_outcome({"PAYMETHOD": "CARD", "RESULTCODE": "9999"}))
+        self.assertFalse(_is_successful_notification_outcome({"PAYMETHOD": "CARD_CANCEL", "RESULTCODE": "0000"}))
+
+    def test_failed_and_cancel_notifications_ack_without_database_access_or_mutation(self):
+        app = FastAPI()
+        app.include_router(router)
+        settings = SimpleNamespace(
+            kiwoompay_cpid="CPID", kiwoompay_notification_ips=("123.140.121.205",),
+        )
+        base = {
+            "CPID": "CPID", "ORDERNO": "GE-order-123", "DAOUTRX": "daou-trx-1", "AMOUNT": "8000",
+        }
+        with patch("app.routers.payments.JoinRepository") as repo_class, patch(
+            "app.routers.payments.get_settings", return_value=settings,
+        ):
+            client = TestClient(app)
+            failed = client.get("/payments/notification", params={
+                **base, "PAYMETHOD": "CARD", "RESULTCODE": "9999",
+            })
+            canceled = client.get("/payments/notification", params={
+                **base, "PAYMETHOD": "CARD_CANCEL", "RESULTCODE": "0000",
+            })
+            repo = repo_class.return_value
+
+        self.assertTrue(all(response.status_code == 200 for response in (failed, canceled)))
+        self.assertTrue(all("<RESULT>SUCCESS</RESULT>" in response.text for response in (failed, canceled)))
+        repo.client.rest_get.assert_not_called()
+        repo.client.rpc.assert_not_called()
+        repo.client.rest_post.assert_not_called()
+        repo.client.rest_patch.assert_not_called()
+
     def test_notification_validates_order_and_persists_daou_transaction(self):
         app = FastAPI()
         app.include_router(router)
@@ -320,13 +360,16 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
                 params={
                     "CPID": "CPID", "PAYMETHOD": "CARD", "ORDERNO": "GE-order-123",
                     "DAOUTRX": "daou-trx-1", "AMOUNT": "8000", "SETTDATE": "20260721090000",
+                    "RESULTCODE": "0000",
                 },
             )
         self.assertEqual(response.status_code, 200)
         self.assertIn("<RESULT>SUCCESS</RESULT>", response.text)
-        update = repo.client.rest_patch.call_args.args[2]
-        self.assertEqual(update["provider_payment_key"], "daou-trx-1")
-        self.assertEqual(update["provider_response"]["ORDERNO"], "GE-order-123")
+        rpc_name, rpc_payload = repo.client.rpc.call_args.args
+        self.assertEqual(rpc_name, "complete_kiwoom_payment_notification")
+        self.assertEqual(rpc_payload["p_provider_transaction_id"], "daou-trx-1")
+        self.assertEqual(rpc_payload["p_payload"]["ORDERNO"], "GE-order-123")
+        repo.client.rest_patch.assert_not_called()
 
     def test_notification_completes_ready_legacy_subsidized_order(self):
         app = FastAPI()
@@ -353,7 +396,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("<RESULT>SUCCESS</RESULT>", response.text)
-        self.assertEqual([call.args[0] for call in repo.client.rpc.call_args_list], ["fulfill_subsidized_order"])
+        self.assertEqual([call.args[0] for call in repo.client.rpc.call_args_list], ["complete_kiwoom_payment_notification"])
 
     def test_notification_completes_fresh_product_subsidized_order(self):
         app = FastAPI()
@@ -381,7 +424,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("<RESULT>SUCCESS</RESULT>", response.text)
-        self.assertEqual([call.args[0] for call in repo.client.rpc.call_args_list], ["fulfill_subsidized_order"])
+        self.assertEqual([call.args[0] for call in repo.client.rpc.call_args_list], ["complete_kiwoom_payment_notification"])
         self.assertEqual(repo.client.rest_get.call_count, 1)
 
     def test_notification_fulfills_started_order_after_catalog_event_ends(self):
@@ -410,7 +453,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("<RESULT>SUCCESS</RESULT>", response.text)
-        self.assertEqual(repo.client.rpc.call_args.args[0], "fulfill_subsidized_order")
+        self.assertEqual(repo.client.rpc.call_args.args[0], "complete_kiwoom_payment_notification")
         self.assertEqual(repo.client.rest_get.call_count, 1)
 
     def test_notification_rejects_expired_subsidized_order(self):
@@ -463,7 +506,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
 
         self.assertTrue(all(response.status_code == 200 and "<RESULT>SUCCESS</RESULT>" in response.text for response in responses))
         self.assertEqual([call.args[0] for call in repo.client.rpc.call_args_list], [
-            "enqueue_legacy_payment_notification", "enqueue_legacy_payment_notification",
+            "complete_kiwoom_payment_notification", "complete_kiwoom_payment_notification",
         ])
         self.assertEqual(repo.client.rpc.call_args.args[1]["p_source_ip"], "123.140.121.205")
         repo.client.rest_patch.assert_not_called()

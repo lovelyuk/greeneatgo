@@ -1428,23 +1428,19 @@ function MerchantProductTaxPanel({ token }) {
 function LegacyTaxReviewPanel({ token }) {
   const pageSize = 50;
   const [items, setItems] = useState(null);
-  const [drafts, setDrafts] = useState({});
-  const [busyId, setBusyId] = useState('');
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [offset, setOffset] = useState(0);
   const [page, setPage] = useState({ total: 0, has_more: false });
   const readGeneration = useRef(0);
   const sessionGeneration = useRef(0);
   const identityRef = useRef(token);
-  const mutationControllers = useRef(new Set());
   identityRef.current = token;
   const current = (capture) => generationIsCurrent(capture, sessionGeneration.current, identityRef.current);
 
   async function loadReviews(signal, requestedOffset = offset) {
     const generation = ++readGeneration.current;
     const capture = captureGeneration(sessionGeneration.current, token, signal);
-    setItems(null); setDrafts({}); setError(''); setNotice('');
+    setItems(null); setError('');
     try {
       const data = await apiFetch(`/admin/merchant/legacy-tax-reviews?limit=${pageSize}&offset=${requestedOffset}`, token, { signal });
       if (!current(capture) || generation !== readGeneration.current) return;
@@ -1459,52 +1455,19 @@ function LegacyTaxReviewPanel({ token }) {
   useEffect(() => {
     const controller = new AbortController();
     loadReviews(controller.signal, offset);
-    return () => {
-      controller.abort(); readGeneration.current += 1; sessionGeneration.current += 1;
-      mutationControllers.current.forEach((item) => item.abort()); mutationControllers.current.clear();
-    };
+    return () => { controller.abort(); readGeneration.current += 1; sessionGeneration.current += 1; };
   }, [token, offset]);
-  useEffect(() => { setOffset(0); setItems(null); setDrafts({}); setPage({ total: 0, has_more: false }); setError(''); setNotice(''); }, [token]);
-
-  async function release(item) {
-    const draft = drafts[item.inbox_id] ?? {};
-    if (!['taxable', 'tax_free'].includes(draft.tax_type) || (draft.reason ?? '').trim().length < 3) {
-      setNotice(''); setError('과세 또는 면세를 직접 선택하고 3자 이상의 검토 사유를 입력해 주세요.'); return;
-    }
-    const controller = new AbortController();
-    mutationControllers.current.add(controller);
-    const capture = captureGeneration(sessionGeneration.current, token, controller.signal);
-    setBusyId(item.inbox_id); setError(''); setNotice('');
-    try {
-      await apiFetch(`/admin/merchant/legacy-tax-reviews/${item.inbox_id}/release`, token, {
-        method: 'POST', body: JSON.stringify({ tax_type: draft.tax_type, reason: draft.reason.trim() }), signal: controller.signal,
-      });
-      if (!current(capture)) return;
-      const remaining = (items?.length ?? 1) - 1;
-      if (remaining === 0 && offset > 0) setOffset((value) => Math.max(0, value - pageSize));
-      else await loadReviews(controller.signal, offset);
-      if (!current(capture)) return;
-      setNotice(`${item.provider_order_id} 주문을 감사 기록과 함께 처리했습니다.`);
-    } catch (releaseError) {
-      if (current(capture) && releaseError.name !== 'AbortError') setError(releaseError.message);
-    } finally {
-      mutationControllers.current.delete(controller); if (current(capture)) setBusyId('');
-    }
-  }
+  useEffect(() => { setOffset(0); setItems(null); setPage({ total: 0, has_more: false }); setError(''); }, [token]);
 
   const pageNumber = Math.floor(offset / pageSize) + 1;
   const pageCount = Math.max(1, Math.ceil(page.total / pageSize));
   return <section className="panel merchant-product-tax-panel" aria-labelledby="legacy-tax-review-title">
-    <div className="panel-title"><div><h3 id="legacy-tax-review-title">기존 결제 과세 검토</h3><p className="panel-note">콜백은 안전하게 보관되며 명시적으로 확정하기 전에는 발급·완료되지 않습니다.</p></div><span className="badge">총 {page.total}건</span></div>
+    <div className="panel-title"><div><h3 id="legacy-tax-review-title">기존 결제 과세 검토</h3><p className="panel-note">읽기 전용 목록입니다. 동일한 결제 결과 알림이 재전송되면 서버가 상품·계약 분류를 검증해 원자적으로 완료합니다.</p></div><span className="badge">총 {page.total}건</span></div>
     {error && <div className="alert error" role="alert">{error}</div>}
-    {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
-    {items === null ? <p className="empty-state" role="status">검토 목록을 불러오는 중...</p> : items.length === 0 ? <p className="empty-state" role="status">검토 대기 중인 기존 결제가 없습니다.</p> : <div className="merchant-product-tax-list">{items.map((item) => <article className="merchant-product-tax-row" key={item.inbox_id}>
-      <div><strong>{item.product_name || item.provider_order_id}</strong><span>{item.provider_order_id} · {krw(item.amount)} · {item.payment_method}</span><span>상품 분류 제안: {taxTypeMeta(item.suggested_tax_type).label} (확정 필요)</span></div>
-      <label>확정 과세 유형<select aria-label={`${item.provider_order_id} 과세 유형`} value={drafts[item.inbox_id]?.tax_type ?? ''} onChange={(event) => setDrafts((currentDrafts) => ({ ...currentDrafts, [item.inbox_id]: { ...currentDrafts[item.inbox_id], tax_type: event.target.value } }))} disabled={!!busyId}><option value="">직접 선택</option><option value="taxable">과세</option><option value="tax_free">면세</option></select></label>
-      <label>검토 사유<input maxLength="1000" value={drafts[item.inbox_id]?.reason ?? ''} onChange={(event) => setDrafts((currentDrafts) => ({ ...currentDrafts, [item.inbox_id]: { ...currentDrafts[item.inbox_id], reason: event.target.value } }))} disabled={!!busyId}/></label>
-      <button type="button" className="primary" onClick={() => release(item)} disabled={!!busyId}>{busyId === item.inbox_id ? '처리 중...' : '확정 및 결제 처리'}</button>
+    {items === null ? <p className="empty-state" role="status">검토 목록을 불러오는 중...</p> : items.length === 0 ? <p className="empty-state" role="status">대기 중인 기존 결제가 없습니다.</p> : <div className="merchant-product-tax-list">{items.map((item) => <article className="merchant-product-tax-row" key={item.inbox_id}>
+      <div><strong>{item.product_name || item.provider_order_id}</strong><span>{item.provider_order_id} · {krw(item.amount)} · {item.payment_method}</span><span>현재 상품·계약 분류: {taxTypeMeta(item.suggested_tax_type).label}</span></div>
     </article>)}</div>}
-    <nav className="pagination-controls" aria-label="기존 결제 검토 페이지"><button type="button" className="ghost" disabled={offset === 0 || !!busyId} onClick={() => setOffset((value) => Math.max(0, value - pageSize))}>이전</button><span>{pageNumber} / {pageCount} 페이지</span><button type="button" className="ghost" disabled={!page.has_more || !!busyId} onClick={() => setOffset((value) => value + pageSize)}>다음</button></nav>
+    <nav className="pagination-controls" aria-label="기존 결제 검토 페이지"><button type="button" className="ghost" disabled={offset === 0 || items === null} onClick={() => setOffset((value) => Math.max(0, value - pageSize))}>이전</button><span>{pageNumber} / {pageCount} 페이지</span><button type="button" className="ghost" disabled={!page.has_more || items === null} onClick={() => setOffset((value) => value + pageSize)}>다음</button></nav>
   </section>;
 }
 

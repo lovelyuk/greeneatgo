@@ -18,7 +18,7 @@ from app.auth import bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import LegacyTaxReviewReleaseRequest, LegacyVoucherClassifyRequest, MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, MerchantProductCreateRequest, MerchantProductUpdateRequest, MerchantProfileUpdateRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
+from app.schemas import LegacyVoucherClassifyRequest, MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, MerchantProductCreateRequest, MerchantProductUpdateRequest, MerchantProfileUpdateRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
 from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
@@ -591,30 +591,6 @@ def list_legacy_tax_reviews(
         raise _error(502, "TAX_REVIEW_LOAD_FAILED", "기존 결제 검토 목록을 불러오지 못했어요") from exc
 
 
-@router.post("/legacy-tax-reviews/{inbox_id}/release")
-def release_legacy_tax_review(inbox_id: UUID, payload: LegacyTaxReviewReleaseRequest, token: str = Depends(bearer_token)):
-    repo = JoinRepository()
-    try:
-        actor, merchant_id = _merchant_admin(repo, token)
-        result = repo.client.rpc("release_legacy_tax_review", {
-            "p_inbox_id": str(inbox_id), "p_merchant_id": merchant_id, "p_actor_id": actor.id,
-            "p_tax_type": payload.tax_type, "p_reason": payload.reason,
-        })
-        return {"ok": True, "data": result, "error": None}
-    except JoinFlowError as exc:
-        raise _error(403, str(exc.code), exc.message) from exc
-    except SupabaseHttpError as exc:
-        errors = {
-            "TAX_REVIEW_NOT_FOUND": (404, "TAX_REVIEW_NOT_FOUND", "검토할 결제를 찾을 수 없어요"),
-            "TAX_REVIEW_ALREADY_RELEASED": (409, "TAX_REVIEW_ALREADY_RELEASED", "이미 다른 과세 유형으로 처리된 결제예요"),
-            "ORDER_NOT_IN_TAX_REVIEW": (409, "ORDER_NOT_IN_TAX_REVIEW", "현재 검토 대기 상태가 아니에요"),
-        }
-        for marker, detail in errors.items():
-            if marker in exc.body:
-                raise _error(*detail) from exc
-        raise _error(502, "TAX_REVIEW_RELEASE_FAILED", "기존 결제를 처리하지 못했어요") from exc
-
-
 @router.get("/legacy-vouchers")
 def list_active_legacy_vouchers(
     limit: int = Query(default=50, ge=1, le=100),
@@ -947,19 +923,24 @@ def create_vendor_settlement(company_id: str, payload: SettlementCreateRequest, 
 def confirm_vendor_settlement_payment(company_id: str, settlement_id: str, payload: SettlementPaymentConfirmRequest, token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
-        _, merchant_id = _merchant_admin(repo, token)
+        actor, merchant_id = _merchant_admin(repo, token)
         _require_company_link(repo, merchant_id, company_id)
-        rows = repo.client.rest_get("settlements", {"select": "id,company_id,merchant_id", "id": f"eq.{settlement_id}", "company_id": f"eq.{company_id}", "merchant_id": f"eq.{merchant_id}", "limit": "1"})
-        if not rows:
-            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산 회차를 찾을 수 없어요")
-        paid_at = payload.paid_at if "T" in payload.paid_at else f"{payload.paid_at}T00:00:00+00:00"
-        updated = repo.client.rest_patch("settlements", {"id": f"eq.{settlement_id}"}, {"status": "paid", "paid_at": paid_at})[0]
-        return {"ok": True, "data": {"settlement": updated}, "error": None}
+        result = repo.client.rpc("merchant_confirm_settlement_payment_legacy", {
+            "p_actor_id": actor.id, "p_merchant_id": merchant_id,
+            "p_company_id": company_id, "p_settlement_id": settlement_id,
+        })
+        return {"ok": True, "data": result, "error": None}
     except HTTPException:
         raise
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
+        if "SETTLEMENT_NOT_FOUND" in exc.body:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산 회차를 찾을 수 없어요") from exc
+        if "SETTLEMENT_FORBIDDEN" in exc.body:
+            raise _error(403, "FORBIDDEN", "이 정산을 처리할 권한이 없어요") from exc
+        if "SETTLEMENT_STATE_CONFLICT" in exc.body:
+            raise _error(409, "SETTLEMENT_STATE_CONFLICT", "세금계산서 발행 후 입금확인할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "입금확인 처리 중 오류가 발생했어요") from exc
 
 

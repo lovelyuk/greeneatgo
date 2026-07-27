@@ -3,7 +3,6 @@ from __future__ import annotations
 import ipaddress
 import json
 import time
-from datetime import datetime, timezone
 from html import escape
 from urllib.parse import parse_qs, urlsplit
 
@@ -20,6 +19,11 @@ from app.services.kiwoom_payment import KiwoomHashInput, KiwoomPaymentError, req
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 short_redirect_router = APIRouter(include_in_schema=False)
+
+# Existing Kiwoom API/result handling consistently defines 0000 as success.
+# Deployed result notifications may omit RESULTCODE, so absence remains
+# compatible while an explicit non-success value can never approve an order.
+KIWOOM_NOTIFICATION_SUCCESS_CODES = frozenset({"0000"})
 
 ORDER_SELECT = (
     "id,order_id,checkout_token,user_id,merchant_id,product_id,merchant_name,"
@@ -183,8 +187,6 @@ def _decode_form(raw: bytes) -> dict[str, str]:
 def _notification_ip(request: Request) -> str:
     # The ingress proxy appends its peer at the right. Taking the rightmost
     # non-empty XFF value avoids trusting a client-prepended leftmost value.
-    # This remains provisional transport filtering: final Kiwoom callback
-    # authentication is blocked on provider signature/server-inquiry docs.
     forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
     candidate = forwarded[-1] if forwarded else (request.client.host if request.client else "")
     if candidate == "testclient":
@@ -195,6 +197,16 @@ def _notification_ip(request: Request) -> str:
 def _ack(success: bool, status_code: int = 200) -> Response:
     result = "SUCCESS" if success else "FAIL"
     return Response(f"<html><body><RESULT>{result}</RESULT></body></html>", status_code=status_code, media_type="text/html")
+
+
+def _is_successful_notification_outcome(values: dict[str, str]) -> bool:
+    """Return whether a callback can represent an approval."""
+    pay_method = str(values.get("PAYMETHOD") or "").strip().upper()
+    if pay_method.endswith("CANCEL") or pay_method == "CARD_CANCEL":
+        return False
+    if "RESULTCODE" not in values:
+        return True
+    return str(values["RESULTCODE"]).strip() in KIWOOM_NOTIFICATION_SUCCESS_CODES
 
 
 async def _notification(request: Request) -> Response:
@@ -212,7 +224,9 @@ async def _notification(request: Request) -> Response:
         if values.get("CPID") != settings.kiwoompay_cpid:
             return _ack(False, 400)
         pay_method = str(values.get("PAYMETHOD") or "")
-        if pay_method.endswith("CANCEL") or pay_method == "CARD_CANCEL":
+        if not _is_successful_notification_outcome(values):
+            # SUCCESS acknowledges receipt. Cancellation and explicit failures
+            # are terminal provider outcomes, not payment approvals.
             return _ack(True)
         order_id, transaction_id = values.get("ORDERNO"), values.get("DAOUTRX")
         if not order_id or not transaction_id:
@@ -230,53 +244,36 @@ async def _notification(request: Request) -> Response:
             return _ack(False, 409)
         if not pay_method:
             return _ack(False, 400)
-        provider_response = {**values, "source_ip": source_ip}
-        if order.get("tax_review_required"):
-            # ACK only after the immutable event has been durably stored. This
-            # branch never fulfills or marks the legacy order done.
-            repo.client.rpc("enqueue_legacy_payment_notification", {
-                "p_order_id": order["id"], "p_provider_order_id": order_id,
-                "p_cpid": values["CPID"], "p_amount": int(order["amount"]),
-                "p_payment_method": pay_method, "p_provider_transaction_id": transaction_id,
-                "p_payload": provider_response, "p_source_ip": source_ip,
-            })
-            return _ack(True)
-        _require_order_tax_classified(order)
-        if order.get("status") == "done":
-            return _ack(order.get("provider_payment_key") == transaction_id, 200 if order.get("provider_payment_key") == transaction_id else 409)
-        if order.get("status") != "ready":
+        if order.get("status") not in {"ready", "done"}:
             return _ack(False, 409)
-        # Availability/event state gates order creation and checkout only. Once
-        # checkout starts, settlement uses immutable order/provider snapshots.
         legacy_subsidized = (
             order.get("voucher_product_id") is None
             and int(order.get("voucher_count") or 0) == 1
             and int(order.get("paid_voucher_count") or 0) == 1
             and int(order.get("bonus_voucher_count") or 0) == 0
         )
-        if order.get("pay_type") == "subsidized" and int(order.get("amount") or 0) > 0 and not order.get("checkout_started_at") and not legacy_subsidized:
+        if (order.get("status") == "ready" and order.get("pay_type") == "subsidized"
+                and int(order.get("amount") or 0) > 0 and not order.get("checkout_started_at")
+                and not legacy_subsidized):
             return _ack(False, 409)
-        approved_at = datetime.now(timezone.utc).isoformat()
-        if order.get("pay_type") in {"voucher", "subsidized"}:
-            repo.client.rpc("fulfill_voucher_order" if order.get("pay_type") == "voucher" else "fulfill_subsidized_order", {
-                "p_order_id": order["id"], "p_provider_payment_key": transaction_id,
-                "p_payment_method": pay_method, "p_provider_response": provider_response,
-                "p_approved_at": approved_at,
-            })
-        else:
-            updated = repo.client.rest_patch("payment_orders", {
-                "id": f"eq.{order['id']}", "status": "eq.ready",
-            }, {
-                "status": "done", "provider_payment_key": transaction_id,
-                "payment_method": pay_method, "provider_response": provider_response,
-                "approved_at": approved_at, "updated_at": approved_at,
-            })
-            if not updated:
-                return _ack(False, 409)
+        provider_response = {**values, "source_ip": source_ip}
+        # Kiwoom's validated result notification is the final approval. The RPC
+        # repeats every stored-order check, persists the durable inbox record,
+        # completes payment, and fulfills assets in one database transaction.
+        repo.client.rpc("complete_kiwoom_payment_notification", {
+            "p_order_id": order["id"], "p_provider_order_id": order_id,
+            "p_cpid": values["CPID"], "p_amount": int(order["amount"]),
+            "p_payment_method": pay_method, "p_provider_transaction_id": transaction_id,
+            "p_payload": provider_response, "p_source_ip": source_ip,
+        })
         return _ack(True)
     except HTTPException as exc:
         return _ack(False, exc.status_code)
-    except (SupabaseHttpError, ValueError, TypeError):
+    except SupabaseHttpError as exc:
+        if "TAX_TYPE_UNCLASSIFIED" in exc.body:
+            return _ack(False, 409)
+        return _ack(False, 500)
+    except (ValueError, TypeError):
         return _ack(False, 500)
 
 

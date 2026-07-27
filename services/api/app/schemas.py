@@ -263,18 +263,6 @@ class VoucherProductUpdateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class LegacyTaxReviewReleaseRequest(BaseModel):
-    tax_type: str = Field(pattern="^(taxable|tax_free)$")
-    reason: str = Field(min_length=3, max_length=1000)
-
-    @field_validator("reason", mode="before")
-    @classmethod
-    def trim_review_reason(cls, value: object) -> object:
-        return value.strip() if isinstance(value, str) else value
-
-    model_config = {"extra": "forbid"}
-
-
 class LegacyVoucherClassifyRequest(BaseModel):
     tax_type: str = Field(pattern="^(taxable|tax_free)$")
     reason: str = Field(min_length=3, max_length=1000)

@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from app.routers.merchant_admin import create_merchant_product, list_legacy_tax_reviews, list_merchant_products, update_merchant_product
+from app.routers.merchant_admin import create_merchant_product, list_legacy_tax_reviews, list_merchant_products, router, update_merchant_product
 from app.schemas import MerchantProductCreateRequest, MerchantProductUpdateRequest
 
 
@@ -58,3 +58,11 @@ def test_legacy_payment_review_list_passes_bounded_page_and_server_tenant(repo_c
     })
     assert result["data"]["total"] == 101
     assert result["data"]["has_more"] is True
+
+
+def test_manual_legacy_tax_release_route_is_removed():
+    assert not any(
+        getattr(route, "path", None) == "/admin/merchant/legacy-tax-reviews/{inbox_id}/release"
+        and "POST" in (getattr(route, "methods", None) or set())
+        for route in router.routes
+    )

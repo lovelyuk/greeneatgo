@@ -35,8 +35,8 @@ def runtime_db():
             conn.execute("create publication supabase_realtime")
         for migration in sorted(MIGRATIONS.glob("*.sql")):
             conn.execute(migration.read_text(encoding="utf-8"))
-        # Migration replay is a required production property.
-        conn.execute((MIGRATIONS / "0036_runtime_tax_snapshots.sql").read_text(encoding="utf-8"))
+        # Replaying the newest evolution is a required production property.
+        conn.execute((MIGRATIONS / "0038_atomic_kiwoom_notifications.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -126,16 +126,13 @@ def test_service_role_has_read_only_tables_direct_release_is_blocked_and_functio
 
     actor, merchants = _actor_and_merchants(pg)
     order_id, provider_order = _legacy_direct_order(pg, actor, merchants[0])
-    first = pg.execute(
-        "select enqueue_legacy_payment_notification(%s,%s,'CPID',1100,'CARD','trx-one','{}','127.0.0.1')",
-        (order_id, provider_order),
+    inbox_id = pg.execute(
+        """insert into payment_notification_inbox(
+             order_id,merchant_id,provider_transaction_id,provider_order_id,cpid,amount,
+             payment_method,normalized_payload,source_ip)
+           values(%s,%s,'trx-one',%s,'CPID',1100,'CARD','{}','127.0.0.1') returning id""",
+        (order_id, merchants[0], provider_order),
     ).fetchone()[0]
-    duplicate = pg.execute(
-        "select enqueue_legacy_payment_notification(%s,%s,'CPID',1100,'CARD','trx-one','{}','127.0.0.1')",
-        (order_id, provider_order),
-    ).fetchone()[0]
-    assert first["duplicate"] is False and duplicate["duplicate"] is True
-    inbox_id = first["id"]
 
     privileges = pg.execute(
         """select has_table_privilege('service_role','payment_notification_inbox','select'),
@@ -177,17 +174,18 @@ def test_service_role_has_read_only_tables_direct_release_is_blocked_and_functio
         with pg.transaction():
             pg.execute("set local role service_role")
             pg.execute("update public.payment_notification_inbox set review_status='released' where id=%s", (inbox_id,))
-    with pytest.raises(psycopg.errors.RaiseException, match="AUDITED_NOTIFICATION_RELEASE_REQUIRED"):
+    with pytest.raises(psycopg.errors.RaiseException, match="COMPLETED_NOTIFICATION_REQUIRED"):
         with pg.transaction():
             pg.execute(
                 "update payment_notification_inbox set review_status='released',processed_at=now(),processed_by=%s where id=%s",
                 (actor, inbox_id),
             )
 
+    assert pg.execute("select to_regprocedure('public.release_legacy_tax_review(uuid,uuid,uuid,text,text)')").fetchone()[0] is None
     pg.execute("set local role service_role")
     result = pg.execute(
-        "select public.release_legacy_tax_review(%s::uuid,%s,%s,'taxable','legacy direct reviewed')",
-        (inbox_id, merchants[0], actor),
+        "select public.complete_kiwoom_payment_notification(%s,%s,'CPID',1100,'CARD','trx-one','{}','127.0.0.1')",
+        (order_id, provider_order),
     ).fetchone()[0]
     pg.execute("reset role")
     assert result["status"] == "done" and result["duplicate"] is False
@@ -195,15 +193,15 @@ def test_service_role_has_read_only_tables_direct_release_is_blocked_and_functio
     assert pg.execute("select review_status,processed_by from payment_notification_inbox where id=%s", (inbox_id,)).fetchone() == ("released", actor)
 
     same = pg.execute(
-        "select release_legacy_tax_review(%s,%s,%s,'taxable','retry reason')",
-        (inbox_id, merchants[0], actor),
+        "select complete_kiwoom_payment_notification(%s,%s,'CPID',1100,'CARD','trx-one','{}','127.0.0.1')",
+        (order_id, provider_order),
     ).fetchone()[0]
     assert same["duplicate"] is True
-    with pytest.raises(psycopg.errors.RaiseException, match="TAX_REVIEW_ALREADY_RELEASED"):
+    with pytest.raises(psycopg.errors.RaiseException, match="NOTIFICATION_IDEMPOTENCY_CONFLICT"):
         with pg.transaction():
             pg.execute(
-                "select release_legacy_tax_review(%s,%s,%s,'tax_free','conflicting retry')",
-                (inbox_id, merchants[0], actor),
+                "select complete_kiwoom_payment_notification(%s,%s,'CPID',1100,'CARD','trx-one','{\"changed\":true}','127.0.0.1')",
+                (order_id, provider_order),
             )
 
     audit_id = pg.execute("select id from tax_classification_audit where inbox_id=%s", (inbox_id,)).fetchone()[0]
@@ -268,8 +266,11 @@ def test_legacy_payment_review_rpc_paginates_large_tenant_scoped_fixture(pg):
     for index in range(101):
         order_id, provider_order = _legacy_direct_order(pg, actor, merchants[0], f"page-{index:03d}")
         pg.execute(
-            "select enqueue_legacy_payment_notification(%s,%s,'CPID',1100,'CARD',%s,'{}','127.0.0.1')",
-            (order_id, provider_order, f"trx-page-{index:03d}"),
+            """insert into payment_notification_inbox(
+                 order_id,merchant_id,provider_transaction_id,provider_order_id,cpid,amount,
+                 payment_method,normalized_payload,source_ip)
+               values(%s,%s,%s,%s,'CPID',1100,'CARD','{}','127.0.0.1')""",
+            (order_id, merchants[0], f"trx-page-{index:03d}", provider_order),
         )
     first = pg.execute("select list_legacy_tax_reviews(%s,500,0)", (merchants[0],)).fetchone()[0]
     last = pg.execute("select list_legacy_tax_reviews(%s,50,100)", (merchants[0],)).fetchone()[0]

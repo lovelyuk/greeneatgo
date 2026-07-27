@@ -1091,7 +1091,7 @@ function SettlementV2Screen({ viewer }) {
     setDialog(null);
   }
 
-  if (!selected) return <AdminMockPage title="매출 정산" description={isMerchant ? '업체별 월 정산과 증빙·입금 처리 현황을 확인합니다.' : '우리 회사의 월별 청구와 세금계산서 처리 현황을 확인합니다.'} showHeader={!isMerchant} className={isMerchant ? 'merchant-regular-weight merchant-open-table' : ''}>
+  if (!selected) return <AdminMockPage title="매출 정산" description={isMerchant ? '업체별 월 정산과 증빙·입금 처리 현황을 확인합니다.' : '우리 회사의 월별 청구와 세금계산서 처리 현황을 확인합니다.'} showHeader={!isMerchant} preview={false} className="merchant-regular-weight merchant-open-table">
     {notice && <div className="alert success">{notice}</div>}
     <div className="settlement-v2-title-actions"><span className="badge">월별 정산 목록</span></div>
     <div className="settlement-v2-periodbar"><div className="settlement-v2-months" role="tablist" aria-label="정산월"><button type="button" role="tab" aria-selected={month === 'all'} className={month === 'all' ? 'active' : ''} onClick={() => setMonth('all')}>전체</button>{Array.from({ length: 12 }, (_, index) => index + 1).map((value) => <button type="button" role="tab" aria-selected={month === value} key={value} className={month === value ? 'active' : ''} disabled={!availableMonths.has(value)} onClick={() => setMonth(value)}>{value}월</button>)}</div><div className="settlement-v2-year-control" aria-label="정산 연도"><button type="button" className="ghost" onClick={() => { setYear((value) => value - 1); setMonth('all'); }} aria-label="이전 연도">‹</button><strong>{year}</strong><button type="button" className="ghost" onClick={() => { setYear((value) => value + 1); setMonth('all'); }} aria-label="다음 연도">›</button></div></div>
@@ -1101,7 +1101,7 @@ function SettlementV2Screen({ viewer }) {
 
   const issued = selected.evidence === '완료';
   const requested = selected.requested;
-  return <AdminMockPage title={`${selected.month}월 정산서`} description={`${selected.company} · ${selected.from} ~ ${selected.to}`} className={isMerchant ? 'merchant-regular-weight merchant-open-table' : ''}>
+  return <AdminMockPage title={`${selected.month}월 정산서`} description={`${selected.company} · ${selected.from} ~ ${selected.to}`} preview={false} className="merchant-regular-weight merchant-open-table">
     {notice && <div className="alert success">{notice}</div>}
     <div className="settlement-v2-detailbar"><button ref={backButtonRef} type="button" className="ghost" onClick={() => { setSelectedId(null); setNotice(''); }}>‹ 뒤로</button><div className="settlement-v2-detail-actions"><button type="button" className="ghost" onClick={() => setNotice(`${selected.year}년 ${selected.month}월 정산자료 엑셀 다운로드는 실제 연동 단계에서 제공됩니다.`)}><Download size={16}/> 엑셀 다운로드</button>{isMerchant && requested && !issued && <span className="settlement-v2-status requested">발급요청됨</span>}{issued ? <><span className="settlement-v2-status complete">발행완료</span>{!isMerchant && <button type="button" className="ghost" onClick={() => setNotice('PDF 다운로드는 실제 팝빌 연동 단계에서 제공됩니다.')}><Download size={16}/> PDF 다운로드</button>}</> : !isMerchant && requested ? <button type="button" className="primary" disabled>발급요청됨</button> : <button ref={actionButtonRef} type="button" className="primary" onClick={() => { dialogReturnRef.current = actionButtonRef.current; setDialog(isMerchant ? 'issue' : 'request'); }}>{isMerchant ? '세금계산서 발행' : '세금계산서 발급요청'}</button>}</div></div>
     <article className="panel settlement-v2-overview"><div className="settlement-v2-overview-row"><span>매출 기간</span><strong>{selected.from} ~ {selected.to}</strong></div><div className="settlement-v2-overview-row"><span>정산 옵션</span><div className="settlement-v2-options"><div><small>적격증빙 상계 여부</small><button type="button" className={offsetOption ? 'selected' : ''} onClick={() => setOffsetOption((value) => !value)}>{offsetOption ? '상계' : '별도'}</button></div><div><small>매출 증빙 방식</small>{[['direct', '공급자직접발행'], ['service', '서비스 내 증빙발행'], ['paper', '종이세금계산서']].map(([id, label]) => <button type="button" key={id} className={evidenceMethod === id ? 'selected' : ''} onClick={() => setEvidenceMethod(id)}>{label}</button>)}</div></div></div><div className="settlement-v2-overview-row"><span>정산 금액</span><div className="settlement-v2-amounts"><div><small>매출금액(A)</small><strong className="money">{krw(selected.amount)}</strong></div><div><small>총 정산금액</small><strong className="money">{krw(selected.amount)}</strong></div></div></div><div className="settlement-v2-overview-row"><span>입금 일자</span><div>증빙 마감일 <b>{selected.year}-{String(selected.month + 1).padStart(2, '0')}-07</b>까지 완료 시 → 입금 예정일 <b>{selected.year}-{String(selected.month + 1).padStart(2, '0')}-14</b></div></div><div className="settlement-v2-overview-row"><span>사업자 정보</span><dl className="settlement-v2-business"><div><dt>상호</dt><dd>{selected.company}</dd></div><div><dt>사업자번호</dt><dd>{recipient.bizNo}</dd></div><div><dt>종사업장번호</dt><dd>{recipient.branchNo}</dd></div><div><dt>대표자명</dt><dd>{recipient.representative}</dd></div><div><dt>주소</dt><dd>{recipient.address}</dd></div><div><dt>업태</dt><dd>{recipient.businessType}</dd></div><div><dt>종목</dt><dd>{recipient.businessItem}</dd></div></dl></div></article>
@@ -1245,8 +1245,8 @@ function MerchantMockScreen({ section, companyItems, onCompanyDetail, merchant, 
 
 function CompanyDashboardMock() {
   // TODO: company_id 강제 스코프 대시보드 API로 교체합니다.
-  return <AdminMockPage title="대시보드" description="이번달 사용액과 미납·세금계산서 현황을 확인합니다.">
-    <section className="grid mock-kpi-grid"><article className="card"><span>이번달 사용액</span><strong className="money">4,812,000원</strong></article><article className="card warning-card"><span>미납액</span><strong className="money">1,232,000원</strong></article><article className="card"><span>등록 사원</span><strong className="money">84명</strong></article><article className="card mock-download-card"><span>최근 세금계산서</span><strong>2026년 6월</strong><button type="button" className="ghost"><Download size={16}/> 다운로드</button></article></section>
+  return <AdminMockPage title="대시보드" description="이번달 사용액과 미납·세금계산서 현황을 확인합니다." preview={false} className="merchant-regular-weight merchant-open-table">
+    <section className="grid merchant-kpi-grid"><article className="card merchant-kpi-card"><CreditCard size={22}/><span>이번달 사용액</span><strong className="money">4,812,000원</strong></article><article className="card merchant-kpi-card warning-card"><AlertTriangle size={22}/><span>미납액</span><strong className="money">1,232,000원</strong></article><article className="card merchant-kpi-card"><Users size={22}/><span>등록 사원</span><strong className="money">84명</strong></article><article className="card merchant-kpi-card mock-download-card"><FileText size={22}/><span>최근 세금계산서</span><strong>2026년 6월</strong><button type="button" className="ghost"><Download size={16}/> 다운로드</button></article></section>
     <article className="panel"><div className="panel-title"><div><h3>이번달 이용 요약</h3><p className="panel-note">우리 회사 사원의 식대 이용 현황입니다.</p></div><span className="badge">7월</span></div><div className="mock-summary-strip"><div><span>이용 사원</span><strong className="money">76명</strong></div><div><span>총 끼수</span><strong className="money">542끼</strong></div><div><span>전월 대비</span><strong className="money">+6.8%</strong></div></div></article>
   </AdminMockPage>;
 }
@@ -1254,28 +1254,28 @@ function CompanyMonthlyUsageMock() {
   // TODO: company_id 스코프 일별 집계 API로 교체합니다.
   const rows = [['07.01', 48, 52, 468000], ['07.02', 51, 56, 504000], ['07.03', 46, 49, 441000], ['07.04', 54, 61, 549000], ['07.05', 18, 19, 171000], ['07.06', 12, 13, 117000], ['07.07', 52, 57, 513000]];
   const total = rows.reduce((sum, row) => [sum[0] + row[2], sum[1] + row[3]], [0, 0]);
-  return <AdminMockPage title="월별 이용" description="우리 회사의 일별 식대 이용 현황을 확인합니다.">
+  return <AdminMockPage title="월별 이용" description="우리 회사의 일별 식대 이용 현황을 확인합니다." preview={false} className="merchant-regular-weight merchant-open-table">
     <article className="panel"><div className="panel-title"><div><h3>2026년 7월</h3><p className="panel-note">일별 이용 사원수·끼수·금액</p></div><span className="badge">목업 데이터</span></div><div className="table-wrap"><table><thead><tr><th>날짜</th><th className="money">이용 사원수</th><th className="money">끼수</th><th className="money">금액</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td>{row[0]}</td><td className="money">{row[1]}명</td><td className="money">{row[2]}끼</td><td className="money">{krw(row[3])}</td></tr>)}<tr className="mock-total-row"><td>합계</td><td className="money">-</td><td className="money">{total[0]}끼</td><td className="money">{krw(total[1])}</td></tr></tbody></table></div></article>
   </AdminMockPage>;
 }
 function CompanyEmployeeUsageMock() {
   // TODO: company_id 스코프 사원별 사용 집계 API로 교체합니다.
   const rows = [['김민지', '개발팀', 18, 162000, 0], ['박준호', '기획팀', 17, 153000, 18000], ['이서연', '디자인팀', 16, 144000, 0], ['정우진', '영업팀', 15, 135000, 15000], ['최하늘', '개발팀', 14, 126000, 0]];
-  return <AdminMockPage title="사원별 사용" description="사원별 끼수와 사용액을 비교합니다.">
+  return <AdminMockPage title="사원별 사용" description="사원별 끼수와 사용액을 비교합니다." preview={false} className="merchant-regular-weight merchant-open-table">
     <article className="panel"><div className="table-wrap"><table><thead><tr><th>사원명</th><th>부서</th><th className="money">끼수</th><th className="money">사용액</th><th className="money">자부담액</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td>{row[1]}</td><td className="money">{row[2]}끼</td><td className="money">{krw(row[3])}</td><td className="money">{row[4] ? krw(row[4]) : '-'}</td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
 function CompanyBillingMock() {
   // TODO: company_id 스코프 settlements 조회로 교체합니다.
   const rows = [['2026년 7월', 4374545, 437455, 4812000, '입금대기'], ['2026년 6월', 4120000, 412000, 4532000, '입금완료'], ['2026년 5월', 3981818, 398182, 4380000, '입금완료'], ['2026년 4월', 4210909, 421091, 4632000, '입금완료']];
-  return <AdminMockPage title="청구 내역" description="월별 청구 금액과 납부 상태를 확인합니다.">
+  return <AdminMockPage title="청구 내역" description="월별 청구 금액과 납부 상태를 확인합니다." preview={false} className="merchant-regular-weight merchant-open-table">
     <article className="panel"><div className="table-wrap"><table><thead><tr><th>청구월</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th>상태</th><th>명세서</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td className="money">{krw(row[1])}</td><td className="money">{krw(row[2])}</td><td className="money">{krw(row[3])}</td><td><span className={`settlement-status ${row[4]}`}>{row[4]}</span></td><td><button type="button" className="ghost"><FileText size={15}/> 명세서</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
 function CompanyTaxInvoiceMock() {
   // TODO: company_id 스코프 수신 세금계산서 조회로 교체합니다.
   const rows = [['2026년 6월', '20260701-41000001-00000123', 4532000, '2026.07.01'], ['2026년 5월', '20260602-41000001-00000098', 4380000, '2026.06.02'], ['2026년 4월', '20260502-41000001-00000074', 4632000, '2026.05.02']];
-  return <AdminMockPage title="세금계산서" description="수신한 세금계산서를 조회하고 내려받습니다.">
+  return <AdminMockPage title="세금계산서" description="수신한 세금계산서를 조회하고 내려받습니다." preview={false} className="merchant-regular-weight merchant-open-table">
     <article className="panel"><div className="panel-title"><div><h3>수신 세금계산서</h3><p className="panel-note">식당에서 발행한 월 합계 계산서입니다.</p></div><span className="badge">수신 전용</span></div><div className="table-wrap"><table><thead><tr><th>발행월</th><th>승인번호</th><th className="money">합계</th><th>발행일</th><th>파일</th></tr></thead><tbody>{rows.map((row) => <tr key={row[1]}><td><strong>{row[0]}</strong></td><td><code>{row[1]}</code></td><td className="money">{krw(row[2])}</td><td>{row[3]}</td><td><button type="button" className="ghost"><Download size={15}/> PDF 다운로드</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
@@ -1283,7 +1283,7 @@ function CompanyEmployeeListMock() {
   const items = [{ name: '김민지', department: '개발팀', no: 'A-1024', status: '사용중' }, { name: '박준호', department: '기획팀', no: 'A-1031', status: '사용중' }, { name: '이서연', department: '디자인팀', no: 'A-1042', status: '초대대기' }, { name: '정우진', department: '영업팀', no: 'A-1057', status: '사용중' }];
   const [notice, setNotice] = useState('');
   // TODO: 기존 사원관리 핸들러 재사용 여부 확인 후 company_id 스코프 API로 교체합니다.
-  return <AdminMockPage title="사원 목록" description="우리 회사 사원 등록 현황을 확인합니다.">
+  return <AdminMockPage title="사원 목록" description="우리 회사 사원 등록 현황을 확인합니다." preview={false} className="merchant-regular-weight merchant-open-table">
     {notice && <div className="alert warning">{notice}</div>}
     <article className="panel"><div className="panel-title"><div><h3>등록 사원</h3><p className="panel-note">기존 사원 관리 화면과 비교하기 위한 신규 목업입니다.</p></div><button type="button" className="primary">+ 사원 등록</button></div><div className="table-wrap"><table><thead><tr><th>이름</th><th>부서</th><th>사번</th><th>상태</th><th>관리</th></tr></thead><tbody>{items.map((item) => <tr key={item.no}><td><strong>{item.name}</strong></td><td>{item.department}</td><td>{item.no}</td><td><span className="badge">{item.status}</span></td><td><button type="button" className="ghost" onClick={() => setNotice(`${item.name} 삭제는 목업 화면에서 실행되지 않습니다.`)}>삭제 (목업)</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
@@ -1295,7 +1295,7 @@ function CompanyInfoScreen({ company, busy, onSave }) {
     setForm(Object.fromEntries(Object.keys(emptyForm).map((key) => [key, company?.[key] ?? (key === 'tax_invoice_email' ? company?.contact_email ?? '' : '')])));
   }, [company]);
   const field = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
-  return <AdminMockPage title="회사 정보" description="업체 상세에 표시할 사업자정보와 세금계산서 수신 정보를 관리합니다.">
+  return <AdminMockPage title="회사 정보" description="업체 상세에 표시할 사업자정보와 세금계산서 수신 정보를 관리합니다." preview={false} className="merchant-regular-weight">
     <form className="panel mock-business-form" onSubmit={(event) => { event.preventDefault(); onSave(form); }}><label>사업자등록번호<input value={form.biz_reg_no} onChange={field('biz_reg_no')} required /></label><label>상호<input value={form.name} onChange={field('name')} required /></label><label>대표자<input value={form.representative_name} onChange={field('representative_name')} /></label><label>업태<input value={form.business_type} onChange={field('business_type')} /></label><label>종목<input value={form.business_item} onChange={field('business_item')} /></label><label className="wide">사업장주소<input value={form.address} onChange={field('address')} /></label><label>담당자명<input value={form.contact_name} onChange={field('contact_name')} /></label><label>연락처<input value={form.contact_phone} onChange={field('contact_phone')} /></label><label className="wide">세금계산서 수신 이메일<input type="email" value={form.tax_invoice_email} onChange={field('tax_invoice_email')} /></label><div className="row-actions wide"><button type="button" className="ghost" onClick={() => setForm(Object.fromEntries(Object.keys(emptyForm).map((key) => [key, company?.[key] ?? (key === 'tax_invoice_email' ? company?.contact_email ?? '' : '')])))}>취소</button><button className="primary" disabled={busy}>회사 정보 저장</button></div></form>
   </AdminMockPage>;
 }
@@ -2009,11 +2009,11 @@ function Dashboard({ session, onLogout }) {
     ['reviews', '리뷰'],
   ];
   const companyNavGroups = [
-    ['대시보드', [['company-dashboard', '대시보드']]],
-    ['이용 내역', [['monthly-usage', '월별 이용'], ['employee-usage', '사원별 사용']]],
-    ['정산', [['company-billing', '청구 내역'], ['company-tax-invoices', '세금계산서']]],
-    ['사원 관리', [['legacy-employees', '사원 관리'], ['company-employee-list', '사원 목록']]],
-    ['설정', [['company-info', '회사 정보']]],
+    ['대시보드', [['company-dashboard', '대시보드', Home]]],
+    ['이용 내역', [['monthly-usage', '월별 이용', CalendarDays], ['employee-usage', '사원별 사용', BarChart3]]],
+    ['정산', [['company-billing', '청구 내역', WalletCards], ['company-tax-invoices', '세금계산서', FileText]]],
+    ['사원 관리', [['legacy-employees', '사원 관리', Users], ['company-employee-list', '사원 목록', Building2]]],
+    ['설정', [['company-info', '회사 정보', Settings]]],
   ];
 
   return <main className={`shell${isMerchantAdmin ? ' merchant-shell' : ''}${isCompanyAdmin ? ' company-shell' : ''}`}>
@@ -2027,7 +2027,7 @@ function Dashboard({ session, onLogout }) {
         </div>
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
-      {!isMerchantAdmin && <div className="top-actions">
+      {isPlatformAdmin && <div className="top-actions">
         <button className="ghost" onClick={load} disabled={busy}><RefreshCw size={16}/> 새로고침</button>
         <button className="ghost" onClick={onLogout}><LogOut size={16}/> 로그아웃</button>
       </div>}
@@ -2045,10 +2045,18 @@ function Dashboard({ session, onLogout }) {
     </nav>}
 
     {isCompanyAdmin && <nav className="company-tabs" aria-label="업체 관리자 메뉴">
-      {companyNavGroups.map(([group, items]) => <React.Fragment key={group}><div className="company-nav-group">{group}</div>{items.map(([id, label]) => <button key={id} type="button" className={companySection === id ? 'active' : ''} onClick={() => setCompanySection(id)} aria-current={companySection === id ? 'page' : undefined}><span>{label}</span></button>)}</React.Fragment>)}
+      {companyNavGroups.map(([group, items]) => <React.Fragment key={group}><div className="company-nav-group">{group}</div>{items.map(([id, label, Icon]) => <button key={id} type="button" className={companySection === id ? 'active' : ''} onClick={() => setCompanySection(id)} aria-current={companySection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span></button>)}</React.Fragment>)}
+      <div className="merchant-nav-divider" role="separator" />
+      <button type="button" className="merchant-sidebar-logout" onClick={load} disabled={busy}><RefreshCw size={18}/><span>새로고침</span></button>
+      <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
+      <div className="merchant-sidebar-legal">
+        <a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침</a>
+        <span aria-hidden="true">|</span>
+        <a href="/terms.html" target="_blank" rel="noreferrer">이용약관</a>
+      </div>
     </nav>}
 
-    <div className={isMerchantAdmin ? `merchant-content${merchantSection === 'main' || merchantSection === 'payment-history' ? ' merchant-regular-weight' : ''}` : isCompanyAdmin ? 'company-content' : undefined}>
+    <div className={isMerchantAdmin ? `merchant-content${merchantSection === 'main' || merchantSection === 'payment-history' ? ' merchant-regular-weight' : ''}` : isCompanyAdmin ? 'company-content merchant-regular-weight' : undefined}>
     {isMerchantAdmin && merchantSection === 'companies' && <nav className="merchant-section-tabs" aria-label="업체 관리 페이지">
       {companyManagementTabs.map(([id, label]) => <button key={id} type="button" className={companyManagementTab === id ? 'active' : ''} onClick={() => setCompanyManagementTab(id)} aria-current={companyManagementTab === id ? 'page' : undefined}>{label}</button>)}
     </nav>}

@@ -2401,6 +2401,7 @@ function Dashboard({ session, onLogout }) {
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
       {merchantNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
       <div className="merchant-nav-divider merchant-nav-divider-before-logout" role="separator" />
+      <button type="button" className="merchant-sidebar-logout" onClick={load} disabled={busy}><RefreshCw size={18}/><span>새로고침</span></button>
       <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
       <div className="merchant-sidebar-legal">
         <a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침</a>

@@ -2267,26 +2267,9 @@ function Dashboard({ session, onLogout }) {
       </article>
     </section>}
 
-    {showCompanyLegacy && <section className="panel meal-policy-panel">
+    {showCompanyLegacy && <section className="panel employee-panel merchant-regular-weight merchant-open-table">
       <div className="panel-title">
-        <div><h2>식대 사용시간 설정</h2><p className="panel-note">기본은 사용제한없음입니다. 제한을 켜면 중식/석식 시간에만 결제됩니다.</p></div>
-        <span className="badge">{mealPolicyForm.enabled ? '제한 사용' : '제한없음'}</span>
-      </div>
-      <form className="meal-policy-form" onSubmit={saveMealPolicy}>
-        <label className="policy-toggle"><input type="checkbox" checked={mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, enabled: event.target.checked }))} /> 사용시간 제한 켜기</label>
-        <div className="time-window-grid">
-          <label>중식 시작<input type="time" value={mealPolicyForm.lunch_start} disabled={!mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, lunch_start: event.target.value }))} /></label>
-          <label>중식 종료<input type="time" value={mealPolicyForm.lunch_end} disabled={!mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, lunch_end: event.target.value }))} /></label>
-          <label>석식 시작<input type="time" value={mealPolicyForm.dinner_start} disabled={!mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, dinner_start: event.target.value }))} /></label>
-          <label>석식 종료<input type="time" value={mealPolicyForm.dinner_end} disabled={!mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, dinner_end: event.target.value }))} /></label>
-        </div>
-        <button className="primary" disabled={busy}>식대 사용시간 저장</button>
-      </form>
-    </section>}
-
-    {showCompanyLegacy && <section className="panel employee-panel">
-      <div className="panel-title">
-        <div><h2>등록된 직원목록</h2><p className="panel-note">직원 정보, 포인트 잔액과 이번 달 이용 현황을 확인합니다.</p></div>
+        <div><p className="panel-note titleless-guidance">직원 정보, 포인트 잔액과 이번 달 이용 현황을 확인합니다.</p></div>
         <div className="employee-panel-actions"><button className="primary bulk-open-button" onClick={() => setEmployeeBulkOpen(true)} disabled={employees?.bulk_migration_required}>+ 직원 일괄등록</button><span className="badge">{employees?.items?.length ?? 0}명</span></div>
       </div>
       {employees?.bulk_migration_required && <div className="alert error">0017_employee_bulk_invites.sql 적용 후 직원 일괄등록을 사용할 수 있어요.</div>}

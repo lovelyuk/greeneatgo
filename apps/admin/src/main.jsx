@@ -946,7 +946,7 @@ function AnnouncementReviewPanel({ token, section }) {
 
 function AdminMockPage({ title, description, children, actions = null, preview = true, showHeader = true, className = '' }) {
   return <section className={`admin-mock-page${className ? ` ${className}` : ''}`}>
-    {showHeader && <div className="panel-title admin-mock-page-title"><div>{preview && <span className="eyebrow">PREVIEW</span>}{title && <h2>{title}</h2>}<p className="panel-note">{description}</p></div><div className="admin-page-actions">{actions}{preview && <span className="badge">목업</span>}</div></div>}
+    {showHeader && <div className="panel-title admin-mock-page-title"><div>{preview && <span className="eyebrow">PREVIEW</span>}{title && <h2>{title}</h2>}<p className={`panel-note${!title ? ' titleless-guidance' : ''}`}>{description}</p></div><div className="admin-page-actions">{actions}{preview && <span className="badge">목업</span>}</div></div>}
     {children ?? <article className="panel"><p className="empty-state">화면 구성을 준비 중입니다.</p></article>}
   </section>;
 }
@@ -1091,7 +1091,7 @@ function SettlementV2Screen({ viewer }) {
     setDialog(null);
   }
 
-  if (!selected) return <AdminMockPage title="매출 정산" description={isMerchant ? '업체별 월 정산과 증빙·입금 처리 현황을 확인합니다.' : '우리 회사의 월별 청구와 세금계산서 처리 현황을 확인합니다.'} showHeader={!isMerchant} preview={false} className="merchant-regular-weight merchant-open-table">
+  if (!selected) return <AdminMockPage title="매출 정산" description={isMerchant ? '업체별 월 정산과 증빙·입금 처리 현황을 확인합니다.' : '우리 회사의 월별 청구와 세금계산서 처리 현황을 확인합니다.'} showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
     {notice && <div className="alert success">{notice}</div>}
     <div className="settlement-v2-title-actions"><span className="badge">월별 정산 목록</span></div>
     <div className="settlement-v2-periodbar"><div className="settlement-v2-months" role="tablist" aria-label="정산월"><button type="button" role="tab" aria-selected={month === 'all'} className={month === 'all' ? 'active' : ''} onClick={() => setMonth('all')}>전체</button>{Array.from({ length: 12 }, (_, index) => index + 1).map((value) => <button type="button" role="tab" aria-selected={month === value} key={value} className={month === value ? 'active' : ''} disabled={!availableMonths.has(value)} onClick={() => setMonth(value)}>{value}월</button>)}</div><div className="settlement-v2-year-control" aria-label="정산 연도"><button type="button" className="ghost" onClick={() => { setYear((value) => value - 1); setMonth('all'); }} aria-label="이전 연도">‹</button><strong>{year}</strong><button type="button" className="ghost" onClick={() => { setYear((value) => value + 1); setMonth('all'); }} aria-label="다음 연도">›</button></div></div>
@@ -1245,7 +1245,7 @@ function MerchantMockScreen({ section, companyItems, onCompanyDetail, merchant, 
 
 function CompanyDashboardMock() {
   // TODO: company_id 강제 스코프 대시보드 API로 교체합니다.
-  return <AdminMockPage title="대시보드" description="이번달 사용액과 미납·세금계산서 현황을 확인합니다." preview={false} className="merchant-regular-weight merchant-open-table">
+  return <AdminMockPage title={null} description="이번달 사용액과 미납·세금계산서 현황을 확인합니다." preview={false} className="merchant-regular-weight merchant-open-table">
     <section className="grid merchant-kpi-grid"><article className="card merchant-kpi-card"><CreditCard size={22}/><span>이번달 사용액</span><strong className="money">4,812,000원</strong></article><article className="card merchant-kpi-card warning-card"><AlertTriangle size={22}/><span>미납액</span><strong className="money">1,232,000원</strong></article><article className="card merchant-kpi-card"><Users size={22}/><span>등록 사원</span><strong className="money">84명</strong></article><article className="card merchant-kpi-card mock-download-card"><FileText size={22}/><span>최근 세금계산서</span><strong>2026년 6월</strong><button type="button" className="ghost"><Download size={16}/> 다운로드</button></article></section>
     <article className="panel"><div className="panel-title"><div><h3>이번달 이용 요약</h3><p className="panel-note">우리 회사 사원의 식대 이용 현황입니다.</p></div><span className="badge">7월</span></div><div className="mock-summary-strip"><div><span>이용 사원</span><strong className="money">76명</strong></div><div><span>총 끼수</span><strong className="money">542끼</strong></div><div><span>전월 대비</span><strong className="money">+6.8%</strong></div></div></article>
   </AdminMockPage>;
@@ -1254,14 +1254,14 @@ function CompanyMonthlyUsageMock() {
   // TODO: company_id 스코프 일별 집계 API로 교체합니다.
   const rows = [['07.01', 48, 52, 468000], ['07.02', 51, 56, 504000], ['07.03', 46, 49, 441000], ['07.04', 54, 61, 549000], ['07.05', 18, 19, 171000], ['07.06', 12, 13, 117000], ['07.07', 52, 57, 513000]];
   const total = rows.reduce((sum, row) => [sum[0] + row[2], sum[1] + row[3]], [0, 0]);
-  return <AdminMockPage title="월별 이용" description="우리 회사의 일별 식대 이용 현황을 확인합니다." preview={false} className="merchant-regular-weight merchant-open-table">
+  return <AdminMockPage title={null} description="우리 회사의 일별 식대 이용 현황을 확인합니다." preview={false} className="merchant-regular-weight merchant-open-table">
     <article className="panel"><div className="panel-title"><div><h3>2026년 7월</h3><p className="panel-note">일별 이용 사원수·끼수·금액</p></div><span className="badge">목업 데이터</span></div><div className="table-wrap"><table><thead><tr><th>날짜</th><th className="money">이용 사원수</th><th className="money">끼수</th><th className="money">금액</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td>{row[0]}</td><td className="money">{row[1]}명</td><td className="money">{row[2]}끼</td><td className="money">{krw(row[3])}</td></tr>)}<tr className="mock-total-row"><td>합계</td><td className="money">-</td><td className="money">{total[0]}끼</td><td className="money">{krw(total[1])}</td></tr></tbody></table></div></article>
   </AdminMockPage>;
 }
 function CompanyEmployeeUsageMock() {
   // TODO: company_id 스코프 사원별 사용 집계 API로 교체합니다.
   const rows = [['김민지', '개발팀', 18, 162000, 0], ['박준호', '기획팀', 17, 153000, 18000], ['이서연', '디자인팀', 16, 144000, 0], ['정우진', '영업팀', 15, 135000, 15000], ['최하늘', '개발팀', 14, 126000, 0]];
-  return <AdminMockPage title="사원별 사용" description="사원별 끼수와 사용액을 비교합니다." preview={false} className="merchant-regular-weight merchant-open-table">
+  return <AdminMockPage title={null} description="사원별 끼수와 사용액을 비교합니다." preview={false} className="merchant-regular-weight merchant-open-table">
     <article className="panel"><div className="table-wrap"><table><thead><tr><th>사원명</th><th>부서</th><th className="money">끼수</th><th className="money">사용액</th><th className="money">자부담액</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td>{row[1]}</td><td className="money">{row[2]}끼</td><td className="money">{krw(row[3])}</td><td className="money">{row[4] ? krw(row[4]) : '-'}</td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
@@ -1275,7 +1275,7 @@ function CompanyBillingMock() {
 function CompanyTaxInvoiceMock() {
   // TODO: company_id 스코프 수신 세금계산서 조회로 교체합니다.
   const rows = [['2026년 6월', '20260701-41000001-00000123', 4532000, '2026.07.01'], ['2026년 5월', '20260602-41000001-00000098', 4380000, '2026.06.02'], ['2026년 4월', '20260502-41000001-00000074', 4632000, '2026.05.02']];
-  return <AdminMockPage title="세금계산서" description="수신한 세금계산서를 조회하고 내려받습니다." preview={false} className="merchant-regular-weight merchant-open-table">
+  return <AdminMockPage title={null} description="수신한 세금계산서를 조회하고 내려받습니다." preview={false} className="merchant-regular-weight merchant-open-table">
     <article className="panel"><div className="panel-title"><div><h3>수신 세금계산서</h3><p className="panel-note">식당에서 발행한 월 합계 계산서입니다.</p></div><span className="badge">수신 전용</span></div><div className="table-wrap"><table><thead><tr><th>발행월</th><th>승인번호</th><th className="money">합계</th><th>발행일</th><th>파일</th></tr></thead><tbody>{rows.map((row) => <tr key={row[1]}><td><strong>{row[0]}</strong></td><td><code>{row[1]}</code></td><td className="money">{krw(row[2])}</td><td>{row[3]}</td><td><button type="button" className="ghost"><Download size={15}/> PDF 다운로드</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
@@ -1295,7 +1295,7 @@ function CompanyInfoScreen({ company, busy, onSave }) {
     setForm(Object.fromEntries(Object.keys(emptyForm).map((key) => [key, company?.[key] ?? (key === 'tax_invoice_email' ? company?.contact_email ?? '' : '')])));
   }, [company]);
   const field = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
-  return <AdminMockPage title="회사 정보" description="업체 상세에 표시할 사업자정보와 세금계산서 수신 정보를 관리합니다." preview={false} className="merchant-regular-weight">
+  return <AdminMockPage title={null} description="업체 상세에 표시할 사업자정보와 세금계산서 수신 정보를 관리합니다." preview={false} className="merchant-regular-weight">
     <form className="panel mock-business-form" onSubmit={(event) => { event.preventDefault(); onSave(form); }}><label>사업자등록번호<input value={form.biz_reg_no} onChange={field('biz_reg_no')} required /></label><label>상호<input value={form.name} onChange={field('name')} required /></label><label>대표자<input value={form.representative_name} onChange={field('representative_name')} /></label><label>업태<input value={form.business_type} onChange={field('business_type')} /></label><label>종목<input value={form.business_item} onChange={field('business_item')} /></label><label className="wide">사업장주소<input value={form.address} onChange={field('address')} /></label><label>담당자명<input value={form.contact_name} onChange={field('contact_name')} /></label><label>연락처<input value={form.contact_phone} onChange={field('contact_phone')} /></label><label className="wide">세금계산서 수신 이메일<input type="email" value={form.tax_invoice_email} onChange={field('tax_invoice_email')} /></label><div className="row-actions wide"><button type="button" className="ghost" onClick={() => setForm(Object.fromEntries(Object.keys(emptyForm).map((key) => [key, company?.[key] ?? (key === 'tax_invoice_email' ? company?.contact_email ?? '' : '')])))}>취소</button><button className="primary" disabled={busy}>회사 정보 저장</button></div></form>
   </AdminMockPage>;
 }

@@ -34,6 +34,8 @@ def _receipt_origin(base_url: str) -> tuple[str, bool] | None:
     Requiring an exact HTTPS API origin makes an unknown/malformed environment
     fail closed by returning no links.
     """
+    if not isinstance(base_url, str) or "?" in base_url or "#" in base_url:
+        return None
     try:
         parsed = urlsplit(base_url)
         invalid_origin = (

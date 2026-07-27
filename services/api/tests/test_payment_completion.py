@@ -121,6 +121,9 @@ def test_unknown_or_malformed_base_host_fails_closed():
         "https://apitest.kiwoompay.co.kr/path",
         "https://apitest.kiwoompay.co.kr?unexpected=1",
         "https://apitest.kiwoompay.co.kr#unexpected",
+        "https://apitest.kiwoompay.co.kr?",
+        "https://apitest.kiwoompay.co.kr#",
+        "https://apitest.kiwoompay.co.kr?#",
     ):
         result = present_payment_completion(_order(), base_url=base_url, cpid="CPID")
         assert result["receipts"]["sales_slip_url"] is None

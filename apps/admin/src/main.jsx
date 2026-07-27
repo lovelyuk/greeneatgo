@@ -1288,20 +1288,20 @@ function CompanyEmployeeListMock() {
     <article className="panel"><div className="panel-title"><div><h3>등록 사원</h3><p className="panel-note">기존 사원 관리 화면과 비교하기 위한 신규 목업입니다.</p></div><button type="button" className="primary">+ 사원 등록</button></div><div className="table-wrap"><table><thead><tr><th>이름</th><th>부서</th><th>사번</th><th>상태</th><th>관리</th></tr></thead><tbody>{items.map((item) => <tr key={item.no}><td><strong>{item.name}</strong></td><td>{item.department}</td><td>{item.no}</td><td><span className="badge">{item.status}</span></td><td><button type="button" className="ghost" onClick={() => setNotice(`${item.name} 삭제는 목업 화면에서 실행되지 않습니다.`)}>삭제 (목업)</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
-function CompanyInfoScreen({ company, busy, onSave }) {
+function CompanyInfoScreen({ company, busy, onSave, onSettings }) {
   const emptyForm = { name: '', biz_reg_no: '', representative_name: '', business_type: '', business_item: '', address: '', contact_name: '', contact_phone: '', tax_invoice_email: '' };
   const [form, setForm] = useState(emptyForm);
   useEffect(() => {
     setForm(Object.fromEntries(Object.keys(emptyForm).map((key) => [key, company?.[key] ?? (key === 'tax_invoice_email' ? company?.contact_email ?? '' : '')])));
   }, [company]);
   const field = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
-  return <AdminMockPage title={null} description="업체 상세에 표시할 사업자정보와 세금계산서 수신 정보를 관리합니다." preview={false} className="merchant-regular-weight">
+  return <AdminMockPage title={null} description="업체 상세에 표시할 사업자정보와 세금계산서 수신 정보를 관리합니다." actions={<button type="button" className="account-settings-button" onClick={onSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/></button>} preview={false} className="merchant-regular-weight">
     <form className="panel mock-business-form" onSubmit={(event) => { event.preventDefault(); onSave(form); }}><label>사업자등록번호<input value={form.biz_reg_no} onChange={field('biz_reg_no')} required /></label><label>상호<input value={form.name} onChange={field('name')} required /></label><label>대표자<input value={form.representative_name} onChange={field('representative_name')} /></label><label>업태<input value={form.business_type} onChange={field('business_type')} /></label><label>종목<input value={form.business_item} onChange={field('business_item')} /></label><label className="wide">사업장주소<input value={form.address} onChange={field('address')} /></label><label>담당자명<input value={form.contact_name} onChange={field('contact_name')} /></label><label>연락처<input value={form.contact_phone} onChange={field('contact_phone')} /></label><label className="wide">세금계산서 수신 이메일<input type="email" value={form.tax_invoice_email} onChange={field('tax_invoice_email')} /></label><div className="row-actions wide"><button type="button" className="ghost" onClick={() => setForm(Object.fromEntries(Object.keys(emptyForm).map((key) => [key, company?.[key] ?? (key === 'tax_invoice_email' ? company?.contact_email ?? '' : '')])))}>취소</button><button className="primary" disabled={busy}>회사 정보 저장</button></div></form>
   </AdminMockPage>;
 }
 
-function CompanyMockScreen({ section, company, busy, onSaveCompany }) {
-  if (section === 'company-info') return <CompanyInfoScreen company={company} busy={busy} onSave={onSaveCompany} />;
+function CompanyMockScreen({ section, company, busy, onSaveCompany, onSettings }) {
+  if (section === 'company-info') return <CompanyInfoScreen company={company} busy={busy} onSave={onSaveCompany} onSettings={onSettings} />;
   const screens = {
     'company-dashboard': CompanyDashboardMock,
     'monthly-usage': CompanyMonthlyUsageMock,
@@ -2069,7 +2069,7 @@ function Dashboard({ session, onLogout }) {
     </nav>}
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantContentSection) && <AnnouncementReviewPanel token={token} section={merchantContentSection}/>}
     {isMerchantAdmin && <MerchantMockScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} />}
-    {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companyContentSection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} />}
+    {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companyContentSection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} onSettings={openAccountSettings} />}
 
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}
@@ -2251,9 +2251,7 @@ function Dashboard({ session, onLogout }) {
         <div className="profile-grid">
           <span>이메일</span><strong>{session.user.email}</strong>
           <span>{['company_admin', 'merchant_admin'].includes(me?.role) ? '관리자 이름' : '이름'}</span>
-          {me?.role === 'company_admin'
-            ? <div className="profile-name-value"><strong>{me?.display_name ?? '-'}</strong><button type="button" className="account-settings-button" onClick={openAccountSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/></button></div>
-            : <strong>{me?.display_name ?? '-'}</strong>}
+          <strong>{me?.display_name ?? '-'}</strong>
           {me?.role !== 'company_admin' && <><span>권한</span><strong>{me?.role === 'merchant_admin' ? '관리자' : me?.role ?? '-'}</strong><span>상태</span><strong>{me?.status ?? '-'}</strong></>}
         </div>
       </article>
@@ -2273,7 +2271,7 @@ function Dashboard({ session, onLogout }) {
         <div className="employee-panel-actions"><button className="primary bulk-open-button" onClick={() => setEmployeeBulkOpen(true)} disabled={employees?.bulk_migration_required}>+ 직원 일괄등록</button><span className="badge">{employees?.items?.length ?? 0}명</span></div>
       </div>
       {employees?.bulk_migration_required && <div className="alert error">0017_employee_bulk_invites.sql 적용 후 직원 일괄등록을 사용할 수 있어요.</div>}
-      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하거나 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>이번 달 이용액</th><th>최근 이용일</th><th>이용내역</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className="badge">{employee.is_staged ? '초대대기' : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.is_staged ? '-' : krw(employee.month_used ?? 0)}</td><td>{employee.recent_used_at ? new Date(employee.recent_used_at).toLocaleDateString('ko-KR') : '-'}</td><td>{employee.is_staged ? '-' : <button className="ghost" onClick={() => openEmployeeTransactions(employee)}>이용내역</button>}</td><td>{employee.is_staged ? <span className="muted">최초 가입 대기</span> : <button className="ghost icon-button" disabled={busy} onClick={() => openEmployeeManage(employee)} aria-label={`${employee.display_name ?? '직원'} 관리`} title="직원 관리"><Settings size={18}/></button>}</td></tr>)}</tbody></table></div>}
+      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하거나 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className="badge">{employee.is_staged ? '초대대기' : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.is_staged ? <span className="muted">최초 가입 대기</span> : <button className="ghost icon-button" disabled={busy} onClick={() => openEmployeeManage(employee)} aria-label={`${employee.display_name ?? '직원'} 관리`} title="직원 관리"><Settings size={18}/></button>}</td></tr>)}</tbody></table></div>}
     </section>}
 
     {!isPlatformAdmin && isMerchantAdmin && merchantContentSection === 'companies' && <section className="panel merchant-regular-weight merchant-open-table">

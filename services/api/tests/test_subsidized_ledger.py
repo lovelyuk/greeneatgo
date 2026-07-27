@@ -206,7 +206,8 @@ class SubsidizedLedgerTests(unittest.TestCase):
             "status": "done", "pay_type": "subsidized", "provider_payment_key": "daou-trx", "tax_type": "tax_free",
         }]
         result = confirm(PaymentConfirmRequest(order_id="GE-S-order", amount=6000), "bearer")
-        self.assertEqual(result["data"]["provider_payment_key"], "daou-trx")
+        self.assertEqual(result["data"]["payment"]["transaction_id"], "daou-trx")
+        self.assertNotIn("provider_payment_key", result["data"])
         repo.client.rpc.assert_not_called()
 
     def test_settlement_charges_only_company_share_for_subsidized(self):

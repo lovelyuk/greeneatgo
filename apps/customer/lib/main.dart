@@ -14,6 +14,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'auth_helpers.dart';
 import 'firebase_config.dart';
+import 'payment_completion.dart';
 import 'push_notifications.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
@@ -30,8 +31,8 @@ Future<void> openLegalDocument(BuildContext context, String filename) async {
     if (!opened) throw Exception('문서를 열 수 없습니다.');
   } catch (_) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('문서를 열지 못했어요. 잠시 후 다시 시도해 주세요.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('문서를 열지 못했어요. 잠시 후 다시 시도해 주세요.')));
     }
   }
 }
@@ -1023,8 +1024,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               labelText: '비밀번호 확인',
                               prefixIcon: Icon(Icons.verified_user_outlined))),
                       const SizedBox(height: 12),
-                      const Text(
-                          '계정을 만들면 이용약관과 개인정보 처리방침에 동의한 것으로 봅니다.',
+                      const Text('계정을 만들면 이용약관과 개인정보 처리방침에 동의한 것으로 봅니다.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                               fontSize: 12, color: Color(0xFF5C7A66))),
@@ -2868,7 +2868,6 @@ class VoucherKiwoomPaymentScreen extends StatefulWidget {
 
   bool get isSubsidized => purchaseMode == VoucherPurchaseMode.subsidized;
   String get paymentTitle => product.name;
-  int get expectedIssued => product.totalCount;
 
   @override
   State<VoucherKiwoomPaymentScreen> createState() =>
@@ -2881,10 +2880,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   bool _loading = true;
   bool _confirming = false;
   bool _completed = false;
-  int? _balance;
-  int? _issued;
-  int? _pointAmount;
-  int? _cardAmount;
+  PaymentCompletionData? _completion;
   String? _error;
   String? _lastExternalUrl;
   String? _orderId;
@@ -3021,9 +3017,6 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       final checkoutUrl = order['checkout_url'] as String?;
       _orderId = order['order_id'] as String?;
       _orderAmount = (order['amount'] as num?)?.round();
-      _pointAmount = (order['point_amount'] as num?)?.round() ?? 0;
-      _cardAmount = (order['card_amount'] as num?)?.round() ??
-          (order['amount'] as num?)?.round();
       // The route can be popped while order creation is in flight. Release the
       // newly-created reservation instead of loading checkout on a dead State.
       if (!mounted) {
@@ -3031,13 +3024,9 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
         return;
       }
       if (order['point_only'] == true) {
-        final fulfillment = order['fulfillment'] is Map
-            ? (order['fulfillment'] as Map).cast<String, dynamic>()
-            : <String, dynamic>{};
         if (mounted) {
           setState(() {
-            _issued = (fulfillment['issued_count'] as num?)?.round() ??
-                widget.expectedIssued;
+            _completion = PaymentCompletionData.pointOnly(order);
             _completed = true;
             _loading = false;
           });
@@ -3138,13 +3127,9 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       // Vouchers are issued atomically by this confirm response; redirect alone is not success.
       final confirmed = await ApiClient(widget.session)
           .confirmPayment(orderId: orderId, amount: amount);
-      final fulfillment = confirmed['fulfillment'] is Map
-          ? (confirmed['fulfillment'] as Map).cast<String, dynamic>()
-          : confirmed;
       if (mounted) {
         setState(() {
-          _issued = (fulfillment['issued_count'] as num?)?.round();
-          _balance = (fulfillment['voucher_balance'] as num?)?.round();
+          _completion = PaymentCompletionData.fromConfirmDto(confirmed);
           _completed = true;
           _approvalPending = false;
           _loading = false;
@@ -3165,41 +3150,13 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   @override
   Widget build(BuildContext context) {
     if (_completed) {
-      return Scaffold(
-          backgroundColor: kOrange,
-          body: SafeArea(
-              child: Center(
-                  child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: BrandPanel(children: [
-                        const Icon(Icons.check_circle_rounded,
-                            color: kOrange, size: 96),
-                        const SizedBox(height: 14),
-                        const Text('식권 구매완료',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                fontSize: 32, fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 8),
-                        Text(
-                            '${_issued ?? widget.expectedIssued}장 발급됐어요${_balance == null ? '' : ' · 보유 $_balance장'}',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                color: kCocoa,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900)),
-                        if (widget.isSubsidized) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                              '포인트 ${won(_pointAmount)} P · 카드 ${won(_cardAmount)}',
-                              style: const TextStyle(
-                                  color: Color(0xFF5C7A66),
-                                  fontWeight: FontWeight.w800)),
-                        ],
-                        const SizedBox(height: 18),
-                        FilledButton(
-                            onPressed: () => Navigator.of(context).pop(true),
-                            child: const Text('확인')),
-                      ])))));
+      return PaymentCompletionScreen(
+        payment: _completion ??
+            PaymentCompletionData.pointOnly(<String, dynamic>{
+              'amount': _orderAmount,
+              'order_id': _orderId,
+            }),
+      );
     }
     return Scaffold(
         appBar: AppBar(title: Text('${widget.paymentTitle} 결제')),

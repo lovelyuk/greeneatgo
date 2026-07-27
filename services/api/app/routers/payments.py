@@ -16,6 +16,7 @@ from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.voucher_products import _expire_stale_subsidized_orders, _is_exposed, _load_products
 from app.schemas import PaymentConfirmRequest
 from app.services.kiwoom_payment import KiwoomHashInput, KiwoomPaymentError, request_payment_hash
+from app.services.payment_completion import present_payment_completion
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 short_redirect_router = APIRouter(include_in_schema=False)
@@ -289,7 +290,7 @@ async def notification_post(request: Request):
 
 @router.post("/confirm")
 def confirm(payload: PaymentConfirmRequest, token: str = Depends(bearer_token)):
-    repo = JoinRepository()
+    repo, settings = JoinRepository(), get_settings()
     try:
         _, profile = _customer(repo, token, allow_employee=True)
         rows = repo.client.rest_get("payment_orders", {
@@ -314,7 +315,12 @@ def confirm(payload: PaymentConfirmRequest, token: str = Depends(bearer_token)):
                     break
         if order.get("status") != "done":
             raise _error(409, "PAYMENT_PENDING", "결제 승인 확인 중이에요. 잠시 후 다시 확인해 주세요")
-        return {"ok": True, "data": order, "error": None}
+        completion = present_payment_completion(
+            order,
+            base_url=settings.kiwoompay_base_url,
+            cpid=settings.kiwoompay_cpid,
+        )
+        return {"ok": True, "data": completion, "error": None}
     except HTTPException:
         raise
     except SupabaseHttpError as exc:

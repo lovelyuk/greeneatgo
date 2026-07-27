@@ -206,7 +206,8 @@ class VoucherCoreTests(unittest.TestCase):
 
         result = confirm(PaymentConfirmRequest(order_id="GE-V-order", amount=72000), "bearer")
 
-        self.assertEqual(result["data"]["provider_payment_key"], "daou-trx")
+        self.assertEqual(result["data"]["payment"]["transaction_id"], "daou-trx")
+        self.assertNotIn("provider_payment_key", result["data"])
         repo.client.rpc.assert_not_called()
 
     @patch("app.routers.transactions.JoinRepository")

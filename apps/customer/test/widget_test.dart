@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:greeneatgo_customer/auth_helpers.dart';
 import 'package:greeneatgo_customer/main.dart';
+import 'package:greeneatgo_customer/payment_completion.dart';
 
 void main() {
   testWidgets('app shows missing environment guidance when not configured',
@@ -167,6 +168,155 @@ void main() {
     expect(find.text('식당 총 지원 10,000원'), findsOneWidget);
     expect(find.text('직원 부담 50,000원'), findsOneWidget);
     expect(find.text('BANK · 계좌이체 전용'), findsOneWidget);
+  });
+
+  testWidgets('CARD completion shows only the card sales slip', (tester) async {
+    final payment = PaymentCompletionData.fromConfirmDto({
+      'data': {
+        'amount': 72000,
+        'payment': {
+          'method': 'CARD',
+          'method_label': '신용카드',
+          'approved_at': '2026-07-27T13:14:15',
+          'transaction_id': 'CARD-TRX-1',
+          'issuer_name': '그린카드',
+          'masked_card_number': '1234-****-****-5678',
+          'authorization_number': '12345678',
+          'cash_receipt_status': 'ISSUED',
+        },
+        'receipts': {
+          'sales_slip_url': 'https://example.com/card-slip',
+          'cash_receipt_url': 'https://example.com/invalid-card-cash',
+        },
+      },
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(colorSchemeSeed: kOrange),
+      home: PaymentCompletionScreen(payment: payment, onDone: () {}),
+    ));
+
+    expect(find.text('결제 완료'), findsOneWidget);
+    expect(find.text('결제가 완료되었습니다'), findsOneWidget);
+    expect(find.text('72,000원'), findsOneWidget);
+    expect(find.text('신용카드'), findsOneWidget);
+    expect(find.text('그린카드 1234-****-****-5678'), findsOneWidget);
+    expect(find.text('카드 매출전표 보기'), findsOneWidget);
+    expect(find.text('계좌이체 전표 보기'), findsNothing);
+    expect(find.text('현금영수증 보기'), findsNothing,
+        reason: 'CARD must never expose a cash receipt');
+    expect(find.byType(BackButton), findsNothing);
+  });
+
+  testWidgets('BANK completion shows transfer slip without cash receipt',
+      (tester) async {
+    final payment = PaymentCompletionData.fromConfirmDto({
+      'data': {
+        'amount': 50000,
+        'payment': {
+          'method': 'BANK',
+          'method_label': '계좌이체',
+          'approved_at': '2026-07-27T14:15:16',
+          'transaction_id': 'BANK-TRX-1',
+          'bank_name': '그린은행',
+          'authorization_number': '87654321',
+          'cash_receipt_status': 'NOT_ISSUED',
+        },
+        'receipts': {
+          'sales_slip_url': 'https://example.com/bank-slip',
+          'cash_receipt_url': 'https://example.com/unissued-cash',
+        },
+      },
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      home: PaymentCompletionScreen(payment: payment, onDone: () {}),
+    ));
+
+    expect(find.text('50,000원'), findsOneWidget);
+    expect(find.text('이용은행'), findsOneWidget);
+    expect(find.text('그린은행'), findsOneWidget);
+    expect(find.text('계좌이체 전표 보기'), findsOneWidget);
+    expect(find.text('카드 매출전표 보기'), findsNothing);
+    expect(find.text('현금영수증 보기'), findsNothing);
+  });
+
+  testWidgets('BANK completion exposes issued cash receipt with URL',
+      (tester) async {
+    final payment = PaymentCompletionData.fromConfirmDto({
+      'data': {
+        'amount': 80000,
+        'payment': {
+          'method': 'bank',
+          'method_label': '실시간 계좌이체',
+          'approved_at': '2026-07-27T15:16:17',
+          'transaction_id': 'BANK-TRX-2',
+          'bank_name': '푸른은행',
+          'authorization_number': '11223344',
+          'cash_receipt_authorization_number': 'CASH-9988',
+          'cash_receipt_status': 'issued',
+        },
+        'receipts': {
+          'sales_slip_url': 'https://example.com/bank-slip-2',
+          'cash_receipt_url': 'https://example.com/cash-receipt',
+        },
+      },
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      home: PaymentCompletionScreen(payment: payment, onDone: () {}),
+    ));
+
+    expect(payment.cashReceiptAuthorizationNumber, 'CASH-9988');
+    expect(find.text('계좌이체 전표 보기'), findsOneWidget);
+    expect(find.text('현금영수증 보기'), findsOneWidget);
+    expect(find.text('BANK-TRX-2'), findsOneWidget);
+    expect(find.text('2026.07.27 15:16:17'), findsOneWidget);
+  });
+
+  testWidgets('completion remains overflow-free at 360x640 and text scale 1.2',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final payment = PaymentCompletionData.fromConfirmDto({
+      'amount': 80000,
+      'payment': {
+        'method': 'BANK',
+        'method_label': '계좌이체',
+        'approved_at': '2026-07-27T06:16:17Z',
+        'transaction_id': 'BANK-TRX-LONG-1234567890',
+        'bank_name': '그린잇 테스트은행',
+        'authorization_number': 'BANK-AUTH-1234',
+        'cash_receipt_status': 'ISSUED',
+      },
+      'receipts': {
+        'sales_slip_url': 'https://example.com/bank-slip',
+        'cash_receipt_url': 'https://example.com/cash-receipt',
+      },
+    });
+
+    await tester.pumpWidget(MediaQuery(
+      data: const MediaQueryData(textScaler: TextScaler.linear(1.2)),
+      child: MaterialApp(
+        home: PaymentCompletionScreen(payment: payment, onDone: () {}),
+      ),
+    ));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('80,000원'), findsOneWidget);
+    expect(find.text('확인'), findsOneWidget);
+    expect(find.text('현금영수증 보기'), findsOneWidget);
+  });
+
+  test('point-only completion displays the actual point amount', () {
+    final payment = PaymentCompletionData.pointOnly({
+      'amount': 0,
+      'point_amount': 28500,
+      'order_id': 'POINT-ORDER-1',
+    });
+
+    expect(payment.amount, 28500);
+    expect(payment.displayedMethod, '포인트');
   });
 
   test('event voucher exposes event flag and D-day label', () {

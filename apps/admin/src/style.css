@@ -1622,7 +1622,7 @@ code { font-size: 12px; }
 .supplier-info-page button { font-weight: 500; }
 .supplier-settings-button { flex: 0 0 auto; border-radius: 12px; }
 .supplier-info-card { width: 100%; margin: 0; }
-.supplier-info-card-title { align-items: flex-start; }
+.supplier-info-card-title { align-items: flex-start; justify-content: flex-end; }
 .supplier-edit-actions { flex-wrap: wrap; justify-content: flex-end; }
 .supplier-capsule-button {
   width: auto;

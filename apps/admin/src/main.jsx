@@ -1579,7 +1579,6 @@ function MerchantSupplierInfoScreen({ merchant, busy, onSave, onSettings, token 
   >
     <form className="panel supplier-info-card" onSubmit={save}>
       <div className="panel-title supplier-info-card-title">
-        <div><h3>사업자 정보</h3><p className="panel-note">팝빌 발행 시 자동 사용될 정보입니다.</p></div>
         <div className="supplier-edit-actions">
           <button type="button" className="ghost supplier-capsule-button" onClick={beginEdit} disabled={editing || busy}>수정</button>
           <button type="button" className="ghost supplier-capsule-button" onClick={cancelEdit} disabled={!editing || busy}>취소</button>
@@ -1667,13 +1666,37 @@ function CompanyEmployeeListMock() {
 }
 function CompanyInfoScreen({ company, busy, onSave, onSettings }) {
   const emptyForm = { name: '', biz_reg_no: '', representative_name: '', business_type: '', business_item: '', address: '', contact_name: '', contact_phone: '', tax_invoice_email: '' };
-  const [form, setForm] = useState(emptyForm);
+  const valuesFrom = (item) => Object.fromEntries(Object.keys(emptyForm).map((key) => [key, item?.[key] ?? (key === 'tax_invoice_email' ? item?.contact_email ?? '' : '')]));
+  const [form, setForm] = useState(() => valuesFrom(company));
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
-    setForm(Object.fromEntries(Object.keys(emptyForm).map((key) => [key, company?.[key] ?? (key === 'tax_invoice_email' ? company?.contact_email ?? '' : '')])));
+    setForm(valuesFrom(company));
+    setEditing(false);
   }, [company]);
   const field = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
-  return <AdminMockPage title={null} description="업체 상세에 표시할 사업자정보와 세금계산서 수신 정보를 관리합니다." actions={<button type="button" className="account-settings-button" onClick={onSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/></button>} preview={false} className="merchant-regular-weight">
-    <form className="panel mock-business-form" onSubmit={(event) => { event.preventDefault(); onSave(form); }}><label>사업자등록번호<input value={form.biz_reg_no} onChange={field('biz_reg_no')} required /></label><label>상호<input value={form.name} onChange={field('name')} required /></label><label>대표자<input value={form.representative_name} onChange={field('representative_name')} /></label><label>업태<input value={form.business_type} onChange={field('business_type')} /></label><label>종목<input value={form.business_item} onChange={field('business_item')} /></label><label className="wide">사업장주소<input value={form.address} onChange={field('address')} /></label><label>담당자명<input value={form.contact_name} onChange={field('contact_name')} /></label><label>연락처<input value={form.contact_phone} onChange={field('contact_phone')} /></label><label className="wide">세금계산서 수신 이메일<input type="email" value={form.tax_invoice_email} onChange={field('tax_invoice_email')} /></label><div className="row-actions wide"><button type="button" className="ghost" onClick={() => setForm(Object.fromEntries(Object.keys(emptyForm).map((key) => [key, company?.[key] ?? (key === 'tax_invoice_email' ? company?.contact_email ?? '' : '')])))}>취소</button><button className="primary" disabled={busy}>회사 정보 저장</button></div></form>
+  const beginEdit = () => { setForm(valuesFrom(company)); setEditing(true); };
+  const cancelEdit = () => { setForm(valuesFrom(company)); setEditing(false); };
+  return <AdminMockPage title={null} description="업체 상세에 표시할 사업자정보와 세금계산서 수신 정보를 관리합니다." actions={<button type="button" className="account-settings-button" onClick={onSettings} aria-label="관리자 정보 설정" title="관리자 정보 설정"><Settings size={20}/></button>} preview={false} className="merchant-regular-weight supplier-info-page">
+    <form className="panel supplier-info-card" onSubmit={async (event) => { event.preventDefault(); await onSave(form); }}>
+      <div className="panel-title supplier-info-card-title">
+        <div className="supplier-edit-actions">
+          <button type="button" className="ghost supplier-capsule-button" onClick={beginEdit} disabled={editing || busy}>수정</button>
+          <button type="button" className="ghost supplier-capsule-button" onClick={cancelEdit} disabled={!editing || busy}>취소</button>
+          <button type="submit" className="primary supplier-capsule-button" disabled={!editing || busy}>{busy ? '저장 중' : '저장'}</button>
+        </div>
+      </div>
+      <div className="supplier-info-fields">
+        <label>사업자등록번호<input value={form.biz_reg_no} onChange={field('biz_reg_no')} disabled={!editing} required /></label>
+        <label>상호<input value={form.name} onChange={field('name')} disabled={!editing} required /></label>
+        <label>대표자<input value={form.representative_name} onChange={field('representative_name')} disabled={!editing} /></label>
+        <label>업태<input value={form.business_type} onChange={field('business_type')} disabled={!editing} /></label>
+        <label>종목<input value={form.business_item} onChange={field('business_item')} disabled={!editing} /></label>
+        <label className="wide">사업장주소<input value={form.address} onChange={field('address')} disabled={!editing} /></label>
+        <label>담당자명<input value={form.contact_name} onChange={field('contact_name')} disabled={!editing} /></label>
+        <label>연락처<input value={form.contact_phone} onChange={field('contact_phone')} disabled={!editing} /></label>
+        <label className="wide">세금계산서 수신 이메일<input type="email" value={form.tax_invoice_email} onChange={field('tax_invoice_email')} disabled={!editing} /></label>
+      </div>
+    </form>
   </AdminMockPage>;
 }
 

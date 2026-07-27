@@ -39,3 +39,21 @@ services:
       # Firebase Admin SDK: store the service-account JSON as Base64 in Render Secret.
       - key: FIREBASE_SERVICE_ACCOUNT_JSON_BASE64
         sync: false
+      # Popbill Taxinvoice SDK: all values are server-only.
+      - key: POPBILL_LINK_ID
+        sync: false
+      - key: POPBILL_SECRET_KEY
+        sync: false
+      - key: POPBILL_CORP_NUM
+        sync: false
+      - key: POPBILL_USER_ID
+        sync: false
+      # Keep the safe test environment default. Production must override this explicitly.
+      - key: POPBILL_IS_TEST
+        value: "true"
+      - key: POPBILL_IP_RESTRICT_ON
+        value: "true"
+      - key: POPBILL_USE_STATIC_IP
+        value: "false"
+      - key: POPBILL_USE_LOCAL_TIME
+        value: "true"

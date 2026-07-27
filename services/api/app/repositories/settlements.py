@@ -9,9 +9,18 @@ from app.services.join_flow import JoinErrorCode, JoinFlowError, UserProfile
 
 LIST_FIELDS = (
     "id,company_id,merchant_id,period_ym,period_from,period_to,tx_count,total_amount,"
-    "supply_amount,vat_amount,status,settlement_status,tax_invoice_status,payment_status,"
+    "supply_amount,vat_amount,settlement_tax_type,status,settlement_status,tax_invoice_status,payment_status,"
     "sent_at,confirmed_at,finalized_at,due_date,paid_at,created_at,updated_at"
 )
+
+INVOICE_FIELDS = (
+    "id,settlement_id,company_id,merchant_id,document_type,tax_type,"
+    "write_date,supply_amount,vat_amount,total_amount,supplier_snapshot,recipient_snapshot,"
+    "popbill_status,nts_status,nts_confirm_num,requested_at,issue_requested_at,issued_at,nts_sent_at,"
+    "nts_accepted_at,failure_code,failed_at,created_at,updated_at"
+)
+
+PAYMENT_FIELDS = "id,amount,depositor_name,deposited_at,memo,confirmed_at,created_at"
 
 
 class SettlementRepository:
@@ -57,7 +66,7 @@ class SettlementRepository:
             return None
         row = rows[0]
         invoices = self.client.rest_get("tax_invoices", {
-            "select": "id,settlement_id,document_type,invoicer_mgt_key,tax_type,write_date,supply_amount,vat_amount,total_amount,supplier_snapshot,recipient_snapshot,popbill_status,nts_status,requested_at,issued_at,nts_sent_at,nts_accepted_at,failure_code,failure_message,created_at",
+            "select": INVOICE_FIELDS,
             "settlement_id": f"eq.{settlement_id}", "order": "created_at.asc,id.asc",
         })
         events = self.client.rest_get("settlement_events", {
@@ -68,20 +77,23 @@ class SettlementRepository:
             "select": "id,name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,contact_name,contact_phone,status,contact_email,created_at",
             "id": f"eq.{row['company_id']}", "limit": "1",
         })
+        supplier = self.client.rest_get("merchants", {
+            "select": "name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,contact_phone:owner_phone",
+            "id": f"eq.{row['merchant_id']}", "limit": "1",
+        })
+        payments = self.client.rest_get("settlement_payments", {
+            "select": PAYMENT_FIELDS,
+            "settlement_id": f"eq.{settlement_id}", "order": "created_at.asc,id.asc",
+        })
         return {**row, "business_information": company[0] if company else None,
-                "tax_invoices": invoices, "events": events}
+                "supplier_information": supplier[0] if supplier else None,
+                "tax_invoices": invoices, "events": events, "payments": payments}
 
     def company_detail(self, settlement_id: str | UUID, company_id: str) -> dict[str, Any] | None:
         return self._detail(settlement_id, "company_id", company_id)
 
     def merchant_detail(self, settlement_id: str | UUID, merchant_id: str) -> dict[str, Any] | None:
-        row = self._detail(settlement_id, "merchant_id", merchant_id)
-        if row is not None:
-            row["payments"] = self.client.rest_get("settlement_payments", {
-                "select": "id,amount,depositor_name,deposited_at,memo,confirmed_at,created_at",
-                "settlement_id": f"eq.{settlement_id}", "order": "created_at.asc,id.asc",
-            })
-        return row
+        return self._detail(settlement_id, "merchant_id", merchant_id)
 
     def confirm(self, actor: UserProfile, settlement_id: str | UUID) -> dict[str, Any]:
         return self.client.rpc("company_confirm_and_request_tax_invoice", {
@@ -106,3 +118,59 @@ class SettlementRepository:
             "p_deposited_at": payload.deposited_at.isoformat(), "p_memo": payload.memo,
             "p_idempotency_key": payload.idempotency_key,
         })
+
+    def claim_invoice_issue(self, actor: UserProfile, settlement_id: str | UUID) -> dict[str, Any]:
+        return self.client.rpc("merchant_claim_tax_invoice_issue", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_settlement_id": settlement_id,
+        })
+
+    def finalize_invoice_issue(
+        self, actor: UserProfile, settlement_id: str | UUID, attempt_token: str | UUID,
+        outcome: str, failure_code: str | None = None, failure_message: str | None = None,
+    ) -> dict[str, Any]:
+        return self.client.rpc("merchant_finalize_tax_invoice_issue", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_settlement_id": settlement_id, "p_attempt_token": attempt_token,
+            "p_outcome": outcome, "p_failure_code": failure_code,
+            "p_failure_message": failure_message,
+        })
+
+    def apply_invoice_status(self, actor: UserProfile, settlement_id: str | UUID, status: Any) -> dict[str, Any]:
+        return self.client.rpc("merchant_apply_tax_invoice_status", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_settlement_id": settlement_id, "p_state_code": status.provider_state_code,
+            "p_nts_result": status.nts_result_code,
+            "p_nts_confirm_num": status.nts_confirm_number,
+            "p_issued_at": status.issued_at, "p_nts_sent_at": status.nts_sent_at,
+            "p_nts_result_at": status.nts_result_at,
+        })
+
+    def reset_stale_invoice_issue(
+        self, actor: UserProfile, settlement_id: str | UUID, attempt_token: str | UUID,
+        management_key_in_use: bool,
+    ) -> dict[str, Any]:
+        return self.client.rpc("merchant_reset_stale_tax_invoice_issue", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_settlement_id": settlement_id, "p_attempt_token": attempt_token,
+            "p_management_key_in_use": management_key_in_use,
+        })
+
+    def original_invoice_management_key(
+        self, actor: UserProfile, settlement_id: str | UUID
+    ) -> str | None:
+        """Fetch provider identity only through an independently tenant-scoped path."""
+        tenant_column = "company_id" if actor.role == "company_admin" else "merchant_id"
+        tenant_id = actor.company_id if actor.role == "company_admin" else actor.merchant_id
+        if not tenant_id:
+            return None
+        settlements = self.client.rest_get("settlements", {
+            "select": "id", "id": f"eq.{settlement_id}", tenant_column: f"eq.{tenant_id}", "limit": "1",
+        })
+        if not settlements:
+            return None
+        invoices = self.client.rest_get("tax_invoices", {
+            "select": "invoicer_mgt_key", "settlement_id": f"eq.{settlement_id}",
+            "document_type": "eq.original", tenant_column: f"eq.{tenant_id}", "limit": "1",
+        })
+        return invoices[0].get("invoicer_mgt_key") if invoices else None

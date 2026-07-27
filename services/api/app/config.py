@@ -5,6 +5,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def parse_env_bool(name: str, default: bool) -> bool:
+    """Read an environment boolean without accepting surprising truthy values."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    if raw == "true":
+        return True
+    if raw == "false":
+        return False
+    raise RuntimeError(f"{name} must be exactly 'true' or 'false'")
+
+
 def load_dotenv(path: str | Path = ".env") -> None:
     env_path = Path(path)
     if not env_path.exists():
@@ -37,6 +49,14 @@ class Settings:
     invite_email_from: str = "GreenEatGo <verified-sender@example.com>"
     pilot_merchant_id: str | None = None
     cors_allowed_origins: tuple[str, ...] = ("http://localhost:5173", "https://greeneatgo.vercel.app")
+    popbill_link_id: str = ""
+    popbill_secret_key: str = ""
+    popbill_corp_num: str = ""
+    popbill_user_id: str = ""
+    popbill_is_test: bool = True
+    popbill_ip_restrict_on: bool = True
+    popbill_use_static_ip: bool = False
+    popbill_use_local_time: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -71,6 +91,16 @@ class Settings:
             sendgrid_api_key=os.environ.get("SENDGRID_API_KEY", "").strip(),
             invite_email_from=os.environ.get("INVITE_EMAIL_FROM", "GreenEatGo <verified-sender@example.com>").strip(),
             pilot_merchant_id=(os.environ.get("PILOT_MERCHANT_ID") or "").strip() or None,
+            popbill_link_id=os.environ.get("POPBILL_LINK_ID", "").strip(),
+            popbill_secret_key=os.environ.get("POPBILL_SECRET_KEY", "").strip(),
+            # Keep the raw value: the SDK boundary accepts only the two documented
+            # corporation-number forms and must reject surrounding whitespace.
+            popbill_corp_num=os.environ.get("POPBILL_CORP_NUM", ""),
+            popbill_user_id=os.environ.get("POPBILL_USER_ID", "").strip(),
+            popbill_is_test=parse_env_bool("POPBILL_IS_TEST", True),
+            popbill_ip_restrict_on=parse_env_bool("POPBILL_IP_RESTRICT_ON", True),
+            popbill_use_static_ip=parse_env_bool("POPBILL_USE_STATIC_IP", False),
+            popbill_use_local_time=parse_env_bool("POPBILL_USE_LOCAL_TIME", True),
             cors_allowed_origins=tuple(
                 origin.strip()
                 for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173,https://greeneatgo.vercel.app").split(",")

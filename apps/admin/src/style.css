@@ -1529,9 +1529,9 @@ code { font-size: 12px; }
 .settlement-v2-status.complete { color: #fff; background: var(--accent); }
 .settlement-v2-status.requested { color: #9A5200; background: #FFF0CC; }
 .settlement-v2-status.confirmed, .settlement-v2-status.issued, .settlement-v2-status.paid, .settlement-v2-status.nts_accepted { color: #fff; background: var(--accent); }
-.settlement-v2-status.issuing, .settlement-v2-status.nts_sending, .settlement-v2-status.scheduled { color: #315A91; background: #E7F0FF; }
-.settlement-v2-status.failed, .settlement-v2-status.overdue, .settlement-v2-status.cancelled { color: #A52D25; background: #FDE8E5; }
-.settlement-v2-status.pending, .settlement-v2-status.not_requested, .settlement-v2-status.unpaid { color: #725A20; background: #FFF3CE; }
+.settlement-v2-status.issuing, .settlement-v2-status.nts_sending, .settlement-v2-status.matching { color: #315A91; background: #E7F0FF; }
+.settlement-v2-status.failed, .settlement-v2-status.cancelled, .settlement-v2-status.overpaid, .settlement-v2-status.unmatched { color: #A52D25; background: #FDE8E5; }
+.settlement-v2-status.pending, .settlement-v2-status.not_requested, .settlement-v2-status.unpaid, .settlement-v2-status.partially_paid { color: #725A20; background: #FFF3CE; }
 .settlement-v2-inline-action { min-height: 32px; padding: 5px 9px; font-size: 11px; white-space: nowrap; }
 .settlement-v2-detail-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .settlement-v2-overview { padding: 0; overflow: hidden; }

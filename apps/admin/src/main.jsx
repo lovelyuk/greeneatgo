@@ -6,6 +6,16 @@ import Cropper from 'react-easy-crop';
 import './style.css';
 import { PaymentHistoryDashboard, RefundModal } from './PaymentFeatures.jsx';
 import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
+import {
+  PILOT_COMPANY_SCOPE_ID,
+  canConfirmAndRequest,
+  canMerchantIssue,
+  canMerchantMarkPaid,
+  isBusinessPartyComplete,
+  loadSettlementMockRows,
+  saveSettlementMockRows,
+  transitionSettlementMockRow,
+} from './settlementMock.js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -964,28 +974,61 @@ function AdminMockPage({ title, description, children, actions = null, preview =
 }
 
 
+const SETTLEMENT_STATUS = {
+  pending: '정산 확인 대기', confirmed: '정산 확정', finalized: '정산 마감', completed: '정산 완료', cancelled: '정산 취소',
+};
+const TAX_INVOICE_STATUS = {
+  not_requested: '미요청', requested: '발급 요청', issuing: '발행 처리 중', issued: '발행 완료',
+  nts_sending: '국세청 전송 중', nts_accepted: '국세청 접수 완료', failed: '발행 실패', cancelled: '발행 취소',
+};
+const PAYMENT_STATUS = { unpaid: '입금 대기', scheduled: '입금 예정', paid: '입금 완료', overdue: '입금 지연' };
+
+const SETTLEMENT_V2_PARTIES = {
+  supplier: { name: 'GreenEat', biz_reg_no: '123-45-67890', branch_no: null, representative_name: '이용욱', address: '서울특별시 강남구 테헤란로 1', business_type: '음식점업', business_item: '단체급식', tax_invoice_email: 'tax@greeneat.example', contact_name: '이용욱', contact_phone: '02-1000-1000' },
+  gaon: { name: '가온테크 주식회사', biz_reg_no: '214-86-12345', branch_no: null, representative_name: '김가온', address: '서울특별시 강남구 테헤란로 123', business_type: '서비스업', business_item: '소프트웨어 개발', tax_invoice_email: 'tax@gaon.example', contact_name: '김담당', contact_phone: '02-2000-1000' },
+  moa: { name: '모아산업', biz_reg_no: '220-88-45678', branch_no: null, representative_name: '박모아', address: '경기도 성남시 분당구 판교로 45', business_type: '제조업', business_item: '산업용 기기', tax_invoice_email: 'tax@moa.example', contact_name: '박담당', contact_phone: '031-2000-2000' },
+  saebom: { name: '새봄복지관', biz_reg_no: '110-82-98765', branch_no: null, representative_name: '최새봄', address: '서울특별시 마포구 월드컵로 88', business_type: '사회복지서비스업', business_item: '복지시설 운영', tax_invoice_email: 'tax@saebom.example', contact_name: '최담당', contact_phone: '02-3000-3000' },
+};
+
+function settlementSeed({ id, companyId, merchantId = 'merchant-greeneat', periodStart, periodEnd, total, supply, vat, recipient, settlementStatus, taxStatus, paymentStatus, dueDate, issuedAt = null, paidAt = null, failedReason = null }) {
+  const now = `${periodEnd}T09:00:00+09:00`;
+  return {
+    id, company_id: companyId, merchant_id: merchantId, period_start: periodStart, period_end: periodEnd,
+    total_amount: total, supply_amount: supply, vat_amount: vat,
+    settlement_status: settlementStatus, tax_invoice_status: taxStatus, payment_status: paymentStatus,
+    due_date: dueDate, created_at: now, updated_at: now,
+    confirmed_at: settlementStatus === 'confirmed' ? now : null,
+    tax_invoice_requested_at: taxStatus === 'not_requested' ? null : now,
+    supplier: { ...SETTLEMENT_V2_PARTIES.supplier }, recipient: { ...recipient },
+    invoice: taxStatus === 'not_requested' ? null : {
+      id: `mock-invoice-${id}`, provider: 'local_mock', approval_number: null, external_url: null, pdf_url: null,
+      written_at: periodEnd, issued_at: issuedAt, nts_sent_at: taxStatus === 'nts_sending' || taxStatus === 'nts_accepted' ? issuedAt : null,
+      nts_accepted_at: taxStatus === 'nts_accepted' ? issuedAt : null, failed_reason: failedReason,
+    },
+    payment: { bank_name: null, account_number: null, account_holder: null, scheduled_at: dueDate, paid_at: paidAt, amount: paidAt ? total : 0, memo: paidAt ? `${periodStart.slice(0, 7)} 식대 정산` : null },
+  };
+}
+
 const SETTLEMENT_V2_SEED = [
-  { id: '2026-07-gaon', year: 2026, month: 7, from: '2026-07-01', to: '2026-07-31', business: '그린잇 식당', bizNo: '123-45-67890', representative: '이용욱', email: 'tax@greeneat.example', company: '가온테크 주식회사', amount: 4812000, confirmed: '대기', evidence: '-', deposit: '-', requested: false },
-  { id: '2026-07-moa', year: 2026, month: 7, from: '2026-07-01', to: '2026-07-31', business: '그린잇 식당', bizNo: '123-45-67890', representative: '이용욱', email: 'tax@greeneat.example', company: '모아산업', amount: 2640000, confirmed: '대기', evidence: '-', deposit: '-', requested: false },
-  { id: '2026-06-gaon', year: 2026, month: 6, from: '2026-06-01', to: '2026-06-30', business: '그린잇 식당', bizNo: '123-45-67890', representative: '이용욱', email: 'tax@greeneat.example', company: '가온테크 주식회사', amount: 4532000, confirmed: '완료', evidence: '완료', deposit: '완료', requested: false },
-  { id: '2026-05-saebom', year: 2026, month: 5, from: '2026-05-01', to: '2026-05-31', business: '그린잇 식당', bizNo: '123-45-67890', representative: '이용욱', email: 'tax@greeneat.example', company: '새봄복지관', amount: 4380000, confirmed: '완료', evidence: '완료', deposit: '완료', requested: false },
-  { id: '2026-04-moa', year: 2026, month: 4, from: '2026-04-01', to: '2026-04-30', business: '그린잇 식당', bizNo: '123-45-67890', representative: '이용욱', email: 'tax@greeneat.example', company: '모아산업', amount: 4632000, confirmed: '완료', evidence: '완료', deposit: '완료', requested: false },
-  { id: '2026-03-gaon', year: 2026, month: 3, from: '2026-03-01', to: '2026-03-31', business: '그린잇 식당', bizNo: '123-45-67890', representative: '이용욱', email: 'tax@greeneat.example', company: '가온테크 주식회사', amount: 4120000, confirmed: '완료', evidence: '완료', deposit: '완료', requested: false },
+  settlementSeed({ id: 'stl-2026-07-gaon', companyId: 'company-gaon', periodStart: '2026-07-01', periodEnd: '2026-07-31', total: 4812000, supply: 4374545, vat: 437455, recipient: SETTLEMENT_V2_PARTIES.gaon, settlementStatus: 'pending', taxStatus: 'not_requested', paymentStatus: 'unpaid', dueDate: '2026-08-14' }),
+  settlementSeed({ id: 'stl-2026-07-moa', companyId: 'company-moa', periodStart: '2026-07-01', periodEnd: '2026-07-31', total: 2640000, supply: 2400000, vat: 240000, recipient: SETTLEMENT_V2_PARTIES.moa, settlementStatus: 'confirmed', taxStatus: 'requested', paymentStatus: 'unpaid', dueDate: '2026-08-14' }),
+  settlementSeed({ id: 'stl-2026-06-gaon', companyId: 'company-gaon', periodStart: '2026-06-01', periodEnd: '2026-06-30', total: 4532000, supply: 4120000, vat: 412000, recipient: SETTLEMENT_V2_PARTIES.gaon, settlementStatus: 'confirmed', taxStatus: 'nts_accepted', paymentStatus: 'paid', dueDate: '2026-07-14', issuedAt: '2026-07-02T10:20:00+09:00', paidAt: '2026-07-14T10:30:00+09:00' }),
+  settlementSeed({ id: 'stl-2026-05-saebom', companyId: 'company-saebom', periodStart: '2026-05-01', periodEnd: '2026-05-31', total: 4380000, supply: 3981818, vat: 398182, recipient: SETTLEMENT_V2_PARTIES.saebom, settlementStatus: 'confirmed', taxStatus: 'nts_sending', paymentStatus: 'scheduled', dueDate: '2026-06-14', issuedAt: '2026-06-02T09:10:00+09:00' }),
+  settlementSeed({ id: 'stl-2026-04-moa', companyId: 'company-moa', periodStart: '2026-04-01', periodEnd: '2026-04-30', total: 4632000, supply: 4210909, vat: 421091, recipient: SETTLEMENT_V2_PARTIES.moa, settlementStatus: 'confirmed', taxStatus: 'failed', paymentStatus: 'overdue', dueDate: '2026-05-14', failedReason: '로컬 목업: 필수 수신 정보 확인 필요' }),
+  settlementSeed({ id: 'stl-2026-03-gaon', companyId: 'company-gaon', periodStart: '2026-03-01', periodEnd: '2026-03-31', total: 4120000, supply: 3745455, vat: 374545, recipient: SETTLEMENT_V2_PARTIES.gaon, settlementStatus: 'cancelled', taxStatus: 'cancelled', paymentStatus: 'unpaid', dueDate: '2026-04-14' }),
+  settlementSeed({ id: 'stl-2026-02-moa', companyId: 'company-moa', periodStart: '2026-02-01', periodEnd: '2026-02-28', total: 3300000, supply: 3000000, vat: 300000, recipient: SETTLEMENT_V2_PARTIES.moa, settlementStatus: 'confirmed', taxStatus: 'issuing', paymentStatus: 'unpaid', dueDate: '2026-03-14' }),
+  settlementSeed({ id: 'stl-2026-01-saebom', companyId: 'company-saebom', periodStart: '2026-01-01', periodEnd: '2026-01-31', total: 2200000, supply: 2000000, vat: 200000, recipient: SETTLEMENT_V2_PARTIES.saebom, settlementStatus: 'confirmed', taxStatus: 'issued', paymentStatus: 'scheduled', dueDate: '2026-02-14', issuedAt: '2026-02-02T11:00:00+09:00' }),
 ];
 
-const SETTLEMENT_V2_COMPANIES = {
-  '가온테크 주식회사': { bizNo: '214-86-12345', branchNo: '-', representative: '김가온', address: '서울특별시 강남구 테헤란로 123', businessType: '서비스업', businessItem: '소프트웨어 개발' },
-  '모아산업': { bizNo: '220-88-45678', branchNo: '-', representative: '박모아', address: '경기도 성남시 분당구 판교로 45', businessType: '제조업', businessItem: '산업용 기기' },
-  '새봄복지관': { bizNo: '110-82-98765', branchNo: '-', representative: '최새봄', address: '서울특별시 마포구 월드컵로 88', businessType: '사회복지서비스업', businessItem: '복지시설 운영' },
-};
-const SETTLEMENT_V2_STORE_KEY = 'greeneatgo:settlement-v2-mock';
-
 function loadSettlementV2Rows() {
+  return loadSettlementMockRows(settlementLocalStorage(), SETTLEMENT_V2_SEED);
+}
+
+function settlementLocalStorage() {
   try {
-    const stored = window.localStorage.getItem(SETTLEMENT_V2_STORE_KEY);
-    return stored ? JSON.parse(stored) : SETTLEMENT_V2_SEED.map((row) => ({ ...row }));
+    return typeof window === 'undefined' ? null : window.localStorage;
   } catch {
-    return SETTLEMENT_V2_SEED.map((row) => ({ ...row }));
+    return null;
   }
 }
 
@@ -993,34 +1036,38 @@ function useSettlementV2Rows() {
   const [rows, setRowsState] = useState(loadSettlementV2Rows);
   const setRows = (updater) => setRowsState((current) => {
     const next = typeof updater === 'function' ? updater(current) : updater;
-    window.localStorage.setItem(SETTLEMENT_V2_STORE_KEY, JSON.stringify(next));
+    saveSettlementMockRows(settlementLocalStorage(), next);
     return next;
   });
   return [rows, setRows];
 }
 
-function settlementV2Evidence(row) {
-  const recipient = SETTLEMENT_V2_COMPANIES[row.company];
-  const supply = Math.round(row.amount / 1.1);
-  const vat = row.amount - supply;
-  const nextMonth = new Date(row.year, row.month, 1);
-  const writtenAt = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`;
-  return { id: `ev-${row.id}`, kind: '매출', item: `${row.year}년 ${row.month}월 식대(월합계)`, type: '세금계산서', recipient: row.company, bizNo: recipient.bizNo, supply, vat, total: row.amount, writtenAt, approvalNo: `${writtenAt.replaceAll('-', '')}-41000001-${row.id.replaceAll('-', '').slice(-8)}`, approvedAt: writtenAt };
+function formatKoreanTimestamp(value) {
+  if (!value) return '미확정';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '미확정';
+  return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
-function SettlementV2Status({ value }) {
-  return <span className={`settlement-v2-status ${value === '완료' ? 'complete' : 'waiting'}`}>{value}</span>;
+function settlementV2Evidence(row, recipient = row.recipient) {
+  return { id: `ev-${row.id}`, kind: '매출', item: `${row.period_start.slice(0, 7)} 식대(월합계)`, type: '세금계산서', recipient: recipient.name, bizNo: recipient.biz_reg_no, supply: row.supply_amount, vat: row.vat_amount, total: row.total_amount, writtenAt: row.invoice?.written_at ?? '미확정', approvalNo: row.invoice?.approval_number ?? '미수신 (로컬 목업)', approvedAt: formatKoreanTimestamp(row.invoice?.issued_at) };
+}
+
+function SettlementV2Status({ type = 'generic', value }) {
+  const labels = type === 'settlement' ? SETTLEMENT_STATUS : type === 'invoice' ? TAX_INVOICE_STATUS : type === 'payment' ? PAYMENT_STATUS : null;
+  return <span className={`settlement-v2-status ${value}`}>{labels?.[value] ?? value}</span>;
 }
 
 function SettlementV2Empty({ text = '내역이 없습니다' }) {
   return <div className="settlement-v2-empty" role="status"><FileText size={32}/><strong>{text}</strong></div>;
 }
 
-function SettlementV2Screen({ viewer }) {
+function SettlementV2Screen({ viewer, companyProfile = null, onCompanyInfo = null }) {
   // TODO: settlements·증빙·입금 데이터와 팝빌 발행/발급요청 API로 교체합니다.
   const isMerchant = viewer === 'merchant';
   const [allRows, setRows] = useSettlementV2Rows();
-  const rows = isMerchant ? allRows : allRows.filter((row) => row.company === '가온테크 주식회사');
+  // Pilot data is authorized by a stable mock scope. The live profile only overlays display fields.
+  const rows = isMerchant ? allRows : allRows.filter((row) => row.company_id === PILOT_COMPANY_SCOPE_ID);
   const [year, setYear] = useState(2026);
   const [month, setMonth] = useState('all');
   const [selectedId, setSelectedId] = useState(null);
@@ -1032,6 +1079,8 @@ function SettlementV2Screen({ viewer }) {
   const [evidenceMethod, setEvidenceMethod] = useState('service');
   const [dialog, setDialog] = useState(null);
   const [notice, setNotice] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [confirmChecks, setConfirmChecks] = useState([false, false, false]);
   const actionButtonRef = useRef(null);
   const backButtonRef = useRef(null);
   const dialogRef = useRef(null);
@@ -1044,32 +1093,47 @@ function SettlementV2Screen({ viewer }) {
     return () => window.cancelAnimationFrame(frame);
   }, [dialog]);
   const selected = rows.find((row) => row.id === selectedId) ?? null;
-  const recipient = selected ? SETTLEMENT_V2_COMPANIES[selected.company] : null;
-  const availableMonths = new Set(rows.filter((row) => row.year === year).map((row) => row.month));
-  const visibleRows = rows.filter((row) => row.year === year && (month === 'all' || row.month === month));
+  const recipientFor = (row) => companyProfile && row && !isMerchant && canConfirmAndRequest(row) ? {
+    ...row.recipient,
+    id: companyProfile.id ?? row.recipient.id,
+    name: companyProfile.name ?? '',
+    biz_reg_no: companyProfile.biz_reg_no ?? '',
+    representative_name: companyProfile.representative_name ?? '',
+    address: companyProfile.address ?? '',
+    business_type: companyProfile.business_type ?? '',
+    business_item: companyProfile.business_item ?? '',
+    tax_invoice_email: companyProfile.tax_invoice_email ?? companyProfile.contact_email ?? '',
+    contact_name: companyProfile.contact_name ?? '',
+    contact_phone: companyProfile.contact_phone ?? '',
+  } : row?.recipient;
+  const profileRecipient = recipientFor(selected);
+  const recipientReady = isBusinessPartyComplete(profileRecipient);
+  const selectedYear = (row) => Number(row.period_start.slice(0, 4));
+  const selectedMonth = (row) => Number(row.period_start.slice(5, 7));
+  const availableMonths = new Set(rows.filter((row) => selectedYear(row) === year).map(selectedMonth));
+  const visibleRows = rows.filter((row) => selectedYear(row) === year && (month === 'all' || selectedMonth(row) === month));
 
-  const transactions = selected && selected.month !== 3 ? [
-    [`${selected.from} 11:42`, selected.company, '김민지', 9000, 9000, '완료'],
-    [`${selected.from.slice(0, 8)}15 12:06`, selected.company, '박준호', 9000, 9000, '완료'],
-    [`${selected.to} 18:21`, selected.company, '이서연', 9000, 9000, '완료'],
+  const transactions = selected && selectedMonth(selected) !== 3 ? [
+    [formatKoreanTimestamp(`${selected.period_start}T11:42:00+09:00`), profileRecipient.name, '김민지', 9000, 9000, '완료'],
+    [formatKoreanTimestamp(`${selected.period_start.slice(0, 8)}15T12:06:00+09:00`), profileRecipient.name, '박준호', 9000, 9000, '완료'],
+    [formatKoreanTimestamp(`${selected.period_end}T18:21:00+09:00`), profileRecipient.name, '이서연', 9000, 9000, '완료'],
   ] : [];
-  const supply = selected ? Math.round(selected.amount / 1.1) : 0;
-  const vat = selected ? selected.amount - supply : 0;
-  const evidenceRecord = selected?.evidence === '완료' ? settlementV2Evidence(selected) : null;
+  const evidenceRecord = selected && ['issued', 'nts_sending', 'nts_accepted'].includes(selected.tax_invoice_status) ? settlementV2Evidence(selected, profileRecipient) : null;
   const evidenceRows = evidenceRecord ? [[
-    evidenceRecord.type, evidenceRecord.item, selected.business, selected.representative, selected.bizNo,
+    evidenceRecord.type, evidenceRecord.item, selected.supplier.name, selected.supplier.representative_name, selected.supplier.biz_reg_no,
     evidenceRecord.writtenAt, evidenceRecord.supply, evidenceRecord.vat, evidenceRecord.total,
-    evidenceRecord.approvalNo, evidenceRecord.approvedAt, '발행완료',
+    evidenceRecord.approvalNo, evidenceRecord.approvedAt, selected.tax_invoice_status,
   ]] : [];
-  const depositRows = selected?.deposit === '완료' ? [[`${selected.year}-${String(selected.month + 1).padStart(2, '0')}-14 10:30`, selected.amount, `${selected.month}월 식대 정산`]] : [];
+  const depositRows = selected?.payment_status === 'paid' ? [[formatKoreanTimestamp(selected.payment.paid_at), selected.payment.amount, selected.payment.memo]] : [];
 
   function openSettlement(row) {
     setSelectedId(row.id);
     setDetailTab('transactions');
     setRangeMode('all');
-    setRangeFrom(row.from);
-    setRangeTo(row.to);
+    setRangeFrom(row.period_start);
+    setRangeTo(row.period_end);
     setNotice('');
+    setActionError('');
   }
 
   function closeDialog() {
@@ -1092,36 +1156,73 @@ function SettlementV2Screen({ viewer }) {
 
   function confirmInvoiceAction() {
     if (!selected) return;
-    if (isMerchant) {
-      setRows((current) => current.map((row) => row.id === selected.id ? { ...row, evidence: '완료' } : row));
-      setNotice('목업 세금계산서를 발행완료로 변경했습니다.');
-    } else {
-      setRows((current) => current.map((row) => row.id === selected.id ? { ...row, requested: true } : row));
-      setNotice('식당에 세금계산서 발급요청을 전달한 목업 상태입니다.');
+    const now = new Date().toISOString();
+    const action = isMerchant ? 'merchant_issue' : 'confirm_and_request';
+    if (!isMerchant && (!recipientReady || !confirmChecks.every(Boolean))) {
+      setActionError('회사 정보의 필수 공급받는자 정보를 모두 입력하고 확인 항목에 동의해 주세요.');
+      return;
     }
+    const changed = transitionSettlementMockRow(selected, action, now, isMerchant ? null : profileRecipient);
+    if (!changed) {
+      setActionError('현재 정산 상태에서는 요청을 처리할 수 없습니다. 새로고침 후 상태를 확인해 주세요.');
+      return;
+    }
+    setRows((current) => current.map((row) => row.id === selected.id ? changed : row));
+    setActionError('');
+    setNotice(isMerchant
+      ? '로컬 목업에서 세금계산서를 발행 완료 상태로 변경했습니다. Popbill 전송은 실행되지 않았습니다.'
+      : '정산 확정과 세금계산서 발급 요청을 한 번에 저장한 로컬 목업 상태입니다.');
     dialogReturnRef.current = backButtonRef.current;
     setDialog(null);
   }
 
+  function simulatePayment() {
+    if (!selected || !isMerchant) return;
+    const now = new Date().toISOString();
+    const changed = transitionSettlementMockRow(selected, 'merchant_mark_paid', now);
+    if (!changed) {
+      setActionError('현재 정산·세금계산서 상태에서는 입금 완료로 변경할 수 없습니다.');
+      return;
+    }
+    setRows((current) => current.map((row) => row.id === selected.id ? changed : row));
+    setActionError('');
+    setNotice('로컬 목업에서 입금 완료 상태로 변경했습니다. 실제 입금 또는 은행 조회는 실행되지 않았습니다.');
+  }
+
   if (!selected) return <AdminMockPage title="매출 정산" description={isMerchant ? '업체별 월 정산과 증빙·입금 처리 현황을 확인합니다.' : '우리 회사의 월별 청구와 세금계산서 처리 현황을 확인합니다.'} showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
-    {notice && <div className="alert success">{notice}</div>}
+    <div className="alert warning settlement-mock-notice" role="status">데모용 로컬 목업 데이터입니다. 실제 청구·세금계산서·입금 정보가 아니며 외부 기관으로 전송되지 않습니다.</div>
+    {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
     <div className="settlement-v2-title-actions"><span className="badge">월별 정산 목록</span></div>
-    <div className="settlement-v2-periodbar"><div className="settlement-v2-months" role="tablist" aria-label="정산월"><button type="button" role="tab" aria-selected={month === 'all'} className={month === 'all' ? 'active' : ''} onClick={() => setMonth('all')}>전체</button>{Array.from({ length: 12 }, (_, index) => index + 1).map((value) => <button type="button" role="tab" aria-selected={month === value} key={value} className={month === value ? 'active' : ''} disabled={!availableMonths.has(value)} onClick={() => setMonth(value)}>{value}월</button>)}</div><div className="settlement-v2-year-control" aria-label="정산 연도"><button type="button" className="ghost" onClick={() => { setYear((value) => value - 1); setMonth('all'); }} aria-label="이전 연도">‹</button><strong>{year}</strong><button type="button" className="ghost" onClick={() => { setYear((value) => value + 1); setMonth('all'); }} aria-label="다음 연도">›</button></div></div>
+    <div className="settlement-v2-periodbar"><div className="settlement-v2-months" role="tablist" aria-label="정산월"><button id="settlement-month-all-tab" type="button" role="tab" aria-selected={month === 'all'} aria-controls="settlement-month-panel" className={month === 'all' ? 'active' : ''} onClick={() => setMonth('all')}>전체</button>{Array.from({ length: 12 }, (_, index) => index + 1).map((value) => <button id={`settlement-month-${value}-tab`} type="button" role="tab" aria-selected={month === value} aria-controls="settlement-month-panel" key={value} className={month === value ? 'active' : ''} disabled={!availableMonths.has(value)} onClick={() => setMonth(value)}>{value}월</button>)}</div><div className="settlement-v2-year-control" aria-label="정산 연도"><button type="button" className="ghost" onClick={() => { setYear((value) => value - 1); setMonth('all'); }} aria-label="이전 연도">‹</button><strong>{year}</strong><button type="button" className="ghost" onClick={() => { setYear((value) => value + 1); setMonth('all'); }} aria-label="다음 연도">›</button></div></div>
     <div className="settlement-v2-guide"><span>· 매출 금액은 매일 1회 업데이트됩니다.</span><span>· 고객사와 직접거래가 있는 경우 정산금액에서 제외되어 노출됩니다.</span></div>
-    <article className="panel settlement-v2-list-panel" role="tabpanel"><div className="table-wrap"><table className="settlement-v2-table"><thead><tr><th>정산월</th><th>시작일</th><th>종료일</th><th>업체명</th><th className="money">매출금액</th><th className="money">정산(예정)금액</th><th>정산확정</th><th>증빙처리</th><th>입금처리</th></tr></thead><tbody>{visibleRows.map((row) => <tr key={row.id} className="settlement-v2-clickable-row" onClick={() => openSettlement(row)}><td><button type="button" className="settlement-v2-row-link" aria-label={`${row.year}년 ${row.month}월 ${row.company} 정산서 상세 보기`} onClick={(event) => { event.stopPropagation(); openSettlement(row); }}>{row.month}월</button></td><td>{row.from}</td><td>{row.to}</td><td>{row.company}</td><td className="money">{krw(row.amount)}</td><td className="money">{krw(row.amount)}</td><td><SettlementV2Status value={row.confirmed}/></td><td><SettlementV2Status value={row.evidence}/></td><td><SettlementV2Status value={row.deposit}/></td></tr>)}</tbody></table></div>{visibleRows.length === 0 && <SettlementV2Empty />}</article>
+    <article id="settlement-month-panel" aria-labelledby={month === 'all' ? 'settlement-month-all-tab' : `settlement-month-${month}-tab`} className="panel settlement-v2-list-panel" role="tabpanel"><div className="table-wrap"><table className="settlement-v2-table"><thead><tr><th>정산월</th><th>{isMerchant ? '업체명' : '공급자'}</th><th className="money">정산금액</th><th>정산</th><th>세금계산서</th><th>입금</th><th>주요 액션</th></tr></thead><tbody>{visibleRows.map((row) => { const displayRecipient = recipientFor(row); return <tr key={row.id} className="settlement-v2-clickable-row" onClick={() => openSettlement(row)}><td><button type="button" className="settlement-v2-row-link" aria-label={`${row.period_start.slice(0, 7)} ${displayRecipient.name} 정산서 상세 보기`} onClick={(event) => { event.stopPropagation(); openSettlement(row); }}>{row.period_start.slice(0, 7)} <small className="mock-row-label">목업</small></button></td><td>{isMerchant ? displayRecipient.name : row.supplier.name}</td><td className="money">{krw(row.total_amount)}</td><td><SettlementV2Status type="settlement" value={row.settlement_status}/></td><td><SettlementV2Status type="invoice" value={row.tax_invoice_status}/></td><td><SettlementV2Status type="payment" value={row.payment_status}/></td><td><button type="button" className="ghost settlement-v2-inline-action" onClick={(event) => { event.stopPropagation(); openSettlement(row); }}>{!isMerchant && canConfirmAndRequest(row) ? '확정 및 발급 요청' : '상세 보기'}</button></td></tr>; })}</tbody></table></div>{visibleRows.length === 0 && <SettlementV2Empty />}</article>
   </AdminMockPage>;
 
-  const issued = selected.evidence === '완료';
-  const requested = selected.requested;
-  return <AdminMockPage title={`${selected.month}월 정산서`} description={`${selected.company} · ${selected.from} ~ ${selected.to}`} preview={false} className="merchant-regular-weight merchant-open-table">
-    {notice && <div className="alert success">{notice}</div>}
-    <div className="settlement-v2-detailbar"><button ref={backButtonRef} type="button" className="ghost" onClick={() => { setSelectedId(null); setNotice(''); }}>‹ 뒤로</button><div className="settlement-v2-detail-actions"><button type="button" className="ghost" onClick={() => setNotice(`${selected.year}년 ${selected.month}월 정산자료 엑셀 다운로드는 실제 연동 단계에서 제공됩니다.`)}><Download size={16}/> 엑셀 다운로드</button>{isMerchant && requested && !issued && <span className="settlement-v2-status requested">발급요청됨</span>}{issued ? <><span className="settlement-v2-status complete">발행완료</span>{!isMerchant && <button type="button" className="ghost" onClick={() => setNotice('PDF 다운로드는 실제 팝빌 연동 단계에서 제공됩니다.')}><Download size={16}/> PDF 다운로드</button>}</> : !isMerchant && requested ? <button type="button" className="primary" disabled>발급요청됨</button> : <button ref={actionButtonRef} type="button" className="primary" onClick={() => { dialogReturnRef.current = actionButtonRef.current; setDialog(isMerchant ? 'issue' : 'request'); }}>{isMerchant ? '세금계산서 발행' : '세금계산서 발급요청'}</button>}</div></div>
-    <article className="panel settlement-v2-overview"><div className="settlement-v2-overview-row"><span>매출 기간</span><strong>{selected.from} ~ {selected.to}</strong></div><div className="settlement-v2-overview-row"><span>정산 옵션</span><div className="settlement-v2-options"><div><small>적격증빙 상계 여부</small><button type="button" className={offsetOption ? 'selected' : ''} onClick={() => setOffsetOption((value) => !value)}>{offsetOption ? '상계' : '별도'}</button></div><div><small>매출 증빙 방식</small>{[['direct', '공급자직접발행'], ['service', '서비스 내 증빙발행'], ['paper', '종이세금계산서']].map(([id, label]) => <button type="button" key={id} className={evidenceMethod === id ? 'selected' : ''} onClick={() => setEvidenceMethod(id)}>{label}</button>)}</div></div></div><div className="settlement-v2-overview-row"><span>정산 금액</span><div className="settlement-v2-amounts"><div><small>매출금액(A)</small><strong className="money">{krw(selected.amount)}</strong></div><div><small>총 정산금액</small><strong className="money">{krw(selected.amount)}</strong></div></div></div><div className="settlement-v2-overview-row"><span>입금 일자</span><div>증빙 마감일 <b>{selected.year}-{String(selected.month + 1).padStart(2, '0')}-07</b>까지 완료 시 → 입금 예정일 <b>{selected.year}-{String(selected.month + 1).padStart(2, '0')}-14</b></div></div><div className="settlement-v2-overview-row"><span>사업자 정보</span><dl className="settlement-v2-business"><div><dt>상호</dt><dd>{selected.company}</dd></div><div><dt>사업자번호</dt><dd>{recipient.bizNo}</dd></div><div><dt>종사업장번호</dt><dd>{recipient.branchNo}</dd></div><div><dt>대표자명</dt><dd>{recipient.representative}</dd></div><div><dt>주소</dt><dd>{recipient.address}</dd></div><div><dt>업태</dt><dd>{recipient.businessType}</dd></div><div><dt>종목</dt><dd>{recipient.businessItem}</dd></div></dl></div></article>
-    <div className="settlement-v2-tabs" role="tablist" aria-label="정산서 상세"><button type="button" role="tab" aria-selected={detailTab === 'transactions'} aria-controls="settlement-transactions-panel" className={detailTab === 'transactions' ? 'active' : ''} onClick={() => setDetailTab('transactions')}>거래 내역</button><button type="button" role="tab" aria-selected={detailTab === 'evidence'} aria-controls="settlement-evidence-panel" className={detailTab === 'evidence' ? 'active' : ''} onClick={() => setDetailTab('evidence')}>증빙 내역</button><button type="button" role="tab" aria-selected={detailTab === 'deposits'} aria-controls="settlement-deposits-panel" className={detailTab === 'deposits' ? 'active' : ''} onClick={() => setDetailTab('deposits')}>입금/이체 내역</button></div>
-    {detailTab === 'transactions' && <article id="settlement-transactions-panel" role="tabpanel" className="panel"><div className="settlement-v2-filterbar"><div className="mock-segmented"><button type="button" className={rangeMode === 'all' ? 'active' : ''} onClick={() => setRangeMode('all')}>전체</button><button type="button" className={rangeMode === 'range' ? 'active' : ''} onClick={() => setRangeMode('range')}>기간검색</button></div>{rangeMode === 'range' && <><input type="date" aria-label="조회 시작일" value={rangeFrom} onChange={(event) => setRangeFrom(event.target.value)}/><span>~</span><input type="date" aria-label="조회 종료일" value={rangeTo} onChange={(event) => setRangeTo(event.target.value)}/></>}<button type="button" className="ghost" onClick={() => setNotice('')}>조회</button></div><p className="panel-note">취소·이월·보상 등으로 매출과 정산금액이 다를 수 있습니다.</p><div className="table-wrap"><table><thead><tr><th>거래일시</th><th>업체명</th><th>사용자명</th><th className="money">결제금액</th><th className="money">정산(예정)금액</th><th>상태</th></tr></thead><tbody>{transactions.map((row) => <tr key={row[0]}><td>{row[0]}</td><td>{row[1]}</td><td>{row[2]}</td><td className="money">{krw(row[3])}</td><td className="money">{krw(row[4])}</td><td><SettlementV2Status value={row[5]}/></td></tr>)}</tbody></table></div>{transactions.length === 0 && <SettlementV2Empty />}</article>}
-    {detailTab === 'evidence' && <article id="settlement-evidence-panel" role="tabpanel" className="panel"><div className="panel-title"><div><h3>매출(거래 금액) 증빙 내역</h3><p className="panel-note">식당이 업체에 발행한 매출증빙입니다.</p></div></div><div className="table-wrap"><table><thead><tr><th>증빙유형</th><th>품목</th><th>공급하는자</th><th>대표자명</th><th>사업자번호</th><th>작성일자</th><th className="money">공급가액</th><th className="money">부가세액</th><th className="money">총액</th><th>승인번호</th><th>승인일자</th><th>상태</th></tr></thead><tbody>{evidenceRows.map((row) => <tr key={row[9]}>{row.slice(0, 6).map((value, index) => <td key={index}>{value}</td>)}<td className="money">{krw(row[6])}</td><td className="money">{krw(row[7])}</td><td className="money">{krw(row[8])}</td><td>{row[9]}</td><td>{row[10]}</td><td><SettlementV2Status value="완료"/></td></tr>)}</tbody></table></div>{evidenceRows.length === 0 && <SettlementV2Empty />}<div className="settlement-v2-attachments"><strong>첨부 자료</strong><span>등록된 첨부 자료가 없습니다.</span></div></article>}
-    {detailTab === 'deposits' && <article id="settlement-deposits-panel" role="tabpanel" className="panel"><div className="panel-title"><div><h3>입금 내역 (금액: {depositRows.length ? krw(selected.amount) : '0원'})</h3><p className="panel-note">식당 입금 계좌와 이체 내역입니다.</p></div></div><div className="settlement-v2-account"><span>은행 <strong>그린은행</strong></span><span>계좌번호 <strong>123-456-789012</strong></span><span>예금주 <strong>그린잇 식당</strong></span></div><div className="table-wrap"><table><thead><tr><th>거래 일시</th><th className="money">입금액(원)</th><th>적요</th></tr></thead><tbody>{depositRows.map((row) => <tr key={row[0]}><td>{row[0]}</td><td className="money">{krw(row[1])}</td><td>{row[2]}</td></tr>)}</tbody></table></div>{depositRows.length === 0 && <SettlementV2Empty />}</article>}
-    {dialog && <div className="modal-backdrop" onClick={closeDialog}><section ref={dialogRef} className="invite-modal mock-tax-modal" role="dialog" aria-modal="true" aria-labelledby="settlement-v2-dialog-title" onClick={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}><div className="modal-head"><div><span className="eyebrow">TAX INVOICE</span><h2 id="settlement-v2-dialog-title">세금계산서 {isMerchant ? '발행 검토' : '발급요청 확인'}</h2></div><button type="button" className="ghost" aria-label="닫기" onClick={closeDialog} autoFocus><X size={18}/></button></div><div className="mock-invoice-parties"><article><span>공급자</span><strong>{selected.business}</strong><small>{selected.bizNo} · {selected.representative}</small></article><article><span>공급받는자</span><strong>{selected.company}</strong><small>{recipient.bizNo} · {recipient.representative}</small></article></div><div className="table-wrap"><table><thead><tr><th>품목</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th>작성일자</th></tr></thead><tbody><tr><td>{selected.year}년 {selected.month}월 식대(월합계)</td><td className="money">{krw(supply)}</td><td className="money">{krw(vat)}</td><td className="money">{krw(selected.amount)}</td><td>{selected.year}-{String(selected.month + 1).padStart(2, '0')}-01</td></tr></tbody></table></div><div className="modal-actions"><button type="button" className="ghost" onClick={closeDialog}>닫기</button><button type="button" className="primary" onClick={confirmInvoiceAction}>{isMerchant ? '발행하기' : '발급요청'}</button></div></section></div>}
+  const invoiceAvailable = ['issued', 'nts_sending', 'nts_accepted'].includes(selected.tax_invoice_status);
+  const companyCanRequest = !isMerchant && canConfirmAndRequest(selected);
+  const merchantCanIssue = isMerchant && canMerchantIssue(selected);
+  const merchantCanMarkPaid = isMerchant && canMerchantMarkPaid(selected);
+  return <AdminMockPage title={null} description="" showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
+    <div className="alert warning settlement-mock-notice" role="status">이 정산서와 거래 행은 합성된 로컬 목업 데이터입니다. 실제 청구·발행·입금 처리가 아닙니다.</div>
+    {actionError && <div className="alert error" role="alert" aria-live="assertive">{actionError}</div>}
+    {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
+    <div className="settlement-v2-detailbar"><button ref={backButtonRef} type="button" className="ghost" onClick={() => { setSelectedId(null); setNotice(''); setActionError(''); }}>‹ 뒤로</button><div className="settlement-v2-detail-actions"><button type="button" className="ghost" onClick={() => setNotice(`${selected.period_start.slice(0, 7)} 정산자료 엑셀 다운로드는 실제 API 연동 단계에서 제공됩니다.`)}><Download size={16}/> 엑셀 다운로드</button>{invoiceAvailable && <><button type="button" className="ghost" onClick={() => setNotice('보기 기능은 로컬 목업입니다. 실제 Popbill 문서 URL이 없어 외부 문서를 열지 않았습니다.')}><FileText size={16}/> 보기 (목업)</button><button type="button" className="ghost" onClick={() => setNotice('PDF는 실제 Popbill 연동 후 제공됩니다. 로컬 목업 파일을 생성하지 않았습니다.')}><Download size={16}/> PDF 미제공</button></>}{merchantCanIssue && <button ref={actionButtonRef} type="button" className="primary" onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('issue'); }}>세금계산서 발행 시뮬레이션</button>}{companyCanRequest && <button ref={actionButtonRef} type="button" className="primary" disabled={!recipientReady} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('request'); }}>정산 확정 및 발급 요청</button>}{merchantCanMarkPaid && <button type="button" className="ghost" onClick={simulatePayment}>입금 완료 시뮬레이션</button>}</div></div>
+    {!isMerchant && !recipientReady && <div className="alert warning" role="alert">정산 확정에 필요한 회사 정보(사업자 정보, 세금계산서 이메일, 담당자명·연락처)가 미완성입니다. <button type="button" className="ghost" onClick={onCompanyInfo}>회사 정보에서 입력하기</button></div>}
+    <article className="panel settlement-v2-overview">
+      <div className="settlement-v2-overview-row"><span>정산 요약</span><div className="settlement-v2-summary-grid"><div><small>공급자</small><strong>{selected.supplier.name}</strong></div><div><small>정산금액</small><strong className="money">{krw(selected.total_amount)}</strong></div><div><small>정산</small><SettlementV2Status type="settlement" value={selected.settlement_status}/></div><div><small>세금계산서</small><SettlementV2Status type="invoice" value={selected.tax_invoice_status}/></div><div><small>입금</small><SettlementV2Status type="payment" value={selected.payment_status}/></div></div></div>
+      <div className="settlement-v2-overview-row"><span>정산 기간</span><strong>{selected.period_start} ~ {selected.period_end}</strong></div>
+      <div className="settlement-v2-overview-row"><span>금액 구성</span><div className="settlement-v2-amounts"><div><small>공급가액</small><strong className="money">{krw(selected.supply_amount)}</strong></div><div><small>부가세</small><strong className="money">{krw(selected.vat_amount)}</strong></div><div><small>합계</small><strong className="money">{krw(selected.total_amount)}</strong></div></div></div>
+      <div className="settlement-v2-overview-row"><span>입금 정보</span><div className="settlement-v2-account-summary"><span>은행 <strong>{selected.payment.bank_name || '미설정/확인 필요'}</strong></span><span>계좌번호 <strong>{selected.payment.account_number || '미설정/확인 필요'}</strong></span><span>예금주 <strong>{selected.payment.account_holder || '미설정/확인 필요'}</strong></span><span>입금 예정일 <strong>{selected.due_date || '확인 필요'}</strong></span>{!isMerchant && <small>회사에서는 입금 정보를 조회만 할 수 있습니다.</small>}</div></div>
+      <div className="settlement-v2-overview-row"><span>정산 옵션</span><div className="settlement-v2-options"><div><small>적격증빙 상계 여부</small><button type="button" aria-pressed={offsetOption} className={offsetOption ? 'selected' : ''} onClick={() => setOffsetOption((value) => !value)}>{offsetOption ? '상계' : '별도'}</button></div><div><small>매출 증빙 방식</small>{[['direct', '공급자직접발행'], ['service', '서비스 내 증빙발행'], ['paper', '종이세금계산서']].map(([id, label]) => <button type="button" aria-pressed={evidenceMethod === id} key={id} className={evidenceMethod === id ? 'selected' : ''} onClick={() => setEvidenceMethod(id)}>{label}</button>)}</div></div></div>
+      <div className="settlement-v2-overview-row"><span>공급받는자 정보</span><dl className="settlement-v2-business"><div><dt>상호</dt><dd>{profileRecipient.name || '확인 필요'}</dd></div><div><dt>사업자번호</dt><dd>{profileRecipient.biz_reg_no || '확인 필요'}</dd></div><div><dt>종사업장번호</dt><dd>{profileRecipient.branch_no || '해당 없음'}</dd></div><div><dt>대표자명</dt><dd>{profileRecipient.representative_name || '확인 필요'}</dd></div><div><dt>주소</dt><dd>{profileRecipient.address || '확인 필요'}</dd></div><div><dt>업태</dt><dd>{profileRecipient.business_type || '확인 필요'}</dd></div><div><dt>종목</dt><dd>{profileRecipient.business_item || '확인 필요'}</dd></div><div><dt>세금계산서 이메일</dt><dd>{profileRecipient.tax_invoice_email || '확인 필요'}</dd></div></dl></div>
+      {invoiceAvailable && <div className="settlement-v2-overview-row"><span>세금계산서 메타데이터</span><dl className="settlement-v2-business"><div><dt>로컬 목업 ID</dt><dd>{selected.invoice?.id}</dd></div><div><dt>작성일자</dt><dd>{selected.invoice?.written_at || '미확정'}</dd></div><div><dt>발행일시</dt><dd>{formatKoreanTimestamp(selected.invoice?.issued_at)}</dd></div><div><dt>승인번호</dt><dd>{selected.invoice?.approval_number || '미수신 (로컬 목업)'}</dd></div></dl></div>}
+      {selected.tax_invoice_status === 'failed' && <div className="settlement-v2-overview-row"><span>실패 사유</span><strong className="settlement-v2-error-text">{selected.invoice?.failed_reason || '확인 필요'}</strong></div>}
+    </article>
+    <div className="settlement-v2-tabs" role="tablist" aria-label="정산서 상세"><button id="settlement-transactions-tab" type="button" role="tab" aria-selected={detailTab === 'transactions'} aria-controls="settlement-transactions-panel" className={detailTab === 'transactions' ? 'active' : ''} onClick={() => setDetailTab('transactions')}>거래 내역</button><button id="settlement-evidence-tab" type="button" role="tab" aria-selected={detailTab === 'evidence'} aria-controls="settlement-evidence-panel" className={detailTab === 'evidence' ? 'active' : ''} onClick={() => setDetailTab('evidence')}>증빙 내역</button><button id="settlement-deposits-tab" type="button" role="tab" aria-selected={detailTab === 'deposits'} aria-controls="settlement-deposits-panel" className={detailTab === 'deposits' ? 'active' : ''} onClick={() => setDetailTab('deposits')}>입금/이체 내역</button></div>
+    {detailTab === 'transactions' && <article id="settlement-transactions-panel" aria-labelledby="settlement-transactions-tab" role="tabpanel" className="panel"><div className="settlement-v2-filterbar"><div className="mock-segmented"><button type="button" aria-pressed={rangeMode === 'all'} className={rangeMode === 'all' ? 'active' : ''} onClick={() => setRangeMode('all')}>전체</button><button type="button" aria-pressed={rangeMode === 'range'} className={rangeMode === 'range' ? 'active' : ''} onClick={() => setRangeMode('range')}>기간검색</button></div>{rangeMode === 'range' && <><input type="date" aria-label="조회 시작일" value={rangeFrom} onChange={(event) => setRangeFrom(event.target.value)}/><span>~</span><input type="date" aria-label="조회 종료일" value={rangeTo} onChange={(event) => setRangeTo(event.target.value)}/></>}<button type="button" className="ghost" onClick={() => setNotice('')}>조회</button></div><p className="panel-note">합성된 목업 거래 행입니다. 취소·이월·보상 등으로 매출과 정산금액이 다를 수 있습니다.</p><div className="table-wrap"><table><thead><tr><th>거래일시</th><th>업체명</th><th>사용자명</th><th className="money">결제금액</th><th className="money">정산(예정)금액</th><th>상태</th></tr></thead><tbody>{transactions.map((row) => <tr key={row[0]}><td>{row[0]}</td><td>{row[1]} <small className="mock-row-label">목업</small></td><td>{row[2]}</td><td className="money">{krw(row[3])}</td><td className="money">{krw(row[4])}</td><td><SettlementV2Status value={row[5]}/></td></tr>)}</tbody></table></div>{transactions.length === 0 && <SettlementV2Empty />}</article>}
+    {detailTab === 'evidence' && <article id="settlement-evidence-panel" aria-labelledby="settlement-evidence-tab" role="tabpanel" className="panel"><div className="panel-title"><div><h3>매출(거래 금액) 증빙 내역</h3><p className="panel-note">식당이 업체에 발행한 매출증빙입니다.</p></div></div><div className="table-wrap"><table><thead><tr><th>증빙유형</th><th>품목</th><th>공급하는자</th><th>대표자명</th><th>사업자번호</th><th>작성일자</th><th className="money">공급가액</th><th className="money">부가세액</th><th className="money">총액</th><th>승인번호</th><th>승인일자</th><th>상태</th></tr></thead><tbody>{evidenceRows.map((row) => <tr key={`${selected.id}-${row[0]}`}>{row.slice(0, 6).map((value, index) => <td key={index}>{value}</td>)}<td className="money">{krw(row[6])}</td><td className="money">{krw(row[7])}</td><td className="money">{krw(row[8])}</td><td>{row[9]}</td><td>{row[10]}</td><td><SettlementV2Status type="invoice" value={row[11]}/></td></tr>)}</tbody></table></div>{evidenceRows.length === 0 && <SettlementV2Empty />}<div className="settlement-v2-attachments"><strong>첨부 자료</strong><span>등록된 첨부 자료가 없습니다.</span></div></article>}
+    {detailTab === 'deposits' && <article id="settlement-deposits-panel" aria-labelledby="settlement-deposits-tab" role="tabpanel" className="panel"><div className="panel-title"><div><h3>입금 내역 (금액: {depositRows.length ? krw(selected.total_amount) : '0원'})</h3><p className="panel-note">입금 계좌와 이체 내역입니다.{!isMerchant && ' 회사 관리자는 조회만 할 수 있습니다.'}</p></div></div><div className="settlement-v2-account"><span>은행 <strong>{selected.payment.bank_name || '미설정/확인 필요'}</strong></span><span>계좌번호 <strong>{selected.payment.account_number || '미설정/확인 필요'}</strong></span><span>예금주 <strong>{selected.payment.account_holder || '미설정/확인 필요'}</strong></span><span>입금 예정일 <strong>{selected.due_date || '확인 필요'}</strong></span></div><div className="table-wrap"><table><thead><tr><th>거래 일시</th><th className="money">입금액(원)</th><th>적요</th></tr></thead><tbody>{depositRows.map((row) => <tr key={row[0]}><td>{row[0]}</td><td className="money">{krw(row[1])}</td><td>{row[2]}</td></tr>)}</tbody></table></div>{depositRows.length === 0 && <SettlementV2Empty />}</article>}
+    {dialog && <div className="modal-backdrop" onClick={closeDialog}><section ref={dialogRef} className="invite-modal mock-tax-modal" role="dialog" aria-modal="true" aria-labelledby="settlement-v2-dialog-title" onClick={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}><div className="modal-head"><div><span className="eyebrow">TAX INVOICE · LOCAL MOCK</span><h2 id="settlement-v2-dialog-title">{isMerchant ? '세금계산서 발행 시뮬레이션' : '정산 확정 및 발급 요청'}</h2></div><button type="button" className="ghost" aria-label="닫기" onClick={closeDialog} autoFocus><X size={18}/></button></div><div className="alert warning">이 화면은 로컬 상태 목업입니다. Popbill 또는 국세청으로 데이터를 전송하지 않습니다.</div><div className="mock-invoice-parties"><article><span>공급자</span><strong>{selected.supplier.name}</strong><small>{selected.supplier.biz_reg_no || '사업자번호 확인 필요'} · {selected.supplier.representative_name || '대표자 확인 필요'}</small></article><article><span>공급받는자</span><strong>{profileRecipient.name || '확인 필요'}</strong><small>{profileRecipient.biz_reg_no || '사업자번호 확인 필요'} · {profileRecipient.representative_name || '대표자 확인 필요'}</small></article></div><dl className="settlement-v2-business settlement-v2-dialog-business"><div><dt>상호</dt><dd>{profileRecipient.name || '확인 필요'}</dd></div><div><dt>사업자등록번호</dt><dd>{profileRecipient.biz_reg_no || '확인 필요'}</dd></div><div><dt>종사업장번호</dt><dd>{profileRecipient.branch_no || '해당 없음'}</dd></div><div><dt>대표자</dt><dd>{profileRecipient.representative_name || '확인 필요'}</dd></div><div><dt>사업장 주소</dt><dd>{profileRecipient.address || '확인 필요'}</dd></div><div><dt>업태</dt><dd>{profileRecipient.business_type || '확인 필요'}</dd></div><div><dt>종목</dt><dd>{profileRecipient.business_item || '확인 필요'}</dd></div><div><dt>수신 이메일</dt><dd>{profileRecipient.tax_invoice_email || '확인 필요'}</dd></div></dl><div className="table-wrap"><table><thead><tr><th>품목</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th>작성일자</th></tr></thead><tbody><tr><td>{selected.period_start.slice(0, 7)} 식대(월합계)</td><td className="money">{krw(selected.supply_amount)}</td><td className="money">{krw(selected.vat_amount)}</td><td className="money">{krw(selected.total_amount)}</td><td>{selected.period_end || '미확정'}</td></tr></tbody></table></div>{!isMerchant && <fieldset className="settlement-v2-confirmations"><legend>확정 전 필수 확인</legend>{['정산 기간과 정산금액을 확인했습니다.', '공급받는자 사업자 정보와 수신 이메일을 확인했습니다.', '정산 확정과 세금계산서 발급 요청이 동시에 처리됨에 동의합니다.'].map((label, index) => <label key={label}><input type="checkbox" checked={confirmChecks[index]} onChange={(event) => setConfirmChecks((current) => current.map((value, currentIndex) => currentIndex === index ? event.target.checked : value))}/><span>{label}</span></label>)}</fieldset>}<div className="modal-actions"><button type="button" className="ghost" onClick={closeDialog}>닫기</button><button type="button" className="primary" onClick={confirmInvoiceAction} disabled={!isMerchant && (!recipientReady || !confirmChecks.every(Boolean))}>{isMerchant ? '발행 완료로 변경' : '정산 확정 및 발급 요청'}</button></div></section></div>}
   </AdminMockPage>;
 }
 
@@ -1129,8 +1230,8 @@ function MerchantSettlementV2Mock() {
   return <SettlementV2Screen viewer="merchant" />;
 }
 
-function CompanySettlementV2Mock() {
-  return <SettlementV2Screen viewer="company" />;
+function CompanySettlementV2Mock({ company, onCompanyInfo }) {
+  return <SettlementV2Screen viewer="company" companyProfile={company} onCompanyInfo={onCompanyInfo} />;
 }
 
 function SettlementEvidenceV2Mock() {
@@ -1140,7 +1241,7 @@ function SettlementEvidenceV2Mock() {
   const [kind, setKind] = useState('전체');
   const [type, setType] = useState('전체');
   const [notice, setNotice] = useState('');
-  const evidenceRecords = settlementRows.filter((row) => row.evidence === '완료').map(settlementV2Evidence);
+  const evidenceRecords = settlementRows.filter((row) => ['issued', 'nts_sending', 'nts_accepted'].includes(row.tax_invoice_status)).map(settlementV2Evidence);
   const rows = evidenceRecords.filter((row) => row.writtenAt.startsWith(year) && (kind === '전체' || row.kind === kind) && (type === '전체' || row.type === type));
   return <AdminMockPage title="증빙 내역" description="전 기간·모든 업체의 매출증빙을 통합 조회합니다." showHeader={false} className="merchant-regular-weight merchant-open-table">
     {notice && <div className="alert success">{notice}</div>}
@@ -1159,14 +1260,40 @@ function MerchantSettlementMock() {
 }
 function MerchantTaxInvoiceMock() {
   // TODO: 팝빌 registIssue API 연동은 별도 단계에서 구현합니다.
-  const initial = [{ name: '가온테크', supply: 2400000, vat: 240000, status: '발행대기' }, { name: '모아산업', supply: 1350000, vat: 135000, status: '발행완료' }, { name: '새봄복지관', supply: 1120000, vat: 112000, status: '국세청전송' }, { name: '한결디자인', supply: 480000, vat: 48000, status: '발행실패' }];
-  const [items, setItems] = useState(initial);
-  const [selected, setSelected] = useState(null);
-  const issue = (name) => { setItems((current) => current.map((item) => item.name === name ? { ...item, status: '발행완료' } : item)); setSelected(null); };
+  const [items, setItems] = useSettlementV2Rows();
+  const [notice, setNotice] = useState('');
+  const [issueError, setIssueError] = useState('');
+  const issue = (id) => {
+    const now = new Date().toISOString();
+    const source = items.find((item) => item.id === id);
+    const changed = transitionSettlementMockRow(source, 'merchant_issue', now);
+    if (!changed) {
+      setNotice('');
+      setIssueError('현재 상태에서는 선택한 세금계산서를 발행 완료로 변경할 수 없습니다.');
+      return;
+    }
+    setItems((current) => current.map((item) => item.id === id ? changed : item));
+    setIssueError('');
+    setNotice('선택한 행을 로컬 목업 발행 완료 상태로 변경했습니다. 외부 전송은 실행하지 않았습니다.');
+  };
+  const issueAll = () => {
+    const now = new Date().toISOString();
+    const next = items.map((item) => transitionSettlementMockRow(item, 'merchant_issue', now) ?? item);
+    if (!next.some((item, index) => item !== items[index])) {
+      setNotice('');
+      setIssueError('현재 발행 가능한 세금계산서가 없습니다.');
+      return;
+    }
+    setItems(next);
+    setIssueError('');
+    setNotice('법적 목업 전이 조건을 충족한 행만 발행 완료 상태로 변경했습니다. 외부 전송은 실행하지 않았습니다.');
+  };
   return <AdminMockPage title="세금계산서" description="월 합계 세금계산서 발행 대상을 검토합니다." showHeader={false} className="merchant-regular-weight merchant-open-table">
-    <div className="mock-page-actions"><div className="alert warning">익월 10일 발행 기한 · D-16</div><button type="button" className="primary" onClick={() => setItems((current) => current.map((item) => item.status === '발행대기' ? { ...item, status: '발행완료' } : item))}>일괄 발행</button></div>
-    <article className="panel"><div className="table-wrap"><table><thead><tr><th>업체명</th><th className="money">공급가액</th><th className="money">부가세</th><th>상태</th><th>처리</th></tr></thead><tbody>{items.map((item) => { const canIssue = item.status === '발행대기' || item.status === '발행실패'; return <tr key={item.name}><td><strong>{item.name}</strong></td><td className="money">{krw(item.supply)}</td><td className="money">{krw(item.vat)}</td><td><span className={`mock-tax-status ${item.status}`}>{item.status}</span></td><td><button type="button" className="ghost" disabled={!canIssue} onClick={() => setSelected(item)}>{canIssue ? '발행' : '처리 완료'}</button></td></tr>; })}</tbody></table></div></article>
-    {selected && <div className="modal-backdrop" onClick={() => setSelected(null)}><section className="invite-modal mock-tax-modal" role="dialog" aria-modal="true" aria-labelledby="mock-tax-modal-title" onKeyDown={(event) => { if (event.key === 'Escape') setSelected(null); }} onClick={(event) => event.stopPropagation()}><div className="panel-title"><div><h2 id="mock-tax-modal-title">발행 검토</h2><p className="panel-note">입력 없이 발행 정보를 최종 확인합니다.</p></div><button type="button" className="ghost icon-button" autoFocus onClick={() => setSelected(null)} aria-label="닫기"><X size={20}/></button></div><div className="mock-invoice-parties"><article><span>공급자</span><strong>그린잇 식당</strong><small>123-45-67890 · 대표 용욱</small></article><article><span>공급받는자</span><strong>{selected.name}</strong><small>세금계산서 수신 업체</small></article></div><div className="profile-grid"><span>품목</span><strong>2026년 7월 식대(월합계)</strong><span>공급가액</span><strong className="money">{krw(selected.supply)}</strong><span>부가세</span><strong className="money">{krw(selected.vat)}</strong><span>합계</span><strong className="money">{krw(selected.supply + selected.vat)}</strong><span>작성일자</span><strong>2026.07.31</strong><span>구분</span><strong>청구</strong></div><div className="row-actions"><button type="button" className="ghost" onClick={() => setSelected(null)}>닫기</button><button type="button" className="primary" onClick={() => issue(selected.name)}>발행하기</button></div></section></div>}
+    <div className="alert warning settlement-mock-notice" role="status">버전 관리되는 정산 로컬 목업 상태입니다. 실제 세금계산서 발행 또는 국세청 전송이 아닙니다.</div>
+    {issueError && <div className="alert error" role="alert">{issueError}</div>}
+    {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
+    <div className="mock-page-actions"><button type="button" className="primary" disabled={!items.some(canMerchantIssue)} onClick={issueAll}>발행 가능 건 일괄 시뮬레이션</button></div>
+    <article className="panel"><div className="table-wrap"><table><thead><tr><th>정산월</th><th>업체명</th><th className="money">공급가액</th><th className="money">부가세</th><th>상태</th><th>처리</th></tr></thead><tbody>{items.map((item) => { const legal = canMerchantIssue(item); return <tr key={item.id}><td>{item.period_start.slice(0, 7)} <small className="mock-row-label">목업</small></td><td><strong>{item.recipient.name}</strong></td><td className="money">{krw(item.supply_amount)}</td><td className="money">{krw(item.vat_amount)}</td><td><SettlementV2Status type="invoice" value={item.tax_invoice_status}/></td><td>{legal ? <button type="button" className="ghost" onClick={() => issue(item.id)}>발행 시뮬레이션</button> : <span className="panel-note">처리 불가</span>}</td></tr>; })}</tbody></table></div></article>
   </AdminMockPage>;
 }
 function MerchantPrepurchaseMock() {
@@ -1284,11 +1411,16 @@ function CompanyBillingMock() {
     <article className="panel"><div className="table-wrap"><table><thead><tr><th>청구월</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th>상태</th><th>명세서</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td className="money">{krw(row[1])}</td><td className="money">{krw(row[2])}</td><td className="money">{krw(row[3])}</td><td><span className={`settlement-status ${row[4]}`}>{row[4]}</span></td><td><button type="button" className="ghost"><FileText size={15}/> 명세서</button></td></tr>)}</tbody></table></div></article>
   </AdminMockPage>;
 }
-function CompanyTaxInvoiceMock() {
+function CompanyTaxInvoiceMock({ company }) {
   // TODO: company_id 스코프 수신 세금계산서 조회로 교체합니다.
-  const rows = [['2026년 6월', '20260701-41000001-00000123', 4532000, '2026.07.01'], ['2026년 5월', '20260602-41000001-00000098', 4380000, '2026.06.02'], ['2026년 4월', '20260502-41000001-00000074', 4632000, '2026.05.02']];
-  return <AdminMockPage title={null} description="수신한 세금계산서를 조회하고 내려받습니다." preview={false} className="merchant-regular-weight merchant-open-table">
-    <article className="panel"><div className="panel-title employee-panel-actions"><span className="badge">수신 전용</span></div><div className="table-wrap"><table><thead><tr><th>발행월</th><th>승인번호</th><th className="money">합계</th><th>발행일</th><th>파일</th></tr></thead><tbody>{rows.map((row) => <tr key={row[1]}><td><strong>{row[0]}</strong></td><td><code>{row[1]}</code></td><td className="money">{krw(row[2])}</td><td>{row[3]}</td><td><button type="button" className="ghost"><Download size={15}/> PDF 다운로드</button></td></tr>)}</tbody></table></div></article>
+  const [allRows] = useSettlementV2Rows();
+  const [notice, setNotice] = useState('');
+  const rows = allRows.filter((row) => row.company_id === PILOT_COMPANY_SCOPE_ID && row.tax_invoice_status !== 'not_requested');
+  const displayName = company?.name || SETTLEMENT_V2_PARTIES.gaon.name;
+  return <AdminMockPage title={null} description="" showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
+    <div className="alert warning settlement-mock-notice" role="status">{displayName}에 표시하는 수신 전용 로컬 목업입니다. 실제 승인번호·문서 URL·PDF 파일은 제공하지 않습니다.</div>
+    {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
+    <article className="panel"><div className="panel-title employee-panel-actions"><span className="badge">수신 전용 · 목업</span></div><div className="table-wrap"><table><thead><tr><th>정산월</th><th>작성일자</th><th className="money">합계</th><th>세금계산서 상태</th><th>발행일시</th><th>승인번호</th><th>문서</th></tr></thead><tbody>{rows.map((row) => { const documentReady = ['issued', 'nts_sending', 'nts_accepted'].includes(row.tax_invoice_status); return <tr key={row.id}><td><strong>{row.period_start.slice(0, 7)}</strong> <small className="mock-row-label">목업</small></td><td>{row.invoice?.written_at || '미확정'}</td><td className="money">{krw(row.total_amount)}</td><td><SettlementV2Status type="invoice" value={row.tax_invoice_status}/></td><td>{formatKoreanTimestamp(row.invoice?.issued_at)}</td><td>{row.invoice?.approval_number || '미수신 (로컬 목업)'}</td><td>{documentReady ? <div className="row-actions"><button type="button" className="ghost settlement-v2-inline-action" onClick={() => setNotice('실제 문서 URL이 없는 로컬 목업이므로 문서를 열지 않았습니다.')}><FileText size={14}/> 보기</button><button type="button" className="ghost settlement-v2-inline-action" onClick={() => setNotice('실제 PDF 파일이 없는 로컬 목업이므로 다운로드하지 않았습니다.')}><Download size={14}/> PDF</button></div> : <span className="panel-note">{TAX_INVOICE_STATUS[row.tax_invoice_status]} · 문서 없음</span>}</td></tr>; })}</tbody></table></div>{rows.length === 0 && <SettlementV2Empty />}</article>
   </AdminMockPage>;
 }
 function CompanyEmployeeListMock() {
@@ -1312,14 +1444,14 @@ function CompanyInfoScreen({ company, busy, onSave, onSettings }) {
   </AdminMockPage>;
 }
 
-function CompanyMockScreen({ section, company, busy, onSaveCompany, onSettings }) {
+function CompanyMockScreen({ section, company, busy, onSaveCompany, onSettings, onCompanyInfo }) {
   if (section === 'company-info') return <CompanyInfoScreen company={company} busy={busy} onSave={onSaveCompany} onSettings={onSettings} />;
+  if (section === 'company-billing') return <CompanySettlementV2Mock company={company} onCompanyInfo={onCompanyInfo} />;
+  if (section === 'company-tax-invoices') return <CompanyTaxInvoiceMock company={company} />;
   const screens = {
     'company-dashboard': CompanyDashboardMock,
     'monthly-usage': CompanyMonthlyUsageMock,
     'employee-usage': CompanyEmployeeUsageMock,
-    'company-billing': CompanySettlementV2Mock,
-    'company-tax-invoices': CompanyTaxInvoiceMock,
     'company-employee-list': CompanyEmployeeListMock,
   };
   const Screen = screens[section];
@@ -2067,7 +2199,7 @@ function Dashboard({ session, onLogout }) {
     </nav>}
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantContentSection) && <AnnouncementReviewPanel token={token} section={merchantContentSection}/>}
     {isMerchantAdmin && <MerchantMockScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} />}
-    {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companyContentSection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} onSettings={openAccountSettings} />}
+    {isCompanyAdmin && !showCompanyLegacy && <CompanyMockScreen section={companyContentSection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} onSettings={openAccountSettings} onCompanyInfo={() => setCompanySection('company-info')} />}
 
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}

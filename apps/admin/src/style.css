@@ -343,6 +343,15 @@ select:focus { border-color: #2FB865; box-shadow: 0 0 0 5px rgba(47, 184, 101, .
 @media (max-width: 520px) { .voucher-form { grid-template-columns: 1fr; } }
 
 .employee-panel-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.inline-summary-row { display: flex; align-items: center; width: 100%; min-width: 0; margin: 0 0 24px; padding: 4px 0 18px; overflow-x: auto; }
+.inline-summary-row > div { display: flex; flex: 1 0 auto; align-items: center; gap: 8px; min-width: 180px; padding: 0 24px; white-space: nowrap; }
+.inline-summary-row > div:first-child { padding-left: 0; }
+.inline-summary-row > div:last-child { min-width: 310px; padding-right: 0; }
+.inline-summary-row > div + div { border-left: 1px solid var(--border); }
+.inline-summary-row svg { flex: 0 0 auto; color: var(--accent); }
+.inline-summary-row span { color: var(--text-secondary); font-size: 14px; }
+.inline-summary-row strong { color: var(--text-primary); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.inline-summary-row .ghost { min-height: 32px; margin-left: 4px; padding: 5px 10px; border-radius: 7px; font-size: 12px; }
 .bulk-open-button { width: auto; min-height: 44px; padding: 10px 16px; }
 .bulk-backdrop { z-index: 90; }
 .employee-bulk-modal { width: min(640px, 100%); max-height: min(90vh, 860px); display: flex; flex-direction: column; overflow: hidden; border-radius: 28px; background: #fcfefc; border: 1.5px solid #cdebd5; box-shadow: 0 30px 90px rgba(20,53,31,.28); }

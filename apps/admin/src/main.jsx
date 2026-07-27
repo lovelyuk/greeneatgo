@@ -2173,7 +2173,13 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
 
-    {(isPlatformAdmin || showCompanyLegacy || (isMerchantAdmin && merchantSection === 'main')) && <section className={`grid${isMerchantAdmin ? ' merchant-kpi-grid' : ''}`}>
+    {showCompanyLegacy && <section className="inline-summary-row" aria-label="사원 관리 요약">
+      <div><Bell size={20}/><span>가입요청</span><strong>{requests.length}명</strong></div>
+      <div><Users size={20}/><span>직원</span><strong>{employees ? `${employees.items.length}명` : '조회 중'}</strong></div>
+      <div><QrCode size={20}/><span>초대코드</span><strong>{me?.invite_code ?? '-'}</strong><button type="button" className="ghost" onClick={copyCompanyInviteCode} disabled={!me?.invite_code}>복사</button></div>
+    </section>}
+
+    {(isPlatformAdmin || (isMerchantAdmin && merchantSection === 'main')) && <section className={`grid${isMerchantAdmin ? ' merchant-kpi-grid' : ''}`}>
       {cards.map(([label, value, Icon, tone]) => <article className={`card ${tone}${isMerchantAdmin ? ' merchant-kpi-card' : ''}`} key={label}>
         <Icon size={28}/><span>{label}</span><strong>{value}</strong>
       </article>)}
@@ -2239,7 +2245,7 @@ function Dashboard({ session, onLogout }) {
 
     {isMerchantAdmin && merchantSection === 'payment-history' && <PaymentHistoryDashboard request={merchantRequest} refreshKey={paymentHistoryRefreshKey}/>}
 
-    {(isPlatformAdmin || showCompanyLegacy) && <section className="two-col">
+    {isPlatformAdmin && <section className="two-col">
       <article className="panel profile-panel">
         <div className="panel-title"><h2>로그인 정보</h2><span className="badge">secure</span></div>
         <div className="profile-grid">

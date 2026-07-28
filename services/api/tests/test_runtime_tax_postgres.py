@@ -227,11 +227,15 @@ def test_legacy_voucher_list_and_classification_are_tenant_scoped_idempotent_and
              values (%s,'legacy voucher',1,1100,'taxable') returning id""",
         (merchants[0],),
     ).fetchone()[0]
+    # Simulate a row issued before the always-taxable migration. New inserts are
+    # normalized to taxable by the database trigger.
+    pg.execute("set local session_replication_role=replica")
     voucher = pg.execute(
         """insert into vouchers(user_id,merchant_id,product_id,order_id,issue_index,purchase_price,purchase_price_won,tax_type)
              values (%s,%s,%s,%s,1,1100,1100,'unclassified') returning id""",
         (actor, merchants[0], product, order_id),
     ).fetchone()[0]
+    pg.execute("set local session_replication_role=origin")
     own = pg.execute("select list_active_legacy_vouchers(%s,10,0)", (merchants[0],)).fetchone()[0]
     other = pg.execute("select list_active_legacy_vouchers(%s,10,0)", (merchants[1],)).fetchone()[0]
     assert [item["id"] for item in own["items"]] == [str(voucher)]

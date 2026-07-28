@@ -212,7 +212,7 @@ def test_voucher_and_subsidized_fulfillment_and_transaction_rollback(pg):
         "CPID": "CPID", "ORDERNO": subsidized[1], "AMOUNT": "1000",
         "PAYMETHOD": "CARD", "DAOUTRX": "trx-subsidy",
     }, amount=1000)
-    assert result["tax_type"] == "tax_free" and result["duplicate"] is False
+    assert result["tax_type"] == "taxable" and result["duplicate"] is False
     assert pg.execute("select status from payment_orders where id=%s", (subsidized[0],)).fetchone()[0] == "done"
     assert pg.execute("select count(*) from payment_notification_inbox where order_id=%s", (subsidized[0],)).fetchone()[0] == 1
     assert pg.execute("select count(*) from vouchers where order_id=%s", (subsidized[0],)).fetchone()[0] == 1

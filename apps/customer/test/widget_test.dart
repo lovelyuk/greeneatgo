@@ -388,6 +388,16 @@ void main() {
 
     expect(pending.isPaymentPending, isTrue);
     expect(other.isPaymentPending, isFalse);
+    expect(shouldRetryPaymentConfirmation(pending, 0), isTrue);
+    expect(
+        shouldRetryPaymentConfirmation(
+            pending, paymentConfirmationMaxAttempts - 2),
+        isTrue);
+    expect(
+        shouldRetryPaymentConfirmation(
+            pending, paymentConfirmationMaxAttempts - 1),
+        isFalse);
+    expect(shouldRetryPaymentConfirmation(other, 0), isFalse);
   });
 
   test('Firebase auth error codes have safe Korean messages', () {

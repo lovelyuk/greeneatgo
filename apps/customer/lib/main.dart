@@ -350,6 +350,11 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+const paymentConfirmationMaxAttempts = 8;
+
+bool shouldRetryPaymentConfirmation(ApiException error, int attempt) =>
+    error.isPaymentPending && attempt + 1 < paymentConfirmationMaxAttempts;
+
 class TodayMenu {
   TodayMenu({required this.title, required this.menuText, this.imageUrl});
   final String title;
@@ -3129,13 +3134,18 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     try {
       // Vouchers are issued atomically by this confirm response; redirect alone is not success.
       Map<String, dynamic>? confirmed;
-      for (var attempt = 0; attempt < 3; attempt += 1) {
+      // A provider result notification can arrive after the browser return.
+      // Keep the user on the approval screen while polling the authoritative
+      // server state instead of turning a slow callback into a payment error.
+      for (var attempt = 0;
+          attempt < paymentConfirmationMaxAttempts;
+          attempt += 1) {
         try {
           confirmed = await ApiClient(widget.session)
               .confirmPayment(orderId: orderId, amount: amount);
           break;
         } on ApiException catch (error) {
-          if (!error.isPaymentPending || attempt == 2) rethrow;
+          if (!shouldRetryPaymentConfirmation(error, attempt)) rethrow;
           await Future<void>.delayed(const Duration(seconds: 2));
           if (!mounted) return;
         }

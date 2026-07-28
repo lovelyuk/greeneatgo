@@ -254,6 +254,47 @@ def merchant_popbill_readiness(token: str = Depends(bearer_token), repo: Settlem
     }, "error": None}
 
 
+@merchant_router.post("/popbill-test-e2e")
+def merchant_popbill_test_e2e(token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
+    config = PopbillConfig.from_settings(get_settings())
+    if config.is_test is not True:
+        raise _error(409, "POPBILL_TEST_MODE_REQUIRED", "팝빌 테스트 모드에서만 실행할 수 있어요")
+    try:
+        service = PopbillService(config)
+        readiness = repo.supplier_popbill_readiness(actor.merchant_id, config.corp_num)
+        if not readiness["supplier_ready"] or not readiness["corp_matches"]:
+            raise _error(422, "POPBILL_TEST_PARTY_NOT_READY", "팝빌 테스트 사업자 정보를 확인해 주세요")
+        today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+        merchant_key = "".join(char for char in str(actor.merchant_id) if char.isalnum())
+        management_key = f"GE2E{today:%Y%m%d}{merchant_key}"[:24]
+        invoice = repo.popbill_test_invoice_input(actor.merchant_id, management_key, today.isoformat())
+        already_in_use = service.management_key_in_use(management_key)
+        if not already_in_use:
+            service.issue(invoice)
+        status = service.get_status(management_key)
+        view = service.get_view_url(management_key)
+        pdf = service.get_pdf_url(management_key)
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+    except ValueError as exc:
+        raise _error(422, "POPBILL_TEST_PARTY_NOT_READY", "팝빌 테스트 사업자 정보를 확인해 주세요") from exc
+    except PopbillError as exc:
+        raise _popbill_error(exc) from exc
+    return {"ok": True, "data": {
+        "management_key": management_key,
+        "issued_now": not already_in_use,
+        "duplicate_guarded": already_in_use,
+        "provider_state_code": status.provider_state_code,
+        "nts_accepted": status.nts_accepted,
+        "view_url_ready": view.url.startswith("https://") and view.expires_in == 30,
+        "pdf_url_ready": pdf.url.startswith("https://") and pdf.expires_in == 30,
+    }, "error": None}
+
+
 def _merchant_detail(settlement_id: UUID, token: str, repo: SettlementRepository):
     actor = _actor(repo, token, "merchant_admin")
     assert actor.merchant_id is not None

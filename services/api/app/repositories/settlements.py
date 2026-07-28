@@ -76,6 +76,42 @@ class SettlementRepository:
             "corp_matches": bool(supplier_corp and configured_corp and supplier_corp == configured_corp),
         }
 
+    def popbill_test_invoice_input(self, merchant_id: str, management_key: str, write_date: str) -> dict[str, Any]:
+        merchants = self.client.rest_get("merchants", {
+            "select": "name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,owner_phone",
+            "id": f"eq.{merchant_id}", "status": "eq.active", "limit": "1",
+        })
+        contracts = self.client.rest_get("merchant_companies", {
+            "select": "company_id", "merchant_id": f"eq.{merchant_id}", "status": "eq.active",
+            "tax_type": "eq.taxable", "order": "created_at.asc", "limit": "1",
+        })
+        if not merchants or not contracts:
+            raise ValueError("POPBILL_TEST_PARTY_NOT_FOUND")
+        companies = self.client.rest_get("companies", {
+            "select": "name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,contact_name,contact_phone",
+            "id": f"eq.{contracts[0]['company_id']}", "status": "eq.active", "limit": "1",
+        })
+        if not companies:
+            raise ValueError("POPBILL_TEST_PARTY_NOT_FOUND")
+        merchant, company = merchants[0], companies[0]
+        return {
+            "invoicer_mgt_key": management_key, "tax_type": "taxable", "write_date": write_date,
+            "supply_amount": 1000, "vat_amount": 100, "total_amount": 1100,
+            "supplier_snapshot": {
+                "registration_number": merchant.get("biz_reg_no"), "name": merchant.get("name"),
+                "representative": merchant.get("representative_name"), "address": merchant.get("address"),
+                "business_type": merchant.get("business_type"), "business_item": merchant.get("business_item"),
+                "tax_email": merchant.get("tax_invoice_email"), "contact_phone": merchant.get("owner_phone"),
+            },
+            "recipient_snapshot": {
+                "registration_number": company.get("biz_reg_no"), "name": company.get("name"),
+                "representative": company.get("representative_name"), "address": company.get("address"),
+                "business_type": company.get("business_type"), "business_item": company.get("business_item"),
+                "tax_email": company.get("tax_invoice_email"), "contact_name": company.get("contact_name"),
+                "contact_phone": company.get("contact_phone"),
+            },
+        }
+
     def _detail(self, settlement_id: str | UUID, tenant_column: str, tenant_id: str) -> dict[str, Any] | None:
         rows = self.client.rest_get("settlements", {
             "select": LIST_FIELDS, "id": f"eq.{settlement_id}", tenant_column: f"eq.{tenant_id}", "limit": "1",

@@ -45,6 +45,10 @@ class FakeSettlements:
         self.calls.append(("readiness", merchant_id, configured_corp_num))
         return {"supplier_ready": True, "corp_matches": True}
 
+    def popbill_test_invoice_input(self, merchant_id, management_key, write_date):
+        self.calls.append(("test_input", merchant_id, management_key, write_date))
+        return {"invoicer_mgt_key": management_key}
+
     def company_detail(self, settlement_id, company_id):
         self.calls.append(("company_detail", settlement_id, company_id))
         return self.detail if company_id == "company-own" else None
@@ -93,6 +97,11 @@ class FakePopbill:
     def __init__(self, issue_error=None):
         self.issue_error = issue_error
         self.calls = []
+        self.key_in_use = False
+
+    def management_key_in_use(self, key):
+        self.calls.append(("key_in_use", key))
+        return self.key_in_use
 
     def issue(self, invoice):
         self.calls.append(("issue", invoice["invoicer_mgt_key"]))
@@ -151,6 +160,33 @@ def test_popbill_readiness_is_merchant_scoped_and_exposes_no_credentials(client_
     }
     assert repo.calls[-1] == ("readiness", "merchant-own", "123-45-67890")
     assert "secret" not in response.text and "link" not in response.text
+
+
+def test_popbill_test_e2e_is_test_only_and_checks_provider_documents(client_factory, monkeypatch):
+    client, repo = client_factory("merchant_admin")
+    settings = SimpleNamespace(
+        popbill_link_id="link", popbill_secret_key="secret", popbill_corp_num="123-45-67890",
+        popbill_user_id="user", popbill_is_test=True, popbill_ip_restrict_on=True,
+        popbill_use_static_ip=False, popbill_use_local_time=True,
+    )
+    provider = FakePopbill()
+    monkeypatch.setattr(settlements_router, "get_settings", lambda: settings)
+    monkeypatch.setattr(settlements_router, "PopbillService", lambda config: provider)
+
+    response = client.post("/v1/admin/merchant/settlements/popbill-test-e2e")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["issued_now"] is True and data["duplicate_guarded"] is False
+    assert data["provider_state_code"] == 304
+    assert data["view_url_ready"] is True and data["pdf_url_ready"] is True
+    assert any(call[0] == "test_input" for call in repo.calls)
+    assert [call[0] for call in provider.calls] == ["key_in_use", "issue", "status", "view", "pdf"]
+
+    settings.popbill_is_test = False
+    blocked = client.post("/v1/admin/merchant/settlements/popbill-test-e2e")
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "POPBILL_TEST_MODE_REQUIRED"
 
 
 def test_company_routes_scope_server_tenant_and_alias_is_company_only(client_factory):

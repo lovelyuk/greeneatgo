@@ -58,6 +58,24 @@ class SettlementRepository:
             "order": "created_at.desc,id.desc", "limit": str(limit), "offset": str(offset),
         })
 
+    def supplier_popbill_readiness(self, merchant_id: str, configured_corp_num: str) -> dict[str, bool]:
+        rows = self.client.rest_get("merchants", {
+            "select": "name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,owner_phone",
+            "id": f"eq.{merchant_id}", "limit": "1",
+        })
+        row = rows[0] if rows else {}
+        required = (
+            "name", "biz_reg_no", "representative_name", "address", "business_type",
+            "business_item", "tax_invoice_email", "owner_phone",
+        )
+        supplier_ready = all(isinstance(row.get(key), str) and row[key].strip() for key in required)
+        supplier_corp = "".join(char for char in str(row.get("biz_reg_no") or "") if char.isdigit())
+        configured_corp = "".join(char for char in configured_corp_num if char.isdigit())
+        return {
+            "supplier_ready": supplier_ready,
+            "corp_matches": bool(supplier_corp and configured_corp and supplier_corp == configured_corp),
+        }
+
     def _detail(self, settlement_id: str | UUID, tenant_column: str, tenant_id: str) -> dict[str, Any] | None:
         rows = self.client.rest_get("settlements", {
             "select": LIST_FIELDS, "id": f"eq.{settlement_id}", tenant_column: f"eq.{tenant_id}", "limit": "1",

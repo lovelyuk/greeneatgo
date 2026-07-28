@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.auth import bearer_token
+import app.routers.settlements as settlements_router
 from app.main import app
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.settlements import get_popbill_service, get_settlement_repository
@@ -38,6 +40,10 @@ class FakeSettlements:
     def list_merchant(self, merchant_id, limit, offset):
         self.calls.append(("list_merchant", merchant_id, limit, offset))
         return [{"id": "s1", "merchant_id": merchant_id}]
+
+    def supplier_popbill_readiness(self, merchant_id, configured_corp_num):
+        self.calls.append(("readiness", merchant_id, configured_corp_num))
+        return {"supplier_ready": True, "corp_matches": True}
 
     def company_detail(self, settlement_id, company_id):
         self.calls.append(("company_detail", settlement_id, company_id))
@@ -126,6 +132,25 @@ def client_factory():
     app.dependency_overrides.clear()
     for client in clients:
         client.close()
+
+
+def test_popbill_readiness_is_merchant_scoped_and_exposes_no_credentials(client_factory, monkeypatch):
+    client, repo = client_factory("merchant_admin")
+    monkeypatch.setattr(settlements_router, "get_settings", lambda: SimpleNamespace(
+        popbill_link_id="link", popbill_secret_key="secret", popbill_corp_num="123-45-67890",
+        popbill_user_id="user", popbill_is_test=True, popbill_ip_restrict_on=True,
+        popbill_use_static_ip=False, popbill_use_local_time=True,
+    ))
+    monkeypatch.setattr(settlements_router, "PopbillService", lambda config: object())
+
+    response = client.get("/v1/admin/merchant/settlements/popbill-readiness")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "configured": True, "is_test": True, "supplier_ready": True, "corp_matches": True,
+    }
+    assert repo.calls[-1] == ("readiness", "merchant-own", "123-45-67890")
+    assert "secret" not in response.text and "link" not in response.text
 
 
 def test_company_routes_scope_server_tenant_and_alias_is_company_only(client_factory):

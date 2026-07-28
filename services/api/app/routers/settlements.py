@@ -233,6 +233,27 @@ def merchant_list(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, g
         raise _rpc_error(exc) from exc
 
 
+@merchant_router.get("/popbill-readiness")
+def merchant_popbill_readiness(token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
+    config = PopbillConfig.from_settings(get_settings())
+    try:
+        PopbillService(config)
+        configured = True
+    except PopbillError:
+        configured = False
+    try:
+        supplier = repo.supplier_popbill_readiness(actor.merchant_id, config.corp_num)
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+    return {"ok": True, "data": {
+        "configured": configured,
+        "is_test": config.is_test,
+        **supplier,
+    }, "error": None}
+
+
 def _merchant_detail(settlement_id: UUID, token: str, repo: SettlementRepository):
     actor = _actor(repo, token, "merchant_admin")
     assert actor.merchant_id is not None

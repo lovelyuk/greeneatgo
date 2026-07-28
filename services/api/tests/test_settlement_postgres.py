@@ -46,6 +46,7 @@ def settlement_db():
         conn.execute((MIGRATIONS / "0039_popbill_tax_invoice_issuance.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0042_settlement_demo.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0042_settlement_demo.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0044_settlement_demo_state_rpc.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -1064,3 +1065,10 @@ def test_settlement_demo_migration_avoids_extension_schema_random_bytes():
     migration = (MIGRATIONS / "0042_settlement_demo.sql").read_text()
     assert "gen_random_bytes" not in migration
     assert "pg_catalog.random()" in migration
+
+
+def test_settlement_demo_state_is_volatile_for_postgrest(pg):
+    volatility = pg.execute(
+        "select provolatile from pg_proc where oid='public.settlement_demo_state(uuid,uuid)'::regprocedure"
+    ).fetchone()[0]
+    assert volatility == "v"

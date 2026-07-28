@@ -201,11 +201,11 @@ export default function SettlementDemoPanel({ token, apiFetch, openDocumentInNew
       </button>
     </div>
 
-    <div className="settlement-demo-readiness" aria-label="팝빌 시연 준비 상태" aria-busy={loading}>
+    {loadStatus !== 'failed' && <div className="settlement-demo-readiness" aria-label="팝빌 시연 준비 상태" aria-busy={loading}>
       {READINESS_BADGES.map(([key, label]) => <span key={key} className={`badge readiness-${loadStatus === 'loaded' ? readiness[key] ? 'ready' : 'not-ready' : 'loading'}`}>
-        {label}: {loadStatus === 'loading' ? '확인 중' : loadStatus === 'failed' ? '확인 실패' : loadStatus === 'stale' ? '최신 상태 필요' : readiness[key] ? '준비됨' : '미준비'}
+        {label}: {loadStatus === 'loading' ? '확인 중' : loadStatus === 'stale' ? '최신 상태 필요' : readiness[key] ? '준비됨' : '미준비'}
       </span>)}
-    </div>
+    </div>}
     {state?.readiness?.certificate_expires_on && <p className="panel-note">인증서 만료일: {state.readiness.certificate_expires_on}</p>}
     {readiness.production && <div className="alert error" role="alert">실제 발행 위험을 막기 위해 운영 모드에서는 시연 단계 버튼을 사용할 수 없습니다. 초기화만 가능합니다.</div>}
     {error && <div className="alert error" role="alert" aria-live="assertive">{error}</div>}

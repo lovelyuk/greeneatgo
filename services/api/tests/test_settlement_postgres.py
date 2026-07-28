@@ -1,5 +1,7 @@
-import os
 import base64
+import datetime
+import os
+import subprocess
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
@@ -317,10 +319,13 @@ def test_claim_token_ambiguous_success_and_legal_nts_transitions(pg):
     assert pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor,merchant,sid)).fetchone()[0]["action"] == "reconcile"
     pg.execute("select merchant_finalize_tax_invoice_issue(%s,%s,%s,%s,'success',null,null)", (actor,merchant,sid,token))
     assert pg.execute("select tax_invoice_status from settlements where id=%s", (sid,)).fetchone()[0] == "issued"
-    assert pg.execute("select popbill_status,nts_status from tax_invoices where settlement_id=%s", (sid,)).fetchone() == ("issued",None)
-    pg.execute("select merchant_apply_tax_invoice_status(%s,%s,%s,303,null,null,'2026-07-27T01:00:00Z','2026-07-27T01:01:00Z',null)", (actor,merchant,sid))
+    assert pg.execute("select popbill_status,nts_status,issued_at is not null from tax_invoices where settlement_id=%s", (sid,)).fetchone() == ("issued",None,True)
+    issued_at = pg.execute("select issued_at from tax_invoices where settlement_id=%s", (sid,)).fetchone()[0]
+    pg.execute("select merchant_apply_tax_invoice_status(%s,%s,%s,303,null,null,%s,%s,null)",
+               (actor,merchant,sid,issued_at,issued_at + datetime.timedelta(minutes=1)))
     assert pg.execute("select tax_invoice_status,nts_status from settlements join tax_invoices on tax_invoices.settlement_id=settlements.id where settlements.id=%s", (sid,)).fetchone() == ("nts_sending","sending")
-    pg.execute("select merchant_apply_tax_invoice_status(%s,%s,%s,304,'SUC001','CONFIRM-1',null,null,'2026-07-27T01:02:00Z')", (actor,merchant,sid))
+    pg.execute("select merchant_apply_tax_invoice_status(%s,%s,%s,304,'SUC001','CONFIRM-1',null,null,%s)",
+               (actor,merchant,sid,issued_at + datetime.timedelta(minutes=2)))
     accepted_facts = pg.execute("select nts_status_code,nts_confirm_num,nts_sent_at,nts_accepted_at from tax_invoices where settlement_id=%s", (sid,)).fetchone()
     pg.execute("select merchant_apply_tax_invoice_status(%s,%s,%s,305,'ERR',null,null,null,null)", (actor,merchant,sid))
     assert pg.execute("select tax_invoice_status,nts_status from settlements join tax_invoices on tax_invoices.settlement_id=settlements.id where settlements.id=%s", (sid,)).fetchone() == ("nts_accepted","accepted")

@@ -283,7 +283,11 @@ def merchant_popbill_test_e2e(token: str = Depends(bearer_token), repo: Settleme
     except ValueError as exc:
         raise _error(422, "POPBILL_TEST_PARTY_NOT_READY", "팝빌 테스트 사업자 정보를 확인해 주세요") from exc
     except PopbillError as exc:
-        raise _popbill_error(exc) from exc
+        raise HTTPException(status_code=422 if exc.code == "POPBILL_ISSUE_REJECTED" else 503, detail={
+            "code": exc.code,
+            "provider_code": exc.provider_code,
+            "message": "팝빌 테스트 호출을 확인해 주세요",
+        }) from exc
     return {"ok": True, "data": {
         "management_key": management_key,
         "issued_now": not already_in_use,

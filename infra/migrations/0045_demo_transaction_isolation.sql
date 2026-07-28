@@ -207,7 +207,7 @@ end $isolate_demo_create$;
 -- Existing read-model RPC signatures stay PostgREST-compatible. Their source is
 -- rewritten to the fail-closed views without duplicating the large audited SQL.
 do $isolate_read_models$
-declare ddl text; original text; signature regprocedure; pair text[]; source_count int;
+declare ddl text; original text; signature regprocedure; pair text[]; source_count int; qualified_source text;
 begin
   foreach pair slice 1 in array array[
     array['public.company_monthly_usage(uuid,uuid,text)','public.meal_transactions','public.normal_meal_transactions'],
@@ -220,6 +220,11 @@ begin
     original := pg_get_functiondef(signature);
     if position(pair[3] in original)>0 then continue; end if;
     source_count := (length(original)-length(replace(original,pair[2],'')))/length(pair[2]);
+    if source_count < 1 and position('from meal_transactions' in pair[2])=1 then
+      qualified_source := replace(pair[2],'from meal_transactions','from public.meal_transactions');
+      source_count := (length(original)-length(replace(original,qualified_source,'')))/length(qualified_source);
+      if source_count > 0 then pair[2] := qualified_source; end if;
+    end if;
     if source_count < 1 then raise exception '0045 read model exact source assertion failed: %',pair[1]; end if;
     ddl := replace(original,pair[2],pair[3]);
     if position(pair[2] in ddl)>0 or position(pair[3] in ddl)=0 then

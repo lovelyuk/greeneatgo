@@ -51,6 +51,10 @@ def settlement_db():
         conn.execute((MIGRATIONS / "0045_demo_transaction_isolation.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0046_settlement_demo_usage_details.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0046_settlement_demo_usage_details.sql").read_text(encoding="utf-8"))
+        # 0045 may be replayed by recovery tooling; the additive display restore
+        # must remain idempotent and be replayed after it.
+        conn.execute((MIGRATIONS / "0047_demo_transaction_integrated_reads.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0047_demo_transaction_integrated_reads.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -1154,7 +1158,7 @@ def test_demo_usage_detail_migration_replay_preserves_volatility_and_grants(pg):
     assert pg.execute("select has_function_privilege('authenticated','settlement_demo_state(uuid,uuid)','execute')").fetchone()[0] is False
 
 
-def test_demo_markers_isolate_normal_reads_and_preserve_archived_audit(pg):
+def test_demo_visible_reads_integrate_but_limits_and_settlement_stay_isolated(pg):
     import psycopg
 
     company, merchant, actor, company_actor, _, ym = demo_actual_parties(pg, "isolation")
@@ -1170,16 +1174,30 @@ def test_demo_markers_isolate_normal_reads_and_preserve_archived_audit(pg):
     assert pg.execute("""select count(*) from normal_meal_transactions t
       join settlement_demo_transactions d on d.transaction_id=t.id where d.run_id=%s""",
       (run_id,)).fetchone()[0] == 0
-    assert pg.execute("select merchant_transaction_count(%s)", (merchant,)).fetchone()[0] == 0
+    signed_total = pg.execute("""select coalesce(sum(case when t.kind='spend' then t.settlement_total_amount
+      else -t.settlement_total_amount end),0) from meal_transactions t
+      join settlement_demo_transactions d on d.transaction_id=t.id where d.run_id=%s""",
+      (run_id,)).fetchone()[0]
+    assert pg.execute("select merchant_transaction_count(%s)", (merchant,)).fetchone()[0] == demo_count
+    assert pg.execute("select merchant_payment_feed_count(%s)", (merchant,)).fetchone()[0] == demo_count
     summary = pg.execute(
         "select merchant_ledger_summary(%s,%s,%s::date,(%s::date+interval '1 month - 1 day')::date)",
         (merchant, company, seeded["period_from"], seeded["period_from"]),
     ).fetchone()[0]
-    assert summary["total_count"] == 0 and summary["total_amount"] == 0
+    assert summary["total_count"] == demo_count and summary["total_amount"] == signed_total
     usage = pg.execute(
         "select company_monthly_usage(%s,%s,%s)", (company_actor, company, ym)
     ).fetchone()[0]
-    assert usage["summary"]["transaction_count"] == 0
+    assert usage["summary"]["transaction_count"] == demo_count
+    assert usage["summary"]["gross_spend_amount"] == signed_total
+    # Operational eligibility keeps using the fail-closed view: demo usage does
+    # not consume a customer limit and cannot enter a generic settlement.
+    assert pg.execute("""select coalesce(sum(abs(amount)),0) from normal_meal_transactions
+      where company_id=%s and created_at >= %s::date""", (company, seeded["period_from"])).fetchone()[0] == 0
+    with pytest.raises(psycopg.errors.RaiseException, match="TAX_TYPE_UNCLASSIFIED"):
+        with pg.transaction():
+            pg.execute("select create_merchant_settlement(%s,%s,%s,%s)",
+                       (merchant, company, seeded["period_from"], seeded["period_to"]))
 
     created = pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant)).fetchone()[0]
     sid = created["settlement_id"]
@@ -1261,8 +1279,8 @@ def test_link_trigger_marks_transaction_and_normal_reviews_exclude_demo(pg):
             raise RuntimeError("rollback marker fixture")
 
 
-def test_authenticated_rls_cannot_select_own_demo_transaction(pg):
-    company, merchant, actor, _, _, ym = demo_actual_parties(pg, "rls")
+def test_authenticated_rls_shows_demo_to_tenant_admins_but_not_customer(pg):
+    company, merchant, actor, company_actor, _, ym = demo_actual_parties(pg, "rls")
     seeded = pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)).fetchone()[0]
     demo_user = pg.execute("""select t.user_id from settlement_demo_transactions d
       join meal_transactions t on t.id=d.transaction_id where d.run_id=%s limit 1""",
@@ -1276,3 +1294,8 @@ def test_authenticated_rls_cannot_select_own_demo_transaction(pg):
         pg.execute("select set_config('request.jwt.claim.sub',%s,true)", (str(demo_user),))
         pg.execute("set local role authenticated")
         assert pg.execute("select count(*) from meal_transactions where user_id=%s", (demo_user,)).fetchone()[0] == 0
+    for admin_id in (actor, company_actor):
+        with pg.transaction():
+            pg.execute("select set_config('request.jwt.claim.sub',%s,true)", (str(admin_id),))
+            pg.execute("set local role authenticated")
+            assert pg.execute("select count(*) from meal_transactions where is_demo").fetchone()[0] == seeded["transaction_count"]

@@ -9,7 +9,7 @@ import SettlementDemoPanel from './SettlementDemoPanel.jsx';
 import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
 import { captureGeneration, generationIsCurrent } from './generationGuard.js';
 import { changePercent, currentPeriodYm, formatPeriodYm, mapCompanyUsage, shiftPeriodYm } from './companyUsage.js';
-import { filterMerchantTransactions, isDemoTransaction, merchantMealPaymentIds, merchantRecentKpis, reconcileMerchantPaymentFeed } from './merchantPaymentFeed.js';
+import { filterMerchantTransactions, merchantMealPaymentIds, merchantRecentKpis, reconcileMerchantPaymentFeed } from './merchantPaymentFeed.js';
 import {
   buildPaymentPayload, canConfirmAndRequest, canMerchantIssue, canMerchantMarkPaid, canRefreshInvoiceStatus,
   fetchAllSettlementSummaries, hasInvoiceDocument, isBusinessPartyComplete, loadSettlementDetails,
@@ -2230,10 +2230,8 @@ function Dashboard({ session, onLogout }) {
     if (!supabase || !isMerchantAdmin || !merchantId) return undefined;
     const channel = supabase.channel(`merchant-payments-${merchantId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'meal_transactions', filter: `merchant_id=eq.${merchantId}` }, async (event) => {
-        // Demo rows are marked on the INSERT itself. Never let those wake the UI.
-        // For every other event, the filtered API response (not the raw event) is
-        // authoritative because demo linkage/decoration may commit just afterwards.
-        if (isDemoTransaction(event.new)) return;
+        // Reconcile against the complete API feed rather than playing directly
+        // from the event, so initial/current rows cannot produce duplicate sounds.
         const refreshVersion = ++transactionRefreshVersionRef.current;
         try {
           const list = await apiFetch('/admin/merchant/transactions', token);

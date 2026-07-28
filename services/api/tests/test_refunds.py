@@ -595,6 +595,7 @@ def test_payment_history_separates_usage_payments_and_refunds(repo_class, settin
 
     result = payment_history("2026-07-18", "day", "token")
 
+    assert repo.client.rest_get.call_args_list[0].args[0] == "meal_transactions"
     assert [item["employee_name"] for item in result["data"]["payment"]["items"]] == ["홍고객", "홍고객"]
     assert [item["payment_type_label"] for item in result["data"]["payment"]["items"]] == ["보조금", "보조금"]
     assert result["data"]["payment"]["items"][0]["product_name"] == "보조금 식권"
@@ -616,6 +617,33 @@ def test_payment_history_separates_usage_payments_and_refunds(repo_class, settin
         "payment_count": 1, "payment_amount": 80000,
         "refund_count": 1, "refund_amount": 72000, "net_payment_amount": 8000,
     }
+
+
+@patch("app.routers.merchant_admin.get_settings")
+@patch("app.routers.merchant_admin.JoinRepository")
+def test_payment_history_uses_demo_snapshot_for_item_and_every_total(repo_class, settings):
+    settings.return_value = SimpleNamespace(
+        kiwoompay_base_url="https://apitest.kiwoompay.co.kr", kiwoompay_cpid="CPID"
+    )
+    repo = repo_class.return_value
+    repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
+    repo.get_profile.return_value = SimpleNamespace(
+        id="admin-123", role="merchant_admin", status="active", merchant_id="merchant-1"
+    )
+    repo.client.rest_get.side_effect = [
+        [{"id": "demo-tx", "user_id": "customer-1", "company_id": None,
+          "amount": 0, "kind": "spend", "pay_type": "ledger", "is_demo": True,
+          "settlement_total_amount": 71000, "created_at": "2026-07-18T01:00:00Z"}],
+        [], [],
+        [{"id": "customer-1", "display_name": "시연사용자", "company_id": None}],
+    ]
+
+    result = payment_history("2026-07-18", "day", "token")["data"]
+
+    assert result["transaction"]["items"][0]["amount"] == -71000
+    assert result["transaction"]["total"] == 71000
+    assert result["transaction"]["series"] == [{"label": "2026-07-18T10:00", "value": 71000}]
+    assert result["totals"]["transaction_amount"] == 71000
 
 
 @patch("app.routers.merchant_admin.get_settings")

@@ -18,21 +18,21 @@ test('recognizes both the existing event flag and the proposed is_demo column', 
   assert.equal(isDemoTransaction({ ...real, is_demo: false, flags: { settlement_demo: false } }), false);
 });
 
-test('defensively removes marked demo rows and their visible count', () => {
+test('keeps marked demo rows integrated in the visible feed and count', () => {
   const result = filterMerchantTransactions({ items: [real, flaggedDemo, columnDemo], total_count: 3 });
-  assert.deepEqual(result.items, [real]);
-  assert.equal(result.total_count, 1);
+  assert.deepEqual(result.items, [real, flaggedDemo, columnDemo]);
+  assert.equal(result.total_count, 3);
 });
 
-test('reconciliation only notifies for ids confirmed by the filtered backend feed', () => {
+test('reconciliation notifies for real and demo ids confirmed by the backend feed', () => {
   const result = reconcileMerchantPaymentFeed(
     { items: [real, flaggedDemo], total_count: 2 },
     new Set(['9']),
     true,
   );
-  assert.deepEqual(result.newIds, ['10']);
-  assert.deepEqual([...result.nextNotifiedIds], ['9', '10']);
-  assert.deepEqual(result.list.items, [real]);
+  assert.deepEqual(result.newIds, ['10', '11']);
+  assert.deepEqual([...result.nextNotifiedIds], ['9', '10', '11']);
+  assert.deepEqual(result.list.items, [real, flaggedDemo]);
 });
 
 test('initial reconciliation seeds ids without producing a chime candidate', () => {
@@ -41,13 +41,13 @@ test('initial reconciliation seeds ids without producing a chime candidate', () 
   assert.deepEqual([...result.nextNotifiedIds], ['10']);
 });
 
-test('payment ids and dashboard KPIs never include demo rows', () => {
+test('payment ids and dashboard KPIs include demo rows', () => {
   const list = { items: [real, flaggedDemo], total_count: 2 };
-  assert.deepEqual(merchantMealPaymentIds(list), ['10']);
+  assert.deepEqual(merchantMealPaymentIds(list), ['10', '11']);
   assert.deepEqual(merchantRecentKpis(list, '2026-07-28'), {
-    amount: 9000,
-    count: 1,
-    loadedCount: 1,
-    totalCount: 1,
+    amount: 80000,
+    count: 2,
+    loadedCount: 2,
+    totalCount: 2,
   });
 });

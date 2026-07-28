@@ -223,9 +223,9 @@ def list_employees(token: str = Depends(bearer_token)):
         tx_rows = []
         if user_ids:
             tx_rows = _paged_rest_get(repo,
-                "normal_meal_transactions",
+                "meal_transactions",
                 {
-                    "select": "user_id,amount,kind,created_at",
+                    "select": "user_id,amount,kind,is_demo,settlement_total_amount,created_at",
                     "company_id": f"eq.{actor.company_id}",
                     "created_at": f"gte.{start_iso}",
                     "order": "id.asc",
@@ -242,7 +242,8 @@ def list_employees(token: str = Depends(bearer_token)):
             created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
             if not (month_start <= created_dt < month_end):
                 continue
-            stats[user_id]["used"] += abs(int(tx.get("amount") or 0))
+            display_amount = tx.get("settlement_total_amount") if tx.get("is_demo") else tx.get("amount")
+            stats[user_id]["used"] += abs(int(display_amount or 0))
             if stats[user_id]["recent"] is None or created > stats[user_id]["recent"]:
                 stats[user_id]["recent"] = created
         items = []
@@ -461,9 +462,13 @@ def employee_transactions(user_id: str, token: str = Depends(bearer_token)):
         if not rows:
             raise _error(404, "EMPLOYEE_NOT_FOUND", "직원을 찾을 수 없어요")
         tx_rows = repo.client.rest_get(
-            "normal_meal_transactions",
-            {"select": "id,amount,kind,tx_code,meal_window,product_name,product_price,merchant_id,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "100"},
+            "meal_transactions",
+            {"select": "id,amount,kind,tx_code,meal_window,is_demo,settlement_total_amount,product_name,product_price,merchant_id,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "100"},
         )
+        for tx in tx_rows:
+            if tx.get("is_demo"):
+                total = int(tx.get("settlement_total_amount") or 0)
+                tx["amount"] = -total if tx.get("kind") == "spend" else total
         merchant_ids = sorted({str(row.get("merchant_id")) for row in tx_rows if row.get("merchant_id")})
         merchants = {}
         if merchant_ids:

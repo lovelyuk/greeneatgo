@@ -9,29 +9,18 @@ export function isDemoTransaction(item) {
 }
 
 export function filterMerchantTransactions(list) {
-  if (!list || !Array.isArray(list.items)) return list;
-  const items = list.items.filter((item) => !isDemoTransaction(item));
-  const removedCount = list.items.length - items.length;
-  if (removedCount === 0) return list;
-  const totalCount = Number(list.total_count);
-  return {
-    ...list,
-    items,
-    // The API is authoritative and should already exclude demo rows. This fallback
-    // keeps an explicitly marked leaked row out of both the list and visible count.
-    ...(Number.isFinite(totalCount) ? { total_count: Math.max(0, totalCount - removedCount) } : {}),
-  };
+  return list;
 }
 
 export function merchantMealPaymentIds(list) {
-  return (filterMerchantTransactions(list)?.items ?? [])
+  return (list?.items ?? [])
     .filter((item) => item.source !== 'payment' && !['refund', 'cancel'].includes(item.kind))
     .map((item) => String(item.id));
 }
 
 export function reconcileMerchantPaymentFeed(list, notifiedIds, ready = true) {
-  const safeList = filterMerchantTransactions(list);
-  const ids = merchantMealPaymentIds(safeList);
+  const safeList = list;
+  const ids = merchantMealPaymentIds(list);
   const known = notifiedIds instanceof Set ? notifiedIds : new Set();
   const newIds = ready ? ids.filter((id) => !known.has(id)) : [];
   const nextNotifiedIds = new Set(known);

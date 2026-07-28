@@ -241,7 +241,11 @@ def _next_settlement_date_for_contract(link: dict | None) -> str:
 
 
 def _tx_amount(row: dict) -> int:
-    amount = int(row.get("amount") or row.get("product_price") or 0)
+    amount = int((
+        row.get("settlement_total_amount")
+        if row.get("is_demo") and row.get("settlement_total_amount") is not None
+        else (row.get("amount") or row.get("product_price") or 0)
+    ) or 0)
     if row.get("kind") in {"spend", "refund", "cancel"}:
         return abs(amount) if row.get("kind") == "spend" else -abs(amount)
     return amount
@@ -261,9 +265,9 @@ def _load_vendor_transactions(repo: JoinRepository, merchant_id: str, company_id
     from_iso, to_iso, from_date, to_date = _iso_bounds(from_, to)
     rows = _paged_get(
         repo,
-        "normal_meal_transactions",
+        "meal_transactions",
         {
-            "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,product_name,product_price,pay_type,company_subsidy_amount,restaurant_subsidy_amount,employee_paid_amount,created_at",
+            "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,is_demo,product_name,product_price,pay_type,company_subsidy_amount,restaurant_subsidy_amount,employee_paid_amount,settlement_total_amount,created_at",
             "merchant_id": f"eq.{merchant_id}",
             "company_id": f"eq.{company_id}",
             "pay_type": "in.(ledger,subsidized)",
@@ -1294,8 +1298,8 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
         else:
             start, end, pattern = _analytics_bounds(selected, granularity)
         start_iso, end_iso = start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
-        txs = _paged_get(repo, "normal_meal_transactions", {
-            "select": "id,user_id,company_id,amount,kind,pay_type,voucher_id,created_at", "merchant_id": f"eq.{merchant_id}",
+        txs = _paged_get(repo, "meal_transactions", {
+            "select": "id,user_id,company_id,amount,kind,pay_type,voucher_id,is_demo,settlement_total_amount,created_at", "merchant_id": f"eq.{merchant_id}",
             "and": f"(created_at.gte.{start_iso},created_at.lt.{end_iso})", "order": "created_at.desc",
         })
         payments = _paged_get(repo, "payment_orders", {
@@ -1318,6 +1322,10 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
             row["pay_type"] = order.get("pay_type") or "direct"
             row["product_name"] = order.get("product_name") or "환불"
         decorate_bonus_voucher_transactions(repo, txs)
+        for row in txs:
+            if row.get("is_demo"):
+                total = abs(int(row.get("settlement_total_amount") or 0))
+                row["amount"] = -total if row.get("kind") == "spend" else total
         _decorate_payment_receipts(payments, refunds, refund_order_details)
         _decorate_transaction_people(repo, txs, payments, refunds)
         series: dict[str, dict[str, int]] = {}
@@ -1431,14 +1439,18 @@ def list_transactions(token: str = Depends(bearer_token)):
     try:
         _, merchant_id = _merchant_admin(repo, token)
         rows = repo.client.rest_get(
-            "normal_meal_transactions",
+            "meal_transactions",
             {
-                "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,product_name,product_price,pay_type,voucher_id,created_at",
+                "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,is_demo,settlement_total_amount,product_name,product_price,pay_type,voucher_id,created_at",
                 "merchant_id": f"eq.{merchant_id}",
                 "order": "created_at.desc",
                 "limit": "50",
             },
         )
+        for row in rows:
+            if row.get("is_demo"):
+                total = int(row.get("settlement_total_amount") or 0)
+                row["amount"] = -total if row.get("kind") == "spend" else total
         decorate_bonus_voucher_transactions(repo, rows)
         payment_rows = repo.client.rest_get(
             "payment_orders",
@@ -1472,7 +1484,7 @@ def list_transactions(token: str = Depends(bearer_token)):
             user = users.get(str(item.get("user_id") or ""), {})
             item["employee_no"] = user.get("employee_no") or str(item.get("user_id") or "")[:8] or "-"
             item["department"] = user.get("department") or "-"
-        total_count = repo.client.rpc("merchant_transaction_count", {"p_merchant_id": merchant_id})
+        total_count = repo.client.rpc("merchant_payment_feed_count", {"p_merchant_id": merchant_id})
         return {"ok": True, "data": {"items": rows[:50], "total_count": int(total_count or 0)}, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
@@ -1485,13 +1497,16 @@ def transaction_detail(transaction_id: str, token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         _, merchant_id = _merchant_admin(repo, token)
-        rows = repo.client.rest_get("normal_meal_transactions", {
-            "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,product_name,product_price,pay_type,voucher_id,created_at",
+        rows = repo.client.rest_get("meal_transactions", {
+            "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,is_demo,settlement_total_amount,product_name,product_price,pay_type,voucher_id,created_at",
             "id": f"eq.{transaction_id}", "merchant_id": f"eq.{merchant_id}", "limit": "1",
         })
         if not rows:
             raise _error(404, "TRANSACTION_NOT_FOUND", "거래를 찾을 수 없어요")
         item = rows[0]
+        if item.get("is_demo"):
+            total = int(item.get("settlement_total_amount") or 0)
+            item["amount"] = -total if item.get("kind") == "spend" else total
         users = repo.client.rest_get("app_users", {"select": "id,display_name,employee_no,department", "id": f"eq.{item['user_id']}", "limit": "1"})
         user = users[0] if users else {}
         item["employee_name"] = user.get("display_name") or "직원"

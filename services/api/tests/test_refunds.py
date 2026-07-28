@@ -574,8 +574,12 @@ def test_reconciliation_required_retry_returns_409_without_provider_call(repo_cl
     assert [call.args[0] for call in repo.client.rpc.call_args_list] == ["claim_purchase_order_refund"]
 
 
+@patch("app.routers.merchant_admin.get_settings")
 @patch("app.routers.merchant_admin.JoinRepository")
-def test_payment_history_separates_usage_payments_and_refunds(repo_class):
+def test_payment_history_separates_usage_payments_and_refunds(repo_class, settings):
+    settings.return_value = SimpleNamespace(
+        kiwoompay_base_url="https://apitest.kiwoompay.co.kr", kiwoompay_cpid="CPID"
+    )
     repo = repo_class.return_value
     repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
     repo.get_profile.return_value = SimpleNamespace(
@@ -614,8 +618,12 @@ def test_payment_history_separates_usage_payments_and_refunds(repo_class):
     }
 
 
+@patch("app.routers.merchant_admin.get_settings")
 @patch("app.routers.merchant_admin.JoinRepository")
-def test_payment_history_receipt_rechecks_merchant_and_returns_no_store_card_slip(repo_class):
+def test_payment_history_receipt_rechecks_merchant_and_returns_no_store_card_slip(repo_class, settings):
+    settings.return_value = SimpleNamespace(
+        kiwoompay_base_url="https://apitest.kiwoompay.co.kr", kiwoompay_cpid="CPID"
+    )
     repo = repo_class.return_value
     repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
     repo.get_profile.return_value = SimpleNamespace(
@@ -638,8 +646,12 @@ def test_payment_history_receipt_rechecks_merchant_and_returns_no_store_card_sli
     assert "provider_response" not in result["data"]
 
 
+@patch("app.routers.merchant_admin.get_settings")
 @patch("app.routers.merchant_admin.JoinRepository")
-def test_payment_history_receipt_returns_card_slip_for_naverpay_card(repo_class):
+def test_payment_history_receipt_returns_card_slip_for_naverpay_card(repo_class, settings):
+    settings.return_value = SimpleNamespace(
+        kiwoompay_base_url="https://apitest.kiwoompay.co.kr", kiwoompay_cpid="CPID"
+    )
     repo = repo_class.return_value
     repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
     repo.get_profile.return_value = SimpleNamespace(

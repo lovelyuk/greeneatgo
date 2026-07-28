@@ -45,7 +45,7 @@ class SettlementRepository:
         }
         if period_ym is not None:
             params["period_ym"] = f"eq.{period_ym}"
-        return self.client.rest_get("settlements", params)
+        return self.client.rest_get("normal_settlements", params)
 
     def company_month_summary(self, company_id: str, period_ym: str) -> dict[str, Any]:
         return self.client.rpc("company_settlement_month_summary", {
@@ -53,7 +53,7 @@ class SettlementRepository:
         })
 
     def list_merchant(self, merchant_id: str, limit: int, offset: int) -> list[dict[str, Any]]:
-        return self.client.rest_get("settlements", {
+        return self.client.rest_get("normal_settlements", {
             "select": LIST_FIELDS, "merchant_id": f"eq.{merchant_id}",
             "order": "created_at.desc,id.desc", "limit": str(limit), "offset": str(offset),
         })
@@ -132,8 +132,10 @@ class SettlementRepository:
         })
         return bool(rows)
 
-    def _detail(self, settlement_id: str | UUID, tenant_column: str, tenant_id: str) -> dict[str, Any] | None:
-        rows = self.client.rest_get("settlements", {
+    def _detail(
+        self, settlement_id: str | UUID, tenant_column: str, tenant_id: str, *, include_demo: bool = False,
+    ) -> dict[str, Any] | None:
+        rows = self.client.rest_get("settlements" if include_demo else "normal_settlements", {
             "select": LIST_FIELDS, "id": f"eq.{settlement_id}", tenant_column: f"eq.{tenant_id}", "limit": "1",
         })
         if not rows:
@@ -168,6 +170,22 @@ class SettlementRepository:
 
     def merchant_detail(self, settlement_id: str | UUID, merchant_id: str) -> dict[str, Any] | None:
         return self._detail(settlement_id, "merchant_id", merchant_id)
+
+    def merchant_demo_detail(self, settlement_id: str | UUID, merchant_id: str) -> dict[str, Any] | None:
+        """Demo-panel-only detail path after explicit run membership validation."""
+        if not self.is_demo_settlement(merchant_id, settlement_id):
+            return None
+        return self._detail(settlement_id, "merchant_id", merchant_id, include_demo=True)
+
+    def demo_invoice_management_key(self, merchant_id: str, settlement_id: str | UUID) -> str | None:
+        """Resolve a provider key only for an explicitly merchant-owned demo run."""
+        if not self.is_demo_settlement(merchant_id, settlement_id):
+            return None
+        invoices = self.client.rest_get("tax_invoices", {
+            "select": "invoicer_mgt_key", "settlement_id": f"eq.{settlement_id}",
+            "merchant_id": f"eq.{merchant_id}", "document_type": "eq.original", "limit": "1",
+        })
+        return invoices[0].get("invoicer_mgt_key") if invoices else None
 
     def confirm(self, actor: UserProfile, settlement_id: str | UUID) -> dict[str, Any]:
         return self.client.rpc("company_confirm_and_request_tax_invoice", {
@@ -238,7 +256,7 @@ class SettlementRepository:
         tenant_id = actor.company_id if actor.role == "company_admin" else actor.merchant_id
         if not tenant_id:
             return None
-        settlements = self.client.rest_get("settlements", {
+        settlements = self.client.rest_get("normal_settlements", {
             "select": "id", "id": f"eq.{settlement_id}", tenant_column: f"eq.{tenant_id}", "limit": "1",
         })
         if not settlements:

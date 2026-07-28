@@ -223,7 +223,7 @@ def list_employees(token: str = Depends(bearer_token)):
         tx_rows = []
         if user_ids:
             tx_rows = _paged_rest_get(repo,
-                "meal_transactions",
+                "normal_meal_transactions",
                 {
                     "select": "user_id,amount,kind,created_at",
                     "company_id": f"eq.{actor.company_id}",
@@ -461,7 +461,7 @@ def employee_transactions(user_id: str, token: str = Depends(bearer_token)):
         if not rows:
             raise _error(404, "EMPLOYEE_NOT_FOUND", "직원을 찾을 수 없어요")
         tx_rows = repo.client.rest_get(
-            "meal_transactions",
+            "normal_meal_transactions",
             {"select": "id,amount,kind,tx_code,meal_window,product_name,product_price,merchant_id,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "100"},
         )
         merchant_ids = sorted({str(row.get("merchant_id")) for row in tx_rows if row.get("merchant_id")})

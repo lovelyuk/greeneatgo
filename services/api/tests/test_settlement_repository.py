@@ -7,7 +7,9 @@ class DetailClient:
 
     def rest_get(self, table, params):
         self.calls.append((table, params))
-        if table == "settlements":
+        if table == "settlement_demo_runs":
+            return [{"id": "run-1"}]
+        if table in {"normal_settlements", "settlements"}:
             tenant_filter = params.get("company_id") or params.get("merchant_id")
             if tenant_filter not in {"eq.company-own", "eq.merchant-own"}:
                 return []
@@ -72,10 +74,21 @@ def test_company_detail_cross_tenant_denial_does_not_query_payment_history():
     client = DetailClient()
 
     assert repository_with(client).company_detail("settlement-1", "company-other") is None
-    assert client.calls == [("settlements", {
+    assert client.calls == [("normal_settlements", {
         "select": LIST_FIELDS,
         "id": "eq.settlement-1",
         "company_id": "eq.company-other",
         "limit": "1",
     })]
     assert all(table != "settlement_payments" for table, _ in client.calls)
+
+
+def test_demo_detail_explicitly_uses_base_table_while_normal_detail_uses_filtered_view():
+    normal_client = DetailClient()
+    repository_with(normal_client).merchant_detail("settlement-1", "merchant-own")
+    demo_client = DetailClient()
+    repository_with(demo_client).merchant_demo_detail("settlement-1", "merchant-own")
+
+    assert normal_client.calls[0][0] == "normal_settlements"
+    assert demo_client.calls[0][0] == "settlement_demo_runs"
+    assert demo_client.calls[1][0] == "settlements"

@@ -104,7 +104,7 @@ def pay(payload: PayRequest, token: str = Depends(bearer_token)):
         policy = _policy_from_row(policy_rows[0] if policy_rows else None)
 
         tx_rows = repo.client.rest_get(
-            "meal_transactions",
+            "normal_meal_transactions",
             {"select": "amount,kind,created_at", "user_id": f"eq.{user.id}"},
         )
         now = datetime.now(timezone.utc)

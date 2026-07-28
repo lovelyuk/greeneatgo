@@ -9,6 +9,7 @@ import SettlementDemoPanel from './SettlementDemoPanel.jsx';
 import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
 import { captureGeneration, generationIsCurrent } from './generationGuard.js';
 import { changePercent, currentPeriodYm, formatPeriodYm, mapCompanyUsage, shiftPeriodYm } from './companyUsage.js';
+import { filterMerchantTransactions, isDemoTransaction, merchantMealPaymentIds, merchantRecentKpis, reconcileMerchantPaymentFeed } from './merchantPaymentFeed.js';
 import {
   buildPaymentPayload, canConfirmAndRequest, canMerchantIssue, canMerchantMarkPaid, canRefreshInvoiceStatus,
   fetchAllSettlementSummaries, hasInvoiceDocument, isBusinessPartyComplete, loadSettlementDetails,
@@ -45,12 +46,6 @@ function unlockPaymentAudio() {
     audio.volume = 1;
     paymentAudioUnlocked = true;
   }).catch(() => { audio.volume = 1; });
-}
-
-function merchantMealPaymentIds(list) {
-  return (list?.items ?? [])
-    .filter((item) => item.source !== 'payment' && !['refund', 'cancel'].includes(item.kind))
-    .map((item) => String(item.id));
 }
 
 function assertEnv() {
@@ -1768,20 +1763,21 @@ function Dashboard({ session, onLogout }) {
     win.document.write(`<!doctype html><html><head><title>${merchantName} 결제 QR</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:34px;background:#f3fbf4;color:#14351f}.sheet{max-width:520px;margin:0 auto;background:white;border:2px solid #cdebd5;border-radius:28px;padding:34px;text-align:center}.brand{font-size:18px;font-weight:900;color:#2fb865;letter-spacing:.08em}.title{font-size:32px;font-weight:1000;margin:14px 0 6px}.merchant{font-size:22px;font-weight:900;margin-bottom:22px}.qr{width:300px;height:300px;border:12px solid #eaf7ec;border-radius:24px}.help{font-size:17px;font-weight:800;line-height:1.55;color:#5c7a66}.url{word-break:break-all;font-size:12px;color:#5c7a66;margin-top:18px}@media print{body{background:white}.sheet{box-shadow:none;border-color:#14351f}}</style></head><body><section class="sheet"><div class="brand">GREENEATGO PAYMENT</div><div class="title">직원 결제 QR</div><div class="merchant">${merchantName}</div><img class="qr" src="${merchantQrImageUrl}"/><p class="help">직원 앱으로 스캔하면<br/>회사 계약 단가로 바로 결제됩니다.</p><p class="url">${merchantPayUrl}</p></section><script>window.onload=()=>setTimeout(()=>window.print(),500)</script></body></html>`);
     win.document.close();
   }
+  const merchantKpis = useMemo(() => merchantRecentKpis(transactions, paymentAlertDay), [transactions, paymentAlertDay]);
   const cards = useMemo(() => isPlatformAdmin ? [
     ['권한', '플랫폼 운영자', WalletCards, 'brown'],
     ['식당', platformMerchants ? `${platformMerchants.items.length}곳` : '조회 중', Coffee, 'green'],
   ] : isMerchantAdmin ? [
-    ['오늘 매출', '842,000원', WalletCards, 'brown'],
-    ['이번달 누적', '18,400,000원', BarChart3, 'orange'],
-    ['미정산 잔액', '5,357,000원', CreditCard, 'green'],
-    ['발행 대기 건수', '3건', FileText, 'orange'],
+    ['오늘 매출 (최근 내역)', krw(merchantKpis.amount), WalletCards, 'brown'],
+    ['오늘 결제 (최근 내역)', `${merchantKpis.count}건`, BarChart3, 'orange'],
+    ['불러온 거래', transactions ? `${merchantKpis.loadedCount}건` : '조회 중', CreditCard, 'green'],
+    ['전체 거래', merchantKpis.totalCount === null ? '조회 중' : `${merchantKpis.totalCount}건`, FileText, 'orange'],
   ] : [
     ['가입 요청', `${requests.length}명`, Users, 'orange'],
     ['직원', employees ? `${employees.items.length}명` : '조회 중', WalletCards, 'brown'],
-  ], [isPlatformAdmin, isMerchantAdmin, requests.length, platformMerchants, employees]);
+  ], [isPlatformAdmin, isMerchantAdmin, requests.length, platformMerchants, employees, merchantKpis, transactions]);
 
-  const recentPaymentAlerts = useMemo(() => (transactions?.items ?? [])
+  const recentPaymentAlerts = useMemo(() => (filterMerchantTransactions(transactions)?.items ?? [])
     .filter((item) => !['refund', 'cancel'].includes(item.kind) && item.created_at && new Date(item.created_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) === paymentAlertDay)
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, 10), [transactions, paymentAlertDay]);
@@ -1816,6 +1812,7 @@ function Dashboard({ session, onLogout }) {
         if (meData.role === 'merchant_admin') {
           let voucherData;
           let notificationData;
+          const transactionRequestVersion = ++transactionRefreshVersionRef.current;
           [merchantCompanyData, transactionData, merchantQrData, voucherData, notificationData] = await Promise.all([
             apiFetch('/admin/merchant/companies', token),
             apiFetch('/admin/merchant/transactions', token),
@@ -1823,8 +1820,13 @@ function Dashboard({ session, onLogout }) {
             apiFetch('/admin/voucher-products', token),
             apiFetch('/admin/notifications', token),
           ]);
-          notifiedPaymentIdsRef.current = new Set(merchantMealPaymentIds(transactionData));
-          paymentFeedReadyRef.current = true;
+          transactionData = filterMerchantTransactions(transactionData);
+          if (transactionRequestVersion === transactionRefreshVersionRef.current) {
+            notifiedPaymentIdsRef.current = new Set(merchantMealPaymentIds(transactionData));
+            paymentFeedReadyRef.current = true;
+          } else {
+            transactionData = null;
+          }
           setVoucherProducts(voucherData.items ?? []);
           setVoucherProductsMigrationRequired(!!voucherData.migration_required);
           setNotifications(notificationData.items ?? []);
@@ -1844,7 +1846,7 @@ function Dashboard({ session, onLogout }) {
       });
       setSettlements(settlementData);
       setMerchantCompanies(merchantCompanyData);
-      setTransactions(transactionData);
+      if (transactionData !== null || meData.role !== 'merchant_admin') setTransactions(transactionData);
       setMerchantQr(merchantQrData);
       setPlatformMerchants(platformMerchantData);
       setDailyMenu(dailyMenuData);
@@ -2191,24 +2193,20 @@ function Dashboard({ session, onLogout }) {
     const pollRecentPayments = async () => {
       if (stopped || polling || document.visibilityState === 'hidden') return;
       polling = true;
+      const refreshVersion = ++transactionRefreshVersionRef.current;
       try {
         const list = await apiFetch('/admin/merchant/transactions', token);
-        if (stopped) return;
-        const ids = merchantMealPaymentIds(list);
-        if (!paymentFeedReadyRef.current) {
-          notifiedPaymentIdsRef.current = new Set(ids);
-          paymentFeedReadyRef.current = true;
-        } else {
-          const newIds = ids.filter((id) => !notifiedPaymentIdsRef.current.has(id));
-          ids.forEach((id) => notifiedPaymentIdsRef.current.add(id));
-          if (newIds.length > 0) {
-            playPaymentChime();
-            if (merchantSectionRef.current !== 'main') {
-              setUnreadPaymentCount((count) => count + newIds.length);
-            }
+        if (stopped || refreshVersion !== transactionRefreshVersionRef.current) return;
+        const result = reconcileMerchantPaymentFeed(list, notifiedPaymentIdsRef.current, paymentFeedReadyRef.current);
+        notifiedPaymentIdsRef.current = result.nextNotifiedIds;
+        if (paymentFeedReadyRef.current && result.newIds.length > 0) {
+          playPaymentChime();
+          if (merchantSectionRef.current !== 'main') {
+            setUnreadPaymentCount((count) => count + result.newIds.length);
           }
         }
-        setTransactions(list);
+        paymentFeedReadyRef.current = true;
+        setTransactions(result.list);
       } catch {
         // Realtime이 정상 동작하는 동안 폴링 실패는 화면을 방해하지 않는다.
       } finally {
@@ -2232,18 +2230,22 @@ function Dashboard({ session, onLogout }) {
     if (!supabase || !isMerchantAdmin || !merchantId) return undefined;
     const channel = supabase.channel(`merchant-payments-${merchantId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'meal_transactions', filter: `merchant_id=eq.${merchantId}` }, async (event) => {
-        if (!['refund', 'cancel'].includes(event.new.kind)) {
-          const eventId = String(event.new.id);
-          if (!notifiedPaymentIdsRef.current.has(eventId)) {
-            notifiedPaymentIdsRef.current.add(eventId);
-            playPaymentChime();
-            if (merchantSectionRef.current !== 'main') setUnreadPaymentCount((count) => count + 1);
-          }
-        }
+        // Demo rows are marked on the INSERT itself. Never let those wake the UI.
+        // For every other event, the filtered API response (not the raw event) is
+        // authoritative because demo linkage/decoration may commit just afterwards.
+        if (isDemoTransaction(event.new)) return;
         const refreshVersion = ++transactionRefreshVersionRef.current;
         try {
           const list = await apiFetch('/admin/merchant/transactions', token);
-          if (refreshVersion === transactionRefreshVersionRef.current) setTransactions(list);
+          if (refreshVersion !== transactionRefreshVersionRef.current) return;
+          const result = reconcileMerchantPaymentFeed(list, notifiedPaymentIdsRef.current, paymentFeedReadyRef.current);
+          notifiedPaymentIdsRef.current = result.nextNotifiedIds;
+          if (paymentFeedReadyRef.current && result.newIds.length > 0) {
+            playPaymentChime();
+            if (merchantSectionRef.current !== 'main') setUnreadPaymentCount((count) => count + result.newIds.length);
+          }
+          paymentFeedReadyRef.current = true;
+          setTransactions(result.list);
         } catch (noticeError) { setError(`결제 알림 확인 실패: ${noticeError.message}`); }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -2476,13 +2478,17 @@ function Dashboard({ session, onLogout }) {
         <div className="panel-title payment-alert-heading"><div><h2><Bell size={21}/> 오늘의 결제 알림</h2><p className="panel-note">오늘 승인된 최근 결제 10건을 실시간으로 표시합니다.</p></div><span className="badge">{recentPaymentAlerts.length}건</span></div>
         {recentPaymentAlerts.length === 0 ? <p className="empty-state">오늘 들어온 결제가 아직 없어요.</p> : <div className="payment-alert-list">
           {recentPaymentAlerts.map((item) => {
-            const paymentType = item.payment_type_label ?? (item.pay_type === 'ledger' ? '장부' : item.pay_type === 'subsidized' ? '보조금' : '일반');
+            const paymentType = item.is_bonus
+              ? '식권 (보너스)'
+              : item.pay_type === 'voucher'
+                ? '식권'
+                : item.payment_type_label ?? (item.pay_type === 'ledger' ? '장부' : item.pay_type === 'subsidized' ? '보조금' : '일반');
             return <div className="payment-alert-row" key={item.id}>
               <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false })}</time>
               <strong className="payment-alert-company">{item.company_name ?? '일반 고객'}</strong>
               <span className="payment-alert-person">{item.employee_name ?? '-'}</span>
               <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{paymentType}</span>
-              <b>{krw(Math.abs(Number(item.amount ?? 0)))}</b>
+              <b>{item.is_bonus ? '0원' : krw(Math.abs(Number(item.amount ?? 0)))}</b>
             </div>;
           })}
         </div>}

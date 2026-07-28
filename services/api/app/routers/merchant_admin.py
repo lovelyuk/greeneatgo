@@ -24,6 +24,7 @@ from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
 from app.services.kiwoom_payment import KiwoomCancellationOutcomeUnknown, KiwoomPaymentError, cancel_payment
 from app.services.payment_completion import payment_receipt_links, payment_receipt_method
+from app.services.vouchers import decorate_bonus_voucher_transactions
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
 KST = ZoneInfo("Asia/Seoul")
@@ -260,7 +261,7 @@ def _load_vendor_transactions(repo: JoinRepository, merchant_id: str, company_id
     from_iso, to_iso, from_date, to_date = _iso_bounds(from_, to)
     rows = _paged_get(
         repo,
-        "meal_transactions",
+        "normal_meal_transactions",
         {
             "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,product_name,product_price,pay_type,company_subsidy_amount,restaurant_subsidy_amount,employee_paid_amount,created_at",
             "merchant_id": f"eq.{merchant_id}",
@@ -349,7 +350,7 @@ def _settlement_status(row: dict) -> str:
 
 def _ensure_settlements(repo: JoinRepository, merchant_id: str, company_id: str) -> list[dict]:
     tx_rows = repo.client.rest_get(
-        "meal_transactions",
+        "normal_meal_transactions",
         {
             "select": "id,amount,kind,pay_type,company_subsidy_amount,created_at",
             "merchant_id": f"eq.{merchant_id}",
@@ -369,7 +370,7 @@ def _ensure_settlements(repo: JoinRepository, merchant_id: str, company_id: str)
         charge = int(row.get("company_subsidy_amount") or 0) if row.get("pay_type") == "subsidized" else _tx_amount(row)
         bucket["total_amount"] += -charge if row.get("kind") in {"refund", "cancel"} else charge
     existing = repo.client.rest_get(
-        "settlements",
+        "normal_settlements",
         {"select": "id,company_id,merchant_id,period_ym,period_from,period_to,tx_count,total_amount,status,paid_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "order": "period_from.desc,period_ym.desc"},
     )
     existing_by_period = {row["period_ym"]: row for row in existing}
@@ -382,7 +383,7 @@ def _ensure_settlements(repo: JoinRepository, merchant_id: str, company_id: str)
             period_from, period_to = _settlement_period_bounds(ym)
             repo.client.rest_post("settlements", {"company_id": company_id, "merchant_id": merchant_id, "period_ym": ym, "period_from": period_from, "period_to": period_to, "tx_count": summary["tx_count"], "total_amount": summary["total_amount"], "status": "confirmed"})
     return repo.client.rest_get(
-        "settlements",
+        "normal_settlements",
         {"select": "id,company_id,merchant_id,period_ym,period_from,period_to,tx_count,total_amount,status,paid_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "order": "period_from.desc,period_ym.desc"},
     )
 
@@ -819,7 +820,7 @@ def vendor_summary(company_id: str, from_: str | None = Query(default=None, alia
             "p_merchant_id": merchant_id, "p_company_id": company_id,
             "p_period_from": from_date.isoformat(), "p_period_to": to_date.isoformat(),
         })
-        settlements = repo.client.rest_get("settlements", {
+        settlements = repo.client.rest_get("normal_settlements", {
             "select": "total_amount,status", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}",
         })
         unsettled_amount = sum(int(row.get("total_amount") or 0) for row in settlements if row.get("status") != "paid")
@@ -857,7 +858,7 @@ def vendor_settlements(company_id: str, from_: str | None = Query(default=None, 
     try:
         _, merchant_id = _merchant_admin(repo, token)
         _require_company_link(repo, merchant_id, company_id)
-        rows = repo.client.rest_get("settlements", {
+        rows = repo.client.rest_get("normal_settlements", {
             "select": "id,company_id,merchant_id,period_ym,period_from,period_to,tx_count,total_amount,status,paid_at",
             "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}",
             "order": "period_from.desc,period_ym.desc",
@@ -926,6 +927,12 @@ def confirm_vendor_settlement_payment(company_id: str, settlement_id: str, paylo
     try:
         actor, merchant_id = _merchant_admin(repo, token)
         _require_company_link(repo, merchant_id, company_id)
+        normal_rows = repo.client.rest_get("normal_settlements", {
+            "select": "id", "id": f"eq.{settlement_id}",
+            "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "limit": "1",
+        })
+        if not normal_rows:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산 회차를 찾을 수 없어요")
         result = repo.client.rpc("merchant_confirm_settlement_payment_legacy", {
             "p_actor_id": actor.id, "p_merchant_id": merchant_id,
             "p_company_id": company_id, "p_settlement_id": settlement_id,
@@ -1287,7 +1294,7 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
         else:
             start, end, pattern = _analytics_bounds(selected, granularity)
         start_iso, end_iso = start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
-        txs = _paged_get(repo, "meal_transactions", {
+        txs = _paged_get(repo, "normal_meal_transactions", {
             "select": "id,user_id,company_id,amount,kind,pay_type,voucher_id,created_at", "merchant_id": f"eq.{merchant_id}",
             "and": f"(created_at.gte.{start_iso},created_at.lt.{end_iso})", "order": "created_at.desc",
         })
@@ -1310,6 +1317,7 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
             order = refund_order_details.get(str(row.get("order_id")), {})
             row["pay_type"] = order.get("pay_type") or "direct"
             row["product_name"] = order.get("product_name") or "환불"
+        decorate_bonus_voucher_transactions(repo, txs)
         _decorate_payment_receipts(payments, refunds, refund_order_details)
         _decorate_transaction_people(repo, txs, payments, refunds)
         series: dict[str, dict[str, int]] = {}
@@ -1423,7 +1431,7 @@ def list_transactions(token: str = Depends(bearer_token)):
     try:
         _, merchant_id = _merchant_admin(repo, token)
         rows = repo.client.rest_get(
-            "meal_transactions",
+            "normal_meal_transactions",
             {
                 "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,flags,product_name,product_price,pay_type,voucher_id,created_at",
                 "merchant_id": f"eq.{merchant_id}",
@@ -1431,6 +1439,7 @@ def list_transactions(token: str = Depends(bearer_token)):
                 "limit": "50",
             },
         )
+        decorate_bonus_voucher_transactions(repo, rows)
         payment_rows = repo.client.rest_get(
             "payment_orders",
             {
@@ -1476,7 +1485,7 @@ def transaction_detail(transaction_id: str, token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         _, merchant_id = _merchant_admin(repo, token)
-        rows = repo.client.rest_get("meal_transactions", {
+        rows = repo.client.rest_get("normal_meal_transactions", {
             "select": "id,user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,product_name,product_price,pay_type,voucher_id,created_at",
             "id": f"eq.{transaction_id}", "merchant_id": f"eq.{merchant_id}", "limit": "1",
         })

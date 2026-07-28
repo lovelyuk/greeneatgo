@@ -8,6 +8,7 @@ from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.schemas import CompanyBusinessProfileUpdateRequest, ProfileNameUpdateRequest
 from app.services.join_flow import JoinFlowError
+from app.services.vouchers import decorate_bonus_voucher_transactions
 
 router = APIRouter(tags=["me"])
 COMPANY_PROFILE_SELECT = "id,name,biz_reg_no,status,representative_name,business_type,business_item,address,contact_name,contact_email,contact_phone,tax_invoice_email,created_at"
@@ -66,7 +67,7 @@ def _month_start_utc() -> datetime:
 
 def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
     rows = repo.client.rest_get(
-        "meal_transactions",
+        "normal_meal_transactions",
         {"select": "id,amount,kind,tx_code,meal_window,product_name,merchant_id,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc"},
     )
     limit_rows = repo.client.rest_get("app_users", {"select": "monthly_limit", "id": f"eq.{user_id}", "limit": "1"})
@@ -119,7 +120,7 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
 def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
     voucher_balance = int(repo.client.rpc("voucher_balance", {"p_user_id": user_id}) or 0)
     voucher_rows = repo.client.rest_get(
-        "meal_transactions",
+        "normal_meal_transactions",
         {
             "select": "id,amount,kind,product_name,merchant_id,voucher_id,created_at,pay_type",
             "user_id": f"eq.{user_id}", "pay_type": "eq.voucher",
@@ -134,6 +135,7 @@ def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
             "order": "approved_at.desc", "limit": "20",
         },
     )
+    decorate_bonus_voucher_transactions(repo, voucher_rows)
     merchant_ids = sorted({str(row.get("merchant_id")) for row in voucher_rows if row.get("merchant_id")})
     merchants = {}
     if merchant_ids:
@@ -143,6 +145,7 @@ def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
         {
             "id": row.get("id"), "voucher_id": row.get("voucher_id"),
             "amount": abs(int(row.get("amount") or 0)), "kind": "voucher_use",
+            "is_bonus": row.get("is_bonus") is True,
             "title": row.get("product_name") or "식권 사용",
             "merchant_name": merchants.get(row.get("merchant_id"), ""),
             "created_at": row.get("created_at"),

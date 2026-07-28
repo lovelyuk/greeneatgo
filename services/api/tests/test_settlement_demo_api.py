@@ -58,11 +58,15 @@ class DemoRepo:
 
     def merchant_detail(self, settlement_id, merchant_id):
         self.calls.append("detail")
-        return {"id": SID, "tax_invoice_status": "issued", "tax_invoices": [], "events": []}
+        return None if self.demo_member else {"id": SID, "tax_invoice_status": "issued", "tax_invoices": [], "events": []}
+
+    def merchant_demo_detail(self, settlement_id, merchant_id):
+        self.calls.append("demo_detail")
+        return {"id": SID, "tax_invoice_status": "issued", "tax_invoices": [], "events": []} if self.demo_member else None
 
     def company_detail(self, settlement_id, company_id):
         self.calls.append("detail")
-        return {"id": SID, "tax_invoice_status": "issued", "tax_invoices": [], "events": []}
+        return None if self.demo_member else {"id": SID, "tax_invoice_status": "issued", "tax_invoices": [], "events": []}
 
     def is_demo_settlement(self, merchant_id, settlement_id):
         return self.demo_member
@@ -76,6 +80,10 @@ class DemoRepo:
     def original_invoice_management_key(self, actor, settlement_id):
         self.calls.append("key")
         return "GEAAAAAAAAAAAAAAAAAAAAAA"
+
+    def demo_invoice_management_key(self, merchant_id, settlement_id):
+        self.calls.append("demo_key")
+        return "GEAAAAAAAAAAAAAAAAAAAAAA" if self.demo_member else None
 
     def claim_invoice_issue(self, actor, settlement_id):
         self.calls.append("claim")
@@ -98,6 +106,14 @@ class ReadyProvider:
     def issue(self, invoice, *, allow_delayed_issue=False):
         self.calls.append(("issue", allow_delayed_issue))
         return PopbillIssueResult(invoice["invoicer_mgt_key"], 1, False)
+
+    def get_view_url(self, key):
+        self.calls.append(("view", key))
+        return SimpleNamespace(url="https://provider.example/demo-view", expires_in=30)
+
+    def get_pdf_url(self, key):
+        self.calls.append(("pdf", key))
+        return SimpleNamespace(url="https://provider.example/demo-pdf", expires_in=30)
 
 
 @pytest.fixture
@@ -141,7 +157,7 @@ def test_demo_issue_reuses_claim_provider_finalize_only_after_readiness(demo_cli
     app.dependency_overrides[get_popbill_service] = lambda: provider
     response = client.post("/v1/admin/merchant/settlement-demo/issue")
     assert response.status_code == 200
-    assert repo.calls == ["membership", "supplier", "detail", "claim", "finalize"]
+    assert repo.calls == ["membership", "supplier", "demo_detail", "claim", "finalize"]
     assert provider.calls == ["certificate_readiness", ("issue", True)]
 
 
@@ -158,7 +174,7 @@ def test_demo_issue_refuses_non_test_without_claim(demo_client, monkeypatch):
     assert "claim" not in repo.calls
 
 
-def test_generic_issue_cannot_bypass_demo_test_gate(demo_client, monkeypatch):
+def test_generic_issue_returns_not_found_for_demo(demo_client, monkeypatch):
     client, repo = demo_client
     provider = ReadyProvider()
     app.dependency_overrides[get_popbill_service] = lambda: provider
@@ -170,10 +186,32 @@ def test_generic_issue_cannot_bypass_demo_test_gate(demo_client, monkeypatch):
 
     response = client.post(f"/v1/admin/merchant/settlements/{SID}/tax-invoice/issue")
 
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "SETTLEMENT_DEMO_TEST_MODE_REQUIRED"
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "SETTLEMENT_NOT_FOUND"
     assert provider.calls == []
     assert "claim" not in repo.calls
+
+
+@pytest.mark.parametrize("role,path,payload", [
+    ("company_admin", f"/v1/company/settlements/{SID}/confirm-and-request-tax-invoice",
+     {"business_info_accurate": True, "email_accurate": True, "amount_checked": True}),
+    ("company_admin", f"/v1/company/settlements/{SID}/dispute",
+     {"reason": "wrong amount", "idempotency_key": "demo-dispute"}),
+    ("merchant_admin", f"/v1/admin/merchant/settlements/{SID}/send", None),
+    ("merchant_admin", f"/v1/admin/merchant/settlements/{SID}/mark-paid",
+     {"amount": 1000, "depositor_name": "Demo", "deposited_at": "2026-07-01T00:00:00Z", "idempotency_key": "demo-paid"}),
+])
+def test_generic_mutations_return_not_found_for_demo(monkeypatch, role, path, payload):
+    repo = DemoRepo(role)
+    app.dependency_overrides[bearer_token] = lambda: "token"
+    app.dependency_overrides[get_settlement_repository] = lambda: repo
+    with TestClient(app) as client:
+        response = client.post(path, json=payload) if payload is not None else client.post(path)
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "SETTLEMENT_NOT_FOUND"
+    assert not any(call in repo.calls for call in ("confirm", "dispute", "send", "paid"))
 
 
 def test_demo_state_exposes_only_normalized_invoice_evidence(demo_client):
@@ -268,7 +306,7 @@ def test_demo_seed_schema_rejects_invalid_selection_before_repository(demo_clien
     f"/v1/admin/merchant/settlements/{SID}/tax-invoice/pdf-url",
     f"/v1/admin/merchant/settlements/{SID}/tax-invoice/pdf",
 ])
-def test_merchant_demo_provider_routes_are_test_only_without_provider_call(demo_client, monkeypatch, path):
+def test_generic_merchant_provider_routes_return_not_found_for_demo(demo_client, monkeypatch, path):
     client, _ = demo_client
     calls = []
     app.dependency_overrides[get_popbill_service] = lambda: (lambda: calls.append("constructed"))
@@ -278,8 +316,8 @@ def test_merchant_demo_provider_routes_are_test_only_without_provider_call(demo_
         popbill_use_static_ip=False, popbill_use_local_time=True,
     ))
     response = client.post(path) if path.endswith("refresh-status") else client.get(path)
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "SETTLEMENT_DEMO_TEST_MODE_REQUIRED"
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "SETTLEMENT_NOT_FOUND"
     assert calls == []
 
 
@@ -299,9 +337,41 @@ def test_company_demo_document_routes_and_aliases_never_call_non_test_provider(m
     with TestClient(app) as client:
         response = client.get(f"{prefix}/{SID}/tax-invoice/{suffix}")
     app.dependency_overrides.clear()
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "SETTLEMENT_NOT_FOUND"
+    assert calls == [] and "key" not in repo.calls
+
+
+@pytest.mark.parametrize("kind", ["view", "pdf"])
+def test_demo_document_routes_use_membership_scoped_key_and_test_provider(demo_client, kind):
+    client, repo = demo_client
+    provider = ReadyProvider()
+    app.dependency_overrides[get_popbill_service] = lambda: provider
+
+    response = client.get(f"/v1/admin/merchant/settlement-demo/{SID}/tax-invoice/{kind}-url")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["url"] == f"https://provider.example/demo-{kind}"
+    assert repo.calls == ["demo_detail", "demo_key"]
+    assert provider.calls == [(kind, "GEAAAAAAAAAAAAAAAAAAAAAA")]
+
+
+def test_demo_document_route_enforces_test_mode_before_key_or_provider(demo_client, monkeypatch):
+    client, repo = demo_client
+    calls = []
+    app.dependency_overrides[get_popbill_service] = lambda: (lambda: calls.append("constructed"))
+    monkeypatch.setattr(router, "get_settings", lambda: SimpleNamespace(
+        popbill_link_id="link", popbill_secret_key="secret", popbill_corp_num="1234567890",
+        popbill_user_id="user", popbill_is_test=False, popbill_ip_restrict_on=True,
+        popbill_use_static_ip=False, popbill_use_local_time=True,
+    ))
+
+    response = client.get(f"/v1/admin/merchant/settlement-demo/{SID}/tax-invoice/view-url")
+
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "SETTLEMENT_DEMO_TEST_MODE_REQUIRED"
-    assert calls == [] and "key" not in repo.calls
+    assert repo.calls == ["demo_detail"]
+    assert calls == []
 
 
 def test_current_demo_readiness_in_non_test_mode_never_constructs_provider(demo_client, monkeypatch):

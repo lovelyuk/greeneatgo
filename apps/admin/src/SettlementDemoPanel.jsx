@@ -167,7 +167,7 @@ export default function SettlementDemoPanel({ token, apiFetch, openDocumentInNew
     });
     try {
       await openDocumentInNewWindow(window.open.bind(window), async () => {
-        const data = await apiFetch(`/admin/merchant/settlements/${encodeURIComponent(state.settlement.id)}/tax-invoice/${kind}-url`, token, {
+        const data = await apiFetch(`${API_ROOT}/${encodeURIComponent(state.settlement.id)}/tax-invoice/${kind}-url`, token, {
           signal: documentRequest.signal,
         });
         // Throwing here makes openDocumentInNewWindow close its already-opened

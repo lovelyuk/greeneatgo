@@ -47,6 +47,8 @@ def settlement_db():
         conn.execute((MIGRATIONS / "0042_settlement_demo.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0042_settlement_demo.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0044_settlement_demo_state_rpc.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0045_demo_transaction_isolation.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0045_demo_transaction_isolation.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -865,8 +867,8 @@ def legacy_test_settlement_demo_create_rolls_back_on_tampered_creator_result(pg)
     company_id = seeded["company_id"]
     with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_CREATE_RESULT_MISMATCH"):
         with pg.transaction():
-            pg.execute("alter function create_merchant_settlement(uuid,uuid,date,date) rename to demo_test_real_create")
-            pg.execute("""create function create_merchant_settlement(uuid,uuid,date,date) returns jsonb
+            pg.execute("alter function settlement_demo_create_merchant_settlement(uuid,uuid,date,date) rename to demo_test_real_create")
+            pg.execute("""create function settlement_demo_create_merchant_settlement(uuid,uuid,date,date) returns jsonb
               language plpgsql security definer set search_path=pg_catalog,public as $$
               declare result jsonb;
               begin
@@ -1072,3 +1074,127 @@ def test_settlement_demo_state_is_volatile_for_postgrest(pg):
         "select provolatile from pg_proc where oid='public.settlement_demo_state(uuid,uuid)'::regprocedure"
     ).fetchone()[0]
     assert volatility == "v"
+
+
+def test_demo_markers_isolate_normal_reads_and_preserve_archived_audit(pg):
+    import psycopg
+
+    company, merchant, actor, company_actor, _, ym = demo_actual_parties(pg, "isolation")
+    seeded = pg.execute(
+        "select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)
+    ).fetchone()[0]
+    run_id = seeded["run_id"]
+    demo_count = seeded["transaction_count"]
+
+    assert pg.execute("""select count(*) from meal_transactions t
+      join settlement_demo_transactions d on d.transaction_id=t.id
+      where d.run_id=%s and t.is_demo""", (run_id,)).fetchone()[0] == demo_count
+    assert pg.execute("""select count(*) from normal_meal_transactions t
+      join settlement_demo_transactions d on d.transaction_id=t.id where d.run_id=%s""",
+      (run_id,)).fetchone()[0] == 0
+    assert pg.execute("select merchant_transaction_count(%s)", (merchant,)).fetchone()[0] == 0
+    summary = pg.execute(
+        "select merchant_ledger_summary(%s,%s,%s::date,(%s::date+interval '1 month - 1 day')::date)",
+        (merchant, company, seeded["period_from"], seeded["period_from"]),
+    ).fetchone()[0]
+    assert summary["total_count"] == 0 and summary["total_amount"] == 0
+    usage = pg.execute(
+        "select company_monthly_usage(%s,%s,%s)", (company_actor, company, ym)
+    ).fetchone()[0]
+    assert usage["summary"]["transaction_count"] == 0
+
+    created = pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant)).fetchone()[0]
+    sid = created["settlement_id"]
+    demo_tx_id = pg.execute(
+        "select transaction_id from settlement_demo_transactions where run_id=%s limit 1", (run_id,)
+    ).fetchone()[0]
+    assert pg.execute("select is_demo from settlements where id=%s", (sid,)).fetchone()[0] is True
+    assert pg.execute("select count(*) from normal_settlements where id=%s", (sid,)).fetchone()[0] == 0
+    for statement, value, marker in (
+        ("update meal_transactions set is_demo=false where id=%s", demo_tx_id, "DEMO_TRANSACTION_MARKER_IMMUTABLE"),
+        ("update settlements set is_demo=false where id=%s", sid, "DEMO_SETTLEMENT_MARKER_IMMUTABLE"),
+    ):
+        with pytest.raises(psycopg.errors.RaiseException, match=marker):
+            with pg.transaction():
+                pg.execute(statement, (value,))
+    month = pg.execute(
+        "select company_settlement_month_summary(%s,%s)", (company, ym)
+    ).fetchone()[0]
+    assert month["settlement_count"] == 0
+
+    pg.execute("select settlement_demo_confirm(%s,%s)", (actor, merchant))
+    invoice_id = pg.execute(
+        "select id from tax_invoices where settlement_id=%s and document_type='original'", (sid,)
+    ).fetchone()[0]
+    reset = pg.execute(
+        "select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "isolation-audit-reset")
+    ).fetchone()[0]
+    assert reset["stage"] == "empty"
+    assert pg.execute("select is_current from settlement_demo_runs where id=%s", (run_id,)).fetchone()[0] is False
+    assert pg.execute("select count(*) from settlements where id=%s and is_demo", (sid,)).fetchone()[0] == 1
+    assert pg.execute("select count(*) from tax_invoices where id=%s", (invoice_id,)).fetchone()[0] == 1
+    assert pg.execute("""select count(*) from meal_transactions t
+      join settlement_demo_transactions d on d.transaction_id=t.id where d.run_id=%s and t.is_demo""",
+      (run_id,)).fetchone()[0] == demo_count
+    assert pg.execute("select count(*) from normal_settlements where id=%s", (sid,)).fetchone()[0] == 0
+
+
+def test_archived_demo_does_not_reserve_normal_settlement_period(pg):
+    company, merchant, actor, _, employees, ym = demo_actual_parties(pg, "normal-after-archive")
+    seeded = pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)).fetchone()[0]
+    demo = pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant)).fetchone()[0]
+    pg.execute("select settlement_demo_confirm(%s,%s)", (actor, merchant))
+    pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "archive-for-normal"))
+    pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-1100,'spend','ledger','taxable',1000,100,1100,
+      (%s::date+interval '12 hours') at time zone 'Asia/Seoul')""",
+      (employees[0], company, merchant, seeded["period_from"]))
+
+    normal = pg.execute("select create_merchant_settlement(%s,%s,%s,%s)",
+      (merchant, company, seeded["period_from"], seeded["period_to"])).fetchone()[0]
+
+    assert normal["id"] != demo["settlement_id"]
+    assert normal["is_demo"] is False
+    assert pg.execute("select count(*) from settlements where merchant_id=%s and company_id=%s and period_ym=%s",
+      (merchant, company, ym)).fetchone()[0] == 2
+
+
+def test_link_trigger_marks_transaction_and_normal_reviews_exclude_demo(pg):
+    company, merchant, actor, admin, employees, ym = demo_actual_parties(pg, "link-marker")
+    period_from = date.fromisoformat(ym + "-01")
+    period_to = (period_from.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    tx = pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-1100,'spend','ledger','taxable',1000,100,1100,now()) returning id""",
+      (employees[0], company, merchant)).fetchone()[0]
+    review = pg.execute("""insert into reviews(merchant_id,account_id,transaction_id,rating,status)
+      values(%s,%s,%s,5,'visible') returning id""", (merchant, employees[0], tx)).fetchone()[0]
+    assert pg.execute("select count(*) from normal_reviews where id=%s", (review,)).fetchone()[0] == 1
+
+    with pytest.raises(RuntimeError, match="rollback marker fixture"):
+        with pg.transaction():
+            run = pg.execute("""insert into settlement_demo_runs(merchant_id,company_id,company_actor_id,
+              period_from,period_to,period_ym,created_by) values(%s,%s,%s,%s,%s,%s,%s) returning id""",
+              (merchant, company, admin, period_from, period_to, ym, actor)).fetchone()[0]
+            pg.execute("insert into settlement_demo_transactions(run_id,transaction_id) values(%s,%s)", (run, tx))
+            assert pg.execute("select is_demo from meal_transactions where id=%s", (tx,)).fetchone()[0] is True
+            assert pg.execute("select count(*) from normal_reviews where id=%s", (review,)).fetchone()[0] == 0
+            raise RuntimeError("rollback marker fixture")
+
+
+def test_authenticated_rls_cannot_select_own_demo_transaction(pg):
+    company, merchant, actor, _, _, ym = demo_actual_parties(pg, "rls")
+    seeded = pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)).fetchone()[0]
+    demo_user = pg.execute("""select t.user_id from settlement_demo_transactions d
+      join meal_transactions t on t.id=d.transaction_id where d.run_id=%s limit 1""",
+      (seeded["run_id"],)).fetchone()[0]
+    pg.execute("grant usage on schema public,auth to authenticated")
+    pg.execute("grant select on meal_transactions,app_users,merchant_admins to authenticated")
+    pg.execute("""create or replace function auth.uid() returns uuid language sql stable as $$
+      select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$""")
+
+    with pg.transaction():
+        pg.execute("select set_config('request.jwt.claim.sub',%s,true)", (str(demo_user),))
+        pg.execute("set local role authenticated")
+        assert pg.execute("select count(*) from meal_transactions where user_id=%s", (demo_user,)).fetchone()[0] == 0

@@ -187,7 +187,10 @@ def company_detail(settlement_id: UUID, token: str = Depends(bearer_token), repo
 @company_alias_router.post("/{settlement_id}/confirm-and-request-tax-invoice")
 def confirm_and_request(settlement_id: UUID, _: ConfirmTaxInvoiceRequest, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
     actor = _actor(repo, token, "company_admin")
+    assert actor.company_id is not None
     try:
+        if repo.company_detail(settlement_id, actor.company_id) is None:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
         result = repo.confirm(actor, settlement_id)
         return {"ok": True, "data": _public(result), "error": None}
     except SupabaseHttpError as exc:
@@ -198,7 +201,10 @@ def confirm_and_request(settlement_id: UUID, _: ConfirmTaxInvoiceRequest, token:
 @company_alias_router.post("/{settlement_id}/dispute")
 def dispute(settlement_id: UUID, payload: SettlementDisputeRequest, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
     actor = _actor(repo, token, "company_admin")
+    assert actor.company_id is not None
     try:
+        if repo.company_detail(settlement_id, actor.company_id) is None:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
         result = repo.dispute(actor, settlement_id, payload.reason, payload.idempotency_key)
         return {"ok": True, "data": _public(result), "error": None}
     except SupabaseHttpError as exc:
@@ -319,7 +325,10 @@ def merchant_detail(settlement_id: UUID, token: str = Depends(bearer_token), rep
 @merchant_router.post("/{settlement_id}/send")
 def merchant_send(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
     actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
     try:
+        if repo.merchant_detail(settlement_id, actor.merchant_id) is None:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
         return {"ok": True, "data": _public(repo.send(actor, settlement_id)), "error": None}
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
@@ -328,7 +337,10 @@ def merchant_send(settlement_id: UUID, token: str = Depends(bearer_token), repo:
 @merchant_router.post("/{settlement_id}/mark-paid")
 def merchant_mark_paid(settlement_id: UUID, payload: SettlementPaymentRequest, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
     actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
     try:
+        if repo.merchant_detail(settlement_id, actor.merchant_id) is None:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
         return {"ok": True, "data": _public(repo.mark_paid(actor, settlement_id, payload)), "error": None}
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
@@ -356,7 +368,12 @@ def _merchant_issue_invoice(
     assert actor.merchant_id is not None
     # Tenant-scoped existence precedes provider configuration; provider construction
     # still precedes the mutating claim.
-    _merchant_detail(settlement_id, token, repo)
+    if allow_delayed_issue:
+        detail = getattr(repo, "merchant_demo_detail", repo.merchant_detail)(settlement_id, actor.merchant_id)
+        if detail is None:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
+    else:
+        _merchant_detail(settlement_id, token, repo)
     try:
         is_demo = repo.is_demo_settlement(actor.merchant_id, settlement_id)
     except SupabaseHttpError as exc:
@@ -551,6 +568,43 @@ def settlement_demo_issue(token: str = Depends(bearer_token), repo: SettlementRe
         UUID(str(member["settlement_id"])), token, repo, service,
         allow_delayed_issue=True,
     )
+
+
+def _demo_provider_document(
+    settlement_id: UUID, token: str, repo: SettlementRepository,
+    service: PopbillService, kind: str,
+):
+    actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
+    try:
+        row = repo.merchant_demo_detail(settlement_id, actor.merchant_id)
+        if row is None:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
+        if row["tax_invoice_status"] not in ("issued", "nts_sending", "nts_accepted"):
+            raise _error(409, "POPBILL_DOCUMENT_NOT_FOUND", "발행된 세금계산서가 없어요")
+        _require_test_for_demo(True)
+        key = repo.demo_invoice_management_key(actor.merchant_id, settlement_id)
+        if not key:
+            raise _error(404, "POPBILL_DOCUMENT_NOT_FOUND", "세금계산서를 찾을 수 없어요")
+        service = _provider(service)
+        result = service.get_view_url(key) if kind == "view" else service.get_pdf_url(key)
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+    except PopbillError as exc:
+        raise _popbill_error(exc) from exc
+    return {"ok": True, "data": {"url": result.url, "expires_in": result.expires_in}, "error": None}
+
+
+@demo_router.get("/{settlement_id}/tax-invoice/view-url")
+@demo_router.get("/{settlement_id}/tax-invoice/view")
+def settlement_demo_invoice_view(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository), service: PopbillService = Depends(get_popbill_service)):
+    return _demo_provider_document(settlement_id, token, repo, service, "view")
+
+
+@demo_router.get("/{settlement_id}/tax-invoice/pdf-url")
+@demo_router.get("/{settlement_id}/tax-invoice/pdf")
+def settlement_demo_invoice_pdf(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository), service: PopbillService = Depends(get_popbill_service)):
+    return _demo_provider_document(settlement_id, token, repo, service, "pdf")
 
 
 @demo_router.post("/mark-paid")

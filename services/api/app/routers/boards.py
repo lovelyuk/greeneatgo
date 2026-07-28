@@ -136,9 +136,9 @@ def announcements():
 @router.get("/vouchers/reviewable-transactions")
 def reviewable_transactions(token: str = Depends(bearer_token)):
     repo = JoinRepository(); profile = _customer(repo, token); merchant = _pilot_merchant(repo)
-    txs = repo.client.rest_get("meal_transactions", {"select": "id,merchant_id,amount,kind,created_at", "user_id": f"eq.{profile.id}", "merchant_id": f"eq.{merchant['id']}", "kind": "eq.spend", "order": "created_at.desc"})
+    txs = repo.client.rest_get("normal_meal_transactions", {"select": "id,merchant_id,amount,kind,created_at", "user_id": f"eq.{profile.id}", "merchant_id": f"eq.{merchant['id']}", "kind": "eq.spend", "order": "created_at.desc"})
     if not txs: return {"ok": True, "data": {"items": []}, "error": None}
-    reviews = repo.client.rest_get("reviews", {"select": "transaction_id", "transaction_id": f"in.({','.join(str(t['id']) for t in txs)})"})
+    reviews = repo.client.rest_get("normal_reviews", {"select": "transaction_id", "transaction_id": f"in.({','.join(str(t['id']) for t in txs)})"})
     reviewed = {int(row["transaction_id"]) for row in reviews}
     return {"ok": True, "data": {"items": [t for t in txs if int(t["id"]) not in reviewed]}, "error": None}
 
@@ -146,7 +146,7 @@ def reviewable_transactions(token: str = Depends(bearer_token)):
 @router.post("/reviews", status_code=201)
 def create_review(payload: ReviewCreate, token: str = Depends(bearer_token)):
     repo = JoinRepository(); profile = _customer(repo, token)
-    txs = repo.client.rest_get("meal_transactions", {"select": "id,user_id,merchant_id,kind", "id": f"eq.{payload.transaction_id}", "limit": "1"})
+    txs = repo.client.rest_get("normal_meal_transactions", {"select": "id,user_id,merchant_id,kind", "id": f"eq.{payload.transaction_id}", "limit": "1"})
     if not txs or txs[0].get("user_id") != profile.id: raise error(403, "TRANSACTION_NOT_OWNED", "본인의 이용 내역만 리뷰할 수 있어요")
     tx = txs[0]
     if tx.get("kind") != "spend" or not tx.get("merchant_id"): raise error(422, "TRANSACTION_NOT_COMPLETED", "이용 완료된 거래만 리뷰할 수 있어요")
@@ -183,7 +183,7 @@ async def upload_review_image(file: UploadFile = File(...), token: str = Depends
 @router.get("/reviews")
 def reviews():
     repo = JoinRepository(); merchant = _pilot_merchant(repo)
-    rows = repo.client.rest_get("reviews", {"select": "id,account_id,rating,content,image_urls,owner_reply,owner_reply_at,created_at", "merchant_id": f"eq.{merchant['id']}", "status": "eq.visible", "order": "created_at.desc"})
+    rows = repo.client.rest_get("normal_reviews", {"select": "id,account_id,rating,content,image_urls,owner_reply,owner_reply_at,created_at", "merchant_id": f"eq.{merchant['id']}", "status": "eq.visible", "order": "created_at.desc"})
     items = _decorate_reviews(repo, rows)
     average = round(sum(int(r["rating"]) for r in rows) / len(rows), 1) if rows else 0.0
     return {"ok": True, "data": {"items": items, "average_rating": average, "review_count": len(rows)}, "error": None}
@@ -193,7 +193,7 @@ def reviews():
 def admin_reviews(sort: Literal["latest", "rating_asc"] = "latest", token: str = Depends(bearer_token)):
     repo = JoinRepository(); _, merchant_id = _merchant_admin(repo, token)
     order = "rating.asc,created_at.desc" if sort == "rating_asc" else "created_at.desc"
-    rows = repo.client.rest_get("reviews", {"select": "*", "merchant_id": f"eq.{merchant_id}", "order": order})
+    rows = repo.client.rest_get("normal_reviews", {"select": "*", "merchant_id": f"eq.{merchant_id}", "order": order})
     visible = [r for r in rows if r["status"] == "visible"]
     average = round(sum(int(r["rating"]) for r in visible) / len(visible), 1) if visible else 0.0
     return {"ok": True, "data": {"items": _decorate_reviews(repo, rows), "average_rating": average, "review_count": len(visible)}, "error": None}
@@ -202,6 +202,8 @@ def admin_reviews(sort: Literal["latest", "rating_asc"] = "latest", token: str =
 @router.patch("/admin/reviews/{review_id}")
 def update_review(review_id: str, payload: ReviewUpdate, token: str = Depends(bearer_token)):
     repo = JoinRepository(); _, merchant_id = _merchant_admin(repo, token); values = payload.model_dump(exclude_unset=True)
+    existing = repo.client.rest_get("normal_reviews", {"select": "id", "id": f"eq.{review_id}", "merchant_id": f"eq.{merchant_id}", "limit": "1"})
+    if not existing: raise error(404, "REVIEW_NOT_FOUND", "리뷰를 찾을 수 없어요")
     if "owner_reply" in values:
         values["owner_reply"] = values["owner_reply"].strip() or None if values["owner_reply"] is not None else None
         values["owner_reply_at"] = datetime.now(timezone.utc).isoformat() if values["owner_reply"] else None

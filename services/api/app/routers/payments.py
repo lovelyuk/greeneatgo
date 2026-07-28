@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import time
 from html import escape
 from urllib.parse import parse_qs, urlsplit
@@ -20,6 +21,7 @@ from app.services.payment_completion import present_payment_completion
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 short_redirect_router = APIRouter(include_in_schema=False)
+logger = logging.getLogger(__name__)
 
 # Existing Kiwoom API/result handling consistently defines 0000 as success.
 # Deployed result notifications may omit RESULTCODE, so absence remains
@@ -215,8 +217,10 @@ async def _notification(request: Request) -> Response:
     try:
         source_ip = _notification_ip(request)
     except ValueError:
+        logger.warning("kiwoom_notification_rejected reason=invalid_source_ip")
         return _ack(False, 400)
     if source_ip not in {"127.0.0.1", "::1", "testclient"} and source_ip not in settings.kiwoompay_notification_ips:
+        logger.warning("kiwoom_notification_rejected reason=source_ip_not_allowed source_ip=%s", source_ip)
         return _ack(False, 403)
     values = dict(request.query_params)
     if request.method == "POST":
@@ -271,10 +275,15 @@ async def _notification(request: Request) -> Response:
     except HTTPException as exc:
         return _ack(False, exc.status_code)
     except SupabaseHttpError as exc:
+        logger.error(
+            "kiwoom_notification_failed reason=supabase status=%s",
+            exc.status,
+        )
         if "TAX_TYPE_UNCLASSIFIED" in exc.body:
             return _ack(False, 409)
         return _ack(False, 500)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
+        logger.error("kiwoom_notification_failed reason=%s", type(exc).__name__)
         return _ack(False, 500)
 
 

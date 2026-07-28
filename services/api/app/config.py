@@ -5,6 +5,27 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+DEFAULT_KIWOOMPAY_NOTIFICATION_IPS = (
+    "123.140.121.205",
+    "27.102.213.200",
+    "27.102.213.201",
+    "27.102.213.202",
+    "27.102.213.203",
+)
+
+
+def _kiwoompay_notification_ips(raw: str | None) -> tuple[str, ...]:
+    """Keep the documented provider IPs even when Render injects a blank secret.
+
+    Blueprint ``sync: false`` variables can exist as an empty string. Treating
+    that as an explicit empty allowlist rejects every approved payment callback.
+    Configured entries are additive so an incomplete override cannot remove the
+    provider's documented production addresses.
+    """
+    configured = (part.strip() for part in (raw or "").split(","))
+    return tuple(dict.fromkeys((*DEFAULT_KIWOOMPAY_NOTIFICATION_IPS, *(part for part in configured if part))))
+
+
 def parse_env_bool(name: str, default: bool) -> bool:
     """Read an environment boolean without accepting surprising truthy values."""
     raw = os.environ.get(name)
@@ -38,10 +59,7 @@ class Settings:
     kiwoompay_cpid: str = ""
     kiwoompay_authorization_key: str = ""
     kiwoompay_base_url: str = "https://apitest.kiwoompay.co.kr"
-    kiwoompay_notification_ips: tuple[str, ...] = (
-        "123.140.121.205", "27.102.213.200", "27.102.213.201",
-        "27.102.213.202", "27.102.213.203",
-    )
+    kiwoompay_notification_ips: tuple[str, ...] = DEFAULT_KIWOOMPAY_NOTIFICATION_IPS
     kiwoompay_app_url: str = "greeneatgo://payment"
     public_api_base_url: str = "http://localhost:8000/v1"
     admin_app_url: str = "http://localhost:5173"
@@ -77,13 +95,8 @@ class Settings:
             kiwoompay_cpid=os.environ.get("KIWOOMPAY_CPID", "").strip(),
             kiwoompay_authorization_key=os.environ.get("KIWOOMPAY_AUTHORIZATION_KEY", "").strip(),
             kiwoompay_base_url=os.environ.get("KIWOOMPAY_BASE_URL", "https://apitest.kiwoompay.co.kr").rstrip("/"),
-            kiwoompay_notification_ips=tuple(
-                ip.strip()
-                for ip in os.environ.get(
-                    "KIWOOMPAY_NOTIFICATION_IPS",
-                    "123.140.121.205,27.102.213.200,27.102.213.201,27.102.213.202,27.102.213.203",
-                ).split(",")
-                if ip.strip()
+            kiwoompay_notification_ips=_kiwoompay_notification_ips(
+                os.environ.get("KIWOOMPAY_NOTIFICATION_IPS")
             ),
             kiwoompay_app_url=os.environ.get("KIWOOMPAY_APP_URL", "greeneatgo://payment").strip(),
             public_api_base_url=os.environ.get("PUBLIC_API_BASE_URL", "http://localhost:8000/v1").rstrip("/"),

@@ -343,6 +343,9 @@ class ApiException implements Exception {
   bool get isNoVoucher =>
       statusCode == 402 && reason?.toLowerCase() == 'no_voucher';
 
+  bool get isPaymentPending =>
+      statusCode == 409 && reason?.toUpperCase() == 'PAYMENT_PENDING';
+
   @override
   String toString() => message;
 }
@@ -3125,11 +3128,22 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     });
     try {
       // Vouchers are issued atomically by this confirm response; redirect alone is not success.
-      final confirmed = await ApiClient(widget.session)
-          .confirmPayment(orderId: orderId, amount: amount);
+      Map<String, dynamic>? confirmed;
+      for (var attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          confirmed = await ApiClient(widget.session)
+              .confirmPayment(orderId: orderId, amount: amount);
+          break;
+        } on ApiException catch (error) {
+          if (!error.isPaymentPending || attempt == 2) rethrow;
+          await Future<void>.delayed(const Duration(seconds: 2));
+          if (!mounted) return;
+        }
+      }
+      if (confirmed == null) return;
       if (mounted) {
         setState(() {
-          _completion = PaymentCompletionData.fromConfirmDto(confirmed);
+          _completion = PaymentCompletionData.fromConfirmDto(confirmed!);
           _completed = true;
           _approvalPending = false;
           _loading = false;
@@ -3163,9 +3177,20 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
         body: Stack(children: [
           WebViewWidget(controller: _controller),
           if (_loading)
-            const ColoredBox(
+            ColoredBox(
                 color: kCream,
-                child: Center(child: CircularProgressIndicator())),
+                child: Center(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const CircularProgressIndicator(),
+                  if (_approvalPending) ...[
+                    const SizedBox(height: 16),
+                    const Text('결제 승인을 확인하고 있어요',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 4),
+                    const Text('완료 화면으로 자동 전환됩니다.',
+                        style: TextStyle(color: Color(0xFF5C7A66))),
+                  ],
+                ]))),
           if (_error != null)
             ColoredBox(
                 color: kCream,

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, CheckCircle2, ChevronDown, FileDown, Printer, ReceiptText, RotateCcw, Search, X } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronDown, ReceiptText, RotateCcw, Search, X } from 'lucide-react';
 import { receiptApiPath, receiptTypeLabel, validateReceiptUrl } from './receiptUtils.js';
 
 const money = (value) => `₩${Number(value ?? 0).toLocaleString('ko-KR')}`;
@@ -62,7 +62,6 @@ function ReceiptModal({ modal, onClose, onSelectType }) {
   const closeRef = useRef(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const [actionHint, setActionHint] = useState('');
   const safeUrl = validateReceiptUrl(modal?.url);
   const descriptor = modal?.descriptor ?? {};
   const types = Array.isArray(descriptor.types) ? descriptor.types : [];
@@ -118,14 +117,6 @@ function ReceiptModal({ modal, onClose, onSelectType }) {
     requestAnimationFrame(() => document.getElementById(`receipt-tab-${next}`)?.focus());
   };
 
-  const openForOutput = (mode) => {
-    if (!safeUrl) return;
-    window.open(safeUrl, '_blank', 'noopener,noreferrer');
-    setActionHint(mode === 'pdf'
-      ? '새 창의 인쇄 메뉴에서 “PDF로 저장”을 선택해 주세요.'
-      : '새 창에서 영수증의 인쇄 버튼을 눌러 프린터를 선택해 주세요.');
-  };
-
   return createPortal(<div className="modal-backdrop receipt-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section ref={dialogRef} className="receipt-modal" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
       <header className="receipt-modal-header">
@@ -142,12 +133,7 @@ function ReceiptModal({ modal, onClose, onSelectType }) {
         {modal.status === 'ready' && safeUrl && <iframe className="receipt-frame" src={safeUrl} title={modal.title || '영수증'} referrerPolicy="no-referrer" sandbox="allow-scripts allow-forms allow-modals allow-same-origin"/>}
       </div>
       <footer className="receipt-modal-footer">
-        <span className="receipt-action-hint" role="status">{actionHint || '공식 영수증을 새 창에서 열어 출력합니다.'}</span>
-        <div>
-          <button type="button" className="ghost" onClick={() => openForOutput('print')} disabled={!safeUrl}><Printer size={16}/>프린터</button>
-          <button type="button" className="primary" onClick={() => openForOutput('pdf')} disabled={!safeUrl}><FileDown size={16}/>PDF</button>
-          <button type="button" className="ghost" onClick={onClose}>닫기</button>
-        </div>
+        <button type="button" className="ghost" onClick={onClose}>닫기</button>
       </footer>
     </section>
   </div>, document.body);

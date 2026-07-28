@@ -94,7 +94,7 @@ class PaymentCompletionData {
   final String salesSlipUrl;
   final String cashReceiptUrl;
 
-  bool get isCard => method == 'CARD';
+  bool get isCard => method == 'CARD' || method == 'NAVERPAY';
   bool get isBank => method == 'BANK';
 
   String get displayedMethod {

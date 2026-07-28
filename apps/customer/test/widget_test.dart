@@ -208,6 +208,35 @@ void main() {
     expect(find.byType(BackButton), findsNothing);
   });
 
+  testWidgets('NAVERPAY completion uses the card sales slip', (tester) async {
+    final payment = PaymentCompletionData.fromConfirmDto({
+      'data': {
+        'amount': 8000,
+        'payment': {
+          'method': 'NAVERPAY',
+          'method_label': '네이버페이',
+          'issuer_name': '신한카드 - 체크',
+          'masked_card_number': '****-****-****-8900',
+          'cash_receipt_status': 'ISSUED',
+        },
+        'receipts': {
+          'sales_slip_url': 'https://example.com/naver-card-slip',
+          'cash_receipt_url': 'https://example.com/invalid-naver-cash',
+        },
+      },
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      home: PaymentCompletionScreen(payment: payment, onDone: () {}),
+    ));
+
+    expect(find.text('네이버페이'), findsOneWidget);
+    expect(find.text('신한카드 - 체크 ****-****-****-8900'), findsOneWidget);
+    expect(find.text('카드 매출전표 보기'), findsOneWidget);
+    expect(find.text('계좌이체 전표 보기'), findsNothing);
+    expect(find.text('현금영수증 보기'), findsNothing);
+  });
+
   testWidgets('BANK completion shows transfer slip without cash receipt',
       (tester) async {
     final payment = PaymentCompletionData.fromConfirmDto({
@@ -347,6 +376,18 @@ void main() {
     expect(error.reason, 'no_voucher');
     expect(error.isNoVoucher, isTrue);
     expect(error.toString(), '보유 식권이 없습니다');
+  });
+
+  test('API exception identifies payment-pending responses', () {
+    const pending = ApiException(
+        statusCode: 409,
+        reason: 'PAYMENT_PENDING',
+        message: '결제 승인 확인 중이에요');
+    const other = ApiException(
+        statusCode: 409, reason: 'OTHER', message: '다른 오류');
+
+    expect(pending.isPaymentPending, isTrue);
+    expect(other.isPaymentPending, isFalse);
   });
 
   test('Firebase auth error codes have safe Korean messages', () {

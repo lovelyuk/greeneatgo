@@ -284,7 +284,7 @@ begin
  if not public.settlement_demo_company_profile_complete(p_company_id) then
    raise exception 'BUSINESS_PROFILE_INCOMPLETE' using errcode='P0001'; end if;
  select id into admin_id from public.app_users where company_id=p_company_id and role='company_admin' and status='active'
-   order by encode(gen_random_bytes(16),'hex') limit 1;
+   order by pg_catalog.random() limit 1;
  if admin_id is null then raise exception 'SETTLEMENT_DEMO_COMPANY_ADMIN_REQUIRED' using errcode='P0001'; end if;
  select array_agg(id order by id) into users from public.app_users
    where company_id=p_company_id and role in ('employee','customer') and status='active';
@@ -297,19 +297,19 @@ begin
    raise exception 'DEMO_PERIOD_TRANSACTION_CONFLICT' using errcode='P0001'; end if;
  insert into public.settlement_demo_runs(merchant_id,company_id,company_actor_id,period_from,period_to,period_ym,created_by)
  values(p_merchant_id,p_company_id,admin_id,period_start,period_end,p_period_ym,p_actor_id) returning * into r;
- tx_count:=6+(get_byte(gen_random_bytes(1),0)%7);
- user_offset:=get_byte(gen_random_bytes(1),0)%cardinality(users);
+ tx_count:=6+floor(pg_catalog.random()*7)::int;
+ user_offset:=floor(pg_catalog.random()*cardinality(users))::int;
  for i in 1..tx_count loop
    select candidate_day into d from (select gs::date as candidate_day from generate_series(period_start,period_end,interval '1 day') gs
-     where extract(isodow from gs)<6 order by encode(gen_random_bytes(12),'hex') offset (i-1) %
+     where extract(isodow from gs)<6 order by pg_catalog.random() offset (i-1) %
        (select count(*) from generate_series(period_start,period_end,interval '1 day') x where extract(isodow from x)<6) limit 1) picked;
-   total:=(array[8000,9000,10000,11000,12000,13000,14000,15000])[1+(get_byte(gen_random_bytes(1),0)%8)];
+   total:=(array[8000,9000,10000,11000,12000,13000,14000,15000])[1+floor(pg_catalog.random()*8)::int];
    supply:=round(total::numeric/1.1)::int;
    insert into public.meal_transactions(user_id,company_id,merchant_id,amount,kind,tx_code,meal_window,
      flags,idempotency_key,product_name,product_price,pay_type,tax_type,supply_amount,vat_amount,total_amount,
      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
    values(users[1+((user_offset+i-1)%cardinality(users))],p_company_id,p_merchant_id,0,'spend',
-     upper(substr(encode(gen_random_bytes(12),'hex'),1,10)),'중식',jsonb_build_object('settlement_demo',true,'run_id',r.id),
+     upper(substr(replace(r.id::text,'-',''),1,8))||lpad(i::text,2,'0'),'중식',jsonb_build_object('settlement_demo',true,'run_id',r.id),
      'settlement-demo:'||r.id||':'||i,'정산 데모 식사',total,'ledger','taxable',supply,total-supply,total,
      'taxable',supply,total-supply,total,(d+time '12:00') at time zone 'Asia/Seoul') returning id into tx_id;
    insert into public.settlement_demo_transactions(run_id,transaction_id) values(r.id,tx_id);

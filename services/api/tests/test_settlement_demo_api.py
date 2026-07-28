@@ -95,8 +95,8 @@ class ReadyProvider:
         self.calls.append("certificate_readiness")
         return SimpleNamespace(certificate_verified=True, certificate_expires_on="2027-01-01")
 
-    def issue(self, invoice):
-        self.calls.append("issue")
+    def issue(self, invoice, *, allow_delayed_issue=False):
+        self.calls.append(("issue", allow_delayed_issue))
         return PopbillIssueResult(invoice["invoicer_mgt_key"], 1, False)
 
 
@@ -137,10 +137,12 @@ def test_demo_state_and_actions_are_merchant_scoped(demo_client):
 
 def test_demo_issue_reuses_claim_provider_finalize_only_after_readiness(demo_client):
     client, repo = demo_client
-    app.dependency_overrides[get_popbill_service] = lambda: ReadyProvider()
+    provider = ReadyProvider()
+    app.dependency_overrides[get_popbill_service] = lambda: provider
     response = client.post("/v1/admin/merchant/settlement-demo/issue")
     assert response.status_code == 200
     assert repo.calls == ["membership", "supplier", "detail", "claim", "finalize"]
+    assert provider.calls == ["certificate_readiness", ("issue", True)]
 
 
 def test_demo_issue_refuses_non_test_without_claim(demo_client, monkeypatch):

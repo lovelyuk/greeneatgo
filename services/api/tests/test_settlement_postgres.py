@@ -1052,3 +1052,10 @@ def test_settlement_demo_seed_and_reset_preserve_wallet_and_unrelated_ledgers(pg
         aggregate["supply_amount"], aggregate["vat_amount"], aggregate["total_amount"])
     pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "wallet-reset"))
     assert snapshot() == before
+
+
+def test_settlement_demo_migration_avoids_extension_schema_random_bytes():
+    """Supabase installs pgcrypto helpers outside this function search path."""
+    migration = (MIGRATIONS / "0042_settlement_demo.sql").read_text()
+    assert "gen_random_bytes" not in migration
+    assert "pg_catalog.random()" in migration

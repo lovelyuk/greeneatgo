@@ -344,8 +344,14 @@ def _refresh_status(actor, settlement_id: UUID, repo: SettlementRepository, serv
         raise _popbill_error(exc) from exc
 
 
-@merchant_router.post("/{settlement_id}/tax-invoice/issue")
-def merchant_issue_invoice(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository), service: PopbillService = Depends(get_popbill_service)):
+def _merchant_issue_invoice(
+    settlement_id: UUID,
+    token: str,
+    repo: SettlementRepository,
+    service: PopbillService,
+    *,
+    allow_delayed_issue: bool,
+):
     actor = _actor(repo, token, "merchant_admin")
     assert actor.merchant_id is not None
     # Tenant-scoped existence precedes provider configuration; provider construction
@@ -385,7 +391,7 @@ def merchant_issue_invoice(settlement_id: UUID, token: str = Depends(bearer_toke
         return {"ok": True, "data": _public({**result, "reconciled": True}), "error": None}
     attempt_token = claim["attempt_token"]
     try:
-        issued = service.issue(invoice)
+        issued = service.issue(invoice, allow_delayed_issue=allow_delayed_issue)
     except PopbillError as exc:
         outcome = "rejected" if exc.code in ("POPBILL_INVALID_INPUT", "POPBILL_ISSUE_REJECTED") else "reconciliation_required"
         try:
@@ -402,6 +408,14 @@ def merchant_issue_invoice(settlement_id: UUID, token: str = Depends(bearer_toke
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
     return {"ok": True, "data": _public({**result, "reconciled": issued.reconciled}), "error": None}
+
+
+@merchant_router.post("/{settlement_id}/tax-invoice/issue")
+def merchant_issue_invoice(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository), service: PopbillService = Depends(get_popbill_service)):
+    # Delayed issuance has legal meaning and remains disabled for the ordinary path.
+    return _merchant_issue_invoice(
+        settlement_id, token, repo, service, allow_delayed_issue=False,
+    )
 
 
 @merchant_router.post("/{settlement_id}/tax-invoice/refresh-status")
@@ -531,7 +545,12 @@ def settlement_demo_issue(token: str = Depends(bearer_token), repo: SettlementRe
     if certificate.certificate_verified is not True:
         raise _error(503, "SETTLEMENT_DEMO_CERTIFICATE_NOT_READY", "팝빌 인증서를 확인해 주세요")
     # Membership and every readiness condition precede the existing mutating claim/provider/finalize path.
-    return merchant_issue_invoice(UUID(str(member["settlement_id"])), token, repo, service)
+    # This route is already fail-closed to IsTest=true above. Past-period demo
+    # settlements therefore opt in to Popbill's test-only delayed issuance.
+    return _merchant_issue_invoice(
+        UUID(str(member["settlement_id"])), token, repo, service,
+        allow_delayed_issue=True,
+    )
 
 
 @demo_router.post("/mark-paid")

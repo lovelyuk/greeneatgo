@@ -312,13 +312,19 @@ class PopbillService:
         except Exception as exc:
             raise self._safe_error(exc) from None
 
-    def issue(self, tax_invoice: PersistedInvoiceInput | Mapping[str, Any]) -> PopbillIssueResult:
+    def issue(
+        self,
+        tax_invoice: PersistedInvoiceInput | Mapping[str, Any],
+        *,
+        allow_delayed_issue: bool = False,
+    ) -> PopbillIssueResult:
         key, payload = self._build_taxinvoice(tax_invoice)
         try:
             # Exact popbill 1.64.2 positional contract: specification, force, deal key,
             # memo, subject, then user ID.
             response = self._sdk.registIssue(
-                self._corp_num, payload, False, False, None, None, None, self._config.user_id
+                self._corp_num, payload, False, allow_delayed_issue,
+                None, None, None, self._config.user_id,
             )
         except PopbillException as exc:
             # Only an explicit issue exception is an authoritative rejection.

@@ -97,8 +97,8 @@ class FakePopbill:
         self.issue_error = issue_error
         self.calls = []
 
-    def issue(self, invoice):
-        self.calls.append(("issue", invoice["invoicer_mgt_key"]))
+    def issue(self, invoice, *, allow_delayed_issue=False):
+        self.calls.append(("issue", invoice["invoicer_mgt_key"], allow_delayed_issue))
         if self.issue_error:
             raise self.issue_error
         return PopbillIssueResult(invoice["invoicer_mgt_key"], 1, False)

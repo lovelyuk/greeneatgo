@@ -309,6 +309,18 @@ def test_issue_maps_persisted_snapshot_and_exact_sdk_call(config: PopbillConfig,
     assert args[2:] == (False, False, None, None, None, "api-user")
 
 
+def test_issue_allows_delayed_issuance_only_when_explicitly_requested(
+    config: PopbillConfig, invoice: dict[str, Any]
+) -> None:
+    sdk = FakeTaxinvoiceSDK()
+
+    make_service(config, sdk).issue(invoice, allow_delayed_issue=True)
+
+    name, args, kwargs = sdk.calls[0]
+    assert name == "registIssue" and kwargs == {}
+    assert args[2:] == (False, True, None, None, None, "api-user")
+
+
 def test_typed_persisted_boundary_validates_required_structure(config: PopbillConfig, invoice: dict[str, Any]) -> None:
     service = make_service(config, FakeTaxinvoiceSDK())
     del invoice["recipient_snapshot"]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import UUID
 
@@ -83,17 +84,28 @@ class SettlementRepository:
         })
         contracts = self.client.rest_get("merchant_companies", {
             "select": "company_id", "merchant_id": f"eq.{merchant_id}", "status": "eq.active",
-            "tax_type": "eq.taxable", "order": "created_at.asc", "limit": "1",
+            "tax_type": "eq.taxable", "order": "created_at.asc", "limit": "100",
         })
         if not merchants or not contracts:
             raise ValueError("POPBILL_TEST_PARTY_NOT_FOUND")
-        companies = self.client.rest_get("companies", {
-            "select": "name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,contact_name,contact_phone",
-            "id": f"eq.{contracts[0]['company_id']}", "status": "eq.active", "limit": "1",
-        })
-        if not companies:
+        company = None
+        required_company_fields = (
+            "name", "biz_reg_no", "representative_name", "address", "business_type",
+            "business_item", "tax_invoice_email", "contact_name", "contact_phone",
+        )
+        for contract in contracts:
+            companies = self.client.rest_get("companies", {
+                "select": "name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,contact_name,contact_phone",
+                "id": f"eq.{contract['company_id']}", "status": "eq.active", "limit": "1",
+            })
+            candidate = companies[0] if companies else None
+            if candidate and re.fullmatch(r"(?:\d{10}|\d{3}-\d{2}-\d{5})", str(candidate.get("biz_reg_no") or "")) \
+                    and all(isinstance(candidate.get(key), str) and candidate[key].strip() for key in required_company_fields):
+                company = candidate
+                break
+        if company is None:
             raise ValueError("POPBILL_TEST_PARTY_NOT_FOUND")
-        merchant, company = merchants[0], companies[0]
+        merchant = merchants[0]
         return {
             "invoicer_mgt_key": management_key, "tax_type": "taxable", "write_date": write_date,
             "supply_amount": 1000, "vat_amount": 100, "total_amount": 1100,

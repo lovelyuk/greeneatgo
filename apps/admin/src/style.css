@@ -1714,6 +1714,16 @@ code { font-size: 12px; }
 .settlement-demo-actions .primary { width: auto; flex: 1 1 210px; min-height: 46px; }
 .settlement-demo-details { display: grid; gap: 12px; padding-top: 4px; }
 .settlement-demo-details h3 { margin: 0; }
+.settlement-demo-usage { display: grid; gap: 10px; min-width: 0; }
+.settlement-demo-usage h3 { margin: 0; }
+.settlement-demo-usage-table { min-width: 760px; }
+.settlement-demo-usage-table .numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.settlement-demo-usage-table tfoot th,
+.settlement-demo-usage-table tfoot td { font-weight: 800; background: #F3FBF4; }
+.settlement-demo-usage-empty { text-align: center; color: #5C7A66; }
+.settlement-demo-reconciliation { margin: 0; padding: 10px 12px; border-radius: 12px; font-weight: 700; }
+.settlement-demo-reconciliation.matched { color: #047857; background: #E7F8EE; }
+.settlement-demo-reconciliation.mismatch { color: #B42318; background: #FFE8E0; }
 .settlement-demo-status-grid .wide { grid-column: span 2; }
 .settlement-demo-reset { justify-self: end; }
 

@@ -93,3 +93,45 @@ export function invoiceApprovalLabel(settlement, stage) {
   if (stageIndex(stage) >= stageIndex('issued')) return '테스트 발행 완료 / 국세청 승인번호 없음';
   return '대기';
 }
+
+function amount(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function demoUsageTotals(transactions = []) {
+  return transactions.reduce((totals, item) => ({
+    supplyAmount: totals.supplyAmount + amount(item?.supply_amount),
+    vatAmount: totals.vatAmount + amount(item?.vat_amount),
+    totalAmount: totals.totalAmount + amount(item?.total_amount),
+  }), { supplyAmount: 0, vatAmount: 0, totalAmount: 0 });
+}
+
+export function demoUsageReconciliation(state = {}) {
+  const transactions = Array.isArray(state.transactions) ? state.transactions : [];
+  const details = demoUsageTotals(transactions);
+  const detailCount = transactions.length;
+  const aggregateCount = amount(state.aggregate?.transaction_count ?? state.transaction_count);
+  const aggregateSupply = amount(state.aggregate?.supply_amount);
+  const aggregateVat = amount(state.aggregate?.vat_amount);
+  const aggregateTotal = amount(state.aggregate?.total_amount);
+  const hasSettlement = state.settlement != null;
+  const settlementCount = hasSettlement ? amount(state.settlement?.tx_count) : null;
+  const settlementSupply = hasSettlement ? amount(state.settlement?.supply_amount) : null;
+  const settlementVat = hasSettlement ? amount(state.settlement?.vat_amount) : null;
+  const settlementTotal = hasSettlement ? amount(state.settlement?.total_amount) : null;
+  const detailsMatchAggregate = detailCount === aggregateCount
+    && details.supplyAmount === aggregateSupply
+    && details.vatAmount === aggregateVat
+    && details.totalAmount === aggregateTotal;
+  const settlementMatches = !hasSettlement || (settlementCount === aggregateCount
+    && settlementSupply === aggregateSupply
+    && settlementVat === aggregateVat
+    && settlementTotal === aggregateTotal);
+  return {
+    ...details, detailCount, aggregateCount, aggregateSupply, aggregateVat, aggregateTotal,
+    settlementCount, settlementSupply, settlementVat, settlementTotal, hasSettlement,
+    detailsMatchAggregate, settlementMatches,
+    reconciled: detailsMatchAggregate && settlementMatches,
+  };
+}

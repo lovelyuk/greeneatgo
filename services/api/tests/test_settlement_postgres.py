@@ -49,6 +49,8 @@ def settlement_db():
         conn.execute((MIGRATIONS / "0044_settlement_demo_state_rpc.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0045_demo_transaction_isolation.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0045_demo_transaction_isolation.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0046_settlement_demo_usage_details.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0046_settlement_demo_usage_details.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -1074,6 +1076,82 @@ def test_settlement_demo_state_is_volatile_for_postgrest(pg):
         "select provolatile from pg_proc where oid='public.settlement_demo_state(uuid,uuid)'::regprocedure"
     ).fetchone()[0]
     assert volatility == "v"
+
+
+def test_demo_usage_details_are_sanitized_exact_and_survive_settlement_archive_semantics(pg):
+    company, merchant, actor, admin, employees, ym = demo_actual_parties(pg, "usage-details")
+    empty = pg.execute("select settlement_demo_state(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert empty["stage"] == "empty" and empty["transactions"] == []
+
+    period_from = date.fromisoformat(ym + "-01")
+    period_to = pg.execute("select (%s::date+interval '1 month - 1 day')::date", (period_from,)).fetchone()[0]
+    run_id = pg.execute("""insert into settlement_demo_runs
+      (merchant_id,company_id,company_actor_id,period_from,period_to,period_ym,created_by)
+      values(%s,%s,%s,%s,%s,%s,%s) returning id""",
+      (merchant, company, admin, period_from, period_to, ym, actor)).fetchone()[0]
+    amounts = [11000, 11000, 11000, 12000, 13000, 13000]
+    tx_ids = []
+    for index, total in enumerate(amounts, start=1):
+        supply = round(total / 1.1)
+        tx_id = pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,tx_code,
+          meal_window,flags,idempotency_key,product_name,product_price,pay_type,tax_type,supply_amount,vat_amount,
+          total_amount,settlement_tax_type,settlement_supply_amount,settlement_vat_amount,
+          settlement_total_amount,created_at) values(%s,%s,%s,0,'spend',%s,'중식',
+          jsonb_build_object('settlement_demo',true,'run_id',%s::text),%s,'정산 데모 식사',%s,
+          'ledger','taxable',%s,%s,%s,'taxable',%s,%s,%s,%s::date::timestamp at time zone 'Asia/Seoul') returning id""",
+          (employees[(index-1) % len(employees)], company, merchant, f"DETAIL{index:02d}",
+           str(run_id), f"detail-demo:{run_id}:{index}", total,
+           supply, total-supply, total, supply, total-supply, total, period_from + timedelta(days=index+10))).fetchone()[0]
+        tx_ids.append(tx_id)
+        pg.execute("insert into settlement_demo_transactions(run_id,transaction_id) values(%s,%s)", (run_id, tx_id))
+
+    state = pg.execute("select settlement_demo_state(%s,%s)", (actor, merchant)).fetchone()[0]
+    details = state["transactions"]
+    assert len(details) == 6
+    assert [item["display_sequence"] for item in details] == list(range(1, 7))
+    labels = [item["user_label"] for item in details]
+    assert set(labels) == {"시연 사용자 1", "시연 사용자 2"}
+    assert labels[0] == labels[2] == labels[4] and labels[1] == labels[3] == labels[5]
+    assert labels[0] != labels[1]
+    assert all(item["description"] == "시연 식대" and item["kind"] == "spend" for item in details)
+    assert sum(item["supply_amount"] for item in details) == 64545
+    assert sum(item["vat_amount"] for item in details) == 6455
+    assert sum(item["total_amount"] for item in details) == 71000
+    assert state["aggregate"]["total_amount"] == 71000
+
+    allowed = {"display_sequence", "user_label", "used_at", "description", "kind",
+               "supply_amount", "vat_amount", "total_amount"}
+    assert all(set(item) == allowed for item in details)
+    serialized = str(details)
+    forbidden_keys = {"id", "transaction_id", "user_id", "name", "email", "phone", "flags",
+                      "is_demo", "provider", "tx_code", "idempotency_key", "pay_type"}
+    assert all(key not in allowed for key in forbidden_keys)
+    assert all(str(value) not in serialized for value in [admin, *employees])
+    assert all(value not in serialized for value in ["person-0", "person-1", "recipient@example.com", "01012345678"])
+
+    created = pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert created["settlement"]["total_amount"] == 71000
+    assert sum(item["total_amount"] for item in created["transactions"]) == 71000
+    confirmed = pg.execute("select settlement_demo_confirm(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert confirmed["stage"] == "confirmed" and len(confirmed["transactions"]) == 6
+    archived = pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "usage-archive")).fetchone()[0]
+    assert archived["stage"] == "empty" and archived["transactions"] == []
+    assert pg.execute("select is_current from settlement_demo_runs where id=%s", (run_id,)).fetchone()[0] is False
+    replay = pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "usage-archive")).fetchone()[0]
+    assert replay["stage"] == "empty" and replay["transactions"] == []
+
+
+def test_demo_usage_detail_migration_replay_preserves_volatility_and_grants(pg):
+    migration = (MIGRATIONS / "0046_settlement_demo_usage_details.sql").read_text(encoding="utf-8")
+    pg.execute(migration)
+    pg.execute(migration)
+    rows = pg.execute("""select proname,provolatile from pg_proc where oid in
+      ('public.settlement_demo_state(uuid,uuid)'::regprocedure,
+       'public.settlement_demo_state_base(uuid,uuid)'::regprocedure) order by proname""").fetchall()
+    assert rows == [("settlement_demo_state", "v"), ("settlement_demo_state_base", "v")]
+    assert pg.execute("select has_function_privilege('service_role','settlement_demo_state(uuid,uuid)','execute')").fetchone()[0] is True
+    assert pg.execute("select has_function_privilege('service_role','settlement_demo_state_base(uuid,uuid)','execute')").fetchone()[0] is False
+    assert pg.execute("select has_function_privilege('authenticated','settlement_demo_state(uuid,uuid)','execute')").fetchone()[0] is False
 
 
 def test_demo_markers_isolate_normal_reads_and_preserve_archived_audit(pg):

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   DEMO_ACTIONS, DEMO_STAGES, demoInteractionsLocked, demoLoadStatus, invoiceApprovalLabel, nextDemoAction, optionReason,
-  pastMonths, readinessState, stageState, statusLabel,
+  demoUsageReconciliation, pastMonths, readinessState, stageState, statusLabel,
 } from './settlementDemo.js';
 import { createSettlementDemoLifecycle, isLifecycleAbort } from './settlementDemoLifecycle.js';
 
@@ -189,6 +189,8 @@ export default function SettlementDemoPanel({ token, apiFetch, openDocumentInNew
 
   const settlement = state?.settlement;
   const issued = ['issued', 'nts_sending', 'nts_accepted'].includes(settlement?.tax_invoice_status);
+  const transactions = Array.isArray(state?.transactions) ? state.transactions : [];
+  const reconciliation = demoUsageReconciliation(state ?? {});
 
   return <section className={`panel settlement-demo-panel${readiness.production ? ' production' : ''}${loadStatus === 'stale' ? ' stale' : ''}`} aria-labelledby="settlement-demo-title">
     <div className="panel-title settlement-demo-heading">
@@ -245,6 +247,29 @@ export default function SettlementDemoPanel({ token, apiFetch, openDocumentInNew
         <div><dt>거래 합계</dt><dd>{krw(state.aggregate?.total_amount)}</dd></div>
       </dl>
 
+      <div className="settlement-demo-usage">
+        <h3>시연 사용내역</h3>
+        <div className="table-wrap">
+          <table className="settlement-demo-usage-table">
+            <thead><tr><th>날짜/시간</th><th>사용자</th><th>내용</th><th className="numeric">공급가</th><th className="numeric">부가세</th><th className="numeric">금액</th></tr></thead>
+            <tbody>
+              {transactions.map((item) => <tr key={item.display_sequence}>
+                <td>{formatDateTime(item.used_at)}</td><td>{item.user_label}</td><td>{item.description}</td>
+                <td className="numeric">{krw(item.supply_amount)}</td><td className="numeric">{krw(item.vat_amount)}</td><td className="numeric">{krw(item.total_amount)}</td>
+              </tr>)}
+              {transactions.length === 0 && <tr><td colSpan="6" className="settlement-demo-usage-empty">표시할 시연 사용내역이 없습니다.</td></tr>}
+            </tbody>
+            <tfoot><tr><th colSpan="3">합계</th><td className="numeric">{krw(reconciliation.supplyAmount)}</td><td className="numeric">{krw(reconciliation.vatAmount)}</td><td className="numeric">{krw(reconciliation.totalAmount)}</td></tr></tfoot>
+          </table>
+        </div>
+        <p className={`settlement-demo-reconciliation ${reconciliation.reconciled ? 'matched' : 'mismatch'}`} role={reconciliation.reconciled ? 'status' : 'alert'}>
+          상세 {reconciliation.detailCount}건 / 공급가 {krw(reconciliation.supplyAmount)} / 부가세 {krw(reconciliation.vatAmount)} / 합계 {krw(reconciliation.totalAmount)}
+          {' · '}집계 {reconciliation.aggregateCount}건 / 공급가 {krw(reconciliation.aggregateSupply)} / 부가세 {krw(reconciliation.aggregateVat)} / 합계 {krw(reconciliation.aggregateTotal)}
+          {reconciliation.hasSettlement && <> · 정산 {reconciliation.settlementCount}건 / 공급가 {krw(reconciliation.settlementSupply)} / 부가세 {krw(reconciliation.settlementVat)} / 합계 {krw(reconciliation.settlementTotal)}</>}
+          {' — '}{reconciliation.reconciled ? '건수와 금액이 정확히 일치합니다.' : '건수 또는 금액이 일치하지 않습니다. 시연을 진행하지 말고 새로고침해 주세요.'}
+        </p>
+      </div>
+
       <ol className="settlement-demo-timeline" aria-label="시연 단계">
         {DEMO_STAGES.map((item) => <li key={item.key} className={stageState(state.stage, item.key)} aria-current={state.stage === item.key ? 'step' : undefined}>
           <span aria-hidden="true" />{item.label}
@@ -255,7 +280,7 @@ export default function SettlementDemoPanel({ token, apiFetch, openDocumentInNew
         {ACTION_ORDER.map((stage) => {
           const item = DEMO_ACTIONS[stage];
           const exactNext = action?.endpoint === item.endpoint && action.enabled;
-          return <button type="button" className="primary" key={item.endpoint} onClick={() => mutate(item.endpoint)} disabled={!exactNext || controlsDisabled}>
+          return <button type="button" className="primary" key={item.endpoint} onClick={() => mutate(item.endpoint)} disabled={!exactNext || controlsDisabled || !reconciliation.reconciled}>
             {pending === item.endpoint ? `${item.label} 처리 중` : item.label}
           </button>;
         })}

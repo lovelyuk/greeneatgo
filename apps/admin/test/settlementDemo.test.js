@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEMO_STAGES, demoInteractionsLocked, demoLoadStatus, invoiceApprovalLabel, nextDemoAction, optionReason, pastMonths,
-  readinessState, stageIndex, stageState, statusLabel,
+  demoUsageReconciliation, demoUsageTotals, readinessState, stageIndex, stageState, statusLabel,
 } from '../src/settlementDemo.js';
 
 test('distinguishes load failure from a successfully loaded empty company list', () => {
@@ -79,4 +79,33 @@ test('company reasons and NTS approval text remain explicit and truthful', () =>
   assert.equal(invoiceApprovalLabel({ nts_confirm_num: 'REAL-NTS-123' }, 'issued'), 'REAL-NTS-123');
   assert.equal(invoiceApprovalLabel({}, 'issued'), '테스트 발행 완료 / 국세청 승인번호 없음');
   assert.equal(invoiceApprovalLabel({}, 'confirmed'), '대기');
+});
+
+test('totals sanitized demo details and reconciles aggregate and settlement exactly', () => {
+  const transactions = [
+    { supply_amount: 10000, vat_amount: 1000, total_amount: 11000 },
+    { supply_amount: '54545', vat_amount: '5455', total_amount: '60000' },
+  ];
+  assert.deepEqual(demoUsageTotals(transactions), {
+    supplyAmount: 64545, vatAmount: 6455, totalAmount: 71000,
+  });
+  assert.deepEqual(demoUsageReconciliation({
+    transactions,
+    aggregate: { transaction_count: 2, supply_amount: 64545, vat_amount: 6455, total_amount: 71000 },
+    settlement: { tx_count: 2, supply_amount: '64545', vat_amount: '6455', total_amount: '71000' },
+  }), {
+    supplyAmount: 64545, vatAmount: 6455, totalAmount: 71000,
+    detailCount: 2, aggregateCount: 2, aggregateSupply: 64545, aggregateVat: 6455, aggregateTotal: 71000,
+    settlementCount: 2, settlementSupply: 64545, settlementVat: 6455, settlementTotal: 71000,
+    hasSettlement: true, detailsMatchAggregate: true, settlementMatches: true, reconciled: true,
+  });
+  assert.equal(demoUsageReconciliation({
+    transactions,
+    aggregate: { transaction_count: 2, supply_amount: 64544, vat_amount: 6456, total_amount: 71000 },
+    settlement: { tx_count: 2, supply_amount: 64545, vat_amount: 6455, total_amount: 71000 },
+  }).reconciled, false);
+  assert.equal(demoUsageReconciliation({
+    transactions,
+    aggregate: { transaction_count: 3, supply_amount: 64545, vat_amount: 6455, total_amount: 71000 },
+  }).reconciled, false);
 });

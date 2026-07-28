@@ -20,6 +20,7 @@ build/
 .env
 .env.*
 !.env.example
+.secrets/
 firebase-service-account*.json
 serviceAccountKey*.json
 

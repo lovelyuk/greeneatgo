@@ -51,10 +51,12 @@ def settlement_db():
         conn.execute((MIGRATIONS / "0045_demo_transaction_isolation.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0046_settlement_demo_usage_details.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0046_settlement_demo_usage_details.sql").read_text(encoding="utf-8"))
-        # 0045 may be replayed by recovery tooling; the additive display restore
-        # must remain idempotent and be replayed after it.
+        # 0045 may be replayed by recovery tooling; additive display and generic
+        # settlement integration restores must remain idempotent after it.
         conn.execute((MIGRATIONS / "0047_demo_transaction_integrated_reads.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0047_demo_transaction_integrated_reads.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0048_demo_generic_settlement_integration.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0048_demo_generic_settlement_integration.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -1158,7 +1160,7 @@ def test_demo_usage_detail_migration_replay_preserves_volatility_and_grants(pg):
     assert pg.execute("select has_function_privilege('authenticated','settlement_demo_state(uuid,uuid)','execute')").fetchone()[0] is False
 
 
-def test_demo_visible_reads_integrate_but_limits_and_settlement_stay_isolated(pg):
+def test_demo_visible_reads_integrate_with_generic_settlement_but_not_limits(pg):
     import psycopg
 
     company, merchant, actor, company_actor, _, ym = demo_actual_parties(pg, "isolation")
@@ -1190,14 +1192,14 @@ def test_demo_visible_reads_integrate_but_limits_and_settlement_stay_isolated(pg
     ).fetchone()[0]
     assert usage["summary"]["transaction_count"] == demo_count
     assert usage["summary"]["gross_spend_amount"] == signed_total
-    # Operational eligibility keeps using the fail-closed view: demo usage does
-    # not consume a customer limit and cannot enter a generic settlement.
+    # Demo usage remains inert for customer limits, but is intentionally eligible
+    # for the ordinary merchant settlement workflow during development.
     assert pg.execute("""select coalesce(sum(abs(amount)),0) from normal_meal_transactions
       where company_id=%s and created_at >= %s::date""", (company, seeded["period_from"])).fetchone()[0] == 0
-    with pytest.raises(psycopg.errors.RaiseException, match="TAX_TYPE_UNCLASSIFIED"):
-        with pg.transaction():
-            pg.execute("select create_merchant_settlement(%s,%s,%s,%s)",
-                       (merchant, company, seeded["period_from"], seeded["period_to"]))
+    normal = pg.execute("select create_merchant_settlement(%s,%s,%s,%s)",
+      (merchant, company, seeded["period_from"], seeded["period_to"])).fetchone()[0]
+    assert normal["is_demo"] is False
+    assert normal["tx_count"] == demo_count and normal["total_amount"] == signed_total
 
     created = pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant)).fetchone()[0]
     sid = created["settlement_id"]
@@ -1216,7 +1218,8 @@ def test_demo_visible_reads_integrate_but_limits_and_settlement_stay_isolated(pg
     month = pg.execute(
         "select company_settlement_month_summary(%s,%s)", (company, ym)
     ).fetchone()[0]
-    assert month["settlement_count"] == 0
+    assert month["settlement_count"] == 1
+    assert pg.execute("select count(*) from normal_settlements where id=%s", (normal["id"],)).fetchone()[0] == 1
 
     pg.execute("select settlement_demo_confirm(%s,%s)", (actor, merchant))
     invoice_id = pg.execute(
@@ -1252,6 +1255,8 @@ def test_archived_demo_does_not_reserve_normal_settlement_period(pg):
 
     assert normal["id"] != demo["settlement_id"]
     assert normal["is_demo"] is False
+    assert normal["tx_count"] == seeded["transaction_count"] + 1
+    assert normal["total_amount"] == seeded["aggregate"]["total_amount"] + 1100
     assert pg.execute("select count(*) from settlements where merchant_id=%s and company_id=%s and period_ym=%s",
       (merchant, company, ym)).fetchone()[0] == 2
 

@@ -405,3 +405,218 @@ def test_concurrent_claim_has_one_issue_winner(settlement_db):
     with ThreadPoolExecutor(max_workers=2) as pool:
         actions = sorted(f.result(timeout=10) for f in (pool.submit(claim),pool.submit(claim)))
     assert actions == ["issue","reconcile"]
+
+
+def test_company_monthly_usage_aggregates_seoul_month_employees_and_payments(pg):
+    company, other_company, merchant, _, company_actor, _, merchant_actor, _ = parties(pg)
+    employee_one = pg.execute(
+        """insert into app_users(id,company_id,display_name,employee_no,department,role,status)
+           values(gen_random_uuid(),%s,'Alice','E-1','Sales','employee','active') returning id""",
+        (company,),
+    ).fetchone()[0]
+    employee_two = pg.execute(
+        """insert into app_users(id,company_id,display_name,employee_no,department,role,status)
+           values(gen_random_uuid(),%s,'Bob','E-2','Ops','employee','paused') returning id""",
+        (company,),
+    ).fetchone()[0]
+    outsider = pg.execute(
+        """insert into app_users(id,company_id,display_name,role,status)
+           values(gen_random_uuid(),%s,'Other employee','employee','active') returning id""",
+        (other_company,),
+    ).fetchone()[0]
+
+    # UTC timestamps straddle Seoul civil-month boundaries. Monetary snapshots are
+    # authoritative; the refund reverses each burden independently.
+    pg.execute(
+        """insert into meal_transactions(
+             user_id,company_id,merchant_id,amount,kind,pay_type,
+             employee_paid_amount,company_subsidy_amount,restaurant_subsidy_amount,
+             tax_type,supply_amount,vat_amount,total_amount,
+             settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+           values
+             (%s,%s,%s,-1000,'spend','ledger',300,600,100,'taxable',909,91,1000,'taxable',545,55,600,'2026-06-30 15:00:00+00'),
+             (%s,%s,%s, 200,'refund','ledger',60,120,20,'taxable',182,18,200,'taxable',109,11,120,'2026-07-01 15:00:00+00'),
+             (%s,%s,%s,-500,'spend','ledger',0,500,0,'tax_free',500,0,500,'tax_free',500,0,500,'2026-07-15 03:00:00+00'),
+             (%s,%s,%s,-999,'spend','ledger',0,999,0,'tax_free',999,0,999,'tax_free',999,0,999,'2026-07-31 15:00:00+00'),
+             (%s,%s,%s,-777,'spend','ledger',0,777,0,'tax_free',777,0,777,'tax_free',777,0,777,'2026-07-10 00:00:00+00')""",
+        (
+            employee_one, company, merchant,
+            employee_one, company, merchant,
+            employee_two, company, merchant,
+            employee_two, company, merchant,
+            outsider, other_company, merchant,
+        ),
+    )
+
+    sid = settlement(pg, company, merchant, "sent", "not_requested")
+    pg.execute("update settlements set period_ym='2026-07' where id=%s", (sid,))
+    pg.execute("select company_confirm_and_request_tax_invoice(%s,%s,%s)", (company_actor, company, sid))
+    pg.execute(
+        """insert into settlement_payments(
+             settlement_id,amount,deposited_at,match_method,confirmed_by,confirmed_at,created_by)
+           values(%s,400,now(),'manual',%s,now(),%s),
+                 (%s,900,now(),'manual',null,null,%s)""",
+        (sid, merchant_actor, merchant_actor, sid, merchant_actor),
+    )
+
+    value = pg.execute(
+        "select company_monthly_usage(%s,%s,'2026-07')", (company_actor, company)
+    ).fetchone()[0]
+    assert "company_id" not in value
+    assert value["period"] == {
+        "ym": "2026-07",
+        "timezone": "Asia/Seoul",
+        "start_at": "2026-06-30T15:00:00+00:00",
+        "end_at": "2026-07-31T15:00:00+00:00",
+    }
+    assert value["summary"] == {
+        "gross_spend_amount": 1300,
+        "company_charge_amount": 980,
+        "employee_paid_amount": 240,
+        "transaction_count": 3,
+        "spend_count": 2,
+        "reversal_count": 1,
+        "unique_users": 2,
+        "used_employee_count": 2,
+        "total_employee_count": 2,
+        "active_employee_count": 1,
+        "outstanding_settlement_amount": 700,
+        "confirmed_payment_amount": 400,
+    }
+    assert [row["date"] for row in value["daily"]] == ["2026-07-01", "2026-07-02", "2026-07-15"]
+    assert [row["display_name"] for row in value["employees"]] == ["Alice", "Bob"]
+    alice = next(row for row in value["employees"] if row["display_name"] == "Alice")
+    assert (alice["gross_spend_amount"], alice["company_charge_amount"], alice["employee_paid_amount"]) == (800, 480, 240)
+    assert alice["transaction_count"] == 2 and alice["usage_days"] == 2
+    settlements = value["settlements"]
+    assert (settlements["count"], settlements["total_amount"], settlements["confirmed_payment_amount"], settlements["outstanding_amount"]) == (1, 1100, 400, 700)
+    assert "latest_invoice" not in settlements
+
+
+def test_company_monthly_usage_empty_month_is_stable_and_service_role_only(pg):
+    company, _, _, _, company_actor, _, _, _ = parties(pg)
+    value = pg.execute(
+        "select company_monthly_usage(%s,%s,'2025-02')", (company_actor, company)
+    ).fetchone()[0]
+    assert value["daily"] == []
+    assert value["employees"] == []
+    assert value["summary"]["gross_spend_amount"] == 0
+    assert pg.execute(
+        "select has_function_privilege('authenticated','company_monthly_usage(uuid,uuid,text)','execute')"
+    ).fetchone()[0] is False
+    assert pg.execute(
+        "select has_function_privilege('service_role','company_monthly_usage(uuid,uuid,text)','execute')"
+    ).fetchone()[0] is True
+
+
+def test_company_monthly_usage_rejects_invalid_month_and_unknown_company(pg):
+    import psycopg
+
+    company, _, _, _, company_actor, _, _, _ = parties(pg)
+    with pytest.raises(psycopg.errors.RaiseException, match="COMPANY_USAGE_MONTH_INVALID"):
+        with pg.transaction():
+            pg.execute("select company_monthly_usage(%s,%s,'2026-13')", (company_actor, company))
+    with pytest.raises(psycopg.errors.RaiseException, match="COMPANY_USAGE_ACTOR_FORBIDDEN"):
+        with pg.transaction():
+            pg.execute("select company_monthly_usage(%s,%s,'2026-07')", (company_actor, uuid.uuid4()))
+
+
+def test_company_monthly_usage_rejects_cross_tenant_and_inactive_actors(pg):
+    import psycopg
+
+    company, _, _, _, actor, other_actor, _, _ = parties(pg)
+    with pytest.raises(psycopg.errors.RaiseException, match="COMPANY_USAGE_ACTOR_FORBIDDEN"):
+        with pg.transaction():
+            pg.execute("select company_monthly_usage(%s,%s,'2026-07')", (other_actor, company))
+    pg.execute("update app_users set status='paused' where id=%s", (actor,))
+    with pytest.raises(psycopg.errors.RaiseException, match="COMPANY_USAGE_ACTOR_FORBIDDEN"):
+        with pg.transaction():
+            pg.execute("select company_monthly_usage(%s,%s,'2026-07')", (actor, company))
+
+
+def test_company_monthly_usage_spend_users_invites_privacy_and_reconciliation(pg):
+    company, other_company, merchant, _, actor, _, _, _ = parties(pg)
+    no_usage = pg.execute(
+        "insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,'No usage','employee','active') returning id",
+        (company,),
+    ).fetchone()[0]
+    paused = pg.execute(
+        "insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,'Paused','employee','paused') returning id",
+        (company,),
+    ).fetchone()[0]
+    refund_only = pg.execute(
+        "insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,'Refund','employee',null) returning id",
+        (company,),
+    ).fetchone()[0]
+    moved = pg.execute(
+        "insert into app_users(id,company_id,display_name,employee_no,department,role,status) values(gen_random_uuid(),%s,'Moved','OLD','Old dept','employee','active') returning id",
+        (company,),
+    ).fetchone()[0]
+    outsider = pg.execute(
+        "insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,'Outsider','employee','active') returning id",
+        (other_company,),
+    ).fetchone()[0]
+    pg.execute(
+        "insert into employee_bulk_invites(company_id,display_name,employee_no,phone) values(%s,'Invited','INV','01011112222')",
+        (company,),
+    )
+    pg.execute(
+        """insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+             tax_type,supply_amount,vat_amount,total_amount,
+             settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,
+             employee_paid_amount,created_at)
+           values(%s,%s,%s,-1000,'spend','ledger','tax_free',1000,0,1000,'tax_free',700,0,700,300,'2026-07-02 01:00+00'),
+                 (%s,%s,%s,200,'refund','ledger','tax_free',200,0,200,'tax_free',140,0,140,60,'2026-07-03 01:00+00'),
+                 (%s,%s,%s,-500,'spend','ledger','tax_free',500,0,500,'tax_free',500,0,500,0,'2026-07-04 01:00+00'),
+                 (%s,%s,%s,-999,'spend','ledger','tax_free',999,0,999,'tax_free',999,0,999,0,'2026-07-05 01:00+00')""",
+        (paused, company, merchant, refund_only, company, merchant, moved, company, merchant,
+         outsider, other_company, merchant),
+    )
+    pg.execute(
+        "update app_users set company_id=%s,employee_no='NEW',department='Secret' where id=%s",
+        (other_company, moved),
+    )
+
+    value = pg.execute("select company_monthly_usage(%s,%s,'2026-07')", (actor, company)).fetchone()[0]
+    summary, employees = value["summary"], value["employees"]
+    assert (summary["unique_users"], summary["used_employee_count"]) == (2, 2)
+    assert (summary["total_employee_count"], summary["active_employee_count"]) == (4, 1)
+    ids = {uuid.UUID(row["user_id"]) for row in employees}
+    assert no_usage not in ids and outsider not in ids and len(employees) == 3
+    refund = next(row for row in employees if row["user_id"] == str(refund_only))
+    assert refund["status"] == "unknown" and refund["gross_spend_amount"] == -200
+    assert next(row for row in value["daily"] if row["date"] == "2026-07-03")["unique_users"] == 0
+    moved_row = next(row for row in employees if row["user_id"] == str(moved))
+    assert moved_row["status"] == "former"
+    assert moved_row["employee_no"] is None and moved_row["department"] is None
+    for field in ("gross_spend_amount", "company_charge_amount", "employee_paid_amount", "transaction_count"):
+        assert sum(row[field] for row in employees) == summary[field]
+
+
+def test_company_monthly_usage_cancellation_and_confirmed_overpayment(pg):
+    company, _, merchant, other_merchant, actor, _, payment_actor, _ = parties(pg)
+    employee = pg.execute(
+        "insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,'Employee','employee','active') returning id",
+        (company,),
+    ).fetchone()[0]
+    pg.execute(
+        """insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+             tax_type,supply_amount,vat_amount,total_amount,
+             settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,
+             employee_paid_amount,created_at)
+           values(%s,%s,%s,300,'cancel','ledger','tax_free',300,0,300,'tax_free',200,0,200,100,'2026-07-08 01:00+00')""",
+        (employee, company, merchant),
+    )
+    cancelled = settlement(pg, company, other_merchant, "cancelled")
+    live = settlement(pg, company, merchant, "sent")
+    pg.execute("update settlements set period_ym='2026-07' where id in (%s,%s)", (cancelled, live))
+    pg.execute(
+        """insert into settlement_payments(settlement_id,amount,deposited_at,match_method,confirmed_by,confirmed_at,created_by)
+           values(%s,1500,now(),'manual',%s,now(),%s)""",
+        (live, payment_actor, payment_actor),
+    )
+    value = pg.execute("select company_monthly_usage(%s,%s,'2026-07')", (actor, company)).fetchone()[0]
+    assert value["summary"]["gross_spend_amount"] == -300
+    assert value["summary"]["unique_users"] == 0
+    assert value["settlements"] == {"count": 1, "total_amount": 1100,
+        "confirmed_payment_amount": 1500, "outstanding_amount": 0}

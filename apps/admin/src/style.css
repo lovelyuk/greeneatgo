@@ -1268,11 +1268,11 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
   text-transform: uppercase;
 }
 .merchant-nav-group:first-child, .company-nav-group:first-child { padding-top: 0; }
-.admin-mock-page { display: grid; width: 100%; max-width: 100%; min-width: 0; gap: 18px; overflow: hidden; }
-.admin-mock-page > * { width: 100%; max-width: 100%; min-width: 0; }
-.admin-mock-page .panel { overflow: hidden; }
-.admin-mock-page .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; }
-.admin-mock-page-title { margin-bottom: 0; }
+.admin-page { display: grid; width: 100%; max-width: 100%; min-width: 0; gap: 18px; overflow: hidden; }
+.admin-page > * { width: 100%; max-width: 100%; min-width: 0; }
+.admin-page .panel { overflow: hidden; }
+.admin-page .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; }
+.admin-page-title { margin-bottom: 0; }
 
 .company-shell {
   display: grid;
@@ -1375,12 +1375,12 @@ tbody td:last-child { border-right: 1px solid var(--border); border-radius: 0 12
 .mock-progress-list progress { width: 100%; height: 9px; overflow: hidden; border: 0; border-radius: 999px; accent-color: var(--accent); }
 .mock-progress-list progress::-webkit-progress-bar { background: var(--bg-subtle); }
 .mock-progress-list progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
-.mock-cash-grid, .mock-summary-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
-.mock-cash-grid > div, .mock-summary-strip > div { display: grid; gap: 7px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-subtle); }
-.mock-cash-grid strong, .mock-summary-strip strong { font-size: 24px; }
+.mock-cash-grid, .mock-summary-strip, .usage-summary-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+.mock-cash-grid > div, .mock-summary-strip > div, .usage-summary-strip > div { display: grid; gap: 7px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-subtle); }
+.mock-cash-grid strong, .mock-summary-strip strong, .usage-summary-strip strong { font-size: 24px; }
 .mock-cash-grid small { color: var(--text-muted); }
-.mock-summary-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.mock-total-row td { border-top: 2px solid var(--border-strong); background: var(--bg-subtle); font-weight: 700; }
+.mock-summary-strip, .usage-summary-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mock-total-row td, .usage-total-row td { border-top: 2px solid var(--border-strong); background: var(--bg-subtle); font-weight: 700; }
 .mock-tax-status { display: inline-flex; padding: 6px 10px; border-radius: 999px; color: var(--badge-gray-fg); background: var(--badge-gray-bg); font-size: 12px; font-weight: 700; }
 .mock-tax-status.발행완료 { color: var(--badge-green-fg); background: var(--badge-green-bg); }
 .mock-tax-status.국세청전송 { color: var(--badge-blue-fg); background: var(--badge-blue-bg); }
@@ -1411,15 +1411,15 @@ code { font-size: 12px; }
 }
 
 @media (max-width: 700px) {
-  .admin-mock-page { gap: 14px; }
-  .admin-mock-page-title { align-items: flex-start; }
+  .admin-page { gap: 14px; }
+  .admin-page-title { align-items: flex-start; }
   .mock-kpi-grid, .mock-kpi-grid.three { grid-template-columns: 1fr; }
   .mock-kpi-card, .mock-kpi-grid > .card { min-height: 92px; }
   .mock-filterbar, .mock-page-actions { align-items: stretch; flex-direction: column; }
   .mock-filterbar .mock-segmented { width: 100%; overflow-x: auto; }
   .mock-filterbar > button, .mock-page-actions > button { width: 100%; }
   .mock-sales-bars { height: 180px; gap: 8px; padding-inline: 5px; }
-  .mock-cash-grid, .mock-summary-strip, .mock-invoice-parties { grid-template-columns: 1fr; }
+  .mock-cash-grid, .mock-summary-strip, .usage-summary-strip, .mock-invoice-parties { grid-template-columns: 1fr; }
   .mock-batch-list dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mock-business-form { grid-template-columns: 1fr; }
   .mock-business-form .wide { grid-column: auto; }
@@ -1681,10 +1681,11 @@ code { font-size: 12px; }
 }
 .merchant-section-tabs button:hover { transform: none; color: var(--text-primary); background: var(--bg-subtle); box-shadow: none; }
 .merchant-section-tabs button.active { color: var(--accent); background: var(--accent-soft); border-bottom-color: var(--accent); }
-.titleless-guidance, .company-list-page .admin-mock-page-title .panel-note { margin-top: 0; font-weight: 400; }
-.supplier-info-page .admin-mock-page-title .panel-note { margin-top: 0; }
+.titleless-guidance, .company-list-page .admin-page-title .panel-note { margin-top: 0; font-weight: 400; }
+.supplier-info-page .admin-page-title .panel-note { margin-top: 0; }
 .merchant-regular-weight, .merchant-regular-weight * { font-weight: 400 !important; }
-.merchant-topbar .sidebar-entity-name { color: #6B7480; font-size: 18px; font-weight: 400; letter-spacing: -.01em; }
+.merchant-topbar .sidebar-entity-name,
+.company-topbar .sidebar-entity-name { color: #6B7480; font-size: 18px; font-weight: 400; letter-spacing: .02em; }
 .merchant-open-table .table-wrap { border: 0; border-radius: 0; background: transparent; }
 .merchant-open-table table { border-collapse: collapse; border-spacing: 0; }
 .merchant-open-table thead th { border-bottom: 1px solid #E7E9ED; }
@@ -1735,6 +1736,18 @@ code { font-size: 12px; }
 @media (max-width: 700px) {
   .merchant-section-tabs { margin-bottom: 14px; scroll-snap-type: x proximity; }
   .merchant-section-tabs button { min-height: 42px; padding-inline: 14px; scroll-snap-align: start; font-size: 14px; }
+}
+
+.company-usage-period { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-bottom: 18px; }
+.company-usage-period input[type="month"] { min-height: 40px; padding: 8px 12px; }
+.employee-status-badge { display: inline-flex; padding: 5px 9px; border-radius: 999px; color: var(--badge-gray-fg); background: var(--badge-gray-bg); font-size: 12px; }
+.employee-status-badge.status-active { color: var(--badge-green-fg); background: var(--badge-green-bg); }
+.employee-status-badge.status-suspended { color: var(--badge-red-fg); background: var(--badge-red-bg); }
+.sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
+@media (max-width: 560px) {
+  .company-usage-period { justify-content: stretch; }
+  .company-usage-period > * { flex: 1; min-width: 0; }
+  .company-usage-period input[type="month"] { width: 100%; }
 }
 
 /* Legacy tax review controls remain inside Supplier Information. */

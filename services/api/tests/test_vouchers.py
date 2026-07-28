@@ -18,11 +18,24 @@ from app.schemas import (
     PaymentConfirmRequest,
     TransactionScanRequest,
     VoucherProductCreateRequest,
+    VoucherProductUpdateRequest,
 )
 from app.services.vouchers import calculate_sale_price, krw_amount, parse_qr_data, per_voucher_price
 
 
 class VoucherCoreTests(unittest.TestCase):
+    def test_voucher_product_tax_type_is_always_taxable(self):
+        create = VoucherProductCreateRequest.model_validate({
+            "name": "식권", "voucher_count": 1, "unit_price": 8000,
+            "tax_type": "tax_free",
+        })
+        update = VoucherProductUpdateRequest.model_validate({"tax_type": "unclassified"})
+        status_only = VoucherProductUpdateRequest.model_validate({"status": "inactive"})
+
+        self.assertEqual(_values(create, partial=False)["tax_type"], "taxable")
+        self.assertEqual(_values(update, partial=True)["tax_type"], "taxable")
+        self.assertEqual(_values(status_only, partial=True)["tax_type"], "taxable")
+
     @patch("app.routers.voucher_products.get_settings")
     @patch("app.routers.voucher_products.JoinRepository")
     def test_legacy_public_catalog_remains_available_without_auth(self, repo_class, settings):

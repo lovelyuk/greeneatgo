@@ -220,6 +220,9 @@ def _delete_replaced_image(repo: JoinRepository, merchant_id: str, old_url: str 
 
 def _values(payload: VoucherProductCreateRequest | VoucherProductUpdateRequest, *, partial: bool) -> dict:
     values = payload.model_dump(exclude_unset=partial, mode="json")
+    # GreenEat vouchers are always taxable. Keep this authoritative on the
+    # server so stale or non-web clients cannot save another classification.
+    values["tax_type"] = "taxable"
     if "name" in values:
         values["name"] = values["name"].strip()
     # Validate the same formula used by the generated DB column. sale_price is never accepted.

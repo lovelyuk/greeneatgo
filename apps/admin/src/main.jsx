@@ -641,7 +641,7 @@ function TransactionSkeleton() {
 }
 
 function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage, uploadImage, deleteImage, onChanged, setBusy, setError, setMessage }) {
-  const blank = { name: '', voucher_count: '0', bonus_count: '0', unit_price: '', discount_rate: '0', status: 'active', display_order: '0', kiwoom_pay_method: 'TOTAL', image_url: '', is_event: false, event_start_at: '', event_end_at: '', tax_type: 'unclassified' };
+  const blank = { name: '', voucher_count: '0', bonus_count: '0', unit_price: '', discount_rate: '0', status: 'active', display_order: '0', kiwoom_pay_method: 'TOTAL', image_url: '', is_event: false, event_start_at: '', event_end_at: '' };
   const [form, setForm] = useState(blank);
   const [editingId, setEditingId] = useState(null);
   const [pendingImage, setPendingImage] = useState(null);
@@ -700,7 +700,7 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
       if (pendingImage) uploadedImageUrl = await uploadImage(pendingImage);
       const body = {
         name: form.name.trim(), voucher_count: count, bonus_count: bonus,
-        unit_price: Number(form.unit_price), discount_rate: discount, status: form.status, tax_type: form.tax_type,
+        unit_price: Number(form.unit_price), discount_rate: discount, status: form.status, tax_type: 'taxable',
         display_order: Number(form.display_order || 0), image_url: uploadedImageUrl || form.image_url || null,
         ...(!migrationRequired ? {
           kiwoom_pay_method: form.kiwoom_pay_method,
@@ -736,7 +736,6 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
       <label>장당 정가<input type="number" min="1" step="0.01" value={form.unit_price} onChange={(e) => setForm((p) => ({ ...p, unit_price: e.target.value }))} required /></label>
       <label>할인율(%)<input type="number" min="0" max="99.99" step="0.01" value={form.discount_rate} onChange={(e) => setForm((p) => ({ ...p, discount_rate: e.target.value }))} /></label>
       <label>상태<select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}><option value="active">판매중</option><option value="inactive">숨김</option></select></label>
-      <label>과세 유형<select value={form.tax_type} onChange={(e) => setForm((p) => ({ ...p, tax_type: e.target.value }))}><option value="unclassified">미분류(결제 차단)</option><option value="taxable">과세</option><option value="tax_free">면세</option></select></label>
       <label>결제 방식<select value={form.kiwoom_pay_method} onChange={(e) => setForm((p) => ({ ...p, kiwoom_pay_method: e.target.value }))} disabled={migrationRequired}><option value="TOTAL">통합결제창</option><option value="BANK">계좌이체 전용</option></select></label>
       <label>노출순서<input type="number" value={form.display_order} onChange={(e) => setForm((p) => ({ ...p, display_order: e.target.value }))} /></label>
       <label className="event-toggle"><input type="checkbox" checked={form.is_event} onChange={(e) => setForm((p) => ({ ...p, is_event: e.target.checked }))} disabled={migrationRequired}/> 🎉 이벤트 상품으로 등록</label>
@@ -749,7 +748,7 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
       {bonus > 0 && discount > 0 && <div className="alert warning">보너스와 할인율이 동시에 적용됩니다. 판매가와 총 장수를 다시 확인하세요.</div>}
       <div className="row-actions"><button className="primary" disabled={busy}>{editingId ? '수정 저장' : '상품 등록'}</button>{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(blank); resetPendingImage(); }}>취소</button>}</div>
     </form>
-    <div className="product-list">{items.map((item) => { const tax = taxTypeMeta(item.tax_type); return <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}장{Number(item.bonus_count) > 0 ? ` + ${item.bonus_count}장` : ''} · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span><span className={`tax-type-badge ${tax.tone}`}>{tax.label}</span><span className="badge">{item.kiwoom_pay_method === 'BANK' ? '계좌이체 전용' : '통합결제창'}</span><span className={`exposure-status ${item.exposure_status}`}>{item.exposure_label}</span>{item.is_event && <span className="event-period">{displayEventPeriod(item)}</span>}</div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button className="ghost" onClick={() => toggle(item)}>{item.status === 'active' ? '숨김' : '판매 재개'}</button></div></article>; })}</div>
+    <div className="product-list">{items.map((item) => <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}장{Number(item.bonus_count) > 0 ? ` + ${item.bonus_count}장` : ''} · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span><span className="badge">{item.kiwoom_pay_method === 'BANK' ? '계좌이체 전용' : '통합결제창'}</span><span className={`exposure-status ${item.exposure_status}`}>{item.exposure_label}</span>{item.is_event && <span className="event-period">{displayEventPeriod(item)}</span>}</div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button className="ghost" onClick={() => toggle(item)}>{item.status === 'active' ? '숨김' : '판매 재개'}</button></div></article>)}</div>
   </section>;
 }
 
@@ -1322,110 +1321,6 @@ function MerchantCompanyListScreen({ items, onDetail }) {
     })}</tbody></table></div>}</article>
   </AdminMockPage>;
 }
-function MerchantProductTaxPanel({ token }) {
-  const empty = { name: '', price: '', tax_type: 'unclassified' };
-  const [items, setItems] = useState(null);
-  const [drafts, setDrafts] = useState({});
-  const [form, setForm] = useState(empty);
-  const [busyId, setBusyId] = useState('');
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const requestGeneration = useRef(0);
-  const sessionGeneration = useRef(0);
-  const identityRef = useRef(token);
-  const mutationControllers = useRef(new Set());
-  identityRef.current = token;
-  const current = (capture) => generationIsCurrent(capture, sessionGeneration.current, identityRef.current);
-  function mutationCapture() {
-    const controller = new AbortController();
-    mutationControllers.current.add(controller);
-    return { controller, capture: captureGeneration(sessionGeneration.current, token, controller.signal) };
-  }
-
-  async function loadProducts(signal) {
-    const generation = ++requestGeneration.current;
-    const capture = captureGeneration(sessionGeneration.current, token, signal);
-    setError(''); setNotice(''); setItems(null); setDrafts({});
-    try {
-      const data = await apiFetch('/admin/merchant/products', token, { signal });
-      if (!current(capture) || generation !== requestGeneration.current) return;
-      const products = data?.items ?? [];
-      setItems(products);
-      setDrafts(Object.fromEntries(products.map((item) => [item.id, item.tax_type ?? 'unclassified'])));
-    } catch (loadError) {
-      if (!current(capture) || loadError.name === 'AbortError' || generation !== requestGeneration.current) return;
-      setError(loadError.message); setItems([]);
-    }
-  }
-
-  useEffect(() => {
-    const controller = new AbortController();
-    loadProducts(controller.signal);
-    return () => {
-      controller.abort(); requestGeneration.current += 1; sessionGeneration.current += 1;
-      mutationControllers.current.forEach((item) => item.abort()); mutationControllers.current.clear();
-    };
-  }, [token]);
-
-  async function createProduct(event) {
-    event.preventDefault();
-    const { controller, capture } = mutationCapture();
-    setBusyId('create'); setError(''); setNotice('');
-    try {
-      await apiFetch('/admin/merchant/products', token, {
-        method: 'POST',
-        body: JSON.stringify({ name: form.name.trim(), price: Number(form.price), tax_type: form.tax_type }),
-        signal: controller.signal,
-      });
-      if (!current(capture)) return;
-      setForm(empty);
-      setNotice('상품을 등록했어요. 과세 유형에 따라 결제 가능 여부가 즉시 반영됩니다.');
-      await loadProducts(controller.signal);
-    } catch (saveError) {
-      if (current(capture) && saveError.name !== 'AbortError') setError(saveError.message);
-    } finally {
-      mutationControllers.current.delete(controller); if (current(capture)) setBusyId('');
-    }
-  }
-
-  async function updateTaxType(item) {
-    const taxType = drafts[item.id] ?? 'unclassified';
-    const { controller, capture } = mutationCapture();
-    setBusyId(item.id); setError(''); setNotice('');
-    try {
-      const updated = await apiFetch(`/admin/merchant/products/${item.id}`, token, {
-        method: 'PATCH', body: JSON.stringify({ tax_type: taxType }), signal: controller.signal,
-      });
-      if (!current(capture)) return;
-      setItems((rows) => rows.map((row) => row.id === item.id ? { ...row, ...updated, tax_type: taxType } : row));
-      setNotice(`${item.name} 상품의 과세 유형을 저장했어요.`);
-    } catch (saveError) {
-      if (current(capture) && saveError.name !== 'AbortError') setError(saveError.message);
-    } finally {
-      mutationControllers.current.delete(controller); if (current(capture)) setBusyId('');
-    }
-  }
-
-  const blocked = (items ?? []).filter((item) => (item.tax_type ?? 'unclassified') === 'unclassified').length;
-  return <section className="panel merchant-product-tax-panel" aria-labelledby="merchant-product-tax-title">
-    <div className="panel-title"><div><h3 id="merchant-product-tax-title">일반 상품 과세 유형</h3><p className="panel-note">직접 결제 상품은 과세 또는 면세로 분류해야 결제할 수 있습니다.</p></div><span className="badge">{items?.length ?? 0}개</span></div>
-    {error && <div className="alert error" role="alert">{error} <button type="button" className="ghost" onClick={() => loadProducts()} disabled={!!busyId}>다시 시도</button></div>}
-    {notice && <div className="alert success" role="status">{notice}</div>}
-    {blocked > 0 && <div className="alert warning" role="alert">미분류 상품 {blocked}개는 결제가 차단됩니다. 과세 유형을 저장해 주세요.</div>}
-    <form className="merchant-product-create-form" onSubmit={createProduct}>
-      <label>상품명<input value={form.name} maxLength="120" onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} disabled={!!busyId} required/></label>
-      <label>가격<input type="number" min="1" step="1" value={form.price} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))} disabled={!!busyId} required/></label>
-      <label>과세 유형<select value={form.tax_type} onChange={(event) => setForm((current) => ({ ...current, tax_type: event.target.value }))} disabled={!!busyId}><option value="unclassified">미분류(결제 차단)</option><option value="taxable">과세</option><option value="tax_free">면세</option></select></label>
-      <button type="submit" className="primary" disabled={!!busyId}>{busyId === 'create' ? '등록 중...' : '상품 등록'}</button>
-    </form>
-    {items === null ? <p className="empty-state" role="status" aria-live="polite">상품을 불러오는 중...</p> : !error && items.length === 0 ? <p className="empty-state" role="status">등록된 일반 상품이 없습니다. 위 입력란에서 첫 상품을 등록해 주세요.</p> : <div className="merchant-product-tax-list">{items.map((item) => { const tax = taxTypeMeta(item.tax_type); return <article className="merchant-product-tax-row" key={item.id}>
-      <div><strong>{item.name}</strong><span>{krw(item.price)}</span><span className={`tax-type-badge ${tax.tone}`}>{tax.label}</span></div>
-      <label>과세 유형<select aria-label={`${item.name} 과세 유형`} value={drafts[item.id] ?? 'unclassified'} onChange={(event) => setDrafts((current) => ({ ...current, [item.id]: event.target.value }))} disabled={!!busyId}><option value="unclassified">미분류(결제 차단)</option><option value="taxable">과세</option><option value="tax_free">면세</option></select></label>
-      <button type="button" className="ghost" onClick={() => updateTaxType(item)} disabled={!!busyId || drafts[item.id] === (item.tax_type ?? 'unclassified')}>{busyId === item.id ? '저장 중...' : '저장'}</button>
-    </article>; })}</div>}
-  </section>;
-}
-
 function LegacyTaxReviewPanel({ token }) {
   const pageSize = 50;
   const [items, setItems] = useState(null);
@@ -1469,78 +1364,6 @@ function LegacyTaxReviewPanel({ token }) {
       <div><strong>{item.product_name || item.provider_order_id}</strong><span>{item.provider_order_id} · {krw(item.amount)} · {item.payment_method}</span><span>현재 상품·계약 분류: {taxTypeMeta(item.suggested_tax_type).label}</span></div>
     </article>)}</div>}
     <nav className="pagination-controls" aria-label="기존 결제 검토 페이지"><button type="button" className="ghost" disabled={offset === 0 || items === null} onClick={() => setOffset((value) => Math.max(0, value - pageSize))}>이전</button><span>{pageNumber} / {pageCount} 페이지</span><button type="button" className="ghost" disabled={!page.has_more || items === null} onClick={() => setOffset((value) => value + pageSize)}>다음</button></nav>
-  </section>;
-}
-
-function LegacyVoucherTaxPanel({ token }) {
-  const [items, setItems] = useState(null);
-  const [drafts, setDrafts] = useState({});
-  const [busyId, setBusyId] = useState('');
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const readGeneration = useRef(0);
-  const sessionGeneration = useRef(0);
-  const identityRef = useRef(token);
-  const mutationControllers = useRef(new Set());
-  identityRef.current = token;
-  const current = (capture) => generationIsCurrent(capture, sessionGeneration.current, identityRef.current);
-
-  async function loadVouchers(signal) {
-    const generation = ++readGeneration.current;
-    const capture = captureGeneration(sessionGeneration.current, token, signal);
-    setItems(null); setDrafts({}); setError(''); setNotice('');
-    try {
-      const data = await apiFetch('/admin/merchant/legacy-vouchers?limit=50&offset=0', token, { signal });
-      if (!current(capture) || generation !== readGeneration.current) return;
-      setItems(data?.items ?? []);
-    } catch (loadError) {
-      if (!current(capture) || loadError.name === 'AbortError' || generation !== readGeneration.current) return;
-      setError(loadError.message); setItems([]);
-    }
-  }
-
-  useEffect(() => {
-    const controller = new AbortController();
-    loadVouchers(controller.signal);
-    return () => {
-      controller.abort(); readGeneration.current += 1; sessionGeneration.current += 1;
-      mutationControllers.current.forEach((item) => item.abort()); mutationControllers.current.clear();
-    };
-  }, [token]);
-
-  async function classify(item) {
-    const draft = drafts[item.id] ?? {};
-    if (!['taxable', 'tax_free'].includes(draft.tax_type) || (draft.reason ?? '').trim().length < 3) {
-      setNotice(''); setError('과세 또는 면세를 직접 선택하고 3자 이상의 분류 사유를 입력해 주세요.'); return;
-    }
-    const controller = new AbortController();
-    mutationControllers.current.add(controller);
-    const capture = captureGeneration(sessionGeneration.current, token, controller.signal);
-    setBusyId(item.id); setError(''); setNotice('');
-    try {
-      const result = await apiFetch(`/admin/merchant/legacy-vouchers/${item.id}/classify`, token, {
-        method: 'POST', body: JSON.stringify({ tax_type: draft.tax_type, reason: draft.reason.trim() }), signal: controller.signal,
-      });
-      if (!current(capture)) return;
-      setItems((rows) => (rows ?? []).filter((row) => row.id !== item.id));
-      setNotice(result?.duplicate ? '이미 같은 과세 유형으로 분류된 식권입니다.' : '기존 식권을 감사 기록과 함께 분류했습니다.');
-    } catch (classifyError) {
-      if (current(capture) && classifyError.name !== 'AbortError') setError(classifyError.message);
-    } finally {
-      mutationControllers.current.delete(controller); if (current(capture)) setBusyId('');
-    }
-  }
-
-  return <section className="panel merchant-product-tax-panel" aria-labelledby="legacy-voucher-tax-title">
-    <div className="panel-title"><div><h3 id="legacy-voucher-tax-title">기존 활성 식권 과세 검토</h3><p className="panel-note">사용 전인 미분류 식권만 표시합니다. 고객 개인정보는 표시하지 않습니다.</p></div><span className="badge">{items?.length ?? 0}건</span></div>
-    {error && <div className="alert error" role="alert">{error} <button type="button" className="ghost" onClick={() => loadVouchers()} disabled={!!busyId}>다시 시도</button></div>}
-    {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
-    {items === null ? <p className="empty-state" role="status">기존 식권을 불러오는 중...</p> : items.length === 0 ? <p className="empty-state" role="status">검토할 기존 활성 식권이 없습니다.</p> : <div className="merchant-product-tax-list">{items.map((item) => <article className="merchant-product-tax-row" key={item.id}>
-      <div><strong>식권 {String(item.id).slice(0, 8)}</strong><span>{item.purchase_price_won == null ? '정확한 구매가 없음' : krw(item.purchase_price_won)} · {String(item.purchased_at ?? '').slice(0, 10)}</span></div>
-      <label>확정 과세 유형<select aria-label={`식권 ${item.id} 과세 유형`} value={drafts[item.id]?.tax_type ?? ''} onChange={(event) => setDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], tax_type: event.target.value } }))} disabled={!!busyId}><option value="">직접 선택</option><option value="taxable">과세</option><option value="tax_free">면세</option></select></label>
-      <label>분류 사유<input aria-label={`식권 ${item.id} 분류 사유`} minLength="3" maxLength="1000" value={drafts[item.id]?.reason ?? ''} onChange={(event) => setDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], reason: event.target.value } }))} disabled={!!busyId}/></label>
-      <button type="button" className="primary" onClick={() => classify(item)} disabled={!!busyId}>{busyId === item.id ? '분류 중...' : '분류 확정'}</button>
-    </article>)}</div>}
   </section>;
 }
 
@@ -1597,8 +1420,6 @@ function MerchantSupplierInfoScreen({ merchant, busy, onSave, onSettings, token 
       </div>
     </form>
     <LegacyTaxReviewPanel key={`legacy-payments-${token}`} token={token}/>
-    <LegacyVoucherTaxPanel key={`legacy-vouchers-${token}`} token={token}/>
-    <MerchantProductTaxPanel key={`merchant-products-${token}`} token={token}/>
   </AdminMockPage>;
 }
 
@@ -2456,7 +2277,7 @@ function Dashboard({ session, onLogout }) {
       </div>
     </nav>}
 
-    <div className={isMerchantAdmin ? `merchant-content${merchantSection === 'main' || merchantSection === 'payment-history' ? ' merchant-regular-weight' : ''}` : isCompanyAdmin ? 'company-content merchant-regular-weight' : undefined}>
+    <div className={isMerchantAdmin ? `merchant-content${merchantSection === 'main' || merchantSection === 'payment-history' || merchantContentSection === 'vouchers' ? ' merchant-regular-weight' : ''}` : isCompanyAdmin ? 'company-content merchant-regular-weight' : undefined}>
     {isCompanyAdmin && companySection === 'company-usage' && <nav className="merchant-section-tabs" aria-label="이용 내역 페이지">
       {companyUsageTabs.map(([id, label]) => <button key={id} type="button" className={companyUsageTab === id ? 'active' : ''} onClick={() => setCompanyUsageTab(id)} aria-current={companyUsageTab === id ? 'page' : undefined}>{label}</button>)}
     </nav>}

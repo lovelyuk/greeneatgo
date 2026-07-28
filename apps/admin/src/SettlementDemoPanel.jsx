@@ -280,10 +280,16 @@ export default function SettlementDemoPanel({ token, apiFetch, openDocumentInNew
           {issued && !settlement.nts_confirm_num && <span className="panel-note">테스트 발행 완료 / 국세청 승인번호 없음</span>}
         </div>
       </div>}
-
-      <button type="button" className="reject settlement-demo-reset" disabled={mutationDisabled} onClick={reset}>
-        {pending === 'reset' ? '초기화 중' : '시연 초기화'}
-      </button>
     </>}
+
+    <button
+      type="button"
+      className="reject settlement-demo-reset"
+      disabled={mutationDisabled || !state?.seeded}
+      onClick={reset}
+      title={state?.seeded ? '현재 시연 데이터를 초기화합니다.' : '시연 거래를 생성하면 초기화할 수 있습니다.'}
+    >
+      {pending === 'reset' ? '초기화 중' : '시연 초기화'}
+    </button>
   </section>;
 }

@@ -73,6 +73,7 @@ class MerchantProfileUpdateRequest(BaseModel):
     address: str | None = Field(default=None, max_length=300)
     business_type: str | None = Field(default=None, max_length=120)
     business_item: str | None = Field(default=None, max_length=120)
+    owner_phone: str | None = Field(default=None, max_length=40)
     tax_invoice_email: str | None = Field(default=None, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
     @field_validator("name", mode="before")
@@ -84,7 +85,7 @@ class MerchantProfileUpdateRequest(BaseModel):
                 raise ValueError("식당 이름을 입력해 주세요")
         return value
 
-    @field_validator("biz_reg_no", "representative_name", "address", "business_type", "business_item", "tax_invoice_email", mode="before")
+    @field_validator("biz_reg_no", "representative_name", "address", "business_type", "business_item", "owner_phone", "tax_invoice_email", mode="before")
     @classmethod
     def trim_merchant_profile_field(cls, value: object) -> object:
         if isinstance(value, str):

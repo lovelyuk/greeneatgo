@@ -22,10 +22,12 @@ class MerchantProfileTests(unittest.TestCase):
         payload = MerchantProfileUpdateRequest(
             representative_name="  이용욱  ", business_type=" 음식점업 ",
             business_item=" 한식 뷔페 ", tax_invoice_email=" tax@greeneat.example ",
+            owner_phone=" 010-1234-5678 ",
         )
         self.assertEqual(payload.representative_name, "이용욱")
         self.assertEqual(payload.business_type, "음식점업")
         self.assertEqual(payload.business_item, "한식 뷔페")
+        self.assertEqual(payload.owner_phone, "010-1234-5678")
         self.assertEqual(payload.tax_invoice_email, "tax@greeneat.example")
         with self.assertRaises(ValidationError):
             MerchantProfileUpdateRequest(tax_invoice_email="not-email")
@@ -65,6 +67,7 @@ class MerchantProfileTests(unittest.TestCase):
             "name": "그린잇 식당", "biz_reg_no": "123-45-67890",
             "representative_name": "이용욱", "address": "서울특별시 중구",
             "business_type": "음식점업", "business_item": "한식 뷔페",
+            "owner_phone": "010-1234-5678",
             "tax_invoice_email": "tax@greeneat.example",
         }
         repo.client.rest_patch.return_value = [{"id": "merchant-1", **expected}]

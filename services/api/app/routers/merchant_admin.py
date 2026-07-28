@@ -448,7 +448,7 @@ def merchant_qr(token: str = Depends(bearer_token)):
         try:
             rows = repo.client.rest_get(
                 "merchants",
-                {"select": "id,name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,category,avg_price,qr_token,status", "id": f"eq.{merchant_id}", "limit": "1"},
+                {"select": "id,name,biz_reg_no,representative_name,address,business_type,business_item,owner_phone,tax_invoice_email,category,avg_price,qr_token,status", "id": f"eq.{merchant_id}", "limit": "1"},
             )
             migration_required = False
         except SupabaseHttpError as exc:
@@ -456,7 +456,7 @@ def merchant_qr(token: str = Depends(bearer_token)):
                 raise
             rows = repo.client.rest_get(
                 "merchants",
-                {"select": "id,name,biz_reg_no,address,category,avg_price,qr_token,status", "id": f"eq.{merchant_id}", "limit": "1"},
+                {"select": "id,name,biz_reg_no,address,owner_phone,category,avg_price,qr_token,status", "id": f"eq.{merchant_id}", "limit": "1"},
             )
             rows = [{**row, **{field: None for field in supplier_fields}} for row in rows]
             migration_required = True

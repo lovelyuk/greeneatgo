@@ -1352,7 +1352,7 @@ function LegacyTaxReviewPanel({ token }) {
 }
 
 function MerchantSupplierInfoScreen({ merchant, busy, onSave, onSettings, token }) {
-  const emptyForm = { biz_reg_no: '', name: '', representative_name: '', address: '', business_type: '', business_item: '', tax_invoice_email: '' };
+  const emptyForm = { biz_reg_no: '', name: '', representative_name: '', address: '', business_type: '', business_item: '', owner_phone: '', tax_invoice_email: '' };
   const valuesFrom = (item) => Object.fromEntries(Object.keys(emptyForm).map((key) => [key, item?.[key] ?? '']));
   const [values, setValues] = useState(() => valuesFrom(merchant));
   const [draft, setDraft] = useState(() => valuesFrom(merchant));
@@ -1400,6 +1400,7 @@ function MerchantSupplierInfoScreen({ merchant, busy, onSave, onSettings, token 
         <label>주소<input value={draft.address} onChange={field('address')} disabled={!editing} /></label>
         <label>업태<input value={draft.business_type} onChange={field('business_type')} disabled={!editing} /></label>
         <label>종목<input value={draft.business_item} onChange={field('business_item')} disabled={!editing} /></label>
+        <label>담당 전화번호<input type="tel" autoComplete="tel" value={draft.owner_phone} onChange={field('owner_phone')} disabled={!editing} required /></label>
         <label className="wide">세금계산서 담당 이메일<input type="email" value={draft.tax_invoice_email} onChange={field('tax_invoice_email')} disabled={!editing} /></label>
       </div>
     </form>

@@ -76,6 +76,62 @@ class SettlementRepository:
             "corp_matches": bool(supplier_corp and configured_corp and supplier_corp == configured_corp),
         }
 
+    def _demo_rpc(self, name: str, actor: UserProfile) -> dict[str, Any]:
+        return self.client.rpc(name, {
+            "p_actor_id": actor.id,
+            "p_merchant_id": actor.merchant_id,
+        })
+
+    def demo_state(self, actor: UserProfile) -> dict[str, Any]:
+        return self._demo_rpc("settlement_demo_state", actor)
+
+    def demo_seed(self, actor: UserProfile, company_id: str | UUID, period_ym: str) -> dict[str, Any]:
+        return self.client.rpc("settlement_demo_seed", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_company_id": str(company_id), "p_period_ym": period_ym,
+        })
+
+    def demo_create(self, actor: UserProfile) -> dict[str, Any]:
+        return self._demo_rpc("settlement_demo_create", actor)
+
+    def demo_confirm(self, actor: UserProfile) -> dict[str, Any]:
+        return self._demo_rpc("settlement_demo_confirm", actor)
+
+    def demo_assert_issue(self, actor: UserProfile) -> dict[str, Any]:
+        return self._demo_rpc("settlement_demo_assert_issue", actor)
+
+    def demo_mark_paid(self, actor: UserProfile) -> dict[str, Any]:
+        return self._demo_rpc("settlement_demo_mark_paid", actor)
+
+    def demo_reset(self, actor: UserProfile, idempotency_key: str | None = None) -> dict[str, Any]:
+        return self.client.rpc("settlement_demo_reset", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_idempotency_key": idempotency_key,
+        })
+
+    def is_demo_settlement(self, merchant_id: str, settlement_id: str | UUID) -> bool:
+        """Check explicit demo membership with both document and tenant scope."""
+        rows = self.client.rest_get("settlement_demo_runs", {
+            "select": "id", "merchant_id": f"eq.{merchant_id}",
+            "settlement_id": f"eq.{settlement_id}", "limit": "1",
+        })
+        return bool(rows)
+
+    def is_company_demo_settlement(self, company_id: str, settlement_id: str | UUID) -> bool:
+        """Check explicit membership through the authenticated company tenant."""
+        rows = self.client.rest_get("settlement_demo_runs", {
+            "select": "id", "company_id": f"eq.{company_id}",
+            "settlement_id": f"eq.{settlement_id}", "limit": "1",
+        })
+        return bool(rows)
+
+    def has_current_demo(self, merchant_id: str) -> bool:
+        rows = self.client.rest_get("settlement_demo_runs", {
+            "select": "id", "merchant_id": f"eq.{merchant_id}",
+            "is_current": "eq.true", "limit": "1",
+        })
+        return bool(rows)
+
     def _detail(self, settlement_id: str | UUID, tenant_column: str, tenant_id: str) -> dict[str, Any] | None:
         rows = self.client.rest_get("settlements", {
             "select": LIST_FIELDS, "id": f"eq.{settlement_id}", tenant_column: f"eq.{tenant_id}", "limit": "1",

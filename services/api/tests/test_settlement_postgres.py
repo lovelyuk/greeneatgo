@@ -42,6 +42,8 @@ def settlement_db():
         conn.execute((MIGRATIONS / "0037_atomic_settlement_workflows.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0039_popbill_tax_invoice_issuance.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0039_popbill_tax_invoice_issuance.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0042_settlement_demo.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0042_settlement_demo.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -620,3 +622,433 @@ def test_company_monthly_usage_cancellation_and_confirmed_overpayment(pg):
     assert value["summary"]["unique_users"] == 0
     assert value["settlements"] == {"count": 1, "total_amount": 1100,
         "confirmed_payment_amount": 1500, "outstanding_amount": 0}
+
+
+def legacy_test_settlement_demo_full_db_lifecycle_and_issued_reset_preservation(pg):
+    import psycopg
+
+    merchant = pg.execute("""insert into merchants(name,biz_reg_no,representative_name,address,business_type,
+      business_item,tax_invoice_email,owner_phone,qr_token,view_token)
+      values('Demo supplier','9998877777','Owner','Busan','Food','Meals','supplier@example.com',
+      '01099998888',%s,%s) returning id""", (str(uuid.uuid4()), str(uuid.uuid4()))).fetchone()[0]
+    actor = pg.execute("""insert into app_users(id,merchant_id,display_name,role,status)
+      values(gen_random_uuid(),%s,'Demo merchant','merchant_admin','active') returning id""", (merchant,)).fetchone()[0]
+    outsider_merchant = pg.execute("insert into merchants(name,qr_token,view_token) values('Other',%s,%s) returning id",
+                                  (str(uuid.uuid4()), str(uuid.uuid4()))).fetchone()[0]
+    outsider = pg.execute("""insert into app_users(id,merchant_id,display_name,role,status)
+      values(gen_random_uuid(),%s,'Other','merchant_admin','active') returning id""", (outsider_merchant,)).fetchone()[0]
+
+    seeded = pg.execute("select settlement_demo_seed(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert pg.execute("select has_function_privilege('authenticated','settlement_demo_seed(uuid,uuid)','execute')").fetchone()[0] is False
+    assert pg.execute("select has_function_privilege('service_role','settlement_demo_seed(uuid,uuid)','execute')").fetchone()[0] is True
+    assert seeded["stage"] == "seeded" and seeded["transaction_count"] == 4
+    assert seeded["synthetic_transaction_user"] == "merchant-scoped demo company_admin app_users.id"
+    assert pg.execute("select settlement_demo_seed(%s,%s)", (actor, merchant)).fetchone()[0]["run_id"] == seeded["run_id"]
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_FORBIDDEN"):
+        with pg.transaction():
+            pg.execute("select settlement_demo_state(%s,%s)", (outsider, merchant))
+
+    created = pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert created["stage"] == "draft"
+    assert (created["settlement"]["tx_count"], created["settlement"]["supply_amount"],
+            created["settlement"]["vat_amount"], created["settlement"]["total_amount"]) == (4, 40000, 4000, 44000)
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_STATE_CONFLICT"):
+        with pg.transaction():
+            pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant))
+
+    confirmed = pg.execute("select settlement_demo_confirm(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert confirmed["stage"] == "confirmed"
+    sid = uuid.UUID(confirmed["settlement_id"])
+    claim = pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, sid)).fetchone()[0]
+    pg.execute("select merchant_finalize_tax_invoice_issue(%s,%s,%s,%s,'success',null,null)",
+               (actor, merchant, sid, claim["attempt_token"]))
+    issued = pg.execute("select settlement_demo_state(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert issued["stage"] == "issued"
+    assert issued["settlement"]["tax_invoice_status"] == "issued"
+    # Successful registration does not fabricate a provider timestamp; the stable
+    # evidence shape keeps the field explicit until status refresh supplies one.
+    assert issued["settlement"]["issued_at"] is None
+    assert issued["settlement"]["nts_status"] is None
+    assert "nts_confirm_num" not in issued["settlement"]
+    assert issued["settlement"]["can_view_tax_invoice"] is True
+    assert issued["settlement"]["can_download_tax_invoice_pdf"] is True
+    assert not ({"invoicer_mgt_key", "popbill_status_code", "popbill_status_message", "provider_response"}
+                & issued["settlement"].keys())
+    pg.execute("""select merchant_apply_tax_invoice_status(%s,%s,%s,304,'SUC001','NTS-CONFIRM-1',
+               '2026-07-28T01:02:00Z','2026-07-28T01:03:00Z','2026-07-28T01:04:00Z')""", (actor, merchant, sid))
+    accepted = pg.execute("select settlement_demo_state(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert accepted["settlement"]["issued_at"] == "2026-07-28T01:02:00+00:00"
+    assert accepted["settlement"]["tax_invoice_status"] == "nts_accepted"
+    assert accepted["settlement"]["nts_status"] == "accepted"
+    assert accepted["settlement"]["nts_confirm_num"] == "NTS-CONFIRM-1"
+    paid = pg.execute("select settlement_demo_mark_paid(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert paid["stage"] == "paid" and paid["settlement"]["status"] == "paid"
+
+    old_invoice = pg.execute("select id,invoicer_mgt_key from tax_invoices where settlement_id=%s", (sid,)).fetchone()
+    fresh = pg.execute("select settlement_demo_reset(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert fresh["stage"] == "seeded" and fresh["period_ym"] != seeded["period_ym"]
+    assert pg.execute("select id,invoicer_mgt_key from tax_invoices where settlement_id=%s", (sid,)).fetchone() == old_invoice
+    assert pg.execute("select count(*) from settlements where id=%s", (sid,)).fetchone()[0] == 1
+
+
+def legacy_test_settlement_demo_draft_reset_removes_only_demo_mutable_rows(pg):
+    merchant = pg.execute("insert into merchants(name,qr_token,view_token) values('Draft demo',%s,%s) returning id",
+                          (str(uuid.uuid4()), str(uuid.uuid4()))).fetchone()[0]
+    actor = pg.execute("""insert into app_users(id,merchant_id,display_name,role,status)
+      values(gen_random_uuid(),%s,'Draft actor','merchant_admin','active') returning id""", (merchant,)).fetchone()[0]
+    first = pg.execute("select settlement_demo_seed(%s,%s)", (actor, merchant)).fetchone()[0]
+    draft = pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant)).fetchone()[0]
+    old_sid = draft["settlement_id"]
+    fresh = pg.execute("select settlement_demo_reset(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert fresh["stage"] == "seeded"
+    assert pg.execute("select count(*) from settlements where id=%s", (old_sid,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from settlement_demo_runs where id=%s", (first["run_id"],)).fetchone()[0] == 0
+
+
+def legacy_test_settlement_demo_seed_skips_preexisting_qualifying_transaction_month(pg):
+    merchant = pg.execute("insert into merchants(name,qr_token,view_token) values('Seed pollution demo',%s,%s) returning id",
+                          (str(uuid.uuid4()), str(uuid.uuid4()))).fetchone()[0]
+    demo_company = pg.execute(
+        "select md5('settlement-demo-company:'||%s::uuid::text)::uuid", (merchant,)
+    ).fetchone()[0]
+    actor = pg.execute("""insert into app_users(id,merchant_id,display_name,role,status)
+      values(gen_random_uuid(),%s,'Seed pollution actor','merchant_admin','active') returning id""", (merchant,)).fetchone()[0]
+    pg.execute("""insert into companies(id,name,biz_reg_no,status)
+      values(%s,'Preexisting demo company','1234567890','active') on conflict(id) do nothing""", (demo_company,))
+    polluted_month = pg.execute("select (date_trunc('month',current_date)-interval '1 month')::date").fetchone()[0]
+    polluted_tx = pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-1100,'spend','ledger','taxable',1000,100,1100,
+      (%s::date+interval '10 days')::timestamp at time zone 'Asia/Seoul') returning id""",
+      (actor, demo_company, merchant, polluted_month)).fetchone()[0]
+
+    seeded = pg.execute("select settlement_demo_seed(%s,%s)", (actor, merchant)).fetchone()[0]
+
+    assert seeded["period_ym"] != polluted_month.strftime("%Y-%m")
+    assert pg.execute("""select count(*) from settlement_demo_transactions dt
+      join meal_transactions t on t.id=dt.transaction_id
+      where t.merchant_id=%s and t.company_id=%s
+        and t.created_at >= (%s::date::timestamp at time zone 'Asia/Seoul')
+        and t.created_at < ((%s::date+interval '1 month')::timestamp at time zone 'Asia/Seoul')""",
+      (merchant, demo_company, polluted_month, polluted_month)).fetchone()[0] == 0
+    assert pg.execute("""select count(*) from meal_transactions
+      where merchant_id=%s and company_id=%s
+        and created_at >= (%s::date::timestamp at time zone 'Asia/Seoul')
+        and created_at < ((%s::date+interval '1 month')::timestamp at time zone 'Asia/Seoul')""",
+      (merchant, demo_company, polluted_month, polluted_month)).fetchone()[0] == 1
+    assert pg.execute("select count(*) from meal_transactions where id=%s", (polluted_tx,)).fetchone()[0] == 1
+
+
+def legacy_test_settlement_demo_rejects_polluted_period_without_creating_settlement(pg):
+    import psycopg
+
+    merchant = pg.execute("insert into merchants(name,qr_token,view_token) values('Polluted demo',%s,%s) returning id",
+                          (str(uuid.uuid4()), str(uuid.uuid4()))).fetchone()[0]
+    actor = pg.execute("""insert into app_users(id,merchant_id,display_name,role,status)
+      values(gen_random_uuid(),%s,'Polluted actor','merchant_admin','active') returning id""", (merchant,)).fetchone()[0]
+    seeded = pg.execute("select settlement_demo_seed(%s,%s)", (actor, merchant)).fetchone()[0]
+    run = pg.execute("select company_id,period_from from settlement_demo_runs where id=%s", (seeded["run_id"],)).fetchone()
+    pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-1100,'spend','ledger','taxable',1000,100,1100,
+      %s::timestamp at time zone 'Asia/Seoul')""", (actor, run[0], merchant, run[1] + timedelta(days=10)))
+
+    with pytest.raises(psycopg.errors.RaiseException, match="DEMO_PERIOD_TRANSACTION_CONFLICT"):
+        with pg.transaction():
+            pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant))
+
+    assert pg.execute("select count(*) from settlements where merchant_id=%s and company_id=%s",
+                      (merchant, run[0])).fetchone()[0] == 0
+
+
+def legacy_test_settlement_demo_two_merchants_have_isolated_synthetic_identities(pg):
+    rows = []
+    for suffix in ("A", "B"):
+        merchant = pg.execute(
+            "insert into merchants(name,qr_token,view_token) values(%s,%s,%s) returning id",
+            (f"Isolation {suffix}", str(uuid.uuid4()), str(uuid.uuid4())),
+        ).fetchone()[0]
+        actor = pg.execute("""insert into app_users(id,merchant_id,display_name,role,status)
+          values(gen_random_uuid(),%s,%s,'merchant_admin','active') returning id""",
+          (merchant, f"Actor {suffix}")).fetchone()[0]
+        state = pg.execute("select settlement_demo_seed(%s,%s)", (actor, merchant)).fetchone()[0]
+        row = pg.execute("""select r.merchant_id,r.company_id,r.company_actor_id,r.transaction_user_id,
+          c.name,c.biz_reg_no,u.company_id,
+          (select count(*) from settlement_demo_transactions dt join meal_transactions t
+             on t.id=dt.transaction_id where dt.run_id=r.id and t.user_id=r.transaction_user_id
+             and t.company_id=r.company_id and t.merchant_id=r.merchant_id)
+          from settlement_demo_runs r join companies c on c.id=r.company_id
+          join app_users u on u.id=r.company_actor_id where r.id=%s""", (state["run_id"],)).fetchone()
+        rows.append(row)
+
+    assert rows[0][1:4] != rows[1][1:4]
+    assert rows[0][5] != rows[1][5]
+    for merchant_id, company_id, company_actor_id, transaction_user_id, name, biz_no, user_company, tx_count in rows:
+        assert company_actor_id == transaction_user_id
+        assert user_company == company_id
+        assert "DEMO" in name and "데모" in name
+        assert len(biz_no) == 10 and biz_no.isdigit()
+        digits = [int(value) for value in biz_no]
+        weighted = sum(value * weight for value, weight in zip(digits[:9], [1, 3, 7, 1, 3, 7, 1, 3, 5]))
+        weighted += (digits[8] * 5) // 10
+        assert (weighted + digits[9]) % 10 == 0
+        assert tx_count == 4
+
+
+def legacy_test_settlement_demo_deferred_integrity_guards_reject_cross_ownership(pg):
+    import psycopg
+
+    merchant = pg.execute("insert into merchants(name,qr_token,view_token) values('Guard demo',%s,%s) returning id",
+                          (str(uuid.uuid4()), str(uuid.uuid4()))).fetchone()[0]
+    actor = pg.execute("""insert into app_users(id,merchant_id,display_name,role,status)
+      values(gen_random_uuid(),%s,'Guard actor','merchant_admin','active') returning id""", (merchant,)).fetchone()[0]
+    state = pg.execute("select settlement_demo_seed(%s,%s)", (actor, merchant)).fetchone()[0]
+    run_id = state["run_id"]
+    tx_id = pg.execute("select transaction_id from settlement_demo_transactions where run_id=%s limit 1", (run_id,)).fetchone()[0]
+
+    for statement, params in (
+        ("update settlement_demo_runs set transaction_user_id=%s where id=%s", (actor, run_id)),
+        ("update meal_transactions set flags=flags-'run_id' where id=%s", (tx_id,)),
+    ):
+        with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_MEMBERSHIP_INVALID"):
+            with pg.transaction():
+                pg.execute(statement, params)
+                pg.execute("set constraints all immediate")
+
+    other_company = pg.execute("insert into companies(name) values('Not demo owner') returning id").fetchone()[0]
+    wrong_settlement = pg.execute("""insert into settlements(company_id,merchant_id,period_ym,period_from,period_to,
+      tx_count,supply_amount,vat_amount,total_amount,status) values(%s,%s,%s,current_date,current_date,
+      0,0,0,0,'draft') returning id""", (other_company, merchant, str(uuid.uuid4()))).fetchone()[0]
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_MEMBERSHIP_INVALID"):
+        with pg.transaction():
+            pg.execute("update settlement_demo_runs set settlement_id=%s where id=%s", (wrong_settlement, run_id))
+            pg.execute("set constraints all immediate")
+
+
+def legacy_test_settlement_demo_reset_validates_membership_and_is_retry_safe(pg):
+    import psycopg
+
+    merchant = pg.execute("insert into merchants(name,qr_token,view_token) values('Retry demo',%s,%s) returning id",
+                          (str(uuid.uuid4()), str(uuid.uuid4()))).fetchone()[0]
+    actor = pg.execute("""insert into app_users(id,merchant_id,display_name,role,status)
+      values(gen_random_uuid(),%s,'Retry actor','merchant_admin','active') returning id""", (merchant,)).fetchone()[0]
+    seeded = pg.execute("select settlement_demo_seed(%s,%s)", (actor, merchant)).fetchone()[0]
+    tx_id = pg.execute("select transaction_id from settlement_demo_transactions where run_id=%s limit 1",
+                       (seeded["run_id"],)).fetchone()[0]
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_MEMBERSHIP_INVALID"):
+        with pg.transaction():
+            pg.execute("update meal_transactions set flags=flags-'run_id' where id=%s", (tx_id,))
+            pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "invalid-membership"))
+    assert pg.execute("select count(*) from meal_transactions where id=%s", (tx_id,)).fetchone()[0] == 1
+
+    first = pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "retry-key-1")).fetchone()[0]
+    duplicate = pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "retry-key-1")).fetchone()[0]
+    assert duplicate["run_id"] == first["run_id"]
+    assert pg.execute("select count(*) from settlement_demo_reset_requests where merchant_id=%s",
+                      (merchant,)).fetchone()[0] == 1
+
+
+def legacy_test_settlement_demo_create_rolls_back_on_tampered_creator_result(pg):
+    import psycopg
+
+    merchant = pg.execute("insert into merchants(name,qr_token,view_token) values('TOCTOU demo',%s,%s) returning id",
+                          (str(uuid.uuid4()), str(uuid.uuid4()))).fetchone()[0]
+    actor = pg.execute("""insert into app_users(id,merchant_id,display_name,role,status)
+      values(gen_random_uuid(),%s,'TOCTOU actor','merchant_admin','active') returning id""", (merchant,)).fetchone()[0]
+    seeded = pg.execute("select settlement_demo_seed(%s,%s)", (actor, merchant)).fetchone()[0]
+    company_id = seeded["company_id"]
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_CREATE_RESULT_MISMATCH"):
+        with pg.transaction():
+            pg.execute("alter function create_merchant_settlement(uuid,uuid,date,date) rename to demo_test_real_create")
+            pg.execute("""create function create_merchant_settlement(uuid,uuid,date,date) returns jsonb
+              language plpgsql security definer set search_path=pg_catalog,public as $$
+              declare result jsonb;
+              begin
+                result:=public.demo_test_real_create($1,$2,$3,$4);
+                return jsonb_set(result,'{tx_count}',to_jsonb((result->>'tx_count')::int+1));
+              end $$""")
+            pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant))
+    assert pg.execute("select count(*) from settlements where merchant_id=%s and company_id=%s",
+                      (merchant, company_id)).fetchone()[0] == 0
+
+
+def demo_actual_parties(pg, suffix=""):
+    company = pg.execute("""insert into companies(name,biz_reg_no,representative_name,address,business_type,business_item,
+      tax_invoice_email,contact_name,contact_phone,status) values(%s,'1234567890','Recipient','Seoul','Services','Meals',
+      'recipient@example.com','Billing','01012345678','active') returning id""", (f"Actual company {suffix}",)).fetchone()[0]
+    merchant = pg.execute("""insert into merchants(name,biz_reg_no,representative_name,address,business_type,business_item,
+      tax_invoice_email,owner_phone,qr_token,view_token) values(%s,'9998877777','Supplier','Busan','Food','Meals',
+      'supplier@example.com','01099998888',%s,%s) returning id""",
+      (f"Actual merchant {suffix}", str(uuid.uuid4()), str(uuid.uuid4()))).fetchone()[0]
+    actor = pg.execute("insert into app_users(id,merchant_id,display_name,role,status) values(gen_random_uuid(),%s,'merchant','merchant_admin','active') returning id", (merchant,)).fetchone()[0]
+    admin = pg.execute("insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,'admin','company_admin','active') returning id", (company,)).fetchone()[0]
+    employees = [pg.execute("insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,%s,%s,'active') returning id",
+      (company, f"person-{i}", "employee" if i == 0 else "customer")).fetchone()[0] for i in range(2)]
+    pg.execute("insert into merchant_companies(merchant_id,company_id,status,created_by) values(%s,%s,'active',%s)", (merchant, company, actor))
+    ym = pg.execute("select to_char(date_trunc('month',current_date)-interval '1 month','YYYY-MM')").fetchone()[0]
+    return company, merchant, actor, admin, employees, ym
+
+
+def test_settlement_demo_actual_options_seed_privacy_distribution_and_no_balance_change(pg):
+    company, merchant, actor, admin, employees, ym = demo_actual_parties(pg, "privacy")
+    state = pg.execute("select settlement_demo_state(%s,%s)", (actor, merchant)).fetchone()[0]
+    option = state["options"][0]
+    assert option == {"company_id": str(company), "company_name": "Actual company privacy",
+      "active_employee_customer_count": 2, "active_company_admin_available": True,
+      "invoice_legal_profile_complete": True, "eligible": True, "reason": None}
+    assert all(str(user) not in str(state) for user in [admin, *employees])
+    before = {user: pg.execute("select coalesce(sum(amount),0) from meal_transactions where user_id=%s", (user,)).fetchone()[0] for user in employees}
+    seeded = pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)).fetchone()[0]
+    assert 6 <= seeded["transaction_count"] <= 12
+    rows = pg.execute("""select distinct t.user_id,t.amount,t.product_price,t.settlement_supply_amount,
+      t.settlement_vat_amount,t.settlement_total_amount,extract(isodow from t.created_at at time zone 'Asia/Seoul')
+      from settlement_demo_transactions d join meal_transactions t on t.id=d.transaction_id where d.run_id=%s""", (seeded["run_id"],)).fetchall()
+    assert {row[0] for row in rows} == set(employees)
+    assert all(row[1] == 0 and row[2] in range(8000, 15001, 1000) and row[3] + row[4] == row[5]
+               and row[3] == round(row[5] / 1.1) and 1 <= row[6] <= 5 for row in rows)
+    after = {user: pg.execute("select coalesce(sum(amount),0) from meal_transactions where user_id=%s", (user,)).fetchone()[0] for user in employees}
+    assert before == after and all(str(user) not in str(seeded) for user in employees)
+    duplicate = pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)).fetchone()[0]
+    assert duplicate["run_id"] == seeded["run_id"] and duplicate["aggregate"] == seeded["aggregate"]
+
+
+def test_settlement_demo_eligibility_and_tenant_fail_closed(pg):
+    import psycopg
+    company, merchant, actor, admin, employees, ym = demo_actual_parties(pg, "eligibility")
+    pg.execute("update companies set address=' ' where id=%s", (company,))
+    option = pg.execute("select settlement_demo_state(%s,%s)", (actor, merchant)).fetchone()[0]["options"][0]
+    assert option["eligible"] is False and option["reason"] == "BUSINESS_PROFILE_INCOMPLETE"
+    with pytest.raises(psycopg.errors.RaiseException, match="BUSINESS_PROFILE_INCOMPLETE"):
+      with pg.transaction(): pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym))
+    pg.execute("update companies set address='Seoul' where id=%s", (company,)); pg.execute("update app_users set status='paused' where id=%s", (admin,))
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_COMPANY_ADMIN_REQUIRED"):
+      with pg.transaction(): pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym))
+    pg.execute("update app_users set status='active' where id=%s", (admin,)); pg.execute("update app_users set status='paused' where id=any(%s)", (employees,))
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_EMPLOYEE_REQUIRED"):
+      with pg.transaction(): pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym))
+    other = pg.execute("insert into merchants(name,qr_token,view_token) values('other',%s,%s) returning id", (str(uuid.uuid4()), str(uuid.uuid4()))).fetchone()[0]
+    other_actor = pg.execute("insert into app_users(id,merchant_id,display_name,role,status) values(gen_random_uuid(),%s,'other','merchant_admin','active') returning id", (other,)).fetchone()[0]
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_COMPANY_INELIGIBLE"):
+      with pg.transaction(): pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (other_actor, other, company, ym))
+
+
+def test_settlement_demo_pollution_validation_membership_and_reset_lifecycle(pg):
+    import psycopg
+    company, merchant, actor, admin, employees, ym = demo_actual_parties(pg, "lifecycle")
+    current = pg.execute("select to_char(current_date,'YYYY-MM')").fetchone()[0]
+    for invalid in ("2026-13", current, "2020-01"):
+      with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_INPUT_INVALID"):
+        with pg.transaction(): pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, invalid))
+    start = date.fromisoformat(ym + "-01")
+    pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-1100,'spend','ledger','taxable',1000,100,1100,%s::timestamp at time zone 'Asia/Seoul')""",
+      (employees[0], company, merchant, start + timedelta(days=2)))
+    with pytest.raises(psycopg.errors.RaiseException, match="DEMO_PERIOD_TRANSACTION_CONFLICT"):
+      with pg.transaction(): pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym))
+    pg.execute("delete from meal_transactions where merchant_id=%s and company_id=%s", (merchant, company))
+    seeded = pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)).fetchone()[0]
+    tx = pg.execute("select transaction_id from settlement_demo_transactions where run_id=%s limit 1", (seeded["run_id"],)).fetchone()[0]
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_DEMO_MEMBERSHIP_INVALID"):
+      with pg.transaction():
+        pg.execute("update meal_transactions set user_id=%s where id=%s", (actor, tx)); pg.execute("set constraints all immediate")
+    created = pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant)).fetchone()[0]
+    confirmed = pg.execute("select settlement_demo_confirm(%s,%s)", (actor, merchant)).fetchone()[0]
+    assert created["settlement"]["tx_count"] == seeded["transaction_count"]
+    sid = confirmed["settlement_id"]
+    empty = pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "confirmed-reset")).fetchone()[0]
+    assert empty["stage"] == "empty" and pg.execute("select count(*) from settlements where id=%s", (sid,)).fetchone()[0] == 1
+    assert pg.execute("select count(*) from tax_invoices where settlement_id=%s", (sid,)).fetchone()[0] == 1
+    assert pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "confirmed-reset")).fetchone()[0]["stage"] == "empty"
+    older = pg.execute("select to_char(date_trunc('month',current_date)-interval '2 months','YYYY-MM')").fetchone()[0]
+    draft = pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, older)).fetchone()[0]
+    pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant))
+    assert pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "draft-reset")).fetchone()[0]["stage"] == "empty"
+    assert pg.execute("select count(*) from settlement_demo_runs where id=%s", (draft["run_id"],)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from companies where id=%s", (company,)).fetchone()[0] == 1
+
+
+def test_settlement_demo_deferred_full_set_contract_and_trigger_metadata(pg):
+    import psycopg
+    company, merchant, actor, _, employees, ym = demo_actual_parties(pg, "full-set")
+    seeded = pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)).fetchone()[0]
+    run_id = seeded["run_id"]
+    tx = pg.execute("select transaction_id from settlement_demo_transactions where run_id=%s order by transaction_id limit 1", (run_id,)).fetchone()[0]
+
+    for statement, params, marker in (
+        ("update meal_transactions set created_at=created_at+interval '1 month' where id=%s", (tx,), "DEMO_PERIOD_TRANSACTION_CONFLICT"),
+        ("delete from settlement_demo_transactions where run_id=%s and transaction_id=%s", (run_id, tx), "DEMO_PERIOD_TRANSACTION_CONFLICT"),
+        ("update companies set status='suspended' where id=%s", (company,), "SETTLEMENT_DEMO_MEMBERSHIP_INVALID"),
+        ("update merchant_companies set status='paused' where merchant_id=%s and company_id=%s", (merchant, company), "SETTLEMENT_DEMO_MEMBERSHIP_INVALID"),
+    ):
+        with pytest.raises(psycopg.errors.RaiseException, match=marker):
+            with pg.transaction():
+                pg.execute(statement, params)
+                pg.execute("set constraints all immediate")
+
+    triggers = dict(pg.execute("""select tgname, tgdeferrable and tginitdeferred from pg_trigger
+      where tgname like 'settlement_demo_%_integrity' or tgname in
+        ('settlement_demo_companies_integrity','settlement_demo_contracts_integrity')""").fetchall())
+    assert all(triggers[name] for name in (
+        "settlement_demo_runs_integrity", "settlement_demo_transactions_integrity",
+        "settlement_demo_users_integrity", "settlement_demo_settlements_integrity",
+        "settlement_demo_meal_transactions_integrity", "settlement_demo_companies_integrity",
+        "settlement_demo_contracts_integrity",
+    ))
+    for signature in (
+        "settlement_demo_validate_run(uuid)", "settlement_demo_state(uuid,uuid)",
+        "settlement_demo_seed(uuid,uuid,uuid,text)", "settlement_demo_create(uuid,uuid)",
+    ):
+        assert pg.execute("select has_function_privilege('authenticated',%s,'execute')", (signature,)).fetchone()[0] is False
+    assert pg.execute("""select bool_and(proconfig @> array['search_path=pg_catalog, public']::text[]
+      or proconfig @> array['search_path=pg_catalog,public']::text[])
+      from pg_proc where proname like 'settlement_demo_%' and prosecdef""").fetchone()[0] is True
+
+
+def test_settlement_demo_two_connection_pollution_commit_after_create_is_rejected(settlement_db):
+    import psycopg
+    with psycopg.connect(settlement_db) as setup:
+        company, merchant, actor, _, employees, ym = demo_actual_parties(setup, "concurrent-full-set")
+        seeded = setup.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)).fetchone()[0]
+        period_from = date.fromisoformat(seeded["period_from"])
+        setup.commit()
+
+    with psycopg.connect(settlement_db) as creator, psycopg.connect(settlement_db) as polluter:
+        created = creator.execute("select settlement_demo_create(%s,%s)", (actor, merchant)).fetchone()[0]
+        polluter.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+          settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+          values(%s,%s,%s,0,'spend','ledger','taxable',1000,100,1100,
+          %s::timestamp at time zone 'Asia/Seoul')""", (employees[0], company, merchant, period_from + timedelta(days=3)))
+        with pytest.raises(psycopg.errors.RaiseException, match="DEMO_PERIOD_TRANSACTION_CONFLICT"):
+            polluter.commit()
+        creator.commit()
+        sid = created["settlement_id"]
+    with psycopg.connect(settlement_db) as verify:
+        assert verify.execute("select count(*) from settlements where id=%s", (sid,)).fetchone()[0] == 1
+        assert verify.execute("""select count(*) from meal_transactions where merchant_id=%s and company_id=%s
+          and flags->>'settlement_demo' is distinct from 'true' and created_at >= (%s::date::timestamp at time zone 'Asia/Seoul')
+          and created_at < ((%s::date+interval '1 month')::timestamp at time zone 'Asia/Seoul')""",
+          (merchant, company, period_from, period_from)).fetchone()[0] == 0
+
+
+def test_settlement_demo_seed_and_reset_preserve_wallet_and_unrelated_ledgers(pg):
+    company, merchant, actor, _, employees, ym = demo_actual_parties(pg, "wallet")
+    pg.execute("update app_users set point_balance=5000,point_reserved=1200 where id=%s", (employees[0],))
+    def snapshot():
+        return (
+            pg.execute("select array_agg(row(id,point_balance,point_reserved) order by id) from app_users where id=any(%s)", (employees,)).fetchone()[0],
+            pg.execute("select count(*) from point_transactions where user_id=any(%s)", (employees,)).fetchone()[0],
+            pg.execute("select count(*) from payment_orders where user_id=any(%s)", (employees,)).fetchone()[0],
+            pg.execute("select count(*) from settlement_payments sp join settlements s on s.id=sp.settlement_id where s.company_id=%s", (company,)).fetchone()[0],
+        )
+    before = snapshot()
+    seeded = pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)).fetchone()[0]
+    rows = pg.execute("""select t.kind,t.settlement_tax_type,t.settlement_supply_amount,
+      t.settlement_vat_amount,t.settlement_total_amount from settlement_demo_transactions d
+      join meal_transactions t on t.id=d.transaction_id where d.run_id=%s""", (seeded["run_id"],)).fetchall()
+    assert rows and all(kind == 'spend' and tax_type == 'taxable' and supply + vat == total for kind,tax_type,supply,vat,total in rows)
+    aggregate = seeded["aggregate"]
+    assert (sum(row[2] for row in rows), sum(row[3] for row in rows), sum(row[4] for row in rows)) == (
+        aggregate["supply_amount"], aggregate["vat_amount"], aggregate["total_amount"])
+    pg.execute("select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "wallet-reset"))
+    assert snapshot() == before

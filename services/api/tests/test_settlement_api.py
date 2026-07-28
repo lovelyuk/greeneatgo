@@ -53,6 +53,9 @@ class FakeSettlements:
         self.calls.append(("merchant_detail", settlement_id, merchant_id))
         return self.detail if merchant_id == "merchant-own" else None
 
+    def is_demo_settlement(self, merchant_id, settlement_id):
+        return False
+
     def confirm(self, actor, settlement_id):
         self.calls.append(("confirm", actor.company_id, settlement_id))
         if self.confirm_error is not None:

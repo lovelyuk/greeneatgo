@@ -1685,12 +1685,50 @@ code { font-size: 12px; }
   cursor: default;
 }
 
+/* Test-only settlement walkthrough embedded in Supplier Information. */
+.settlement-demo-panel { display: grid; gap: 18px; margin-top: 18px; }
+.settlement-demo-panel.production { border-color: #FFB4AB; }
+.settlement-demo-heading { align-items: flex-start; margin: 0; }
+.settlement-demo-heading h2 { margin-bottom: 7px; }
+.settlement-demo-warning { margin: 0; color: #047857; }
+.settlement-demo-warning.danger { color: #B42318; font-weight: 700; }
+.settlement-demo-readiness, .settlement-demo-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.settlement-demo-readiness .badge { font-size: 12px; }
+.settlement-demo-readiness .readiness-ready { color: #047857; background: #E7F8EE; }
+.settlement-demo-readiness .readiness-not-ready { color: #B42318; background: #FFE8E0; }
+.settlement-demo-readiness .readiness-loading { color: #5C7A66; background: #EEF2EF; }
+.settlement-demo-seed { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(150px, .7fr) auto; gap: 12px; align-items: end; }
+.settlement-demo-seed select { width: 100%; min-height: 50px; padding: 12px 14px; color: #14351F; background: white; border: 1.5px solid #CDEBD5; border-radius: 16px; }
+.settlement-demo-seed .primary { width: auto; }
+.settlement-demo-seed .empty-state, .settlement-demo-seed .panel-note { grid-column: 1 / -1; }
+.settlement-demo-summary, .settlement-demo-status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.settlement-demo-summary div, .settlement-demo-status-grid div { min-width: 0; padding: 14px; background: #F3FBF4; border: 1px solid #CDEBD5; border-radius: 16px; }
+.settlement-demo-summary dt, .settlement-demo-status-grid dt { margin-bottom: 6px; color: #5C7A66; font-size: 13px; }
+.settlement-demo-summary dd, .settlement-demo-status-grid dd { margin: 0; overflow-wrap: anywhere; color: #14351F; font-weight: 700; }
+.settlement-demo-timeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.settlement-demo-timeline li { display: grid; grid-template-columns: 18px 1fr; align-items: center; gap: 7px; min-width: 0; padding: 12px; color: #6B7480; background: #F4F5F4; border-radius: 14px; font-size: 13px; }
+.settlement-demo-timeline li > span { width: 14px; height: 14px; border: 2px solid #AAB5AD; border-radius: 50%; }
+.settlement-demo-timeline li.complete, .settlement-demo-timeline li.current { color: #047857; background: #E7F8EE; }
+.settlement-demo-timeline li.complete > span, .settlement-demo-timeline li.current > span { border-color: #2FB865; background: #2FB865; }
+.settlement-demo-timeline li.current { box-shadow: inset 0 0 0 2px #2FB865; }
+.settlement-demo-actions .primary { width: auto; flex: 1 1 210px; min-height: 46px; }
+.settlement-demo-details { display: grid; gap: 12px; padding-top: 4px; }
+.settlement-demo-details h3 { margin: 0; }
+.settlement-demo-status-grid .wide { grid-column: span 2; }
+.settlement-demo-reset { justify-self: end; }
+
 @media (max-width: 700px) {
   .supplier-info-card-title { align-items: stretch; flex-direction: column; }
   .supplier-edit-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
   .supplier-capsule-button { width: 100%; min-width: 0; padding-inline: 10px; }
   .supplier-info-fields { grid-template-columns: 1fr; }
   .supplier-info-fields .wide { grid-column: auto; }
+  .settlement-demo-heading { flex-direction: column; }
+  .settlement-demo-heading button { width: 100%; }
+  .settlement-demo-seed, .settlement-demo-summary, .settlement-demo-status-grid, .settlement-demo-timeline { grid-template-columns: 1fr; }
+  .settlement-demo-status-grid .wide { grid-column: auto; }
+  .settlement-demo-actions { display: grid; grid-template-columns: 1fr; }
+  .settlement-demo-actions .primary, .settlement-demo-reset { width: 100%; }
 }
 
 /* Grouped merchant pages share one horizontally scrollable top-tab pattern. */

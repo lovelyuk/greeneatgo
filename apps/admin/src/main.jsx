@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
 import { PaymentHistoryDashboard, RefundModal } from './PaymentFeatures.jsx';
+import SettlementDemoPanel from './SettlementDemoPanel.jsx';
 import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
 import { captureGeneration, generationIsCurrent } from './generationGuard.js';
 import { changePercent, currentPeriodYm, formatPeriodYm, mapCompanyUsage, shiftPeriodYm } from './companyUsage.js';
@@ -1405,6 +1406,7 @@ function MerchantSupplierInfoScreen({ merchant, busy, onSave, onSettings, token 
       </div>
     </form>
     <LegacyTaxReviewPanel key={`legacy-payments-${token}`} token={token}/>
+    <SettlementDemoPanel key={`settlement-demo-${token}`} token={token} apiFetch={apiFetch} openDocumentInNewWindow={openDocumentInNewWindow} krw={krw}/>
   </AdminPage>;
 }
 

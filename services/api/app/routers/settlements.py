@@ -2,7 +2,8 @@ from datetime import datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app.auth import bearer_token
 from app.config import get_settings
@@ -15,6 +16,12 @@ from app.services.popbill_service import PopbillConfig, PopbillError, PopbillSer
 company_router = APIRouter(prefix="/company/settlements", tags=["company-settlements"])
 company_alias_router = APIRouter(prefix="/admin/settlements", tags=["company-settlements"])
 merchant_router = APIRouter(prefix="/admin/merchant/settlements", tags=["merchant-settlements"])
+demo_router = APIRouter(prefix="/admin/merchant/settlement-demo", tags=["merchant-settlement-demo"])
+
+
+class SettlementDemoSeedRequest(BaseModel):
+    company_id: UUID
+    period_ym: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
 def get_settlement_repository() -> SettlementRepository:
@@ -41,6 +48,11 @@ def _provider(value):
     return value() if callable(value) else value
 
 
+def _require_test_for_demo(is_demo: bool) -> None:
+    if is_demo and PopbillConfig.from_settings(get_settings()).is_test is not True:
+        raise _error(409, "SETTLEMENT_DEMO_TEST_MODE_REQUIRED", "데모 문서는 팝빌 테스트 환경에서만 처리할 수 있어요")
+
+
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
 
@@ -62,6 +74,17 @@ def _rpc_error(exc: SupabaseHttpError) -> HTTPException:
         ("ISSUE_ATTEMPT_TOKEN_MISMATCH", 409, "POPBILL_RECONCILIATION_REQUIRED", "발행 결과를 먼저 확인해 주세요"),
         ("POPBILL_ISSUE_LEASE_ACTIVE", 409, "POPBILL_RECONCILIATION_REQUIRED", "발행 결과를 먼저 확인해 주세요"),
         ("POPBILL_RECONCILIATION_REQUIRED", 409, "POPBILL_RECONCILIATION_REQUIRED", "발행 결과를 먼저 확인해 주세요"),
+        ("SETTLEMENT_DEMO_FORBIDDEN", 403, "FORBIDDEN", "이 데모를 처리할 권한이 없어요"),
+        ("SETTLEMENT_DEMO_NOT_SEEDED", 409, "SETTLEMENT_DEMO_NOT_SEEDED", "먼저 데모 데이터를 준비해 주세요"),
+        ("SETTLEMENT_DEMO_NOT_CREATED", 409, "SETTLEMENT_DEMO_NOT_CREATED", "먼저 데모 정산을 생성해 주세요"),
+        ("SETTLEMENT_DEMO_STATE_CONFLICT", 409, "SETTLEMENT_DEMO_STATE_CONFLICT", "현재 데모 단계에서는 처리할 수 없어요"),
+        ("SETTLEMENT_DEMO_MEMBERSHIP_INVALID", 409, "SETTLEMENT_DEMO_MEMBERSHIP_INVALID", "데모 데이터 연결을 확인해 주세요"),
+        ("SETTLEMENT_DEMO_NO_UNUSED_PERIOD", 409, "SETTLEMENT_DEMO_NO_UNUSED_PERIOD", "사용 가능한 데모 정산 기간이 없어요"),
+        ("SETTLEMENT_DEMO_COMPANY_INELIGIBLE", 422, "SETTLEMENT_DEMO_COMPANY_INELIGIBLE", "선택한 회사는 정산 데모 대상이 아니에요"),
+        ("SETTLEMENT_DEMO_COMPANY_ADMIN_REQUIRED", 422, "SETTLEMENT_DEMO_COMPANY_ADMIN_REQUIRED", "활성 회사 관리자가 필요해요"),
+        ("SETTLEMENT_DEMO_EMPLOYEE_REQUIRED", 422, "SETTLEMENT_DEMO_EMPLOYEE_REQUIRED", "활성 직원 또는 고객이 필요해요"),
+        ("SETTLEMENT_DEMO_CREATE_RESULT_MISMATCH", 409, "SETTLEMENT_DEMO_CREATE_RESULT_MISMATCH", "데모 정산 결과가 예상 거래와 일치하지 않아요"),
+        ("DEMO_PERIOD_TRANSACTION_CONFLICT", 409, "DEMO_PERIOD_TRANSACTION_CONFLICT", "데모 기간에 다른 거래가 포함되어 있어요"),
     )
     for marker, status, code, message in mapping:
         if marker in body:
@@ -194,13 +217,17 @@ def _company_provider_document(
     service: PopbillService, kind: str,
 ):
     actor = _actor(repo, token, "company_admin")
+    assert actor.company_id is not None
     row = _company_detail(settlement_id, token, repo)
     if row["tax_invoice_status"] not in ("issued", "nts_sending", "nts_accepted"):
         raise _error(409, "POPBILL_DOCUMENT_NOT_FOUND", "발행된 세금계산서가 없어요")
-    service = _provider(service)
     try:
+        _require_test_for_demo(getattr(repo, "is_company_demo_settlement", lambda _company_id, _sid: False)(actor.company_id, settlement_id))
+        service = _provider(service)
         key = _invoice_key(repo, actor, settlement_id)
         result = service.get_view_url(key) if kind == "view" else service.get_pdf_url(key)
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
     except PopbillError as exc:
         raise _popbill_error(exc) from exc
     return {"ok": True, "data": {"url": result.url, "expires_in": result.expires_in}, "error": None}
@@ -243,21 +270,24 @@ def merchant_popbill_readiness(token: str = Depends(bearer_token), repo: Settlem
         "certificate_expires_on": None,
     }
     try:
-        service = PopbillService(config)
-        configured = True
-    except PopbillError:
-        configured = False
-    else:
-        try:
-            provider = service.certificate_readiness()
-            certificate = {
-                "certificate_verified": provider.certificate_verified,
-                "certificate_expires_on": provider.certificate_expires_on,
-            }
-        except PopbillError:
-            # Readiness is fail-closed and never exposes provider messages or credentials.
-            pass
-    try:
+        current_demo = getattr(repo, "has_current_demo", lambda _merchant_id: False)(actor.merchant_id)
+        if current_demo and config.is_test is not True:
+            configured = False
+        else:
+            try:
+                service = PopbillService(config)
+                configured = True
+            except PopbillError:
+                configured = False
+            else:
+                try:
+                    provider = service.certificate_readiness()
+                    certificate = {
+                        "certificate_verified": provider.certificate_verified,
+                        "certificate_expires_on": provider.certificate_expires_on,
+                    }
+                except PopbillError:
+                    pass
         supplier = repo.supplier_popbill_readiness(actor.merchant_id, config.corp_num)
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
@@ -317,9 +347,18 @@ def _refresh_status(actor, settlement_id: UUID, repo: SettlementRepository, serv
 @merchant_router.post("/{settlement_id}/tax-invoice/issue")
 def merchant_issue_invoice(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository), service: PopbillService = Depends(get_popbill_service)):
     actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
     # Tenant-scoped existence precedes provider configuration; provider construction
     # still precedes the mutating claim.
     _merchant_detail(settlement_id, token, repo)
+    try:
+        is_demo = repo.is_demo_settlement(actor.merchant_id, settlement_id)
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+    # The generic endpoint must not bypass the demo endpoint's test-only gate.
+    # Non-demo production issuance intentionally remains unchanged.
+    if is_demo and PopbillConfig.from_settings(get_settings()).is_test is not True:
+        raise _error(409, "SETTLEMENT_DEMO_TEST_MODE_REQUIRED", "데모 발행은 팝빌 테스트 환경에서만 가능해요")
     service = _provider(service)
     try:
         claim = repo.claim_invoice_issue(actor, settlement_id)
@@ -368,9 +407,14 @@ def merchant_issue_invoice(settlement_id: UUID, token: str = Depends(bearer_toke
 @merchant_router.post("/{settlement_id}/tax-invoice/refresh-status")
 def merchant_refresh_invoice_status(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository), service: PopbillService = Depends(get_popbill_service)):
     actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
     row = _merchant_detail(settlement_id, token, repo)
     if row["tax_invoice_status"] not in ("issuing", "issued", "nts_sending", "nts_accepted"):
         raise _error(409, "POPBILL_DOCUMENT_NOT_FOUND", "발행된 세금계산서가 없어요")
+    try:
+        _require_test_for_demo(repo.is_demo_settlement(actor.merchant_id, settlement_id))
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
     service = _provider(service)
     result = _refresh_status(actor, settlement_id, repo, service, _invoice_key(repo, actor, settlement_id))
     return {"ok": True, "data": _public(result), "error": None}
@@ -378,13 +422,17 @@ def merchant_refresh_invoice_status(settlement_id: UUID, token: str = Depends(be
 
 def _merchant_provider_document(settlement_id: UUID, token: str, repo: SettlementRepository, service: PopbillService, kind: str):
     actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
     row = _merchant_detail(settlement_id, token, repo)
     if row["tax_invoice_status"] not in ("issued", "nts_sending", "nts_accepted"):
         raise _error(409, "POPBILL_DOCUMENT_NOT_FOUND", "발행된 세금계산서가 없어요")
-    service = _provider(service)
     try:
+        _require_test_for_demo(repo.is_demo_settlement(actor.merchant_id, settlement_id))
+        service = _provider(service)
         key = _invoice_key(repo, actor, settlement_id)
         result = service.get_view_url(key) if kind == "view" else service.get_pdf_url(key)
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
     except PopbillError as exc:
         raise _popbill_error(exc) from exc
     return {"ok": True, "data": {"url": result.url, "expires_in": result.expires_in}, "error": None}
@@ -400,3 +448,100 @@ def merchant_invoice_view(settlement_id: UUID, token: str = Depends(bearer_token
 @merchant_router.get("/{settlement_id}/tax-invoice/pdf")
 def merchant_invoice_pdf(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository), service: PopbillService = Depends(get_popbill_service)):
     return _merchant_provider_document(settlement_id, token, repo, service, "pdf")
+
+
+def _demo_action(action: str, token: str, repo: SettlementRepository, *args):
+    actor = _actor(repo, token, "merchant_admin")
+    try:
+        method = getattr(repo, f"demo_{action}")
+        result = method(actor, *args)
+        return {"ok": True, "data": _public(result), "error": None}
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+
+
+def _demo_readiness(actor, repo: SettlementRepository) -> dict:
+    config = PopbillConfig.from_settings(get_settings())
+    result = {
+        "configured": False, "is_test": config.is_test,
+        "certificate_verified": False, "certificate_expires_on": None,
+    }
+    current_demo = getattr(repo, "has_current_demo", lambda _merchant_id: False)(actor.merchant_id)
+    if not current_demo or config.is_test is True:
+        try:
+            service = PopbillService(config)
+            result["configured"] = True
+            ready = service.certificate_readiness()
+            result.update(certificate_verified=ready.certificate_verified,
+                          certificate_expires_on=ready.certificate_expires_on)
+        except PopbillError:
+            pass
+    result.update(repo.supplier_popbill_readiness(actor.merchant_id, config.corp_num))
+    return result
+
+
+@demo_router.get("")
+def settlement_demo_state(token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
+    try:
+        state = repo.demo_state(actor)
+        readiness = _demo_readiness(actor, repo)
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+    public_state = _public(state)
+    assert isinstance(public_state, dict)
+    return {"ok": True, "data": {**public_state, "readiness": readiness}, "error": None}
+
+
+@demo_router.post("/seed")
+def settlement_demo_seed(payload: SettlementDemoSeedRequest, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    return _demo_action("seed", token, repo, payload.company_id, payload.period_ym)
+
+
+@demo_router.post("/create")
+def settlement_demo_create(token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    return _demo_action("create", token, repo)
+
+
+@demo_router.post("/confirm")
+def settlement_demo_confirm(token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    return _demo_action("confirm", token, repo)
+
+
+@demo_router.post("/issue")
+def settlement_demo_issue(token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository), service: PopbillService = Depends(get_popbill_service)):
+    actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
+    try:
+        member = repo.demo_assert_issue(actor)
+        config = PopbillConfig.from_settings(get_settings())
+        supplier = repo.supplier_popbill_readiness(actor.merchant_id, config.corp_num)
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+    if config.is_test is not True:
+        raise _error(409, "SETTLEMENT_DEMO_TEST_MODE_REQUIRED", "데모 발행은 팝빌 테스트 환경에서만 가능해요")
+    if not supplier["supplier_ready"] or not supplier["corp_matches"]:
+        raise _error(422, "SETTLEMENT_DEMO_SUPPLIER_NOT_READY", "공급자 정보와 팝빌 테스트 사업자번호를 확인해 주세요")
+    service = _provider(service)
+    try:
+        certificate = service.certificate_readiness()
+    except PopbillError as exc:
+        raise _popbill_error(exc) from exc
+    if certificate.certificate_verified is not True:
+        raise _error(503, "SETTLEMENT_DEMO_CERTIFICATE_NOT_READY", "팝빌 인증서를 확인해 주세요")
+    # Membership and every readiness condition precede the existing mutating claim/provider/finalize path.
+    return merchant_issue_invoice(UUID(str(member["settlement_id"])), token, repo, service)
+
+
+@demo_router.post("/mark-paid")
+def settlement_demo_mark_paid(token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    return _demo_action("mark_paid", token, repo)
+
+
+@demo_router.post("/reset")
+def settlement_demo_reset(
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=1, max_length=200),
+    token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository),
+):
+    return _demo_action("reset", token, repo, idempotency_key)

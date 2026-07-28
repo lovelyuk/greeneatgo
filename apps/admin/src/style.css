@@ -620,6 +620,45 @@ input,textarea,select { min-height:46px;border:1px solid var(--line);border-radi
 @media(max-width:700px){.payment-history-grid{grid-template-columns:1fr}.history-period-filter{align-items:stretch;flex-direction:column}.history-period-modes{display:grid;grid-template-columns:repeat(4,1fr)}.history-period-modes button{padding:7px 5px}.history-period-inputs{align-items:stretch;flex-wrap:wrap;justify-content:flex-start}.history-period-inputs label{flex:1 1 135px;min-width:0}.history-period-inputs input{width:100%;min-width:0}.history-period-label{flex:1 0 100%;justify-content:center}.history-heading h2{font-size:25px}.history-summary-card{min-height:270px}.history-summary-card>header{display:grid}.history-granularity{width:100%}.history-granularity button{flex:1}.history-date-dock{align-items:stretch;flex-direction:column}.history-date-dock>div{flex-wrap:wrap}.history-date-dock label{display:grid}.merchant-refund-dock{align-items:stretch;flex-direction:column}.refund-open-button{width:100%}.refund-modal{width:100%;max-height:94svh;border-radius:24px 24px 0 0}.refund-modal-header{padding:19px 16px}.refund-modal-icon{width:42px;height:42px}.refund-modal-body{padding:18px 16px}.refund-modal-footer{padding:14px 16px calc(14px + env(safe-area-inset-bottom))}.refund-search{grid-template-columns:1fr}.refund-search .primary{width:100%}.refund-order-card>div:first-child{display:grid}.refund-order-card dl{grid-template-columns:repeat(2,minmax(0,1fr))}.refund-confirm .profile-grid{grid-template-columns:1fr}.history-detail-card{min-height:300px}}
 @media(max-width:700px){.history-row.history-row-columns{gap:4px 5px;padding-block:11px}.history-row-transaction{grid-template-columns:58px minmax(0,1fr) 52px auto;grid-template-areas:"time company company amount" "time person badge amount"}.history-row-payment{grid-template-columns:58px minmax(0,1fr) 38px auto;grid-template-areas:"time product product receipt" "time person badge amount"}.history-row-columns time{grid-area:time;align-self:center;white-space:normal;line-height:1.3}.history-row-columns .history-company{grid-area:company}.history-row-columns .history-product{grid-area:product}.history-row-columns .history-person{grid-area:person}.history-row-columns .payment-type-badge{grid-area:badge}.history-row-columns>b{grid-area:amount}.history-row-columns .receipt-trigger{grid-area:receipt;justify-self:end}.history-row-columns .history-company,.history-row-columns .history-person{font-size:11px;line-height:1.25}.history-row-columns .history-product{font-size:12px;line-height:1.25}.history-row-columns b{font-size:11px}.history-row .payment-type-badge{min-width:38px;max-width:52px;padding-inline:3px;font-size:9px}.receipt-trigger{width:48px;gap:2px;padding-inline:3px;font-size:8px}.receipt-trigger svg{width:12px;height:12px}.receipt-backdrop{padding:0}.receipt-modal{width:100vw;max-width:100vw;max-height:90svh;border-radius:14px}.receipt-modal-header{padding:16px}.receipt-modal-header h2{font-size:21px}.receipt-type-tabs,.receipt-source-notice{padding-inline:16px}.receipt-modal-body{padding:0}.receipt-frame{width:500px;height:969px;min-height:969px}.receipt-modal-footer{align-items:flex-end;padding:12px 14px calc(12px + env(safe-area-inset-bottom))}.receipt-modal-footer button{min-width:86px;padding-inline:12px}}
 
+/* Payment history rows share one fixed six-column contract; narrow screens scroll this list only. */
+.payment-detail-card .history-rows {
+  --payment-history-columns: 92px minmax(90px, 1fr) 72px 58px 82px 62px;
+  overflow-x: auto;
+}
+.payment-detail-card .history-row-payment {
+  min-width: 492px;
+  grid-template-areas: none;
+  grid-template-columns: var(--payment-history-columns);
+  gap: 6px;
+}
+.payment-detail-card .history-row-payment > * { grid-area: auto; }
+.payment-detail-card .history-row-payment .history-product,
+.payment-detail-card .history-row-payment .history-person {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.payment-detail-card .history-row-payment .payment-type-badge {
+  width: 58px;
+  min-width: 58px;
+  max-width: 58px;
+  justify-self: stretch;
+  text-align: center;
+}
+.payment-detail-card .history-row-payment > b {
+  justify-self: stretch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.payment-detail-card .receipt-trigger {
+  width: 62px;
+  min-width: 62px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.payment-detail-card .receipt-trigger span { white-space: nowrap; }
+
 /* Keep compact merchant controls optically centered and date ranges inside mobile cards. */
 @media (max-width: 700px) {
   .merchant-topbar .top-actions svg {

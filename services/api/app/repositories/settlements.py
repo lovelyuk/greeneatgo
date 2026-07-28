@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -21,6 +22,11 @@ INVOICE_FIELDS = (
 )
 
 PAYMENT_FIELDS = "id,amount,depositor_name,deposited_at,memo,confirmed_at,created_at"
+TRANSACTION_FIELDS = (
+    "id,user_id,amount,kind,tx_code,meal_window,product_name,pay_type,is_demo,"
+    "settlement_tax_type,settlement_supply_amount,settlement_vat_amount,"
+    "settlement_total_amount,created_at"
+)
 
 
 class SettlementRepository:
@@ -133,7 +139,8 @@ class SettlementRepository:
         return bool(rows)
 
     def _detail(
-        self, settlement_id: str | UUID, tenant_column: str, tenant_id: str, *, include_demo: bool = False,
+        self, settlement_id: str | UUID, tenant_column: str, tenant_id: str, *,
+        include_demo: bool = False, include_transactions: bool = False,
     ) -> dict[str, Any] | None:
         rows = self.client.rest_get("settlements" if include_demo else "normal_settlements", {
             "select": LIST_FIELDS, "id": f"eq.{settlement_id}", tenant_column: f"eq.{tenant_id}", "limit": "1",
@@ -161,15 +168,78 @@ class SettlementRepository:
             "select": PAYMENT_FIELDS,
             "settlement_id": f"eq.{settlement_id}", "order": "created_at.asc,id.asc",
         })
+        transactions = self._settlement_transactions(row) if include_transactions else []
         return {**row, "business_information": company[0] if company else None,
                 "supplier_information": supplier[0] if supplier else None,
-                "tax_invoices": invoices, "events": events, "payments": payments}
+                "tax_invoices": invoices, "events": events, "payments": payments,
+                "transactions": transactions}
 
-    def company_detail(self, settlement_id: str | UUID, company_id: str) -> dict[str, Any] | None:
-        return self._detail(settlement_id, "company_id", company_id)
+    def _settlement_transactions(self, settlement: dict[str, Any]) -> list[dict[str, Any]]:
+        period_from = date.fromisoformat(str(settlement["period_from"]))
+        period_to = date.fromisoformat(str(settlement["period_to"])) + timedelta(days=1)
+        params = {
+            "select": TRANSACTION_FIELDS,
+            "merchant_id": f"eq.{settlement['merchant_id']}",
+            "company_id": f"eq.{settlement['company_id']}",
+            "pay_type": "in.(ledger,subsidized)",
+            "kind": "in.(spend,refund,cancel)",
+            "and": (
+                f"(created_at.gte.{period_from.isoformat()}T00:00:00+09:00,"
+                f"created_at.lt.{period_to.isoformat()}T00:00:00+09:00)"
+            ),
+            "order": "created_at.asc,id.asc",
+        }
+        rows: list[dict[str, Any]] = []
+        page_size = 1000
+        while True:
+            page = self.client.rest_get("meal_transactions", {
+                **params, "limit": str(page_size), "offset": str(len(rows)),
+            })
+            rows.extend(page)
+            if len(page) < page_size:
+                break
 
-    def merchant_detail(self, settlement_id: str | UUID, merchant_id: str) -> dict[str, Any] | None:
-        return self._detail(settlement_id, "merchant_id", merchant_id)
+        users: dict[str, dict[str, Any]] = {}
+        user_ids = sorted({str(row["user_id"]) for row in rows if row.get("user_id")})
+        for start in range(0, len(user_ids), 100):
+            chunk = user_ids[start:start + 100]
+            user_rows = self.client.rest_get("app_users", {
+                "select": "id,display_name,employee_no,department",
+                "id": f"in.({','.join(chunk)})",
+            })
+            users.update({str(user["id"]): user for user in user_rows})
+
+        result = []
+        for row in rows:
+            user = users.get(str(row.get("user_id")), {})
+            sign = 1 if row.get("kind") == "spend" else -1
+            result.append({
+                "id": row.get("id"),
+                "created_at": row.get("created_at"),
+                "employee_name": user.get("display_name") or "직원",
+                "employee_no": user.get("employee_no"),
+                "department": user.get("department"),
+                "kind": row.get("kind"),
+                "pay_type": row.get("pay_type"),
+                "item": row.get("product_name") or row.get("meal_window") or "식대 사용",
+                "tx_code": row.get("tx_code"),
+                "tax_type": row.get("settlement_tax_type"),
+                "supply_amount": sign * int(row.get("settlement_supply_amount") or 0),
+                "vat_amount": sign * int(row.get("settlement_vat_amount") or 0),
+                "total_amount": sign * int(row.get("settlement_total_amount") or 0),
+                "is_demo": bool(row.get("is_demo")),
+            })
+        return result
+
+    def company_detail(
+        self, settlement_id: str | UUID, company_id: str, *, include_transactions: bool = False,
+    ) -> dict[str, Any] | None:
+        return self._detail(settlement_id, "company_id", company_id, include_transactions=include_transactions)
+
+    def merchant_detail(
+        self, settlement_id: str | UUID, merchant_id: str, *, include_transactions: bool = False,
+    ) -> dict[str, Any] | None:
+        return self._detail(settlement_id, "merchant_id", merchant_id, include_transactions=include_transactions)
 
     def merchant_demo_detail(self, settlement_id: str | UUID, merchant_id: str) -> dict[str, Any] | None:
         """Demo-panel-only detail path after explicit run membership validation."""

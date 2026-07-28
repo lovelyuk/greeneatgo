@@ -22,6 +22,9 @@ const detail = {
     { id: 'payment-secret-1', amount: 4000, depositor_name: '첫 입금자', deposited_at: '2026-08-09T01:00:00Z', memo: '1차' },
     { id: 'payment-secret-2', amount: 3000, depositor_name: '두 번째 입금자', deposited_at: '2026-08-10T01:00:00Z', memo: '2차' },
   ],
+  transactions: [
+    { id: 'tx-1', created_at: '2026-07-02T03:00:00Z', employee_name: '김직원', employee_no: 'A-1', department: '개발팀', kind: 'spend', pay_type: 'ledger', item: '중식', tx_code: 'TX-1', supply_amount: 10000, vat_amount: 1000, total_amount: 11000, is_demo: true },
+  ],
   events: [{ event_type: 'paid', provider_key: 'secret' }],
 };
 
@@ -39,6 +42,11 @@ test('maps public supplier information first and preserves every payment without
   assert.equal(row.payment.account_holder, '두 번째 입금자');
   assert.equal(row.payment.amount, 7000);
   assert.equal(row.payment.paid_at, '2026-08-10T01:00:00Z');
+  assert.deepEqual(row.transactions, [{
+    id: 'tx-1', created_at: '2026-07-02T03:00:00Z', employee_name: '김직원', employee_no: 'A-1',
+    department: '개발팀', kind: 'spend', pay_type: 'ledger', item: '중식', tx_code: 'TX-1',
+    supply_amount: 10000, vat_amount: 1000, total_amount: 11000, is_demo: true,
+  }]);
   assert.equal('company_id' in row, false);
   assert.equal('merchant_id' in row, false);
   assert.equal('id' in row.invoice, false);
@@ -51,6 +59,7 @@ test('does not invent invoice or payment metadata for list rows', () => {
   assert.equal(row.supplier.name, '');
   assert.equal(row.payment.amount, 0);
   assert.deepEqual(row.payments, []);
+  assert.deepEqual(row.transactions, []);
 });
 
 test('action eligibility exactly follows live backend lifecycle', () => {

@@ -45,12 +45,14 @@ class FakeSettlements:
         self.calls.append(("readiness", merchant_id, configured_corp_num))
         return {"supplier_ready": True, "corp_matches": True}
 
-    def company_detail(self, settlement_id, company_id):
-        self.calls.append(("company_detail", settlement_id, company_id))
+    def company_detail(self, settlement_id, company_id, *, include_transactions=False):
+        self.calls.append(("company_detail", settlement_id, company_id, True) if include_transactions
+                          else ("company_detail", settlement_id, company_id))
         return self.detail if company_id == "company-own" else None
 
-    def merchant_detail(self, settlement_id, merchant_id):
-        self.calls.append(("merchant_detail", settlement_id, merchant_id))
+    def merchant_detail(self, settlement_id, merchant_id, *, include_transactions=False):
+        self.calls.append(("merchant_detail", settlement_id, merchant_id, True) if include_transactions
+                          else ("merchant_detail", settlement_id, merchant_id))
         return self.detail if merchant_id == "merchant-own" else None
 
     def is_demo_settlement(self, merchant_id, settlement_id):
@@ -217,6 +219,10 @@ def test_company_routes_scope_server_tenant_and_alias_is_company_only(client_fac
     assert alias.json()["data"]["summary"]["settlement_count"] == 7
     assert client.get(f"/v1/admin/settlements/{SETTLEMENT_ID}").status_code == 200
     assert str(repo.calls[-1][1]) == SETTLEMENT_ID
+    assert client.get(f"/v1/admin/settlements/{SETTLEMENT_ID}?include_transactions=true").status_code == 200
+    assert repo.calls[-1][0] == "company_detail"
+    assert str(repo.calls[-1][1]) == SETTLEMENT_ID
+    assert repo.calls[-1][2:] == ("company-own", True)
     assert client.get("/v1/company/settlements?limit=101").status_code == 422
 
 

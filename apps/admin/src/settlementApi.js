@@ -52,12 +52,31 @@ function mapPayment(item) {
   };
 }
 
+export function mapSettlementTransaction(item = {}) {
+  return {
+    id: item?.id,
+    created_at: item?.created_at ?? null,
+    employee_name: text(item?.employee_name) || '직원',
+    employee_no: text(item?.employee_no),
+    department: text(item?.department),
+    kind: text(item?.kind),
+    pay_type: text(item?.pay_type),
+    item: text(item?.item) || '식대 사용',
+    tx_code: text(item?.tx_code),
+    supply_amount: Number(item?.supply_amount) || 0,
+    vat_amount: Number(item?.vat_amount) || 0,
+    total_amount: Number(item?.total_amount) || 0,
+    is_demo: Boolean(item?.is_demo),
+  };
+}
+
 export function mapSettlement(row = {}) {
   const source = row && typeof row === 'object' ? row : {};
   const invoiceSource = originalInvoice(source);
   const recipientSource = invoiceSource?.recipient_snapshot ?? source.business_information ?? {};
   const supplierSource = source.supplier_information ?? invoiceSource?.supplier_snapshot ?? source.supplier ?? {};
   const payments = (Array.isArray(source.payments) ? source.payments : []).map(mapPayment);
+  const transactions = (Array.isArray(source.transactions) ? source.transactions : []).map(mapSettlementTransaction);
   const latestPayment = payments.at(-1) ?? null;
   const paidAmount = payments.reduce((total, payment) => total + payment.amount, 0);
   const periodStart = text(source.period_from) || (text(source.period_ym) ? `${source.period_ym}-01` : '');
@@ -89,6 +108,7 @@ export function mapSettlement(row = {}) {
       failed_reason: invoiceSource.failure_message ?? null,
     } : null,
     payments,
+    transactions,
     payment: {
       bank_name: null,
       account_number: null,

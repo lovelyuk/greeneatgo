@@ -1,4 +1,4 @@
-from app.repositories.settlements import LIST_FIELDS, PAYMENT_FIELDS, SettlementRepository
+from app.repositories.settlements import LIST_FIELDS, PAYMENT_FIELDS, TRANSACTION_FIELDS, SettlementRepository
 
 
 class DetailClient:
@@ -17,6 +17,8 @@ class DetailClient:
                 "id": "settlement-1",
                 "company_id": "company-own",
                 "merchant_id": "merchant-own",
+                "period_from": "2026-07-01",
+                "period_to": "2026-07-31",
             }]
         if table == "tax_invoices":
             return []
@@ -36,6 +38,16 @@ class DetailClient:
                 "confirmed_at": "2026-07-01T00:01:00Z",
                 "created_at": "2026-07-01T00:01:00Z",
             }]
+        if table == "meal_transactions":
+            return [{
+                "id": "transaction-1", "user_id": "user-1", "kind": "spend",
+                "tx_code": "TX-1", "meal_window": "중식", "product_name": None,
+                "pay_type": "ledger", "is_demo": True, "settlement_tax_type": "taxable",
+                "settlement_supply_amount": 6455, "settlement_vat_amount": 645,
+                "settlement_total_amount": 7100, "created_at": "2026-07-01T03:00:00Z",
+            }]
+        if table == "app_users":
+            return [{"id": "user-1", "display_name": "김직원", "employee_no": "A-1", "department": "개발팀"}]
         raise AssertionError(f"unexpected table: {table}")
 
 
@@ -68,6 +80,30 @@ def test_company_detail_includes_same_ordered_public_payment_history_as_merchant
             "match_method", "confirmed_by", "idempotency_key", "external_reference",
             "audit_metadata", "created_by", "updated_by",
         })
+
+
+def test_settlement_detail_includes_period_transactions_with_snapshot_amounts_and_people():
+    client = DetailClient()
+    detail = repository_with(client).merchant_detail(
+        "settlement-1", "merchant-own", include_transactions=True,
+    )
+
+    assert detail is not None
+    assert detail["transactions"] == [{
+        "id": "transaction-1", "created_at": "2026-07-01T03:00:00Z",
+        "employee_name": "김직원", "employee_no": "A-1", "department": "개발팀",
+        "kind": "spend", "pay_type": "ledger", "item": "중식", "tx_code": "TX-1",
+        "tax_type": "taxable", "supply_amount": 6455, "vat_amount": 645,
+        "total_amount": 7100, "is_demo": True,
+    }]
+    transaction_calls = [params for table, params in client.calls if table == "meal_transactions"]
+    assert transaction_calls == [{
+        "select": TRANSACTION_FIELDS,
+        "merchant_id": "eq.merchant-own", "company_id": "eq.company-own",
+        "pay_type": "in.(ledger,subsidized)", "kind": "in.(spend,refund,cancel)",
+        "and": "(created_at.gte.2026-07-01T00:00:00+09:00,created_at.lt.2026-08-01T00:00:00+09:00)",
+        "order": "created_at.asc,id.asc", "limit": "1000", "offset": "0",
+    }]
 
 
 def test_company_detail_cross_tenant_denial_does_not_query_payment_history():

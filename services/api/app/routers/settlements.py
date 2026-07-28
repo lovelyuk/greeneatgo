@@ -145,11 +145,12 @@ def _company_list(limit: int, offset: int, token: str, repo: SettlementRepositor
         raise _rpc_error(exc) from exc
 
 
-def _company_detail(settlement_id: UUID, token: str, repo: SettlementRepository):
+def _company_detail(settlement_id: UUID, token: str, repo: SettlementRepository, include_transactions: bool = False):
     actor = _actor(repo, token, "company_admin")
     assert actor.company_id is not None
     try:
-        row = repo.company_detail(settlement_id, actor.company_id)
+        row = (repo.company_detail(settlement_id, actor.company_id, include_transactions=True)
+               if include_transactions else repo.company_detail(settlement_id, actor.company_id))
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
     if row is None:
@@ -179,8 +180,8 @@ def company_list_alias(ym: str | None = Query(default=None, pattern=r"^\d{4}-\d{
 
 @company_router.get("/{settlement_id}")
 @company_alias_router.get("/{settlement_id}")
-def company_detail(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
-    return {"ok": True, "data": _company_detail(settlement_id, token, repo), "error": None}
+def company_detail(settlement_id: UUID, include_transactions: bool = False, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    return {"ok": True, "data": _company_detail(settlement_id, token, repo, include_transactions), "error": None}
 
 
 @company_router.post("/{settlement_id}/confirm-and-request-tax-invoice")
@@ -305,11 +306,12 @@ def merchant_popbill_readiness(token: str = Depends(bearer_token), repo: Settlem
     }, "error": None}
 
 
-def _merchant_detail(settlement_id: UUID, token: str, repo: SettlementRepository):
+def _merchant_detail(settlement_id: UUID, token: str, repo: SettlementRepository, include_transactions: bool = False):
     actor = _actor(repo, token, "merchant_admin")
     assert actor.merchant_id is not None
     try:
-        row = repo.merchant_detail(settlement_id, actor.merchant_id)
+        row = (repo.merchant_detail(settlement_id, actor.merchant_id, include_transactions=True)
+               if include_transactions else repo.merchant_detail(settlement_id, actor.merchant_id))
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
     if row is None:
@@ -318,8 +320,8 @@ def _merchant_detail(settlement_id: UUID, token: str, repo: SettlementRepository
 
 
 @merchant_router.get("/{settlement_id}")
-def merchant_detail(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
-    return {"ok": True, "data": _merchant_detail(settlement_id, token, repo), "error": None}
+def merchant_detail(settlement_id: UUID, include_transactions: bool = False, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    return {"ok": True, "data": _merchant_detail(settlement_id, token, repo, include_transactions), "error": None}
 
 
 @merchant_router.post("/{settlement_id}/send")

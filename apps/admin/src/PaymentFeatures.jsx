@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { CalendarDays, CheckCircle2, ChevronDown, RotateCcw, Search, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { CalendarDays, CheckCircle2, ChevronDown, FileDown, Printer, ReceiptText, RotateCcw, Search, X } from 'lucide-react';
+import { receiptApiPath, receiptTypeLabel, validateReceiptUrl } from './receiptUtils.js';
 
 const money = (value) => `₩${Number(value ?? 0).toLocaleString('ko-KR')}`;
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
@@ -13,7 +15,7 @@ const dateTime = (value) => {
 };
 const periodModes = [['year', '올해'], ['month', '이번달'], ['date', '날짜'], ['range', '기간']];
 
-function Rows({ items, kind }) {
+function Rows({ items, kind, onOpenReceipt }) {
   const rows = Array.isArray(items) ? items : [];
   if (!rows.length) return <p className="history-list-empty">선택한 날짜의 내역이 없어요.</p>;
   return <div className="history-rows">{rows.map((item, index) => {
@@ -36,14 +38,119 @@ function Rows({ items, kind }) {
     }
     const subsidized = item.pay_type === 'subsidized' || item.payment_type_label === '보조금';
     const paymentType = subsidized ? '보조금' : '일반';
+    const receiptAvailable = Array.isArray(item.receipt?.types) && item.receipt.types.length > 0;
     return <div className={`history-row history-row-columns history-row-payment${refunded ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}>
       <time dateTime={item.created_at}>{dateTime(item.created_at)}</time>
       <span className="history-product">{refunded ? '환불' : item.product_name ?? '상품'}</span>
       <strong className="history-person">{person}</strong>
       <span className={`payment-type-badge ${subsidized ? 'subsidized' : 'direct'}`}>{paymentType}</span>
       <b>{amount}</b>
+      <button
+        type="button"
+        className="receipt-trigger"
+        disabled={!receiptAvailable}
+        aria-label={receiptAvailable ? `${refunded ? '환불 원결제' : item.product_name ?? '결제'} 영수증 보기` : '조회 가능한 영수증 없음'}
+        title={receiptAvailable ? '영수증 보기' : '조회 가능한 영수증이 없습니다'}
+        onClick={(event) => receiptAvailable && onOpenReceipt(item.receipt, event.currentTarget)}
+      ><ReceiptText size={14} aria-hidden="true"/><span>영수증</span></button>
     </div>;
   })}</div>;
+}
+
+function ReceiptModal({ modal, onClose, onSelectType }) {
+  const dialogRef = useRef(null);
+  const closeRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const [actionHint, setActionHint] = useState('');
+  const safeUrl = validateReceiptUrl(modal?.url);
+  const descriptor = modal?.descriptor ?? {};
+  const types = Array.isArray(descriptor.types) ? descriptor.types : [];
+
+  useEffect(() => {
+    const appRoot = document.getElementById('root');
+    const previousInert = appRoot?.inert ?? false;
+    const previousAriaHidden = appRoot?.getAttribute('aria-hidden');
+    if (appRoot) {
+      appRoot.inert = true;
+      appRoot.setAttribute('aria-hidden', 'true');
+    }
+    const handleKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = [...dialogRef.current.querySelectorAll('button:not(:disabled), iframe, [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKey);
+    closeRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      if (appRoot) {
+        appRoot.inert = previousInert;
+        if (previousAriaHidden == null) appRoot.removeAttribute('aria-hidden');
+        else appRoot.setAttribute('aria-hidden', previousAriaHidden);
+      }
+    };
+  }, []);
+
+  const handleTabKey = (event, currentType) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || types.length < 2) return;
+    event.preventDefault();
+    const current = types.indexOf(currentType);
+    const nextIndex = event.key === 'Home' ? 0
+      : event.key === 'End' ? types.length - 1
+        : (current + (event.key === 'ArrowRight' ? 1 : -1) + types.length) % types.length;
+    const next = types[nextIndex];
+    onSelectType(next);
+    requestAnimationFrame(() => document.getElementById(`receipt-tab-${next}`)?.focus());
+  };
+
+  const openForOutput = (mode) => {
+    if (!safeUrl) return;
+    window.open(safeUrl, '_blank', 'noopener,noreferrer');
+    setActionHint(mode === 'pdf'
+      ? '새 창의 인쇄 메뉴에서 “PDF로 저장”을 선택해 주세요.'
+      : '새 창에서 영수증의 인쇄 버튼을 눌러 프린터를 선택해 주세요.');
+  };
+
+  return createPortal(<div className="modal-backdrop receipt-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section ref={dialogRef} className="receipt-modal" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+      <header className="receipt-modal-header">
+        <div><span className="eyebrow">PAYMENT RECEIPT</span><h2 id="receipt-title">{modal.title || receiptTypeLabel(modal.type, descriptor.source)}</h2></div>
+        <button ref={closeRef} type="button" className="icon-button" onClick={onClose} aria-label="영수증 창 닫기"><X size={20}/></button>
+      </header>
+      {types.length > 1 && <div className="receipt-type-tabs" role="tablist" aria-label="영수증 종류">
+        {types.map((type) => <button id={`receipt-tab-${type}`} type="button" role="tab" aria-controls="receipt-panel" aria-selected={modal.type === type} tabIndex={modal.type === type ? 0 : -1} className={modal.type === type ? 'active' : ''} key={type} onClick={() => onSelectType(type)} onKeyDown={(event) => handleTabKey(event, type)}>{receiptTypeLabel(type, descriptor.source)}</button>)}
+      </div>}
+      {descriptor.source === 'original_payment' && <div className="receipt-source-notice">환불 거래의 원결제 영수증입니다. 환불 완료 전표가 아닙니다.</div>}
+      <div id="receipt-panel" className="receipt-modal-body" role={types.length > 1 ? 'tabpanel' : undefined} aria-labelledby={types.length > 1 ? `receipt-tab-${modal.type}` : undefined}>
+        {modal.status === 'loading' && <p className="receipt-loading" role="status">영수증을 불러오는 중...</p>}
+        {modal.status === 'error' && <div className="alert error" role="alert">{modal.error}</div>}
+        {modal.status === 'ready' && safeUrl && <iframe className="receipt-frame" src={safeUrl} title={modal.title || '영수증'} referrerPolicy="no-referrer" sandbox="allow-scripts allow-forms allow-modals allow-same-origin"/>}
+      </div>
+      <footer className="receipt-modal-footer">
+        <span className="receipt-action-hint" role="status">{actionHint || '공식 영수증을 새 창에서 열어 출력합니다.'}</span>
+        <div>
+          <button type="button" className="ghost" onClick={() => openForOutput('print')} disabled={!safeUrl}><Printer size={16}/>프린터</button>
+          <button type="button" className="primary" onClick={() => openForOutput('pdf')} disabled={!safeUrl}><FileDown size={16}/>PDF</button>
+          <button type="button" className="ghost" onClick={onClose}>닫기</button>
+        </div>
+      </footer>
+    </section>
+  </div>, document.body);
 }
 
 export function PaymentHistoryDashboard({ request, refreshKey }) {
@@ -55,6 +162,41 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
   const [payment, setPayment] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [receiptModal, setReceiptModal] = useState(null);
+  const receiptRequestId = useRef(0);
+  const receiptTrigger = useRef(null);
+
+  async function loadReceipt(descriptor, type) {
+    const path = receiptApiPath(descriptor, type);
+    if (!path) return;
+    const requestId = ++receiptRequestId.current;
+    setReceiptModal({ descriptor, type, status: 'loading', title: '', url: '', error: '' });
+    try {
+      const data = await request(path);
+      if (requestId !== receiptRequestId.current) return;
+      const url = validateReceiptUrl(data?.url);
+      if (!url) throw new Error('허용되지 않은 영수증 주소입니다.');
+      setReceiptModal({ descriptor, type, status: 'ready', title: data?.title ?? '', url, error: '' });
+    } catch (receiptError) {
+      if (requestId !== receiptRequestId.current) return;
+      setReceiptModal({ descriptor, type, status: 'error', title: receiptTypeLabel(type, descriptor.source), url: '', error: receiptError.message });
+    }
+  }
+
+  function openReceipt(descriptor, trigger) {
+    receiptTrigger.current = trigger;
+    const types = Array.isArray(descriptor?.types) ? descriptor.types : [];
+    const preferred = types.includes('cash_receipt') ? 'cash_receipt' : types[0];
+    if (preferred) loadReceipt(descriptor, preferred);
+  }
+
+  function closeReceipt() {
+    receiptRequestId.current += 1;
+    setReceiptModal(null);
+    const trigger = receiptTrigger.current;
+    receiptTrigger.current = null;
+    requestAnimationFrame(() => trigger?.isConnected && trigger.focus());
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -82,8 +224,9 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
     {error && <div className="alert error">결제내역을 불러오지 못했어요: {error}</div>}
     <div className="payment-history-grid is-detail-only">
       <article className="panel history-detail-card"><header><div><span>거래내역 및 총합</span><strong>{Number(transaction.detail_count ?? (transaction.items ?? []).length).toLocaleString('ko-KR')}건</strong></div><b>{money(transaction.total)}</b></header>{loading ? <p className="history-list-empty">거래내역을 불러오는 중...</p> : <Rows items={transaction.items} kind="transaction"/>}</article>
-      <article className="panel history-detail-card payment-detail-card"><header><div><span>결제 · 환불 및 총합</span><strong>{Number(payment.detail_count ?? (payment.items ?? []).length).toLocaleString('ko-KR')}건</strong></div><div className="history-payment-totals"><small>환불 {money(payment.refund_total)}</small><b>순결제 {money(payment.total)}</b></div></header>{loading ? <p className="history-list-empty">결제내역을 불러오는 중...</p> : <Rows items={payment.items} kind="payment"/>}</article>
+      <article className="panel history-detail-card payment-detail-card"><header><div><span>결제 · 환불 및 총합</span><strong>{Number(payment.detail_count ?? (payment.items ?? []).length).toLocaleString('ko-KR')}건</strong></div><div className="history-payment-totals"><small>환불 {money(payment.refund_total)}</small><b>순결제 {money(payment.total)}</b></div></header>{loading ? <p className="history-list-empty">결제내역을 불러오는 중...</p> : <Rows items={payment.items} kind="payment" onOpenReceipt={openReceipt}/>}</article>
     </div>
+    {receiptModal && <ReceiptModal modal={receiptModal} onClose={closeReceipt} onSelectType={(type) => loadReceipt(receiptModal.descriptor, type)}/>}
   </section>;
 }
 function maskPhone(phone) {

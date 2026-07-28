@@ -23,6 +23,7 @@ from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
 from app.services.kiwoom_payment import KiwoomCancellationOutcomeUnknown, KiwoomPaymentError, cancel_payment
+from app.services.payment_completion import payment_receipt_links, payment_receipt_method
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
 KST = ZoneInfo("Asia/Seoul")
@@ -1231,6 +1232,45 @@ def _decorate_transaction_people(repo: JoinRepository, *groups: list[dict]) -> d
     return users
 
 
+def _payment_receipt_descriptor(order: dict, *, entry_kind: str, entry_id: object, source: str) -> dict | None:
+    settings = get_settings()
+    links = payment_receipt_links(
+        order,
+        base_url=settings.kiwoompay_base_url,
+        cpid=settings.kiwoompay_cpid,
+    )
+    types = [
+        receipt_type
+        for receipt_type, url in (
+            ("sales_slip", links.get("receipt_url")),
+            ("cash_receipt", links.get("cash_receipt_url")),
+        )
+        if url
+    ]
+    if not types or not entry_id:
+        return None
+    return {
+        "entry_kind": entry_kind,
+        "entry_id": str(entry_id),
+        "types": types,
+        "source": source,
+    }
+
+
+def _decorate_payment_receipts(payments: list[dict], refunds: list[dict], refund_orders: dict[str, dict]) -> None:
+    for row in payments:
+        row["receipt"] = _payment_receipt_descriptor(
+            row, entry_kind="payment", entry_id=row.get("id"), source="payment",
+        )
+        row.pop("provider_payment_key", None)
+        row.pop("provider_response", None)
+    for row in refunds:
+        original = refund_orders.get(str(row.get("order_id")), {})
+        row["receipt"] = _payment_receipt_descriptor(
+            original, entry_kind="refund", entry_id=row.get("id"), source="original_payment",
+        )
+
+
 @router.get("/payment-history")
 def payment_history(date_: str = Query(alias="date"), granularity: str = Query(pattern="^(year|month|day|hour|range)$"), token: str = Depends(bearer_token), end_date: str | None = Query(default=None)):
     repo = JoinRepository()
@@ -1248,11 +1288,11 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
             start, end, pattern = _analytics_bounds(selected, granularity)
         start_iso, end_iso = start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
         txs = _paged_get(repo, "meal_transactions", {
-            "select": "id,user_id,company_id,amount,kind,pay_type,created_at", "merchant_id": f"eq.{merchant_id}",
+            "select": "id,user_id,company_id,amount,kind,pay_type,voucher_id,created_at", "merchant_id": f"eq.{merchant_id}",
             "and": f"(created_at.gte.{start_iso},created_at.lt.{end_iso})", "order": "created_at.desc",
         })
         payments = _paged_get(repo, "payment_orders", {
-            "select": "id,order_id,user_id,company_id,amount,point_amount,status,pay_type,product_name,payment_method,approved_at,created_at",
+            "select": "id,order_id,user_id,company_id,amount,point_amount,status,pay_type,product_name,payment_method,provider_payment_key,provider_response,approved_at,created_at",
             "merchant_id": f"eq.{merchant_id}", "status": "in.(done,refunded)",
             "and": f"(approved_at.gte.{start_iso},approved_at.lt.{end_iso})", "order": "approved_at.desc",
         })
@@ -1263,13 +1303,14 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
         })
         refund_order_ids = sorted({str(row["order_id"]) for row in refunds if row.get("order_id")})
         refund_orders = repo.client.rest_get(
-            "payment_orders", {"select": "id,pay_type,product_name", "id": f"in.({','.join(refund_order_ids)})"}
+            "payment_orders", {"select": "id,pay_type,product_name,payment_method,provider_payment_key,provider_response", "id": f"in.({','.join(refund_order_ids)})", "merchant_id": f"eq.{merchant_id}"}
         ) if refund_order_ids else []
-        refund_order_details = {row["id"]: row for row in refund_orders}
+        refund_order_details = {str(row["id"]): row for row in refund_orders}
         for row in refunds:
-            order = refund_order_details.get(row.get("order_id"), {})
+            order = refund_order_details.get(str(row.get("order_id")), {})
             row["pay_type"] = order.get("pay_type") or "direct"
             row["product_name"] = order.get("product_name") or "환불"
+        _decorate_payment_receipts(payments, refunds, refund_order_details)
         _decorate_transaction_people(repo, txs, payments, refunds)
         series: dict[str, dict[str, int]] = {}
         for row in txs:
@@ -1310,6 +1351,70 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "결제 분석을 불러오지 못했어요") from exc
+
+
+@router.get("/payment-history/receipts/{entry_kind}/{entry_id}/{receipt_type}")
+def payment_history_receipt(
+    entry_kind: str,
+    entry_id: str,
+    receipt_type: str,
+    response: Response,
+    token: str = Depends(bearer_token),
+):
+    if entry_kind not in {"payment", "refund"} or receipt_type not in {"sales_slip", "cash_receipt"}:
+        raise _error(404, "RECEIPT_NOT_FOUND", "영수증을 찾을 수 없어요")
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        source = "payment"
+        if entry_kind == "payment":
+            orders = repo.client.rest_get("payment_orders", {
+                "select": "id,payment_method,provider_payment_key,provider_response,status",
+                "id": f"eq.{entry_id}", "merchant_id": f"eq.{merchant_id}",
+                "status": "in.(done,refunded)", "limit": "1",
+            })
+        else:
+            refunds = repo.client.rest_get("refund_requests", {
+                "select": "id,order_id,status,refund_amount,point_amount,completed_at",
+                "id": f"eq.{entry_id}", "merchant_id": f"eq.{merchant_id}",
+                "status": "eq.completed", "limit": "1",
+            })
+            if not refunds:
+                raise _error(404, "RECEIPT_NOT_FOUND", "영수증을 찾을 수 없어요")
+            refund = refunds[0]
+            orders = repo.client.rest_get("payment_orders", {
+                "select": "id,payment_method,provider_payment_key,provider_response,status",
+                "id": f"eq.{refund.get('order_id')}", "merchant_id": f"eq.{merchant_id}",
+                "status": "in.(done,refunded)", "limit": "1",
+            })
+            source = "original_payment"
+        if not orders:
+            raise _error(404, "RECEIPT_NOT_FOUND", "영수증을 찾을 수 없어요")
+        settings = get_settings()
+        links = payment_receipt_links(
+            orders[0], base_url=settings.kiwoompay_base_url, cpid=settings.kiwoompay_cpid,
+        )
+        key = "receipt_url" if receipt_type == "sales_slip" else "cash_receipt_url"
+        url = links.get(key)
+        if not url:
+            raise _error(409, "RECEIPT_NOT_AVAILABLE", "발행 완료된 영수증이 없어요")
+        receipt_method = payment_receipt_method(orders[0])
+        if receipt_type == "cash_receipt":
+            title = "현금영수증"
+        elif receipt_method == "CARD":
+            title = "카드 매출전표"
+        else:
+            title = "계좌이체 전표"
+        if source == "original_payment":
+            title = f"원결제 {title}"
+        response.headers["Cache-Control"] = "private, no-store"
+        return {"ok": True, "data": {"title": title, "url": url, "source": source}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "영수증을 불러오지 못했어요") from exc
 
 
 @router.get("/transactions")

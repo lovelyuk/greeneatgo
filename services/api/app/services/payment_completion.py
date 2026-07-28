@@ -106,6 +106,29 @@ def _issued_count(order: dict[str, Any]) -> int | None:
     return None
 
 
+def payment_receipt_method(order: dict[str, Any]) -> str | None:
+    """Resolve the provider document type without relabeling the payment method."""
+    method = _text(order.get("payment_method"))
+    method = method.upper() if method else None
+    if method in {"CARD", "BANK"}:
+        return method
+    payload = order.get("provider_response")
+    provider = payload if isinstance(payload, dict) else {}
+    payment_type = _text(provider.get("PAYMENTTYPE"))
+    payment_type = payment_type.upper() if payment_type else None
+    return payment_type if payment_type in {"CARD", "BANK"} else None
+
+
+def payment_receipt_links(order: dict[str, Any], *, base_url: str, cpid: str) -> dict[str, str | None]:
+    """Build official receipt URLs from authoritative payment-order columns."""
+    payload = order.get("provider_response")
+    provider = payload if isinstance(payload, dict) else {}
+    receipt_method = payment_receipt_method(order)
+    transaction_id = _text(order.get("provider_payment_key"))
+    cash_authorization = _text(provider.get("CASHRECAUTHNO"))
+    return _receipt_urls(base_url, cpid, transaction_id, receipt_method, cash_authorization)
+
+
 def present_payment_completion(order: dict[str, Any], *, base_url: str, cpid: str) -> dict[str, Any]:
     """Build the public completion DTO from authoritative order columns.
 
@@ -118,10 +141,11 @@ def present_payment_completion(order: dict[str, Any], *, base_url: str, cpid: st
     method = method.upper() if method else None
     transaction_id = _text(order.get("provider_payment_key"))
     cash_authorization = _text(provider.get("CASHRECAUTHNO"))
-    links = _receipt_urls(base_url, cpid, transaction_id, method, cash_authorization)
+    receipt_method = payment_receipt_method(order)
+    links = payment_receipt_links(order, base_url=base_url, cpid=cpid)
     issued_count = _issued_count(order)
     cash_receipt_status = "ISSUED" if links["cash_receipt_url"] else None
-    method_label = {"CARD": "카드", "BANK": "계좌이체"}.get(method, method) if method else None
+    method_label = {"CARD": "카드", "BANK": "계좌이체", "NAVERPAY": "네이버페이"}.get(method, method) if method else None
 
     return {
         "order_id": _text(order.get("order_id")),
@@ -135,9 +159,9 @@ def present_payment_completion(order: dict[str, Any], *, base_url: str, cpid: st
             "method_label": method_label,
             "approved_at": order.get("approved_at"),
             "transaction_id": transaction_id,
-            "issuer_name": _text(provider.get("CARDNAME")) if method == "CARD" else None,
+            "issuer_name": _text(provider.get("CARDNAME")) if receipt_method == "CARD" else None,
             "masked_card_number": (
-                _masked_card_number(provider.get("CARDNO")) if method == "CARD" else None
+                _masked_card_number(provider.get("CARDNO")) if receipt_method == "CARD" else None
             ),
             "authorization_number": _text(provider.get("AUTHNO")),
             "bank_name": _text(provider.get("BANKNAME")) if method == "BANK" else None,

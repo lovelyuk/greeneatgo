@@ -60,6 +60,29 @@ def test_card_completion_maps_official_production_receipts_and_allowlisted_detai
     assert result["fulfillment"] == {"issued_count": 11, "voucher_balance": None}
 
 
+def test_naverpay_card_payment_uses_provider_card_receipt_type():
+    result = present_payment_completion(
+        _order(
+            payment_method="NAVERPAY",
+            provider_response={
+                "PAYMENTTYPE": "CARD",
+                "CARDNAME": "신한카드 - 체크",
+                "CARDNO": "****-****-****-8900",
+            },
+        ),
+        base_url=PROD,
+        cpid="CPID",
+    )
+
+    payment, receipts = result["payment"], result["receipts"]
+    assert payment["method"] == "NAVERPAY"
+    assert payment["method_label"] == "네이버페이"
+    assert payment["issuer_name"] == "신한카드 - 체크"
+    assert payment["masked_card_number"] == "****-****-****-8900"
+    assert "PayInfoPrintDirectCard.jsp" in receipts["sales_slip_url"]
+    assert receipts["cash_receipt_url"] is None
+
+
 def test_bank_completion_uses_official_bank_receipt():
     result = present_payment_completion(
         _order(payment_method="bank", provider_response={"BANKNAME": "테스트은행"}),

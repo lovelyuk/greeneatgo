@@ -2,10 +2,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 
 from app.repositories.supabase_http import SupabaseHttpError
-from app.routers.merchant_admin import payment_history, refund_purchase_order
+from app.routers.merchant_admin import payment_history, payment_history_receipt, refund_purchase_order
 from app.schemas import MerchantRefundRequest
 from app.services.refunds import calculate_refund
 from app.services.kiwoom_payment import KiwoomCancellationOutcomeUnknown, KiwoomPaymentError
@@ -583,9 +583,9 @@ def test_payment_history_separates_usage_payments_and_refunds(repo_class):
     )
     repo.client.rest_get.side_effect = [
         [{"id": "tx", "user_id": "customer-1", "amount": -8000, "kind": "spend", "pay_type": "voucher", "created_at": "2026-07-18T01:00:00Z"}],
-        [{"id": "order", "user_id": "customer-1", "amount": 80000, "point_amount": 0, "pay_type": "subsidized", "approved_at": "2026-07-18T02:00:00Z"}],
+        [{"id": "order", "user_id": "customer-1", "amount": 80000, "point_amount": 0, "pay_type": "subsidized", "payment_method": "CARD", "provider_payment_key": "card-trx", "provider_response": {}, "approved_at": "2026-07-18T02:00:00Z"}],
         [{"id": "refund", "order_id": "order", "user_id": "customer-1", "refund_amount": 72000, "point_amount": 0, "completed_at": "2026-07-18T03:00:00Z"}],
-        [{"id": "order", "pay_type": "subsidized", "product_name": "보조금 식권"}],
+        [{"id": "order", "pay_type": "subsidized", "product_name": "보조금 식권", "payment_method": "CARD", "provider_payment_key": "card-trx", "provider_response": {}}],
         [{"id": "customer-1", "display_name": "홍고객", "company_id": None}],
     ]
 
@@ -594,6 +594,14 @@ def test_payment_history_separates_usage_payments_and_refunds(repo_class):
     assert [item["employee_name"] for item in result["data"]["payment"]["items"]] == ["홍고객", "홍고객"]
     assert [item["payment_type_label"] for item in result["data"]["payment"]["items"]] == ["보조금", "보조금"]
     assert result["data"]["payment"]["items"][0]["product_name"] == "보조금 식권"
+    assert result["data"]["payment"]["items"][0]["receipt"] == {
+        "entry_kind": "refund", "entry_id": "refund", "types": ["sales_slip"], "source": "original_payment",
+    }
+    assert result["data"]["payment"]["items"][1]["receipt"] == {
+        "entry_kind": "payment", "entry_id": "order", "types": ["sales_slip"], "source": "payment",
+    }
+    assert "provider_payment_key" not in result["data"]["payment"]["items"][1]
+    assert "provider_response" not in result["data"]["payment"]["items"][1]
     assert result["data"]["transaction"]["items"][0] == {
         "id": "tx", "user_id": "customer-1", "amount": -8000, "kind": "spend", "pay_type": "voucher",
         "created_at": "2026-07-18T01:00:00Z", "employee_name": "홍고객", "company_name": "일반 고객",
@@ -604,3 +612,63 @@ def test_payment_history_separates_usage_payments_and_refunds(repo_class):
         "payment_count": 1, "payment_amount": 80000,
         "refund_count": 1, "refund_amount": 72000, "net_payment_amount": 8000,
     }
+
+
+@patch("app.routers.merchant_admin.JoinRepository")
+def test_payment_history_receipt_rechecks_merchant_and_returns_no_store_card_slip(repo_class):
+    repo = repo_class.return_value
+    repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
+    repo.get_profile.return_value = SimpleNamespace(
+        id="admin-123", role="merchant_admin", status="active", merchant_id="merchant-1"
+    )
+    repo.client.rest_get.return_value = [{
+        "id": "order", "payment_method": "CARD", "provider_payment_key": "trx id&1",
+        "provider_response": {}, "status": "done",
+    }]
+    response = Response()
+
+    result = payment_history_receipt("payment", "order", "sales_slip", response, "token")
+
+    assert result["data"]["title"] == "카드 매출전표"
+    assert result["data"]["url"].startswith("https://agenttest.kiwoompay.co.kr/common/PayInfoPrintDirectCard.jsp?")
+    assert "DAOUTRX=trx+id%261" in result["data"]["url"]
+    assert response.headers["cache-control"] == "private, no-store"
+    params = repo.client.rest_get.call_args.args[1]
+    assert params["merchant_id"] == "eq.merchant-1"
+    assert "provider_response" not in result["data"]
+
+
+@patch("app.routers.merchant_admin.JoinRepository")
+def test_payment_history_receipt_returns_card_slip_for_naverpay_card(repo_class):
+    repo = repo_class.return_value
+    repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
+    repo.get_profile.return_value = SimpleNamespace(
+        id="admin-123", role="merchant_admin", status="active", merchant_id="merchant-1"
+    )
+    repo.client.rest_get.return_value = [{
+        "id": "order", "payment_method": "NAVERPAY", "provider_payment_key": "naver-trx",
+        "provider_response": {"PAYMENTTYPE": "CARD"}, "status": "done",
+    }]
+
+    result = payment_history_receipt("payment", "order", "sales_slip", Response(), "token")
+
+    assert result["data"]["title"] == "카드 매출전표"
+    assert "PayInfoPrintDirectCard.jsp" in result["data"]["url"]
+
+
+@patch("app.routers.merchant_admin.JoinRepository")
+def test_payment_history_receipt_hides_other_merchant_entries(repo_class):
+    repo = repo_class.return_value
+    repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
+    repo.get_profile.return_value = SimpleNamespace(
+        id="admin-123", role="merchant_admin", status="active", merchant_id="merchant-1"
+    )
+    repo.client.rest_get.return_value = []
+
+    with pytest.raises(HTTPException) as raised:
+        payment_history_receipt("payment", "other-order", "sales_slip", Response(), "token")
+
+    assert raised.value.status_code == 404
+    assert isinstance(raised.value.detail, dict)
+    assert raised.value.detail["code"] == "RECEIPT_NOT_FOUND"
+    assert repo.client.rest_get.call_args.args[1]["merchant_id"] == "eq.merchant-1"

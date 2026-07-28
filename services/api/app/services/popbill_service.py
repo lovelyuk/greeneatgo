@@ -319,11 +319,17 @@ class PopbillService:
         allow_delayed_issue: bool = False,
     ) -> PopbillIssueResult:
         key, payload = self._build_taxinvoice(tax_invoice)
+        # popbill 1.64.2 accepts mapping payloads, but its forceIssue=True branch
+        # performs attribute assignment (taxinvoice.forceIssue = True), which
+        # raises AttributeError for a dict. Set the documented wire field on our
+        # fresh payload copy and keep the SDK mutator branch disabled.
+        if allow_delayed_issue:
+            payload["forceIssue"] = True
         try:
             # Exact popbill 1.64.2 positional contract: specification, force, deal key,
             # memo, subject, then user ID.
             response = self._sdk.registIssue(
-                self._corp_num, payload, False, allow_delayed_issue,
+                self._corp_num, payload, False, False,
                 None, None, None, self._config.user_id,
             )
         except PopbillException as exc:

@@ -313,12 +313,15 @@ def test_issue_allows_delayed_issuance_only_when_explicitly_requested(
     config: PopbillConfig, invoice: dict[str, Any]
 ) -> None:
     sdk = FakeTaxinvoiceSDK()
+    original = deepcopy(invoice)
 
     make_service(config, sdk).issue(invoice, allow_delayed_issue=True)
 
+    assert invoice == original
     name, args, kwargs = sdk.calls[0]
     assert name == "registIssue" and kwargs == {}
-    assert args[2:] == (False, True, None, None, None, "api-user")
+    assert args[1]["forceIssue"] is True
+    assert args[2:] == (False, False, None, None, None, "api-user")
 
 
 def test_typed_persisted_boundary_validates_required_structure(config: PopbillConfig, invoice: dict[str, Any]) -> None:

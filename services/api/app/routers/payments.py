@@ -27,6 +27,24 @@ logger = logging.getLogger(__name__)
 # Deployed result notifications may omit RESULTCODE, so absence remains
 # compatible while an explicit non-success value can never approve an order.
 KIWOOM_NOTIFICATION_SUCCESS_CODES = frozenset({"0000"})
+KIWOOM_NOTIFICATION_STORED_FIELDS = frozenset({
+    "CPID",
+    "PAYMETHOD",
+    "DAOUTRX",
+    "ORDERNO",
+    "AMOUNT",
+    "SETTDATE",
+    "PAYMENTTYPE",
+    "RESULTCODE",
+    "AUTHNO",
+    "ALLOTMON",
+    "NOINTFLAG",
+    "CARDCODE",
+    "CARDNAME",
+    "CARDNO",
+    "BANKNAME",
+    "CASHRECAUTHNO",
+})
 
 ORDER_SELECT = (
     "id,order_id,checkout_token,user_id,merchant_id,product_id,merchant_name,"
@@ -212,6 +230,34 @@ def _is_successful_notification_outcome(values: dict[str, str]) -> bool:
     return str(values["RESULTCODE"]).strip() in KIWOOM_NOTIFICATION_SUCCESS_CODES
 
 
+def _masked_card_number_for_storage(value: object) -> str | None:
+    digits = "".join(character for character in str(value or "") if character.isdigit())
+    if len(digits) < 4:
+        return None
+    return f"****-****-****-{digits[-4:]}"
+
+
+def _normalized_notification_payload(values: dict[str, str], source_ip: str) -> dict[str, str]:
+    """Persist only fields required for reconciliation and receipt presentation.
+
+    Kiwoom sends callback data in a GET query and can include a full card PAN plus
+    customer identifiers. Those values are not needed to fulfill an order and
+    must never enter the durable inbox or payment-order provider snapshot.
+    """
+    normalized: dict[str, str] = {"source_ip": source_ip}
+    for key in KIWOOM_NOTIFICATION_STORED_FIELDS:
+        if key not in values:
+            continue
+        value = str(values[key] or "").strip()
+        if key == "CARDNO":
+            masked = _masked_card_number_for_storage(value)
+            if masked:
+                normalized[key] = masked
+        elif value:
+            normalized[key] = value[:200]
+    return normalized
+
+
 async def _notification(request: Request) -> Response:
     settings, repo = get_settings(), JoinRepository()
     try:
@@ -261,7 +307,7 @@ async def _notification(request: Request) -> Response:
                 and int(order.get("amount") or 0) > 0 and not order.get("checkout_started_at")
                 and not legacy_subsidized):
             return _ack(False, 409)
-        provider_response = {**values, "source_ip": source_ip}
+        provider_response = _normalized_notification_payload(values, source_ip)
         # Kiwoom's validated result notification is the final approval. The RPC
         # repeats every stored-order check, persists the durable inbox record,
         # completes payment, and fulfills assets in one database transaction.

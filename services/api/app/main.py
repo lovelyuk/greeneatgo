@@ -2,10 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.logging_filters import install_payment_notification_access_log_filter
 
 from app.routers import admin, auth_pages, boards, company_usage, consumer, health, invites, join, me, merchant_admin, pay, payments, platform, products, push_notifications, settlements, transactions, voucher_products
 
 settings = get_settings()
+install_payment_notification_access_log_filter()
 
 app = FastAPI(title="greeneatGo API", version="0.1.0")
 app.add_middleware(

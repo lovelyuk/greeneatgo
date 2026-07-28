@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from app.routers.payments import (
     _ensure_voucher_order_available,
     _is_successful_notification_outcome,
+    _normalized_notification_payload,
     checkout,
     router,
     short_redirect_router,
@@ -310,6 +311,30 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertFalse(_is_successful_notification_outcome({"PAYMETHOD": "CARD", "RESULTCODE": "9999"}))
         self.assertFalse(_is_successful_notification_outcome({"PAYMETHOD": "CARD_CANCEL", "RESULTCODE": "0000"}))
 
+    def test_notification_payload_masks_pan_and_drops_customer_pii(self):
+        normalized = _normalized_notification_payload({
+            "CPID": "CPID",
+            "PAYMETHOD": "NAVERPAY",
+            "ORDERNO": "GE-order-123",
+            "DAOUTRX": "trx-1",
+            "AMOUNT": "8000",
+            "CARDNO": "5107-3700-0000-8900",
+            "CARDNAME": "카드사 - 체크",
+            "AUTHNO": "approval",
+            "USERID": "customer-uuid",
+            "USERNAME": "홍길동",
+            "EMAIL": "customer@example.com",
+            "RESERVEDSTRING": "private-reserved-data",
+            "UNEXPECTED": "not-allow-listed",
+        }, "123.140.121.205")
+
+        self.assertEqual(normalized["CARDNO"], "****-****-****-8900")
+        self.assertEqual(normalized["source_ip"], "123.140.121.205")
+        self.assertEqual(normalized["CARDNAME"], "카드사 - 체크")
+        self.assertNotIn("5107370000008900", json.dumps(normalized))
+        for key in ("USERID", "USERNAME", "EMAIL", "RESERVEDSTRING", "UNEXPECTED"):
+            self.assertNotIn(key, normalized)
+
     def test_failed_and_cancel_notifications_ack_without_database_access_or_mutation(self):
         app = FastAPI()
         app.include_router(router)
@@ -360,7 +385,8 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
                 params={
                     "CPID": "CPID", "PAYMETHOD": "CARD", "ORDERNO": "GE-order-123",
                     "DAOUTRX": "daou-trx-1", "AMOUNT": "8000", "SETTDATE": "20260721090000",
-                    "RESULTCODE": "0000",
+                    "RESULTCODE": "0000", "CARDNO": "5107370000008900",
+                    "USERID": "customer-uuid", "EMAIL": "customer@example.com",
                 },
             )
         self.assertEqual(response.status_code, 200)
@@ -369,6 +395,9 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertEqual(rpc_name, "complete_kiwoom_payment_notification")
         self.assertEqual(rpc_payload["p_provider_transaction_id"], "daou-trx-1")
         self.assertEqual(rpc_payload["p_payload"]["ORDERNO"], "GE-order-123")
+        self.assertEqual(rpc_payload["p_payload"]["CARDNO"], "****-****-****-8900")
+        self.assertNotIn("USERID", rpc_payload["p_payload"])
+        self.assertNotIn("EMAIL", rpc_payload["p_payload"])
         repo.client.rest_patch.assert_not_called()
 
     def test_notification_completes_ready_legacy_subsidized_order(self):

@@ -238,11 +238,25 @@ def merchant_popbill_readiness(token: str = Depends(bearer_token), repo: Settlem
     actor = _actor(repo, token, "merchant_admin")
     assert actor.merchant_id is not None
     config = PopbillConfig.from_settings(get_settings())
+    certificate = {
+        "certificate_verified": False,
+        "certificate_expires_on": None,
+    }
     try:
-        PopbillService(config)
+        service = PopbillService(config)
         configured = True
     except PopbillError:
         configured = False
+    else:
+        try:
+            provider = service.certificate_readiness()
+            certificate = {
+                "certificate_verified": provider.certificate_verified,
+                "certificate_expires_on": provider.certificate_expires_on,
+            }
+        except PopbillError:
+            # Readiness is fail-closed and never exposes provider messages or credentials.
+            pass
     try:
         supplier = repo.supplier_popbill_readiness(actor.merchant_id, config.corp_num)
     except SupabaseHttpError as exc:
@@ -250,6 +264,7 @@ def merchant_popbill_readiness(token: str = Depends(bearer_token), repo: Settlem
     return {"ok": True, "data": {
         "configured": configured,
         "is_test": config.is_test,
+        **certificate,
         **supplier,
     }, "error": None}
 

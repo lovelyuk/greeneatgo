@@ -141,15 +141,63 @@ def test_popbill_readiness_is_merchant_scoped_and_exposes_no_credentials(client_
         popbill_user_id="user", popbill_is_test=True, popbill_ip_restrict_on=True,
         popbill_use_static_ip=False, popbill_use_local_time=True,
     ))
-    monkeypatch.setattr(settlements_router, "PopbillService", lambda config: object())
+    class ReadyPopbill:
+        def __init__(self, config):
+            self.config = config
+
+        def certificate_readiness(self):
+            return SimpleNamespace(
+                certificate_verified=True,
+                certificate_expires_on="2027-07-27",
+            )
+
+    monkeypatch.setattr(settlements_router, "PopbillService", ReadyPopbill)
 
     response = client.get("/v1/admin/merchant/settlements/popbill-readiness")
 
     assert response.status_code == 200
     assert response.json()["data"] == {
-        "configured": True, "is_test": True, "supplier_ready": True, "corp_matches": True,
+        "configured": True,
+        "is_test": True,
+        "certificate_verified": True,
+        "certificate_expires_on": "2027-07-27",
+        "supplier_ready": True,
+        "corp_matches": True,
     }
     assert repo.calls[-1] == ("readiness", "merchant-own", "123-45-67890")
+    assert "secret" not in response.text and "link" not in response.text
+
+
+def test_popbill_readiness_separates_configuration_from_provider_failure(
+    client_factory, monkeypatch
+):
+    client, _ = client_factory("merchant_admin")
+    monkeypatch.setattr(settlements_router, "get_settings", lambda: SimpleNamespace(
+        popbill_link_id="link", popbill_secret_key="secret", popbill_corp_num="123-45-67890",
+        popbill_user_id="user", popbill_is_test=True, popbill_ip_restrict_on=True,
+        popbill_use_static_ip=False, popbill_use_local_time=True,
+    ))
+
+    class UnreachablePopbill:
+        def __init__(self, config):
+            self.config = config
+
+        def certificate_readiness(self):
+            raise PopbillError("POPBILL_TEMPORARILY_UNAVAILABLE", "safe")
+
+    monkeypatch.setattr(settlements_router, "PopbillService", UnreachablePopbill)
+
+    response = client.get("/v1/admin/merchant/settlements/popbill-readiness")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "configured": True,
+        "is_test": True,
+        "certificate_verified": False,
+        "certificate_expires_on": None,
+        "supplier_ready": True,
+        "corp_matches": True,
+    }
     assert "secret" not in response.text and "link" not in response.text
 
 

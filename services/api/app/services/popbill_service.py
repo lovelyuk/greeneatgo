@@ -91,6 +91,10 @@ class TaxinvoiceSDK(Protocol):
 
     def checkMgtKeyInUse(self, CorpNum: str, MgtKeyType: str, MgtKey: str) -> bool: ...
 
+    def checkCertValidation(self, CorpNum: str, UserID: str | None = None) -> Any: ...
+
+    def getCertificateExpireDate(self, CorpNum: str) -> datetime: ...
+
 
 SDKFactory = Callable[[str, str], TaxinvoiceSDK]
 
@@ -149,6 +153,12 @@ class PopbillStatus:
     nts_sent_at: str | None
     nts_result_at: str | None
     nts_result_code: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True)
+class PopbillCertificateReadiness:
+    certificate_verified: bool
+    certificate_expires_on: str
 
 
 @dataclass(frozen=True)
@@ -328,6 +338,25 @@ class PopbillService:
             provider_code=_attr(response, "code"),
             # registIssue success means issued at Popbill, never accepted by NTS.
             nts_accepted=False,
+        )
+
+    def certificate_readiness(self) -> PopbillCertificateReadiness:
+        """Verify the configured account and certificate without creating a document."""
+        try:
+            # CertCheck uses HTTP success as its authoritative signal; the SDK raises for
+            # every provider rejection. No document is registered by either call.
+            self._sdk.checkCertValidation(self._corp_num, self._config.user_id)
+            expires_at = self._sdk.getCertificateExpireDate(self._corp_num)
+        except Exception as exc:
+            raise self._safe_error(exc, operation="certificate") from None
+        if not isinstance(expires_at, datetime):
+            raise PopbillError(
+                "POPBILL_INVALID_PROVIDER_RESPONSE",
+                "Popbill returned an invalid certificate expiration",
+            )
+        return PopbillCertificateReadiness(
+            certificate_verified=True,
+            certificate_expires_on=expires_at.date().isoformat(),
         )
 
     def get_status(self, management_key: str) -> PopbillStatus:

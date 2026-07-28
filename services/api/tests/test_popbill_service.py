@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from decimal import Decimal
 from copy import deepcopy
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -12,6 +12,7 @@ from popbill import PopbillException, TaxinvoiceService
 
 from app.config import Settings, parse_env_bool
 from app.services.popbill_service import (
+    PopbillCertificateReadiness,
     PopbillConfig,
     PopbillError,
     PopbillIssueResult,
@@ -47,6 +48,7 @@ class FakeTaxinvoiceSDK:
         self.key_in_use = True
         self.view_url: Any = "https://provider.example/view/short-lived"
         self.pdf_url: Any = "https://provider.example/pdf/short-lived"
+        self.certificate_expiration: Any = datetime(2027, 7, 27, 23, 59, 59)
 
     def _record(self, name: str, *args: Any, **kwargs: Any) -> None:
         self.calls.append((name, args, kwargs))
@@ -89,6 +91,14 @@ class FakeTaxinvoiceSDK:
     def checkMgtKeyInUse(self, CorpNum: str, MgtKeyType: str, MgtKey: str) -> bool:
         self._record("checkMgtKeyInUse", CorpNum, MgtKeyType, MgtKey)
         return self.key_in_use
+
+    def checkCertValidation(self, CorpNum: str, UserID: str | None = None) -> Any:
+        self._record("checkCertValidation", CorpNum, UserID)
+        return SimpleNamespace(code=1)
+
+    def getCertificateExpireDate(self, CorpNum: str) -> datetime:
+        self._record("getCertificateExpireDate", CorpNum)
+        return self.certificate_expiration
 
 
 @pytest.fixture
@@ -206,6 +216,8 @@ def test_sdk_runtime_signatures_match_pinned_popbill_1_64_2() -> None:
         "getViewURL": "(self, CorpNum, MgtKeyType, MgtKey, UserID=None)",
         "getPDFURL": "(self, CorpNum, MgtKeyType, MgtKey, UserID=None)",
         "checkMgtKeyInUse": "(self, CorpNum, MgtKeyType, MgtKey)",
+        "checkCertValidation": "(self, CorpNum, UserID=None)",
+        "getCertificateExpireDate": "(self, CorpNum)",
     }
     assert {name: str(inspect.signature(getattr(TaxinvoiceService, name))) for name in expected} == expected
 
@@ -230,6 +242,42 @@ def test_sdk_configuration_uses_documented_flags(config: PopbillConfig) -> None:
     make_service(config, sdk)
     assert (sdk.IsTest, sdk.IPRestrictOnOff, sdk.UseStaticIP, sdk.UseLocalTimeYN) == (True, True, False, True)
     assert not hasattr(sdk, "IPRestrictOnDemand")
+
+
+def test_certificate_readiness_calls_provider_without_issuing(config: PopbillConfig) -> None:
+    sdk = FakeTaxinvoiceSDK()
+
+    result = make_service(config, sdk).certificate_readiness()
+
+    assert result == PopbillCertificateReadiness(True, "2027-07-27")
+    assert sdk.calls == [
+        ("checkCertValidation", ("1234567890", "api-user"), {}),
+        ("getCertificateExpireDate", ("1234567890",), {}),
+    ]
+
+
+def test_certificate_readiness_fails_closed_and_sanitizes_provider_errors(
+    config: PopbillConfig,
+) -> None:
+    sdk = FakeTaxinvoiceSDK()
+    sdk.raise_on["checkCertValidation"] = PopbillException(-999, "certificate secret")
+
+    with pytest.raises(PopbillError) as exc:
+        make_service(config, sdk).certificate_readiness()
+
+    assert exc.value.code == "POPBILL_TEMPORARILY_UNAVAILABLE"
+    assert exc.value.provider_code == -999
+    assert "certificate secret" not in str(exc.value)
+
+
+def test_certificate_readiness_rejects_malformed_expiration(config: PopbillConfig) -> None:
+    sdk = FakeTaxinvoiceSDK()
+    sdk.certificate_expiration = "20270727235959"
+
+    with pytest.raises(PopbillError) as exc:
+        make_service(config, sdk).certificate_readiness()
+
+    assert exc.value.code == "POPBILL_INVALID_PROVIDER_RESPONSE"
 
 
 def test_issue_maps_persisted_snapshot_and_exact_sdk_call(config: PopbillConfig, invoice: dict[str, Any]) -> None:

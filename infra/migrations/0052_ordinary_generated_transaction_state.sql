@@ -66,10 +66,15 @@ begin
    order by i.id for update of i;
  perform 1 from public.settlement_payments p join _legacy_derived_settlements d on d.id=p.settlement_id
    order by p.id for update of p;
- if exists(select 1 from public.tax_invoices i join _legacy_derived_settlements d on d.id=i.settlement_id
-   where i.issue_attempt_token is not null or i.issue_attempt_started_at is not null
+ if exists(select 1 from public.tax_invoices i
+   join _legacy_derived_settlements d on d.id=i.settlement_id
+   join public.settlements s on s.id=i.settlement_id
+   where i.issue_attempt_token is not null
      or (i.issue_lease_expires_at is not null and i.issue_lease_expires_at>clock_timestamp())
-     or i.reconciliation_required_at is not null) then
+     or i.reconciliation_required_at is not null
+     or (i.issue_attempt_started_at is not null and i.issued_at is null and not (
+       (i.popbill_status='issued' and s.tax_invoice_status in ('issued','nts_sending','nts_accepted'))
+       or (i.popbill_status='failed' and s.tax_invoice_status='failed')))) then
   raise exception 'LEGACY_GENERATED_STATE_PROVIDER_OPERATION_IN_FLIGHT' using errcode='P0001';
  end if;
 end $$;
@@ -376,19 +381,15 @@ begin
   perform 1 from public.settlements where id=any(sids) order by id for update;
   perform 1 from public.tax_invoices where settlement_id=any(sids) order by id for update;
   perform 1 from public.settlement_payments where settlement_id=any(sids) order by id for update;
-  if exists(select 1 from public.settlements where id=any(sids)
-      and tax_invoice_status in ('issuing','nts_sending','nts_accepted'))
-    or exists(select 1 from public.settlement_payments where settlement_id=any(sids)
-      and external_reference is not null)
-    or exists(select 1 from public.tax_invoices where settlement_id=any(sids) and (
-      issue_attempt_token is not null or issue_attempt_started_at is not null
-      or (issue_lease_expires_at is not null and issue_lease_expires_at>clock_timestamp())
-      or reconciliation_required_at is not null or nts_sent_at is not null or nts_accepted_at is not null
-      or issued_at is not null or popbill_status_code is not null or provider_response is not null
-      or nullif(btrim(coalesce(popbill_status,'')),'') is not null
-      or nullif(btrim(coalesce(nts_confirm_num,'')),'') is not null))
-    or exists(select 1 from public.tax_invoice_events e join public.tax_invoices i on i.id=e.tax_invoice_id
-      where i.settlement_id=any(sids) and e.provider_event_id is not null)
+  if exists(select 1 from public.tax_invoices i
+    join public.settlements s on s.id=i.settlement_id
+    where i.settlement_id=any(sids) and (
+      i.issue_attempt_token is not null
+      or (i.issue_lease_expires_at is not null and i.issue_lease_expires_at>clock_timestamp())
+      or i.reconciliation_required_at is not null
+      or (i.issue_attempt_started_at is not null and i.issued_at is null and not (
+        (i.popbill_status='issued' and s.tax_invoice_status in ('issued','nts_sending','nts_accepted'))
+        or (i.popbill_status='failed' and s.tax_invoice_status='failed')))))
   then raise exception 'GENERATED_STATE_EXTERNAL_REFERENCE' using errcode='P0001'; end if;
   insert into public.generated_reset_delete_guards
     select pg_catalog.pg_backend_pid(),pg_catalog.txid_current(),unnest(sids);

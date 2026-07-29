@@ -1586,6 +1586,37 @@ def test_generated_ordinary_company_month_is_exact_and_reset_deletes_only_mapped
     assert pg.execute("select count(*) from tax_invoices where settlement_id=%s", (sid,)).fetchone()[0] == 1
     assert pg.execute("select count(*) from settlement_events where settlement_id=%s", (sid,)).fetchone()[0] == 2
 
+    claim = pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, sid)).fetchone()[0]
+    pg.execute(
+        "select merchant_finalize_tax_invoice_issue(%s,%s,%s,%s,'success',null,null)",
+        (actor, merchant, sid, claim["attempt_token"]),
+    )
+    paid = pg.execute(
+        "select generated_transactions_mark_paid(%s,%s,%s,%s)", (actor, merchant, company, ym),
+    ).fetchone()[0]
+    assert paid["stage"] == "paid"
+    # Terminal provider/NTS payloads and provider event identifiers are completed
+    # local test evidence, not evidence that a provider operation is still active.
+    pg.execute("""update tax_invoices set provider_response='{"terminal":true}'::jsonb,
+      popbill_status_code=304,nts_status='accepted',nts_sent_at=clock_timestamp(),
+      nts_accepted_at=clock_timestamp(),nts_confirm_num='terminal-test-confirm' where settlement_id=%s""", (sid,))
+    pg.execute("update settlements set tax_invoice_status='nts_accepted' where id=%s", (sid,))
+    invoice = pg.execute("""select id,issue_attempt_token is null,issue_lease_expires_at is null,
+      reconciliation_required_at is null,issue_attempt_started_at is not null,popbill_status,issued_at is not null
+      from tax_invoices where settlement_id=%s""", (sid,)).fetchone()
+    invoice_id = invoice[0]
+    assert invoice[1:] == (True, True, True, True, "issued", True)
+    pg.execute("""insert into tax_invoice_events(
+      tax_invoice_id,event_type,provider_event_id,payload,actor_id)
+      values(%s,'terminal_test_provider_event','terminal-test-event','{}',%s)""", (invoice_id, actor))
+    assert pg.execute("select payment_status,settlement_status,tax_invoice_status from settlements where id=%s", (sid,)).fetchone() == (
+        "paid", "completed", "nts_accepted",
+    )
+    invoice_event_count = pg.execute(
+        "select count(*) from tax_invoice_events where tax_invoice_id=%s", (invoice_id,),
+    ).fetchone()[0]
+    assert invoice_event_count >= 2
+
     reset = pg.execute(
         "select reset_generated_company_month_state(%s,%s,%s,%s,%s)",
         (actor, merchant, company, ym, "exact-reset-1"),
@@ -1593,6 +1624,7 @@ def test_generated_ordinary_company_month_is_exact_and_reset_deletes_only_mapped
     assert reset["reset"] is True and reset["generated"] is False
     assert pg.execute("select count(*) from settlements where id=%s", (sid,)).fetchone()[0] == 0
     assert pg.execute("select count(*) from tax_invoices where settlement_id=%s", (sid,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from tax_invoice_events where tax_invoice_id=%s", (invoice_id,)).fetchone()[0] == 0
     assert pg.execute("select count(*) from settlement_events where settlement_id=%s", (sid,)).fetchone()[0] == 0
     assert pg.execute("select count(*) from settlement_payments where settlement_id=%s", (sid,)).fetchone()[0] == 0
     assert pg.execute("select count(*) from meal_transactions where id=any(%s)", (generated_ids,)).fetchone()[0] == 0
@@ -1697,7 +1729,14 @@ def test_0052_cleanup_deletes_legacy_demo_rows_and_exact_derived_evidence_but_ke
 
     # Clearing only transient claim state authorizes deletion of historical local
     # evidence; the ordinary real source transaction remains untouched.
-    pg.execute("""update tax_invoices set issue_attempt_token=null,issue_attempt_started_at=null,
+    pg.execute("""update tax_invoices set issue_attempt_token=null,
+      issue_lease_expires_at=null,reconciliation_required_at=clock_timestamp() where id=%s""", (invoice_id,))
+    with pytest.raises(psycopg.errors.RaiseException, match="LEGACY_GENERATED_STATE_PROVIDER_OPERATION_IN_FLIGHT"):
+        with pg.transaction():
+            pg.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
+    assert pg.execute("select count(*) from settlement_demo_runs where id=%s", (run_id,)).fetchone()[0] == 1
+
+    pg.execute("""update tax_invoices set issue_attempt_token=null,
       issue_lease_expires_at=null,reconciliation_required_at=null,issued_at=clock_timestamp(),
       popbill_status='issued',popbill_status_code=300 where id=%s""", (invoice_id,))
     pg.execute(

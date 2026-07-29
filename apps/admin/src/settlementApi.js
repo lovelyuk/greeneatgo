@@ -121,6 +121,13 @@ export function mapSettlement(row = {}) {
   };
 }
 
+export function replaceSettlementDetail(rows, detail) {
+  const mapped = mapSettlement(detail);
+  if (!mapped.id) throw new Error('Settlement detail is missing an id.');
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((row) => row.id === mapped.id ? mapped : row);
+}
+
 export function canConfirmAndRequest(row) {
   return row?.settlement_status === 'sent' && row?.tax_invoice_status === 'not_requested';
 }

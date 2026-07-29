@@ -14,7 +14,8 @@ import {
   buildPaymentPayload, canCompanyDispute, canConfirmAndRequest, canMerchantBeginRevision,
   canMerchantIssue, canMerchantMarkPaid, canMerchantSend, canRefreshInvoiceStatus,
   fetchAllSettlementSummaries, hasInvoiceDocument, isBusinessPartyComplete,
-  mapSettlement, openDocumentInNewWindow, paymentFormForSettlement, PAYMENT_STATUS_LABELS, settlementApiRoot,
+  mapSettlement, openDocumentInNewWindow, paymentFormForSettlement, PAYMENT_STATUS_LABELS,
+  replaceSettlementDetail, settlementApiRoot,
 } from './settlementApi.js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -1098,8 +1099,7 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
       const root = settlementApiRoot(isMerchant);
       const detail = await apiFetch(`${root}/${encodeURIComponent(row.id)}?include_transactions=true`, token);
       if (evidenceRequestRef.current !== requestId) return;
-      const mapped = mapSettlement(detail);
-      setRows((current) => current?.map((item) => item.id === mapped.id ? mapped : item) ?? current);
+      setRows((current) => replaceSettlementDetail(current, detail));
     } catch (evidenceError) {
       if (evidenceRequestRef.current === requestId) setActionError(evidenceError.message);
     } finally {
@@ -1129,7 +1129,9 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
   }
 
   async function refreshAfterAction(message) {
-    reload();
+    const root = settlementApiRoot(isMerchant);
+    const detail = await apiFetch(`${root}/${encodeURIComponent(selected.id)}?include_transactions=true`, token);
+    setRows((current) => replaceSettlementDetail(current, detail));
     setNotice(message);
   }
 

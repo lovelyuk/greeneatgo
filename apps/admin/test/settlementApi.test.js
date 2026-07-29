@@ -5,7 +5,7 @@ import {
   canMerchantIssue, canMerchantMarkPaid, canMerchantSend,
   canRefreshInvoiceStatus, fetchAllSettlementSummaries, isBusinessPartyComplete,
   loadSettlementDetails, mapSettlement, openDocumentInNewWindow, paymentFormForSettlement,
-  PAYMENT_STATUS_LABELS, requireHttpsUrl,
+  PAYMENT_STATUS_LABELS, replaceSettlementDetail, requireHttpsUrl,
 } from '../src/settlementApi.js';
 
 const detail = {
@@ -63,6 +63,20 @@ test('does not invent invoice or payment metadata for list rows', () => {
   assert.equal(row.payment.amount, 0);
   assert.deepEqual(row.payments, []);
   assert.deepEqual(row.transactions, []);
+});
+
+test('replaces a mutated settlement with its refreshed detail without losing business or evidence data', () => {
+  const previous = mapSettlement(detail);
+  const refreshedDetail = { ...detail, settlement_status: 'sent', updated_at: '2026-08-02T00:00:00Z' };
+  const rows = replaceSettlementDetail([previous], refreshedDetail);
+
+  assert.equal(rows[0].settlement_status, 'sent');
+  assert.equal(rows[0].updated_at, '2026-08-02T00:00:00Z');
+  assert.equal(rows[0].recipient.name, '발행 당시 회사');
+  assert.equal(rows[0].recipient.biz_reg_no, '456');
+  assert.equal(rows[0].supplier.name, '현재 공급자');
+  assert.equal(rows[0].transactions.length, 1);
+  assert.equal(rows[0].transactions[0].id, 'tx-1');
 });
 
 test('action eligibility exactly follows explicit review and payment lifecycle', () => {

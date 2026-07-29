@@ -32,6 +32,7 @@ const detail = {
 test('maps public supplier information first and preserves every payment without internal identifiers', () => {
   const row = mapSettlement(detail);
   assert.equal(row.period_start, '2026-07-01');
+  assert.equal(row.is_demo, false);
   assert.equal(row.supplier.name, '현재 공급자');
   assert.equal(row.supplier.biz_reg_no, '999');
   assert.equal(row.recipient.name, '발행 당시 회사');
@@ -116,8 +117,12 @@ test('action eligibility exactly follows explicit review and payment lifecycle',
   assert.equal(canMerchantSend({ settlement_status: 'draft', tax_invoice_status: 'not_requested' }), true);
   assert.equal(canMerchantSend({ settlement_status: 'revising', tax_invoice_status: 'not_requested' }), true);
   assert.equal(canMerchantSend(sent), false);
+  assert.equal(canMerchantSend({ settlement_status: 'draft', tax_invoice_status: 'not_requested', is_demo: true }), false);
+  assert.equal(canConfirmAndRequest({ settlement_status: 'sent', tax_invoice_status: 'not_requested', is_demo: true }), false);
+  assert.equal(canCompanyDispute({ settlement_status: 'sent', tax_invoice_status: 'not_requested', is_demo: true }), false);
   assert.equal(canMerchantBeginRevision({ settlement_status: 'disputed', tax_invoice_status: 'not_requested' }), true);
   assert.equal(canMerchantBeginRevision({ settlement_status: 'sent', tax_invoice_status: 'not_requested' }), false);
+  assert.equal(canMerchantBeginRevision({ settlement_status: 'disputed', tax_invoice_status: 'not_requested', is_demo: true }), false);
   for (const [settlement_status, tax_invoice_status] of [
     ['confirmed', 'requested'], ['confirmed', 'failed'],
   ]) assert.equal(canMerchantIssue({ settlement_status, tax_invoice_status }), true);
@@ -125,13 +130,16 @@ test('action eligibility exactly follows explicit review and payment lifecycle',
   assert.equal(canMerchantIssue({ settlement_status: 'sent', tax_invoice_status: 'failed' }), false);
   assert.equal(canMerchantIssue({ settlement_status: 'finalized', tax_invoice_status: 'failed' }), false);
   assert.equal(canMerchantIssue({ settlement_status: 'confirmed', tax_invoice_status: 'issued' }), false);
+  assert.equal(canMerchantIssue({ settlement_status: 'confirmed', tax_invoice_status: 'requested', is_demo: true }), false);
   assert.equal(canMerchantMarkPaid({ settlement_status: 'confirmed', tax_invoice_status: 'nts_accepted', payment_status: 'unpaid' }), true);
   assert.equal(canMerchantMarkPaid({ settlement_status: 'completed', tax_invoice_status: 'issued', payment_status: 'paid' }), true);
   assert.equal(canMerchantMarkPaid({ settlement_status: 'sent', tax_invoice_status: 'issued', payment_status: 'unpaid' }), false);
   assert.equal(canMerchantMarkPaid({ settlement_status: 'disputed', tax_invoice_status: 'issued', payment_status: 'unpaid' }), false);
   assert.equal(canMerchantMarkPaid({ settlement_status: 'cancelled', tax_invoice_status: 'issued', payment_status: 'unpaid' }), false);
+  assert.equal(canMerchantMarkPaid({ settlement_status: 'confirmed', tax_invoice_status: 'issued', is_demo: true }), false);
   assert.equal(canRefreshInvoiceStatus({ tax_invoice_status: 'issuing' }), true);
   assert.equal(canRefreshInvoiceStatus({ tax_invoice_status: 'requested' }), false);
+  assert.equal(canRefreshInvoiceStatus({ tax_invoice_status: 'issued', is_demo: true }), false);
 });
 
 test('payment labels cover the live backend enum and optional unpaid compatibility value', () => {

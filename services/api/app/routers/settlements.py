@@ -306,12 +306,19 @@ def merchant_popbill_readiness(token: str = Depends(bearer_token), repo: Settlem
     }, "error": None}
 
 
-def _merchant_detail(settlement_id: UUID, token: str, repo: SettlementRepository, include_transactions: bool = False):
+def _merchant_detail(
+    settlement_id: UUID, token: str, repo: SettlementRepository,
+    include_transactions: bool = False, allow_demo: bool = False,
+):
     actor = _actor(repo, token, "merchant_admin")
     assert actor.merchant_id is not None
     try:
         row = (repo.merchant_detail(settlement_id, actor.merchant_id, include_transactions=True)
                if include_transactions else repo.merchant_detail(settlement_id, actor.merchant_id))
+        if allow_demo and row is None and repo.is_demo_settlement(actor.merchant_id, settlement_id):
+            row = repo.merchant_demo_detail(
+                settlement_id, actor.merchant_id, include_transactions=include_transactions,
+            )
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
     if row is None:
@@ -321,7 +328,9 @@ def _merchant_detail(settlement_id: UUID, token: str, repo: SettlementRepository
 
 @merchant_router.get("/{settlement_id}")
 def merchant_detail(settlement_id: UUID, include_transactions: bool = False, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
-    return {"ok": True, "data": _merchant_detail(settlement_id, token, repo, include_transactions), "error": None}
+    return {"ok": True, "data": _merchant_detail(
+        settlement_id, token, repo, include_transactions, allow_demo=True,
+    ), "error": None}
 
 
 @merchant_router.post("/{settlement_id}/send")

@@ -84,6 +84,7 @@ export function mapSettlement(row = {}) {
   const paidAt = latestPayment?.deposited_at ?? source.paid_at ?? null;
   return {
     id: source.id,
+    is_demo: Boolean(source.is_demo),
     period_start: periodStart,
     period_end: periodEnd,
     total_amount: Number(source.total_amount) || 0,
@@ -135,6 +136,7 @@ export function replaceSettlementDetail(rows, detail) {
     if (row.id !== mapped.id) return row;
     return {
       ...mapped,
+      is_demo: includes('is_demo') ? mapped.is_demo : Boolean(row.is_demo),
       recipient: includesRecipient ? mapped.recipient : row.recipient,
       supplier: includesSupplier ? mapped.supplier : row.supplier,
       invoice: includesInvoices ? mapped.invoice : row.invoice,
@@ -161,34 +163,35 @@ export function replaceSettlementDetail(rows, detail) {
 }
 
 export function canConfirmAndRequest(row) {
-  return row?.settlement_status === 'sent' && row?.tax_invoice_status === 'not_requested';
+  return !row?.is_demo && row?.settlement_status === 'sent' && row?.tax_invoice_status === 'not_requested';
 }
 
 export function canCompanyDispute(row) {
-  return row?.settlement_status === 'sent' && row?.tax_invoice_status === 'not_requested';
+  return !row?.is_demo && row?.settlement_status === 'sent' && row?.tax_invoice_status === 'not_requested';
 }
 
 export function canMerchantSend(row) {
-  return ['draft', 'revising'].includes(row?.settlement_status)
+  return !row?.is_demo && ['draft', 'revising'].includes(row?.settlement_status)
     && row?.tax_invoice_status === 'not_requested';
 }
 
 export function canMerchantBeginRevision(row) {
-  return row?.settlement_status === 'disputed' && row?.tax_invoice_status === 'not_requested';
+  return !row?.is_demo && row?.settlement_status === 'disputed' && row?.tax_invoice_status === 'not_requested';
 }
 
 export function canMerchantIssue(row) {
+  if (row?.is_demo) return false;
   const state = `${row?.settlement_status}:${row?.tax_invoice_status}`;
   return new Set(['confirmed:requested', 'confirmed:failed']).has(state);
 }
 
 export function canMerchantMarkPaid(row) {
-  return ['confirmed', 'completed'].includes(row?.settlement_status)
+  return !row?.is_demo && ['confirmed', 'completed'].includes(row?.settlement_status)
     && DOCUMENT_STATUSES.has(row?.tax_invoice_status);
 }
 
 export function canRefreshInvoiceStatus(row) {
-  return REFRESHABLE_STATUSES.has(row?.tax_invoice_status);
+  return !row?.is_demo && REFRESHABLE_STATUSES.has(row?.tax_invoice_status);
 }
 
 export function hasInvoiceDocument(row) {

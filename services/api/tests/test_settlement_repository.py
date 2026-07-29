@@ -216,10 +216,11 @@ class ListNameClient:
 
     def rest_get(self, table, params):
         self.calls.append((table, params))
-        if table == "normal_settlements":
+        if table in {"normal_settlements", "settlements"}:
             return [{
                 "id": "settlement-1", "company_id": "company-1",
                 "merchant_id": "merchant-1", "period_ym": "2026-07",
+                "is_demo": table == "settlements",
             }]
         if table == "merchants":
             return [{"id": "merchant-1", "name": "그린 식당"}]
@@ -236,6 +237,8 @@ def test_lists_attach_only_safe_party_names_without_deposit_information():
 
     assert company_rows[0]["supplier_information"] == {"name": "그린 식당"}
     assert merchant_rows[0]["business_information"] == {"name": "그린 업체"}
+    assert merchant_rows[0]["is_demo"] is True
+    assert merchant_client.calls[0][0] == "settlements"
     assert company_client.calls[1] == (
         "merchants", {"select": "id,name", "id": "in.(merchant-1)"},
     )

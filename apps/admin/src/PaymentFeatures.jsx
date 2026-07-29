@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarDays, CheckCircle2, ChevronDown, ReceiptText, RotateCcw, Search, X } from 'lucide-react';
 import { receiptApiPath, receiptTypeLabel, validateReceiptUrl } from './receiptUtils.js';
+import { paymentHistoryPeriod } from './paymentHistoryPeriod.js';
 
 const money = (value) => `₩${Number(value ?? 0).toLocaleString('ko-KR')}`;
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
@@ -13,7 +14,7 @@ const dateTime = (value) => {
   }).formatToParts(new Date(value)).map((part) => [part.type, part.value]));
   return `${parts.year}.${parts.month}.${parts.day} ${parts.hour}:${parts.minute}`;
 };
-const periodModes = [['year', '올해'], ['month', '이번달'], ['date', '날짜'], ['range', '기간']];
+const periodModes = [['year', '올해'], ['month', '월별'], ['date', '날짜'], ['range', '기간']];
 
 function Rows({ items, kind, onOpenReceipt }) {
   const rows = Array.isArray(items) ? items : [];
@@ -21,12 +22,12 @@ function Rows({ items, kind, onOpenReceipt }) {
   return <div className="history-rows">{rows.map((item, index) => {
     const refunded = item.kind === 'refund' || Number(item.refund_amount ?? 0) > 0;
     const person = item.customer_name ?? item.employee_name ?? '-';
-    const amount = money(Math.abs(Number(item.amount ?? item.total ?? item.payment_amount ?? item.refund_amount ?? 0)));
+    const amount = item.is_bonus ? '0원' : money(Math.abs(Number(item.amount ?? item.total ?? item.payment_amount ?? item.refund_amount ?? 0)));
     if (kind === 'transaction') {
       const transactionType = item.pay_type === 'subsidized'
         ? { label: '보조금', tone: 'subsidized' }
         : item.pay_type === 'voucher' || item.company_name === '일반 고객'
-          ? { label: '식권', tone: 'voucher' }
+          ? { label: item.is_bonus ? '식권 (보너스)' : '식권', tone: 'voucher' }
           : { label: '장부', tone: 'ledger' };
       return <div className="history-row history-row-columns history-row-transaction" key={item.id ?? `${kind}-${index}`}>
         <time dateTime={item.created_at}>{dateTime(item.created_at)}</time>
@@ -143,6 +144,7 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
   const current = today();
   const [mode, setMode] = useState('date');
   const [date, setDate] = useState(current);
+  const [month, setMonth] = useState(current.slice(0, 7));
   const [range, setRange] = useState({ from: current, to: current });
   const [transaction, setTransaction] = useState({});
   const [payment, setPayment] = useState({});
@@ -186,23 +188,23 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
 
   useEffect(() => {
     let cancelled = false;
-    const baseDate = mode === 'year' ? `${current.slice(0, 4)}-01-01` : mode === 'month' ? `${current.slice(0, 7)}-01` : mode === 'range' ? range.from : date;
-    const granularity = mode === 'date' ? 'day' : mode;
-    const end = mode === 'range' ? `&end_date=${encodeURIComponent(range.to)}` : '';
+    const { baseDate, granularity, end } = paymentHistoryPeriod({ mode, current, date, month, range });
     setLoading(true);
     request(`/admin/merchant/payment-history?date=${encodeURIComponent(baseDate)}&granularity=${granularity}${end}`).then((data) => {
       if (!cancelled) { setTransaction(data?.transaction ?? {}); setPayment(data?.payment ?? {}); setError(''); }
     }).catch((e) => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [mode, date, range.from, range.to, request, refreshKey, current]);
+  }, [mode, date, month, range.from, range.to, request, refreshKey, current]);
 
-  const filterLabel = mode === 'year' ? `${current.slice(0, 4)}년` : mode === 'month' ? `${Number(current.slice(5, 7))}월` : mode === 'range' ? `${range.from} ~ ${range.to}` : new Date(`${date}T00:00:00`).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+  const period = paymentHistoryPeriod({ mode, current, date, month, range });
+  const filterLabel = period.label ?? (mode === 'range' ? `${range.from} ~ ${range.to}` : new Date(`${date}T00:00:00`).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }));
   return <section className="payment-history-dashboard" aria-label="실시간 매출">
     <div className="history-heading"><div><span className="eyebrow">PAYMENT HISTORY</span><p>조회 기간을 선택해 거래와 결제·환불 상세 내역을 확인합니다.</p></div></div>
     <div className="history-period-filter">
       <div className="history-period-modes">{periodModes.map(([id, label]) => <button type="button" key={id} className={mode === id ? 'active' : ''} aria-pressed={mode === id} onClick={() => setMode(id)}>{label}</button>)}</div>
       <div className={`history-period-inputs ${mode === 'range' ? 'is-range' : 'is-single'}`}>
         {mode === 'date' && <label>조회 날짜<input type="date" value={date} onChange={(event) => setDate(event.target.value)}/></label>}
+        {mode === 'month' && <label>조회 월<input type="month" value={month} onChange={(event) => setMonth(event.target.value)}/></label>}
         {mode === 'range' && <><label>시작일<input type="date" value={range.from} max={range.to} onChange={(event) => setRange((state) => ({ ...state, from: event.target.value }))}/></label><span>~</span><label>종료일<input type="date" value={range.to} min={range.from} onChange={(event) => setRange((state) => ({ ...state, to: event.target.value }))}/></label></>}
         <div className="history-period-label"><CalendarDays size={19}/><strong>{filterLabel}</strong></div>
       </div>

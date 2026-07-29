@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,6 +20,7 @@ class FakeSettlements:
         self._actor = actor
         self.calls = []
         self.confirm_error = None
+        self.demo = False
         self.detail = {"id": SETTLEMENT_ID, "tax_invoice_status": "issued", "tax_invoices": [
             {"document_type": "original", "invoicer_mgt_key": "GEAAAAAAAAAAAAAAAAAAAAAA"}
         ], "events": []}
@@ -53,10 +55,14 @@ class FakeSettlements:
     def merchant_detail(self, settlement_id, merchant_id, *, include_transactions=False):
         self.calls.append(("merchant_detail", settlement_id, merchant_id, True) if include_transactions
                           else ("merchant_detail", settlement_id, merchant_id))
-        return self.detail if merchant_id == "merchant-own" else None
+        return self.detail if merchant_id == "merchant-own" and not self.demo else None
 
     def is_demo_settlement(self, merchant_id, settlement_id):
-        return False
+        return self.demo and merchant_id == "merchant-own"
+
+    def merchant_demo_detail(self, settlement_id, merchant_id, *, include_transactions=False):
+        self.calls.append(("merchant_demo_detail", settlement_id, merchant_id, include_transactions))
+        return {**self.detail, "is_demo": True} if self.is_demo_settlement(merchant_id, settlement_id) else None
 
     def confirm(self, actor, settlement_id):
         self.calls.append(("confirm", actor.company_id, settlement_id))
@@ -228,6 +234,20 @@ def test_company_routes_scope_server_tenant_and_alias_is_company_only(client_fac
     assert str(repo.calls[-1][1]) == SETTLEMENT_ID
     assert repo.calls[-1][2:] == ("company-own", True)
     assert client.get("/v1/company/settlements?limit=101").status_code == 422
+
+
+def test_merchant_detail_falls_back_to_owned_demo_detail_and_keeps_transactions_flag(client_factory):
+    client, repo = client_factory("merchant_admin")
+    repo.demo = True
+
+    response = client.get(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}?include_transactions=true")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["is_demo"] is True
+    assert repo.calls == [
+        ("merchant_detail", UUID(SETTLEMENT_ID), "merchant-own", True),
+        ("merchant_demo_detail", UUID(SETTLEMENT_ID), "merchant-own", True),
+    ]
 
 
 def test_confirm_requires_all_three_explicit_true_and_uses_no_client_snapshot(client_factory):

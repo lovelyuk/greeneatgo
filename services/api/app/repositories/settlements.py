@@ -11,7 +11,7 @@ from app.services.join_flow import JoinErrorCode, JoinFlowError, UserProfile
 LIST_FIELDS = (
     "id,company_id,merchant_id,period_ym,period_from,period_to,tx_count,total_amount,"
     "supply_amount,vat_amount,settlement_tax_type,status,settlement_status,tax_invoice_status,payment_status,"
-    "sent_at,confirmed_at,finalized_at,due_date,paid_at,created_at,updated_at"
+    "sent_at,confirmed_at,finalized_at,due_date,paid_at,is_demo,created_at,updated_at"
 )
 
 INVOICE_FIELDS = (
@@ -85,7 +85,10 @@ class SettlementRepository:
         })
 
     def list_merchant(self, merchant_id: str, limit: int, offset: int) -> list[dict[str, Any]]:
-        rows = self.client.rest_get("normal_settlements", {
+        # Merchant history intentionally includes its own demo settlements so a
+        # guided run can be reconciled against the normal monthly screens. Demo
+        # mutations remain isolated behind the dedicated demo endpoints.
+        rows = self.client.rest_get("settlements", {
             "select": LIST_FIELDS, "merchant_id": f"eq.{merchant_id}",
             "order": "created_at.desc,id.desc", "limit": str(limit), "offset": str(offset),
         })
@@ -277,11 +280,16 @@ class SettlementRepository:
     ) -> dict[str, Any] | None:
         return self._detail(settlement_id, "merchant_id", merchant_id, include_transactions=include_transactions)
 
-    def merchant_demo_detail(self, settlement_id: str | UUID, merchant_id: str) -> dict[str, Any] | None:
+    def merchant_demo_detail(
+        self, settlement_id: str | UUID, merchant_id: str, *, include_transactions: bool = False,
+    ) -> dict[str, Any] | None:
         """Demo-panel-only detail path after explicit run membership validation."""
         if not self.is_demo_settlement(merchant_id, settlement_id):
             return None
-        return self._detail(settlement_id, "merchant_id", merchant_id, include_demo=True)
+        return self._detail(
+            settlement_id, "merchant_id", merchant_id,
+            include_demo=True, include_transactions=include_transactions,
+        )
 
     def demo_invoice_management_key(self, merchant_id: str, settlement_id: str | UUID) -> str | None:
         """Resolve a provider key only for an explicitly merchant-owned demo run."""

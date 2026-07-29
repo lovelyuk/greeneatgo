@@ -342,11 +342,20 @@ class VoucherCoreTests(unittest.TestCase):
         repo = MagicMock()
         repo.client.rpc.return_value = 1501
         repo.client.rest_get.side_effect = [
-            [{"id": "voucher-tx", "amount": -8000, "product_name": "식권 사용", "merchant_id": "m1",
-              "voucher_id": "v1", "created_at": "2026-07-10T01:00:00Z", "pay_type": "voucher"}],
+            [
+                {"id": "voucher-bonus", "amount": 0, "product_name": "식권 사용", "merchant_id": "m1",
+                 "voucher_id": "v11", "created_at": "2026-07-10T01:30:00Z", "pay_type": "voucher"},
+                {"id": "voucher-paid", "amount": -8000, "product_name": "식권 사용", "merchant_id": "m1",
+                 "voucher_id": "v10", "created_at": "2026-07-10T01:00:00Z", "pay_type": "voucher"},
+            ],
             [{"id": "direct-order", "amount": 9000, "product_name": "비빔밥", "merchant_name": "돈토",
               "approved_at": "2026-07-10T02:00:00Z", "created_at": "2026-07-10T01:59:00Z",
               "pay_type": "direct"}],
+            [
+                {"id": "v10", "order_id": "voucher-order", "issue_index": 10},
+                {"id": "v11", "order_id": "voucher-order", "issue_index": 11},
+            ],
+            [{"id": "voucher-order", "paid_voucher_count": 10}],
             [{"id": "m1", "name": "돈토"}],
         ]
 
@@ -354,7 +363,10 @@ class VoucherCoreTests(unittest.TestCase):
 
         self.assertEqual(usage["voucher_balance"], 1501)
         self.assertEqual(usage["recent_transactions"][0]["kind"], "payment")
-        self.assertEqual(usage["voucher_use_history"][0]["kind"], "voucher_use")
+        self.assertEqual(usage["voucher_use_history"][0]["amount"], 0)
+        self.assertTrue(usage["voucher_use_history"][0]["is_bonus"])
+        self.assertEqual(usage["voucher_use_history"][1]["amount"], 8000)
+        self.assertFalse(usage["voucher_use_history"][1]["is_bonus"])
         repo.client.rpc.assert_called_once_with("voucher_balance", {"p_user_id": "user-1"})
 
 

@@ -35,6 +35,59 @@ def resolve_voucher_merchant(repo, pilot_merchant_id: str | None) -> dict | None
     return rows[0] if rows else None
 
 
+def _batched_lookup(repo, table: str, *, id_field: str, ids: list[str], select: str, chunk_size: int = 100) -> list[dict]:
+    rows: list[dict] = []
+    for offset in range(0, len(ids), chunk_size):
+        chunk = ids[offset:offset + chunk_size]
+        rows.extend(repo.client.rest_get(table, params={
+            "select": select,
+            id_field: f"in.({','.join(chunk)})",
+        }))
+    return rows
+
+
+def decorate_bonus_voucher_transactions(repo, rows: list[dict]) -> None:
+    """Mark voucher use rows from immutable issuance order metadata.
+
+    A zero amount is not sufficient evidence of a bonus: discounted or subsidized
+    paid vouchers can also allocate to zero.  The authoritative rule is that an
+    issued voucher is a bonus only when its issue index is greater than the
+    purchase order's paid voucher count.
+    """
+    candidates = [row for row in rows if row.get("pay_type") == "voucher" and row.get("voucher_id")]
+    for row in candidates:
+        row["is_bonus"] = False
+    if not candidates:
+        return
+
+    voucher_ids = sorted({str(row["voucher_id"]) for row in candidates})
+    vouchers = _batched_lookup(
+        repo,
+        "vouchers",
+        id_field="id",
+        ids=voucher_ids,
+        select="id,order_id,issue_index",
+    )
+    voucher_by_id = {str(row["id"]): row for row in vouchers if row.get("id")}
+    order_ids = sorted({str(row["order_id"]) for row in vouchers if row.get("order_id")})
+    orders = repo.client.rest_get(
+        "payment_orders",
+        {"select": "id,paid_voucher_count", "id": f"in.({','.join(order_ids)})"},
+    ) if order_ids else []
+    paid_counts = {str(row["id"]): row.get("paid_voucher_count") for row in orders if row.get("id")}
+
+    for row in candidates:
+        voucher = voucher_by_id.get(str(row["voucher_id"]))
+        if not voucher:
+            continue
+        try:
+            issue_index = int(voucher.get("issue_index"))
+            paid_count = int(paid_counts[str(voucher.get("order_id"))])
+        except (KeyError, TypeError, ValueError):
+            continue
+        row["is_bonus"] = issue_index > paid_count
+
+
 def parse_qr_data(qr_data: str) -> tuple[str, str]:
     """Return (lookup column, value), retaining legacy raw token and URL formats."""
     value = unquote(qr_data.strip())

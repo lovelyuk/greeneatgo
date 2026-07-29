@@ -1,7 +1,12 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from uuid import UUID
+
 from app.repositories.settlements import (
     COMPANY_VISIBLE_SETTLEMENT_STATUSES, LIST_FIELDS, PAYMENT_FIELDS, TRANSACTION_FIELDS,
     SettlementRepository,
 )
+from app.services.join_flow import UserProfile
 
 
 class DetailClient:
@@ -61,6 +66,53 @@ def repository_with(client):
     repository = SettlementRepository.__new__(SettlementRepository)
     repository.client = client
     return repository
+
+
+class RpcClient:
+    def __init__(self):
+        self.calls = []
+
+    def rpc(self, name, payload):
+        # Exercise the real JSON boundary instead of accepting arbitrary Python objects.
+        import json
+        json.dumps(payload)
+        self.calls.append((name, payload))
+        return {"ok": True}
+
+
+def test_workflow_rpc_boundaries_serialize_fastapi_uuid_parameters_as_strings():
+    client = RpcClient()
+    repository = repository_with(client)
+    settlement_id = UUID("11111111-1111-4111-8111-111111111111")
+    attempt_token = UUID("22222222-2222-4222-8222-222222222222")
+    actor = UserProfile(
+        id="actor-1", email="actor@example.com", display_name="Actor",
+        company_id="company-1", merchant_id="merchant-1", role="merchant_admin", status="active",
+    )
+    payment = SimpleNamespace(
+        amount=100, depositor_name="입금자", deposited_at=datetime.now(timezone.utc),
+        memo=None, idempotency_key="payment-key",
+    )
+    provider_status = SimpleNamespace(
+        provider_state_code="300", nts_result_code=None, nts_confirm_number=None,
+        issued_at=None, nts_sent_at=None, nts_result_at=None,
+    )
+
+    repository.confirm(actor, settlement_id)
+    repository.dispute(actor, settlement_id, "금액 확인", "dispute-key")
+    repository.send(actor, settlement_id)
+    repository.begin_revision(actor, settlement_id)
+    repository.mark_paid(actor, settlement_id, payment)
+    repository.claim_invoice_issue(actor, settlement_id)
+    repository.finalize_invoice_issue(actor, settlement_id, attempt_token, "issued")
+    repository.apply_invoice_status(actor, settlement_id, provider_status)
+    repository.reset_stale_invoice_issue(actor, settlement_id, attempt_token, False)
+
+    assert len(client.calls) == 9
+    for _, payload in client.calls:
+        assert payload["p_settlement_id"] == str(settlement_id)
+    token_payloads = [payload for _, payload in client.calls if "p_attempt_token" in payload]
+    assert token_payloads and all(payload["p_attempt_token"] == str(attempt_token) for payload in token_payloads)
 
 
 def test_company_detail_includes_same_ordered_public_payment_history_as_merchant_detail():

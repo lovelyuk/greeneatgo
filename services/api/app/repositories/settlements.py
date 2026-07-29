@@ -295,29 +295,29 @@ class SettlementRepository:
 
     def confirm(self, actor: UserProfile, settlement_id: str | UUID) -> dict[str, Any]:
         return self.client.rpc("company_confirm_and_request_tax_invoice", {
-            "p_actor_id": actor.id, "p_company_id": actor.company_id, "p_settlement_id": settlement_id,
+            "p_actor_id": actor.id, "p_company_id": actor.company_id, "p_settlement_id": str(settlement_id),
         })
 
     def dispute(self, actor: UserProfile, settlement_id: str | UUID, reason: str, key: str) -> dict[str, Any]:
         return self.client.rpc("company_dispute_settlement", {
-            "p_actor_id": actor.id, "p_company_id": actor.company_id, "p_settlement_id": settlement_id,
+            "p_actor_id": actor.id, "p_company_id": actor.company_id, "p_settlement_id": str(settlement_id),
             "p_reason": reason, "p_idempotency_key": key,
         })
 
     def send(self, actor: UserProfile, settlement_id: str | UUID) -> dict[str, Any]:
         return self.client.rpc("merchant_send_settlement", {
-            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id, "p_settlement_id": settlement_id,
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id, "p_settlement_id": str(settlement_id),
         })
 
     def begin_revision(self, actor: UserProfile, settlement_id: str | UUID) -> dict[str, Any]:
         return self.client.rpc("merchant_begin_settlement_revision", {
             "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
-            "p_settlement_id": settlement_id,
+            "p_settlement_id": str(settlement_id),
         })
 
     def mark_paid(self, actor: UserProfile, settlement_id: str | UUID, payload: Any) -> dict[str, Any]:
         return self.client.rpc("merchant_mark_settlement_paid", {
-            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id, "p_settlement_id": settlement_id,
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id, "p_settlement_id": str(settlement_id),
             "p_amount": payload.amount, "p_depositor_name": payload.depositor_name,
             "p_deposited_at": payload.deposited_at.isoformat(), "p_memo": payload.memo,
             "p_idempotency_key": payload.idempotency_key,
@@ -326,7 +326,7 @@ class SettlementRepository:
     def claim_invoice_issue(self, actor: UserProfile, settlement_id: str | UUID) -> dict[str, Any]:
         return self.client.rpc("merchant_claim_tax_invoice_issue", {
             "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
-            "p_settlement_id": settlement_id,
+            "p_settlement_id": str(settlement_id),
         })
 
     def finalize_invoice_issue(
@@ -335,7 +335,7 @@ class SettlementRepository:
     ) -> dict[str, Any]:
         return self.client.rpc("merchant_finalize_tax_invoice_issue", {
             "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
-            "p_settlement_id": settlement_id, "p_attempt_token": attempt_token,
+            "p_settlement_id": str(settlement_id), "p_attempt_token": str(attempt_token),
             "p_outcome": outcome, "p_failure_code": failure_code,
             "p_failure_message": failure_message,
         })
@@ -343,7 +343,7 @@ class SettlementRepository:
     def apply_invoice_status(self, actor: UserProfile, settlement_id: str | UUID, status: Any) -> dict[str, Any]:
         return self.client.rpc("merchant_apply_tax_invoice_status", {
             "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
-            "p_settlement_id": settlement_id, "p_state_code": status.provider_state_code,
+            "p_settlement_id": str(settlement_id), "p_state_code": status.provider_state_code,
             "p_nts_result": status.nts_result_code,
             "p_nts_confirm_num": status.nts_confirm_number,
             "p_issued_at": status.issued_at, "p_nts_sent_at": status.nts_sent_at,
@@ -356,7 +356,7 @@ class SettlementRepository:
     ) -> dict[str, Any]:
         return self.client.rpc("merchant_reset_stale_tax_invoice_issue", {
             "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
-            "p_settlement_id": settlement_id, "p_attempt_token": attempt_token,
+            "p_settlement_id": str(settlement_id), "p_attempt_token": str(attempt_token),
             "p_management_key_in_use": management_key_in_use,
         })
 

@@ -147,6 +147,53 @@ class SettlementRepository:
             "p_idempotency_key": idempotency_key,
         })
 
+    def generated_state(
+        self, actor: UserProfile, company_id: str | UUID | None = None, period_ym: str | None = None,
+    ) -> dict[str, Any]:
+        return self.client.rpc("generated_transactions_state", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_company_id": str(company_id) if company_id is not None else None,
+            "p_period_ym": period_ym,
+        })
+
+    def generated_seed(self, actor: UserProfile, company_id: str | UUID, period_ym: str) -> dict[str, Any]:
+        return self.client.rpc("generate_company_month_transactions", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_company_id": str(company_id), "p_period_ym": period_ym,
+        })
+
+    def _generated_action(self, name: str, actor: UserProfile, company_id: str | UUID, period_ym: str) -> dict[str, Any]:
+        return self.client.rpc(name, {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_company_id": str(company_id), "p_period_ym": period_ym,
+        })
+
+    def generated_create(self, actor: UserProfile, company_id: str | UUID, period_ym: str) -> dict[str, Any]:
+        return self._generated_action("generated_transactions_create_settlement", actor, company_id, period_ym)
+
+    def generated_confirm(self, actor: UserProfile, company_id: str | UUID, period_ym: str) -> dict[str, Any]:
+        return self._generated_action("generated_transactions_confirm", actor, company_id, period_ym)
+
+    def generated_assert_issue(self, actor: UserProfile, company_id: str | UUID, period_ym: str) -> dict[str, Any]:
+        return self._generated_action("generated_transactions_assert_issue", actor, company_id, period_ym)
+
+    def generated_mark_paid(self, actor: UserProfile, company_id: str | UUID, period_ym: str) -> dict[str, Any]:
+        return self._generated_action("generated_transactions_mark_paid", actor, company_id, period_ym)
+
+    def generated_reset(self, actor: UserProfile, company_id: str | UUID, period_ym: str, idempotency_key: str) -> dict[str, Any]:
+        return self.client.rpc("reset_generated_company_month_state", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_company_id": str(company_id), "p_period_ym": period_ym,
+            "p_idempotency_key": idempotency_key,
+        })
+
+    def is_generated_settlement(self, merchant_id: str, settlement_id: str | UUID) -> bool:
+        rows = self.client.rest_get("generated_transaction_runs", {
+            "select": "id", "merchant_id": f"eq.{merchant_id}",
+            "settlement_id": f"eq.{settlement_id}", "limit": "1",
+        })
+        return bool(rows)
+
     def is_demo_settlement(self, merchant_id: str, settlement_id: str | UUID) -> bool:
         """Check explicit demo membership with both document and tenant scope."""
         rows = self.client.rest_get("settlement_demo_runs", {

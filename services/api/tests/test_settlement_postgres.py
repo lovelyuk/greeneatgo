@@ -65,6 +65,9 @@ def settlement_db():
         # recovery replay of the older demo reset implementation.
         conn.execute((MIGRATIONS / "0051_preserve_demo_evidence_on_reset.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0051_preserve_demo_evidence_on_reset.sql").read_text(encoding="utf-8"))
+        # Ordinary generation/reset remains the final authority after recovery replays.
+        conn.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -1516,3 +1519,331 @@ def test_authenticated_rls_shows_demo_to_tenant_admins_but_not_customer(pg):
             pg.execute("select set_config('request.jwt.claim.sub',%s,true)", (str(admin_id),))
             pg.execute("set local role authenticated")
             assert pg.execute("select count(*) from meal_transactions where is_demo").fetchone()[0] == seeded["transaction_count"]
+
+
+def test_generated_ordinary_company_month_is_exact_and_reset_deletes_only_mapped_state(pg):
+    company, merchant, actor, _, employees, ym = demo_actual_parties(pg, "ordinary-generation")
+    other_company, other_merchant, _, _, other_employees, other_ym = demo_actual_parties(pg, "ordinary-unrelated")
+    pg.execute("update merchant_companies set unit_price=11000,tax_type='taxable' where merchant_id=%s and company_id=%s", (merchant, company))
+    period_from = date.fromisoformat(ym + "-01")
+    real_id = pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      tax_type,supply_amount,vat_amount,total_amount,settlement_tax_type,settlement_supply_amount,
+      settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-5500,'spend','ledger','taxable',5000,500,5500,'taxable',5000,500,5500,
+      (%s::date+interval '3 days 12 hours') at time zone 'Asia/Seoul') returning id""",
+      (employees[0], company, merchant, period_from)).fetchone()[0]
+    unrelated_id = pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-900,'spend','ledger','tax_free',900,0,900,
+      (%s::date+interval '4 days') at time zone 'Asia/Seoul') returning id""",
+      (other_employees[0], other_company, other_merchant, date.fromisoformat(other_ym + "-01"))).fetchone()[0]
+    unrelated_period_from = date.fromisoformat(other_ym + "-01")
+    unrelated_period_to = pg.execute(
+        "select (%s::date+interval '1 month - 1 day')::date", (unrelated_period_from,),
+    ).fetchone()[0]
+    unrelated_sid = pg.execute(
+        "select create_merchant_settlement(%s,%s,%s,%s)",
+        (other_merchant, other_company, unrelated_period_from, unrelated_period_to),
+    ).fetchone()[0]["id"]
+
+    generated = pg.execute(
+        "select generate_company_month_transactions(%s,%s,%s,%s)",
+        (actor, merchant, company, ym),
+    ).fetchone()[0]
+    duplicate = pg.execute(
+        "select generate_company_month_transactions(%s,%s,%s,%s)",
+        (actor, merchant, company, ym),
+    ).fetchone()[0]
+    assert generated["run_id"] == duplicate["run_id"]
+    rows = pg.execute("""select t.is_demo,t.flags,t.product_name,t.amount,t.tax_type,
+      t.supply_amount,t.vat_amount,t.total_amount,t.settlement_tax_type,
+      t.settlement_supply_amount,t.settlement_vat_amount,t.settlement_total_amount
+      from generated_transaction_members gm join meal_transactions t on t.id=gm.transaction_id
+      where gm.run_id=%s order by t.id""", (generated["run_id"],)).fetchall()
+    assert rows and all(row[0] is False and row[1] == {} and row[2] == "식대 사용" and row[3] == -11000 for row in rows)
+    assert all(row[4] == row[8] == "taxable" and row[5:8] == row[9:12] == (10000, 1000, 11000) for row in rows)
+    # Public/business columns are indistinguishable from ordinary ledger rows. The
+    # opaque key carries no provenance; only the private membership is authoritative.
+    assert pg.execute("""select bool_and(
+      idempotency_key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      and concat_ws(' ',tx_code,meal_window,flags::text,idempotency_key,product_name,pay_type) !~* '(generated|demo|test|시연)')
+      from generated_transaction_members gm join meal_transactions t on t.id=gm.transaction_id
+      where gm.run_id=%s""", (generated["run_id"],)).fetchone()[0] is True
+    generated_ids = [row[0] for row in pg.execute(
+        "select transaction_id from generated_transaction_members where run_id=%s order by transaction_id",
+        (generated["run_id"],),
+    ).fetchall()]
+
+    draft = pg.execute(
+        "select generated_transactions_create_settlement(%s,%s,%s,%s)",
+        (actor, merchant, company, ym),
+    ).fetchone()[0]
+    sid = draft["settlement"]["id"]
+    assert draft["settlement"]["tx_count"] == len(generated_ids) + 1
+    assert draft["settlement"]["total_amount"] == len(generated_ids) * 11000 + 5500
+    assert pg.execute("select is_demo from settlements where id=%s", (sid,)).fetchone()[0] is False
+    pg.execute("select generated_transactions_confirm(%s,%s,%s,%s)", (actor, merchant, company, ym))
+    assert pg.execute("select count(*) from tax_invoices where settlement_id=%s", (sid,)).fetchone()[0] == 1
+    assert pg.execute("select count(*) from settlement_events where settlement_id=%s", (sid,)).fetchone()[0] == 2
+
+    reset = pg.execute(
+        "select reset_generated_company_month_state(%s,%s,%s,%s,%s)",
+        (actor, merchant, company, ym, "exact-reset-1"),
+    ).fetchone()[0]
+    assert reset["reset"] is True and reset["generated"] is False
+    assert pg.execute("select count(*) from settlements where id=%s", (sid,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from tax_invoices where settlement_id=%s", (sid,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from settlement_events where settlement_id=%s", (sid,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from settlement_payments where settlement_id=%s", (sid,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from meal_transactions where id=any(%s)", (generated_ids,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from meal_transactions where id=%s", (real_id,)).fetchone()[0] == 1
+    assert pg.execute("select count(*) from meal_transactions where id=%s", (unrelated_id,)).fetchone()[0] == 1
+    assert pg.execute("select count(*) from settlements where id=%s", (unrelated_sid,)).fetchone()[0] == 1
+    repeated = pg.execute(
+        "select reset_generated_company_month_state(%s,%s,%s,%s,%s)",
+        (actor, merchant, company, ym, "exact-reset-1"),
+    ).fetchone()[0]
+    assert repeated["idempotent"] is True
+
+
+def test_generated_payment_uses_opaque_business_marker_without_provenance_prefix(pg):
+    company, merchant, actor, _, _, ym = demo_actual_parties(pg, "opaque-generated-payment")
+    pg.execute(
+        "update merchant_companies set unit_price=11000,tax_type='taxable' where merchant_id=%s and company_id=%s",
+        (merchant, company),
+    )
+    run = pg.execute(
+        "select generate_company_month_transactions(%s,%s,%s,%s)", (actor, merchant, company, ym),
+    ).fetchone()[0]
+    created = pg.execute(
+        "select generated_transactions_create_settlement(%s,%s,%s,%s)", (actor, merchant, company, ym),
+    ).fetchone()[0]
+    sid = uuid.UUID(created["settlement"]["id"])
+    pg.execute("select generated_transactions_confirm(%s,%s,%s,%s)", (actor, merchant, company, ym))
+    claim = pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, sid)).fetchone()[0]
+    pg.execute(
+        "select merchant_finalize_tax_invoice_issue(%s,%s,%s,%s,'success',null,null)",
+        (actor, merchant, sid, claim["attempt_token"]),
+    )
+    paid = pg.execute(
+        "select generated_transactions_mark_paid(%s,%s,%s,%s)", (actor, merchant, company, ym),
+    ).fetchone()[0]
+    assert paid["stage"] == "paid"
+    payment_key = pg.execute(
+        "select idempotency_key from settlement_payments where settlement_id=%s", (sid,),
+    ).fetchone()[0]
+    assert uuid.UUID(payment_key).version == 4
+    assert pg.execute("""select bool_and(
+      concat_ws(' ',p.idempotency_key,p.external_reference,p.depositor_name,p.memo,p.match_method)
+        !~* '(generated|demo|test)[-_:]')
+      from settlement_payments p where p.settlement_id=%s""", (sid,)).fetchone()[0] is True
+    assert pg.execute("""select bool_and(
+      concat_ws(' ',t.tx_code,t.meal_window,t.flags::text,t.idempotency_key,t.product_name,t.pay_type)
+        !~* '(generated|demo|test)[-_:]')
+      from generated_transaction_members gm join meal_transactions t on t.id=gm.transaction_id
+      where gm.run_id=%s""", (run["run_id"],)).fetchone()[0] is True
+
+
+def test_0052_cleanup_deletes_legacy_demo_rows_and_exact_derived_evidence_but_keeps_real_rows(pg):
+    company, merchant, actor, company_actor, employees, ym = demo_actual_parties(pg, "legacy-cleanup")
+    seeded = pg.execute(
+        "select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)
+    ).fetchone()[0]
+    run_id = uuid.UUID(seeded["run_id"])
+    generated_ids = [row[0] for row in pg.execute(
+        "select transaction_id from settlement_demo_transactions where run_id=%s order by transaction_id",
+        (run_id,),
+    ).fetchall()]
+    period_from = date.fromisoformat(ym + "-01")
+    period_to = pg.execute("select (%s::date+interval '1 month - 1 day')::date", (period_from,)).fetchone()[0]
+    # 0051 could archive a run whose rows were already included by an ordinary
+    # settlement. Archived provenance still explicitly scopes the cleanup.
+    pg.execute(
+        "update settlement_demo_runs set is_current=false,archived_at=clock_timestamp() where id=%s",
+        (run_id,),
+    )
+    real_id = pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-2200,'spend','ledger','taxable',2000,200,2200,
+      (%s::date+interval '2 days 12 hours') at time zone 'Asia/Seoul') returning id""",
+      (employees[0], company, merchant, period_from)).fetchone()[0]
+    ordinary = pg.execute(
+        "select create_merchant_settlement(%s,%s,%s,%s)",
+        (merchant, company, period_from, period_to),
+    ).fetchone()[0]
+    sid = uuid.UUID(ordinary["id"])
+    pg.execute("select merchant_send_settlement(%s,%s,%s)", (actor, merchant, sid))
+    pg.execute("select company_confirm_and_request_tax_invoice(%s,%s,%s)", (company_actor, company, sid))
+    invoice_id = pg.execute("select id from tax_invoices where settlement_id=%s", (sid,)).fetchone()[0]
+    pg.execute(
+        "insert into tax_invoice_events(tax_invoice_id,event_type,payload,actor_id) values(%s,'legacy_cleanup_fixture','{}',%s)",
+        (invoice_id, actor),
+    )
+    pg.execute("""insert into settlement_payments(settlement_id,amount,deposited_at,match_method,created_by)
+      values(%s,100,now(),'manual',%s)""", (sid, actor))
+
+    # A provider claim makes cleanup ambiguous. Replay must abort atomically,
+    # including all legacy mappings and exact derived rows.
+    claim = pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, sid)).fetchone()[0]
+    assert claim["action"] == "issue"
+    import psycopg
+    with pytest.raises(psycopg.errors.RaiseException, match="LEGACY_GENERATED_STATE_PROVIDER_OPERATION_IN_FLIGHT"):
+        with pg.transaction():
+            pg.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
+    assert pg.execute("select count(*) from settlement_demo_runs where id=%s", (run_id,)).fetchone()[0] == 1
+    assert pg.execute("select count(*) from meal_transactions where id=any(%s)", (generated_ids,)).fetchone()[0] == len(generated_ids)
+    assert pg.execute("select count(*) from settlements where id=%s", (sid,)).fetchone()[0] == 1
+    assert pg.execute("select count(*) from tax_invoices where id=%s", (invoice_id,)).fetchone()[0] == 1
+
+    # Clearing only transient claim state authorizes deletion of historical local
+    # evidence; the ordinary real source transaction remains untouched.
+    pg.execute("""update tax_invoices set issue_attempt_token=null,issue_attempt_started_at=null,
+      issue_lease_expires_at=null,reconciliation_required_at=null,issued_at=clock_timestamp(),
+      popbill_status='issued',popbill_status_code=300 where id=%s""", (invoice_id,))
+    pg.execute(
+        "update settlements set settlement_status='completed',tax_invoice_status='issued' where id=%s",
+        (sid,),
+    )
+
+    pg.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
+    pg.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
+
+    assert pg.execute("select count(*) from meal_transactions where id=any(%s)", (generated_ids,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from meal_transactions where id=%s and not is_demo", (real_id,)).fetchone()[0] == 1
+    assert pg.execute("select count(*) from settlements where id=%s", (sid,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from tax_invoices where id=%s", (invoice_id,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from tax_invoice_events where tax_invoice_id=%s", (invoice_id,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from settlement_events where settlement_id=%s", (sid,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from settlement_payments where settlement_id=%s", (sid,)).fetchone()[0] == 0
+    assert pg.execute("select count(*) from settlement_demo_runs where id=%s", (run_id,)).fetchone()[0] == 0
+
+
+def test_generated_reset_rejects_claim_in_flight_atomically(pg):
+    import psycopg
+    # A claim leaves an externally ambiguous lease. Reset must roll back before
+    # recording idempotency or deleting any local source/derived state.
+    company, merchant, actor, _, _, ym = demo_actual_parties(pg, "reset-claim-in-flight")
+    pg.execute("update merchant_companies set unit_price=11000,tax_type='taxable' where merchant_id=%s and company_id=%s", (merchant, company))
+    generated = pg.execute(
+        "select generate_company_month_transactions(%s,%s,%s,%s)", (actor, merchant, company, ym),
+    ).fetchone()[0]
+    draft = pg.execute(
+        "select generated_transactions_create_settlement(%s,%s,%s,%s)", (actor, merchant, company, ym),
+    ).fetchone()[0]
+    sid = uuid.UUID(draft["settlement"]["id"])
+    pg.execute("select generated_transactions_confirm(%s,%s,%s,%s)", (actor, merchant, company, ym))
+    claim = pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, sid)).fetchone()[0]
+    assert claim["action"] == "issue"
+    before = pg.execute("""select
+      (select count(*) from generated_transaction_runs where id=%s),
+      (select count(*) from generated_transaction_members where run_id=%s),
+      (select count(*) from settlements where id=%s),
+      (select count(*) from tax_invoices where settlement_id=%s),
+      (select count(*) from settlement_events where settlement_id=%s),
+      (select count(*) from generated_transaction_reset_requests where merchant_id=%s)
+    """, (generated["run_id"], generated["run_id"], sid, sid, sid, merchant)).fetchone()
+    with pytest.raises(psycopg.errors.RaiseException, match="GENERATED_STATE_EXTERNAL_REFERENCE"):
+        with pg.transaction():
+            pg.execute(
+                "select reset_generated_company_month_state(%s,%s,%s,%s,%s)",
+                (actor, merchant, company, ym, "must-not-record"),
+            )
+    after = pg.execute("""select
+      (select count(*) from generated_transaction_runs where id=%s),
+      (select count(*) from generated_transaction_members where run_id=%s),
+      (select count(*) from settlements where id=%s),
+      (select count(*) from tax_invoices where settlement_id=%s),
+      (select count(*) from settlement_events where settlement_id=%s),
+      (select count(*) from generated_transaction_reset_requests where merchant_id=%s)
+    """, (generated["run_id"], generated["run_id"], sid, sid, sid, merchant)).fetchone()
+    assert after == before
+    invoice = pg.execute("select issue_attempt_token,issue_attempt_started_at,issue_lease_expires_at from tax_invoices where settlement_id=%s", (sid,)).fetchone()
+    assert all(value is not None for value in invoice)
+
+
+def test_0052_cleanup_rejects_unmapped_child_reference_without_changes(pg):
+    import psycopg
+    company, merchant, actor, _, _, ym = demo_actual_parties(pg, "legacy-child-reference")
+    seeded = pg.execute("select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)).fetchone()[0]
+    run_id = uuid.UUID(seeded["run_id"])
+    mapped_id = pg.execute(
+        "select transaction_id from settlement_demo_transactions where run_id=%s order by transaction_id limit 1",
+        (run_id,),
+    ).fetchone()[0]
+    child_id = pg.execute("""insert into meal_transactions(
+      user_id,company_id,merchant_id,amount,kind,pay_type,original_transaction_id,created_at)
+      select user_id,company_id,merchant_id,-amount,'refund','ledger',id,created_at+interval '1 hour'
+      from meal_transactions where id=%s returning id""", (mapped_id,)).fetchone()[0]
+    with pytest.raises(psycopg.errors.RaiseException, match="LEGACY_GENERATED_TRANSACTION_EXTERNAL_REFERENCE"):
+        with pg.transaction():
+            pg.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
+    assert pg.execute("select count(*) from meal_transactions where id in (%s,%s)", (mapped_id, child_id)).fetchone()[0] == 2
+    assert pg.execute("select count(*) from settlement_demo_runs where id=%s", (run_id,)).fetchone()[0] == 1
+
+
+def test_generated_rpc_and_private_table_permissions_are_fail_closed(pg):
+    rpc_signatures = [
+        "generated_transactions_state(uuid,uuid,uuid,text)",
+        "generate_company_month_transactions(uuid,uuid,uuid,text)",
+        "generated_transactions_create_settlement(uuid,uuid,uuid,text)",
+        "generated_transactions_confirm(uuid,uuid,uuid,text)",
+        "generated_transactions_assert_issue(uuid,uuid,uuid,text)",
+        "generated_transactions_mark_paid(uuid,uuid,uuid,text)",
+        "reset_generated_company_month_state(uuid,uuid,uuid,text,text)",
+    ]
+    for signature in rpc_signatures:
+        assert pg.execute("select has_function_privilege('anon',%s,'execute')", (signature,)).fetchone()[0] is False
+        assert pg.execute("select has_function_privilege('authenticated',%s,'execute')", (signature,)).fetchone()[0] is False
+        assert pg.execute("select has_function_privilege('service_role',%s,'execute')", (signature,)).fetchone()[0] is True
+    for table in ("generated_transaction_runs", "generated_transaction_members", "generated_transaction_reset_requests", "generated_reset_delete_guards"):
+        assert pg.execute("select has_table_privilege('anon',%s,'insert')", (table,)).fetchone()[0] is False
+        assert pg.execute("select has_table_privilege('authenticated',%s,'insert')", (table,)).fetchone()[0] is False
+        assert pg.execute("select has_table_privilege('service_role',%s,'insert')", (table,)).fetchone()[0] is False
+    assert pg.execute("select has_table_privilege('service_role','generated_transaction_runs','select')").fetchone()[0] is True
+    for table in ("settlement_demo_runs", "settlement_demo_transactions", "settlement_demo_reset_requests"):
+        for privilege in ("insert", "update", "delete"):
+            assert pg.execute("select has_table_privilege('service_role',%s,%s)", (table, privilege)).fetchone()[0] is False
+    for signature in ("settlement_demo_seed(uuid,uuid,uuid,text)", "settlement_demo_create(uuid,uuid)",
+                      "settlement_demo_confirm(uuid,uuid)", "settlement_demo_mark_paid(uuid,uuid)",
+                      "settlement_demo_reset(uuid,uuid)", "settlement_demo_reset(uuid,uuid,text)"):
+        assert pg.execute("select has_function_privilege('service_role',%s,'execute')", (signature,)).fetchone()[0] is False
+
+
+def test_generated_create_and_reset_serialize_on_same_advisory_lock(settlement_db):
+    import psycopg
+    with psycopg.connect(settlement_db) as setup:
+        company, merchant, actor, _, _, ym = demo_actual_parties(setup, "generated-lock-serialization")
+        setup.execute(
+            "update merchant_companies set unit_price=11000,tax_type='taxable' where merchant_id=%s and company_id=%s",
+            (merchant, company),
+        )
+        setup.execute(
+            "select generate_company_month_transactions(%s,%s,%s,%s)", (actor, merchant, company, ym),
+        )
+        setup.commit()
+
+    creator = psycopg.connect(settlement_db)
+    resetter = psycopg.connect(settlement_db)
+    try:
+        # create holds the company/month xact lock until commit. A reset for the
+        # same key cannot pass its own advisory lock or observe partial state.
+        creator.execute(
+            "select generated_transactions_create_settlement(%s,%s,%s,%s)",
+            (actor, merchant, company, ym),
+        ).fetchone()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(
+                lambda: resetter.execute(
+                    "select reset_generated_company_month_state(%s,%s,%s,%s,%s)",
+                    (actor, merchant, company, ym, "concurrent-reset"),
+                ).fetchone()[0]
+            )
+            with pytest.raises(TimeoutError):
+                future.result(timeout=0.2)
+            creator.commit()
+            result = future.result(timeout=5)
+        resetter.commit()
+        assert result["reset"] is True and result["generated"] is False
+    finally:
+        creator.close()
+        resetter.close()

@@ -1,15 +1,27 @@
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth import bearer_token
-from app.main import app
 from app.routers.settlements import get_popbill_service, get_settlement_repository
 import app.routers.settlements as router
 from app.services.join_flow import UserProfile
 from app.services.popbill_service import PopbillIssueResult
 from app.repositories.supabase_http import SupabaseHttpError
+
+# The production app deliberately does not register demo_router after migration
+# 0052. Mount it only in this legacy compatibility unit-test app so the dormant
+# implementation remains covered without restoring an OpenAPI/HTTP surface.
+app = FastAPI()
+for compatibility_router in (
+    router.company_router,
+    router.company_alias_router,
+    router.merchant_router,
+    router.demo_router,
+):
+    app.include_router(compatibility_router, prefix="/v1")
 
 SID = "11111111-1111-1111-1111-111111111111"
 
@@ -70,6 +82,9 @@ class DemoRepo:
 
     def is_demo_settlement(self, merchant_id, settlement_id):
         return self.demo_member
+
+    def is_generated_settlement(self, merchant_id, settlement_id):
+        return False
 
     def is_company_demo_settlement(self, company_id, settlement_id):
         return self.demo_member

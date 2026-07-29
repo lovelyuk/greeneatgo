@@ -1,22 +1,22 @@
 export const DEMO_STAGES = Object.freeze([
-  { key: 'seeded', label: '시연 거래 생성' },
+  { key: 'seeded', label: '거래 생성' },
   { key: 'draft', label: '정산 생성' },
   { key: 'confirmed', label: '정산 확정' },
-  { key: 'issued', label: '테스트 세금계산서 발행' },
+  { key: 'issued', label: '세금계산서 발행' },
   { key: 'paid', label: '입금 완료' },
 ]);
 
 export const DEMO_ACTIONS = Object.freeze({
   seeded: { endpoint: 'create', label: '다음 단계: 정산 생성' },
   draft: { endpoint: 'confirm', label: '다음 단계: 정산 확정' },
-  confirmed: { endpoint: 'issue', label: '다음 단계: 테스트 세금계산서 발행' },
+  confirmed: { endpoint: 'issue', label: '세금계산서 발행' },
   issued: { endpoint: 'mark-paid', label: '다음 단계: 입금 완료 처리' },
 });
 
 export const STATUS_LABELS = Object.freeze({
   legacy: { draft: '작성 중', confirmed: '확정', paid: '입금 완료' },
   workflow: { draft: '작성 중', sent: '회사 전송', confirmed: '확정', cancelled: '취소', disputed: '이의 제기' },
-  tax: { not_requested: '발행 요청 전', requested: '발행 요청', issuing: '발행 중', issued: '테스트 발행 완료', nts_sending: '국세청 전송 중', nts_accepted: '국세청 승인', failed: '발행 실패' },
+  tax: { not_requested: '발행 요청 전', requested: '발행 요청', issuing: '발행 중', issued: '발행 완료', nts_sending: '국세청 전송 중', nts_accepted: '국세청 승인', failed: '발행 실패' },
   payment: { unpaid: '입금 대기', matching: '입금 매칭 중', partially_paid: '부분 입금', paid: '입금 완료', overpaid: '초과 입금', unmatched: '입금 미매칭' },
 });
 
@@ -74,7 +74,7 @@ export function statusLabel(group, value) {
 
 export function optionReason(option = {}) {
   if (option.eligible) return '준비 완료';
-  return OPTION_REASON_LABELS[option.reason] ?? option.reason ?? '시연 조건 미충족';
+  return OPTION_REASON_LABELS[option.reason] ?? option.reason ?? '조건 미충족';
 }
 
 export function demoLoadStatus(state, loading, error = '', reloadRequired = false) {
@@ -90,7 +90,7 @@ export function demoInteractionsLocked(state, { loading = false, reloadRequired 
 
 export function invoiceApprovalLabel(settlement, stage) {
   if (settlement?.nts_confirm_num) return settlement.nts_confirm_num;
-  if (stageIndex(stage) >= stageIndex('issued')) return '테스트 발행 완료 / 국세청 승인번호 없음';
+  if (stageIndex(stage) >= stageIndex('issued')) return '발행 완료 / 국세청 승인번호 없음';
   return '대기';
 }
 
@@ -132,6 +132,9 @@ export function demoUsageReconciliation(state = {}) {
     ...details, detailCount, aggregateCount, aggregateSupply, aggregateVat, aggregateTotal,
     settlementCount, settlementSupply, settlementVat, settlementTotal, hasSettlement,
     detailsMatchAggregate, settlementMatches,
-    reconciled: detailsMatchAggregate && settlementMatches,
+    // A settlement intentionally aggregates every ordinary source row in the month,
+    // including real rows that predated generation. Only private generated details
+    // must reconcile exactly with their generated aggregate.
+    reconciled: detailsMatchAggregate,
   };
 }

@@ -23,8 +23,8 @@ test('locks every interaction after initial, manual, or post-mutation reload fai
 
 test('defines the exact five-stage demo timeline and stage progression', () => {
   assert.deepEqual(DEMO_STAGES.map(({ key, label }) => [key, label]), [
-    ['seeded', '시연 거래 생성'], ['draft', '정산 생성'], ['confirmed', '정산 확정'],
-    ['issued', '테스트 세금계산서 발행'], ['paid', '입금 완료'],
+    ['seeded', '거래 생성'], ['draft', '정산 생성'], ['confirmed', '정산 확정'],
+    ['issued', '세금계산서 발행'], ['paid', '입금 완료'],
   ]);
   assert.equal(stageIndex('empty'), -1);
   assert.equal(stageState('confirmed', 'seeded'), 'complete');
@@ -37,7 +37,7 @@ test('enables only the action matching the exact current stage', () => {
   const ready = { configured: true, is_test: true, certificate_verified: true, supplier_ready: true, corp_matches: true };
   assert.deepEqual(nextDemoAction('seeded', ready), { endpoint: 'create', label: '다음 단계: 정산 생성', enabled: true });
   assert.equal(nextDemoAction('draft', ready).endpoint, 'confirm');
-  assert.equal(nextDemoAction('confirmed', ready).endpoint, 'issue');
+  assert.deepEqual(nextDemoAction('confirmed', ready), { endpoint: 'issue', label: '세금계산서 발행', enabled: true });
   assert.equal(nextDemoAction('issued', ready).endpoint, 'mark-paid');
   assert.equal(nextDemoAction('empty', ready), null);
   assert.equal(nextDemoAction('paid', ready), null);
@@ -66,7 +66,7 @@ test('status labels cover legacy, workflow, tax and payment states without inven
   assert.equal(statusLabel('legacy', 'confirmed'), '확정');
   assert.equal(statusLabel('legacy', 'paid'), '입금 완료');
   assert.equal(statusLabel('workflow', 'confirmed'), '확정');
-  assert.equal(statusLabel('tax', 'issued'), '테스트 발행 완료');
+  assert.equal(statusLabel('tax', 'issued'), '발행 완료');
   assert.equal(statusLabel('payment', 'unpaid'), '입금 대기');
   assert.equal(statusLabel('tax', null), '대기');
   assert.equal(statusLabel('tax', 'provider_new_state'), 'provider_new_state');
@@ -77,7 +77,7 @@ test('company reasons and NTS approval text remain explicit and truthful', () =>
   assert.equal(optionReason({ eligible: false, reason: 'BUSINESS_PROFILE_INCOMPLETE' }), '세금계산서 사업자정보 미완성');
   assert.equal(optionReason({ eligible: true }), '준비 완료');
   assert.equal(invoiceApprovalLabel({ nts_confirm_num: 'REAL-NTS-123' }, 'issued'), 'REAL-NTS-123');
-  assert.equal(invoiceApprovalLabel({}, 'issued'), '테스트 발행 완료 / 국세청 승인번호 없음');
+  assert.equal(invoiceApprovalLabel({}, 'issued'), '발행 완료 / 국세청 승인번호 없음');
   assert.equal(invoiceApprovalLabel({}, 'confirmed'), '대기');
 });
 
@@ -108,4 +108,12 @@ test('totals sanitized demo details and reconciles aggregate and settlement exac
     transactions,
     aggregate: { transaction_count: 3, supply_amount: 64545, vat_amount: 6455, total_amount: 71000 },
   }).reconciled, false);
+  const mixed = demoUsageReconciliation({
+    transactions,
+    aggregate: { transaction_count: 2, supply_amount: 64545, vat_amount: 6455, total_amount: 71000 },
+    settlement: { tx_count: 3, supply_amount: 74545, vat_amount: 7455, total_amount: 82000 },
+  });
+  assert.equal(mixed.detailsMatchAggregate, true);
+  assert.equal(mixed.settlementMatches, false);
+  assert.equal(mixed.reconciled, true);
 });

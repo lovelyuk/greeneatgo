@@ -17,9 +17,15 @@ company_router = APIRouter(prefix="/company/settlements", tags=["company-settlem
 company_alias_router = APIRouter(prefix="/admin/settlements", tags=["company-settlements"])
 merchant_router = APIRouter(prefix="/admin/merchant/settlements", tags=["merchant-settlements"])
 demo_router = APIRouter(prefix="/admin/merchant/settlement-demo", tags=["merchant-settlement-demo"])
+generation_router = APIRouter(prefix="/admin/merchant/transaction-generation", tags=["merchant-transaction-generation"])
 
 
 class SettlementDemoSeedRequest(BaseModel):
+    company_id: UUID
+    period_ym: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class GeneratedPeriodRequest(BaseModel):
     company_id: UUID
     period_ym: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
 
@@ -85,6 +91,11 @@ def _rpc_error(exc: SupabaseHttpError) -> HTTPException:
         ("SETTLEMENT_DEMO_EMPLOYEE_REQUIRED", 422, "SETTLEMENT_DEMO_EMPLOYEE_REQUIRED", "활성 직원 또는 고객이 필요해요"),
         ("SETTLEMENT_DEMO_CREATE_RESULT_MISMATCH", 409, "SETTLEMENT_DEMO_CREATE_RESULT_MISMATCH", "데모 정산 결과가 예상 거래와 일치하지 않아요"),
         ("DEMO_PERIOD_TRANSACTION_CONFLICT", 409, "DEMO_PERIOD_TRANSACTION_CONFLICT", "데모 기간에 다른 거래가 포함되어 있어요"),
+        ("GENERATED_PERIOD_NOT_EMPTY", 409, "GENERATED_PERIOD_NOT_EMPTY", "선택한 회사와 월에 이미 정산이 있어요"),
+        ("GENERATED_SETTLEMENT_SET_CONFLICT", 409, "GENERATED_SETTLEMENT_SET_CONFLICT", "정산 구성이 변경되어 처리할 수 없어요"),
+        ("GENERATED_STATE_EXTERNAL_REFERENCE", 409, "GENERATED_STATE_EXTERNAL_REFERENCE", "외부 처리 내역이 있어 현재 상태를 초기화할 수 없어요"),
+        ("SETTLEMENT_GENERATION_STATE_CONFLICT", 409, "SETTLEMENT_GENERATION_STATE_CONFLICT", "현재 정산 상태에서는 처리할 수 없어요"),
+        ("SETTLEMENT_GENERATION_NOT_CREATED", 409, "SETTLEMENT_GENERATION_NOT_CREATED", "먼저 거래를 생성해 주세요"),
     )
     for marker, status, code, message in mapping:
         if marker in body:
@@ -386,25 +397,28 @@ def _merchant_issue_invoice(
     service: PopbillService,
     *,
     allow_delayed_issue: bool,
+    include_demo: bool = False,
 ):
     actor = _actor(repo, token, "merchant_admin")
     assert actor.merchant_id is not None
     # Tenant-scoped existence precedes provider configuration; provider construction
-    # still precedes the mutating claim.
-    if allow_delayed_issue:
-        detail = getattr(repo, "merchant_demo_detail", repo.merchant_detail)(settlement_id, actor.merchant_id)
+    # still precedes the mutating claim. Detail scope is explicit and independent
+    # from Popbill's delayed-issue option.
+    if include_demo:
+        detail = repo.merchant_demo_detail(settlement_id, actor.merchant_id)
         if detail is None:
             raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
     else:
         _merchant_detail(settlement_id, token, repo)
     try:
         is_demo = repo.is_demo_settlement(actor.merchant_id, settlement_id)
+        generated = repo.is_generated_settlement(actor.merchant_id, settlement_id)
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
-    # The generic endpoint must not bypass the demo endpoint's test-only gate.
-    # Non-demo production issuance intentionally remains unchanged.
-    if is_demo and PopbillConfig.from_settings(get_settings()).is_test is not True:
-        raise _error(409, "SETTLEMENT_DEMO_TEST_MODE_REQUIRED", "데모 발행은 팝빌 테스트 환경에서만 가능해요")
+    # Generated development rows are ordinary business rows, but provider actions
+    # remain fail-closed to Popbill's development backend until this feature is removed.
+    if (is_demo or generated) and PopbillConfig.from_settings(get_settings()).is_test is not True:
+        raise _error(409, "SETTLEMENT_TEST_MODE_REQUIRED", "이 문서는 팝빌 개발 환경에서만 발행할 수 있어요")
     service = _provider(service)
     try:
         claim = repo.claim_invoice_issue(actor, settlement_id)
@@ -466,7 +480,10 @@ def merchant_refresh_invoice_status(settlement_id: UUID, token: str = Depends(be
     if row["tax_invoice_status"] not in ("issuing", "issued", "nts_sending", "nts_accepted"):
         raise _error(409, "POPBILL_DOCUMENT_NOT_FOUND", "발행된 세금계산서가 없어요")
     try:
-        _require_test_for_demo(repo.is_demo_settlement(actor.merchant_id, settlement_id))
+        protected = repo.is_demo_settlement(actor.merchant_id, settlement_id) or repo.is_generated_settlement(
+            actor.merchant_id, settlement_id,
+        )
+        _require_test_for_demo(protected)
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
     service = _provider(service)
@@ -481,7 +498,10 @@ def _merchant_provider_document(settlement_id: UUID, token: str, repo: Settlemen
     if row["tax_invoice_status"] not in ("issued", "nts_sending", "nts_accepted"):
         raise _error(409, "POPBILL_DOCUMENT_NOT_FOUND", "발행된 세금계산서가 없어요")
     try:
-        _require_test_for_demo(repo.is_demo_settlement(actor.merchant_id, settlement_id))
+        protected = repo.is_demo_settlement(actor.merchant_id, settlement_id) or repo.is_generated_settlement(
+            actor.merchant_id, settlement_id,
+        )
+        _require_test_for_demo(protected)
         service = _provider(service)
         key = _invoice_key(repo, actor, settlement_id)
         result = service.get_view_url(key) if kind == "view" else service.get_pdf_url(key)
@@ -589,7 +609,7 @@ def settlement_demo_issue(token: str = Depends(bearer_token), repo: SettlementRe
     # settlements therefore opt in to Popbill's test-only delayed issuance.
     return _merchant_issue_invoice(
         UUID(str(member["settlement_id"])), token, repo, service,
-        allow_delayed_issue=True,
+        allow_delayed_issue=True, include_demo=True,
     )
 
 
@@ -641,3 +661,83 @@ def settlement_demo_reset(
     token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository),
 ):
     return _demo_action("reset", token, repo, idempotency_key)
+
+
+def _generated_action(action: str, payload: GeneratedPeriodRequest, token: str, repo: SettlementRepository):
+    actor = _actor(repo, token, "merchant_admin")
+    try:
+        result = getattr(repo, f"generated_{action}")(actor, payload.company_id, payload.period_ym)
+        return {"ok": True, "data": _public(result), "error": None}
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+
+
+@generation_router.get("")
+def generated_state(
+    company_id: UUID | None = None,
+    period_ym: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository),
+):
+    actor = _actor(repo, token, "merchant_admin")
+    if (company_id is None) != (period_ym is None):
+        raise _error(422, "SETTLEMENT_INPUT_INVALID", "회사와 대상 월을 함께 선택해 주세요")
+    try:
+        state = repo.generated_state(actor, company_id, period_ym)
+        readiness = _demo_readiness(actor, repo)
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+    public_state = _public(state)
+    assert isinstance(public_state, dict)
+    return {"ok": True, "data": {**public_state, "readiness": readiness}, "error": None}
+
+
+@generation_router.post("/seed")
+def generated_seed(payload: GeneratedPeriodRequest, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    return _generated_action("seed", payload, token, repo)
+
+
+@generation_router.post("/create")
+def generated_create(payload: GeneratedPeriodRequest, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    return _generated_action("create", payload, token, repo)
+
+
+@generation_router.post("/confirm")
+def generated_confirm(payload: GeneratedPeriodRequest, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    return _generated_action("confirm", payload, token, repo)
+
+
+@generation_router.post("/issue")
+def generated_issue(
+    payload: GeneratedPeriodRequest, token: str = Depends(bearer_token),
+    repo: SettlementRepository = Depends(get_settlement_repository), service: PopbillService = Depends(get_popbill_service),
+):
+    actor = _actor(repo, token, "merchant_admin")
+    try:
+        member = repo.generated_assert_issue(actor, payload.company_id, payload.period_ym)
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+    if PopbillConfig.from_settings(get_settings()).is_test is not True:
+        raise _error(409, "SETTLEMENT_TEST_MODE_REQUIRED", "이 화면의 발행은 팝빌 개발 환경에서만 가능해요")
+    return _merchant_issue_invoice(
+        UUID(str(member["settlement_id"])), token, repo, _provider(service),
+        allow_delayed_issue=True, include_demo=False,
+    )
+
+
+@generation_router.post("/mark-paid")
+def generated_mark_paid(payload: GeneratedPeriodRequest, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    return _generated_action("mark_paid", payload, token, repo)
+
+
+@generation_router.post("/reset")
+def generated_reset(
+    payload: GeneratedPeriodRequest,
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=200),
+    token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository),
+):
+    actor = _actor(repo, token, "merchant_admin")
+    try:
+        result = repo.generated_reset(actor, payload.company_id, payload.period_ym, idempotency_key)
+        return {"ok": True, "data": _public(result), "error": None}
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc

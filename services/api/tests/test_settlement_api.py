@@ -21,6 +21,8 @@ class FakeSettlements:
         self.calls = []
         self.confirm_error = None
         self.demo = False
+        self.generated = False
+        self.generated_lookup_error = None
         self.detail = {"id": SETTLEMENT_ID, "tax_invoice_status": "issued", "tax_invoices": [
             {"document_type": "original", "invoicer_mgt_key": "GEAAAAAAAAAAAAAAAAAAAAAA"}
         ], "events": []}
@@ -59,6 +61,11 @@ class FakeSettlements:
 
     def is_demo_settlement(self, merchant_id, settlement_id):
         return self.demo and merchant_id == "merchant-own"
+
+    def is_generated_settlement(self, merchant_id, settlement_id):
+        if self.generated_lookup_error is not None:
+            raise self.generated_lookup_error
+        return self.generated and merchant_id == "merchant-own"
 
     def merchant_demo_detail(self, settlement_id, merchant_id, *, include_transactions=False):
         self.calls.append(("merchant_demo_detail", settlement_id, merchant_id, include_transactions))
@@ -102,6 +109,22 @@ class FakeSettlements:
     def original_invoice_management_key(self, actor, settlement_id):
         self.calls.append(("management_key", actor.role, settlement_id))
         return "GEAAAAAAAAAAAAAAAAAAAAAA"
+
+    def generated_state(self, actor, company_id=None, period_ym=None):
+        self.calls.append(("generated_state", actor.merchant_id, company_id, period_ym))
+        return {"generated": False, "stage": "empty", "options": []}
+
+    def generated_seed(self, actor, company_id, period_ym):
+        self.calls.append(("generated_seed", actor.merchant_id, company_id, period_ym))
+        return {"generated": True, "company_id": str(company_id), "period_ym": period_ym}
+
+    def generated_assert_issue(self, actor, company_id, period_ym):
+        self.calls.append(("generated_assert_issue", actor.merchant_id, company_id, period_ym))
+        return {"settlement_id": SETTLEMENT_ID, "company_id": str(company_id)}
+
+    def generated_reset(self, actor, company_id, period_ym, key):
+        self.calls.append(("generated_reset", actor.merchant_id, company_id, period_ym, key))
+        return {"generated": False, "reset": True}
 
 
 class FakePopbill:
@@ -382,3 +405,81 @@ def test_browser_payloads_recursively_redact_provider_and_attempt_internals(clie
         body = response.text
         for secret in ("SECRET-KEY", "raw provider PII", "provider_response", "issue_attempt_token"):
             assert secret not in body
+
+
+def test_generated_company_month_routes_scope_tenant_and_reset_exact_selection(client_factory, monkeypatch):
+    client, repo = client_factory("merchant_admin")
+    monkeypatch.setattr(settlements_router, "_demo_readiness", lambda _actor, _repo: {"is_test": True})
+    company_id = "33333333-3333-4333-8333-333333333333"
+    payload = {"company_id": company_id, "period_ym": "2026-06"}
+
+    state = client.get(f"/v1/admin/merchant/transaction-generation?company_id={company_id}&period_ym=2026-06")
+    assert state.status_code == 200
+    assert repo.calls[-1] == ("generated_state", "merchant-own", UUID(company_id), "2026-06")
+    seeded = client.post("/v1/admin/merchant/transaction-generation/seed", json=payload)
+    assert seeded.status_code == 200
+    assert repo.calls[-1] == ("generated_seed", "merchant-own", UUID(company_id), "2026-06")
+    assert client.post("/v1/admin/merchant/transaction-generation/reset", json=payload).status_code == 422
+    reset = client.post(
+        "/v1/admin/merchant/transaction-generation/reset", json=payload,
+        headers={"Idempotency-Key": "reset-exact-company-month"},
+    )
+    assert reset.status_code == 200
+    assert repo.calls[-1] == (
+        "generated_reset", "merchant-own", UUID(company_id), "2026-06", "reset-exact-company-month",
+    )
+    assert client.get(f"/v1/admin/merchant/transaction-generation?company_id={company_id}").status_code == 422
+
+
+def test_generated_issue_uses_ordinary_detail_and_reaches_provider_only_in_development(
+    client_factory, monkeypatch,
+):
+    client, repo = client_factory("merchant_admin")
+    repo.generated = True
+    provider = FakePopbill()
+    app.dependency_overrides[get_popbill_service] = lambda: provider
+    company_id = "33333333-3333-4333-8333-333333333333"
+    payload = {"company_id": company_id, "period_ym": "2026-06"}
+
+    settings = SimpleNamespace(
+        popbill_link_id="link", popbill_secret_key="secret", popbill_corp_num="1234567890",
+        popbill_user_id="user", popbill_is_test=True, popbill_ip_restrict_on=True,
+        popbill_use_static_ip=False, popbill_use_local_time=True,
+    )
+    monkeypatch.setattr(settlements_router, "get_settings", lambda: settings)
+    response = client.post("/v1/admin/merchant/transaction-generation/issue", json=payload)
+    assert response.status_code == 200
+    assert [call[0] for call in repo.calls] == [
+        "generated_assert_issue", "merchant_detail", "claim", "finalize",
+    ]
+    assert provider.calls == [("issue", "GEAAAAAAAAAAAAAAAAAAAAAA", True)]
+    assert not any(call[0] == "merchant_demo_detail" for call in repo.calls)
+
+    repo.calls.clear()
+    provider.calls.clear()
+    settings.popbill_is_test = False
+    response = client.post("/v1/admin/merchant/transaction-generation/issue", json=payload)
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "SETTLEMENT_TEST_MODE_REQUIRED"
+    assert [call[0] for call in repo.calls] == ["generated_assert_issue"]
+    assert provider.calls == []
+
+
+def test_legacy_demo_routes_are_absent_from_openapi(client_factory):
+    client, _ = client_factory("merchant_admin")
+    paths = client.get("/openapi.json").json()["paths"]
+    assert not any(path.startswith("/v1/admin/merchant/settlement-demo") for path in paths)
+    assert any(path.startswith("/v1/admin/merchant/transaction-generation") for path in paths)
+
+
+@pytest.mark.parametrize("path", [
+    f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue",
+    f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/view-url",
+    f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/pdf-url",
+])
+def test_generated_membership_lookup_failure_is_translated_fail_closed(client_factory, path):
+    client, repo = client_factory("merchant_admin")
+    repo.generated_lookup_error = SupabaseHttpError(503, "generated membership unavailable")
+    response = client.post(path) if path.endswith("/issue") else client.get(path)
+    assert response.status_code == 502
+    assert not any(call[0] in ("claim", "management_key") for call in repo.calls)

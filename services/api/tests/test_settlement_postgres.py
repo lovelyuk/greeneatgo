@@ -3,7 +3,7 @@ import datetime
 import os
 import subprocess
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -61,6 +61,10 @@ def settlement_db():
         # migration must be replay-safe and remain the final authority afterward.
         conn.execute((MIGRATIONS / "0049_recommended_settlement_workflow.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0049_recommended_settlement_workflow.sql").read_text(encoding="utf-8"))
+        # Demo reset evidence preservation is the final authority after any
+        # recovery replay of the older demo reset implementation.
+        conn.execute((MIGRATIONS / "0051_preserve_demo_evidence_on_reset.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0051_preserve_demo_evidence_on_reset.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -1239,8 +1243,13 @@ def test_demo_usage_details_are_sanitized_exact_and_survive_settlement_archive_s
 
 def test_demo_usage_detail_migration_replay_preserves_volatility_and_grants(pg):
     migration = (MIGRATIONS / "0046_settlement_demo_usage_details.sql").read_text(encoding="utf-8")
+    latest_reset = (MIGRATIONS / "0051_preserve_demo_evidence_on_reset.sql").read_text(encoding="utf-8")
     pg.execute(migration)
     pg.execute(migration)
+    # Recovery tooling may replay 0046; reapplying the latest reset migration
+    # must converge back to the evidence-preserving implementation.
+    pg.execute(latest_reset)
+    pg.execute(latest_reset)
     rows = pg.execute("""select proname,provolatile from pg_proc where oid in
       ('public.settlement_demo_state(uuid,uuid)'::regprocedure,
        'public.settlement_demo_state_base(uuid,uuid)'::regprocedure) order by proname""").fetchall()
@@ -1326,6 +1335,119 @@ def test_demo_visible_reads_integrate_with_generic_settlement_but_not_limits(pg)
       join settlement_demo_transactions d on d.transaction_id=t.id where d.run_id=%s and t.is_demo""",
       (run_id,)).fetchone()[0] == demo_count
     assert pg.execute("select count(*) from normal_settlements where id=%s", (sid,)).fetchone()[0] == 0
+
+
+def test_demo_reset_archives_draft_run_when_ordinary_settlement_uses_its_transactions(pg):
+    import psycopg
+
+    company, merchant, actor, _, _, ym = demo_actual_parties(pg, "ordinary-reset-guard")
+    seeded = pg.execute(
+        "select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)
+    ).fetchone()[0]
+    run_id = seeded["run_id"]
+    transaction_count = seeded["transaction_count"]
+    ordinary = pg.execute(
+        "select create_merchant_settlement(%s,%s,%s,%s)",
+        (merchant, company, seeded["period_from"], seeded["period_to"]),
+    ).fetchone()[0]
+    dedicated = pg.execute("select settlement_demo_create(%s,%s)", (actor, merchant)).fetchone()[0]
+
+    reset = pg.execute(
+        "select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "ordinary-reference-reset")
+    ).fetchone()[0]
+
+    assert reset["stage"] == "empty"
+    assert pg.execute(
+        "select is_current from settlement_demo_runs where id=%s", (run_id,)
+    ).fetchone()[0] is False
+    assert pg.execute(
+        "select count(*) from settlements where id in (%s,%s)",
+        (ordinary["id"], dedicated["settlement_id"]),
+    ).fetchone()[0] == 2
+    assert pg.execute("""select count(*) from meal_transactions t
+      join settlement_demo_transactions d on d.transaction_id=t.id
+      where d.run_id=%s""", (run_id,)).fetchone()[0] == transaction_count
+    assert pg.execute("""select count(*) from meal_transactions t where t.merchant_id=%s
+      and t.company_id=%s and t.created_at >= (%s::date::timestamp at time zone 'Asia/Seoul')
+      and t.created_at < ((%s::date+1)::timestamp at time zone 'Asia/Seoul')""",
+      (merchant, company, seeded["period_from"], seeded["period_to"])).fetchone()[0] == transaction_count
+
+    replay = pg.execute(
+        "select settlement_demo_reset(%s,%s,%s)", (actor, merchant, "ordinary-reference-reset")
+    ).fetchone()[0]
+    assert replay["stage"] == "empty"
+    assert pg.execute(
+        "select count(*) from settlement_demo_runs where id=%s", (run_id,)
+    ).fetchone()[0] == 1
+    assert pg.execute("""select count(*) from meal_transactions t
+      join settlement_demo_transactions d on d.transaction_id=t.id
+      where d.run_id=%s""", (run_id,)).fetchone()[0] == transaction_count
+
+    with pytest.raises(psycopg.errors.RaiseException, match="DEMO_PERIOD_TRANSACTION_CONFLICT"):
+        with pg.transaction():
+            pg.execute(
+                "select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)
+            )
+
+    other_ym = pg.execute(
+        "select to_char(date_trunc('month',current_date)-interval '2 months','YYYY-MM')"
+    ).fetchone()[0]
+    repeated = pg.execute(
+        "select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, other_ym)
+    ).fetchone()[0]
+    assert repeated["stage"] == "seeded" and repeated["period_ym"] == other_ym
+
+
+def test_demo_reset_waits_for_concurrent_ordinary_settlement_and_preserves_evidence(settlement_db):
+    import psycopg
+
+    with psycopg.connect(settlement_db) as setup:
+        company, merchant, actor, _, _, ym = demo_actual_parties(setup, "concurrent-reset-guard")
+        seeded = setup.execute(
+            "select settlement_demo_seed(%s,%s,%s,%s)", (actor, merchant, company, ym)
+        ).fetchone()[0]
+        run_id = seeded["run_id"]
+        transaction_count = seeded["transaction_count"]
+        dedicated = setup.execute(
+            "select settlement_demo_create(%s,%s)", (actor, merchant)
+        ).fetchone()[0]
+        setup.commit()
+
+    def reset_while_creator_holds_period_lock():
+        with psycopg.connect(settlement_db) as resetter:
+            result = resetter.execute(
+                "select settlement_demo_reset(%s,%s,%s)",
+                (actor, merchant, "concurrent-ordinary-reference-reset"),
+            ).fetchone()[0]
+            resetter.commit()
+            return result
+
+    with psycopg.connect(settlement_db) as creator:
+        ordinary = creator.execute(
+            "select create_merchant_settlement(%s,%s,%s,%s)",
+            (merchant, company, seeded["period_from"], seeded["period_to"]),
+        ).fetchone()[0]
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            reset_future = executor.submit(reset_while_creator_holds_period_lock)
+            with pytest.raises(TimeoutError):
+                reset_future.result(timeout=0.2)
+            creator.commit()
+            assert reset_future.result(timeout=5)["stage"] == "empty"
+
+    with psycopg.connect(settlement_db) as verify:
+        assert verify.execute(
+            "select is_current from settlement_demo_runs where id=%s", (run_id,)
+        ).fetchone()[0] is False
+        assert verify.execute(
+            "select count(*) from settlements where id in (%s,%s)",
+            (ordinary["id"], dedicated["settlement_id"]),
+        ).fetchone()[0] == 2
+        assert verify.execute("""select count(*) from meal_transactions t
+          join settlement_demo_transactions d on d.transaction_id=t.id
+          where d.run_id=%s""", (run_id,)).fetchone()[0] == transaction_count
+        assert verify.execute(
+            "select tx_count,total_amount from normal_settlements where id=%s", (ordinary["id"],)
+        ).fetchone() == (transaction_count, seeded["aggregate"]["total_amount"])
 
 
 def test_archived_demo_does_not_reserve_normal_settlement_period(pg):

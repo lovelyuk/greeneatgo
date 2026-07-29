@@ -122,10 +122,42 @@ export function mapSettlement(row = {}) {
 }
 
 export function replaceSettlementDetail(rows, detail) {
-  const mapped = mapSettlement(detail);
+  const source = detail && typeof detail === 'object' ? detail : {};
+  const mapped = mapSettlement(source);
   if (!mapped.id) throw new Error('Settlement detail is missing an id.');
   if (!Array.isArray(rows)) return rows;
-  return rows.map((row) => row.id === mapped.id ? mapped : row);
+  const includes = (key) => Object.prototype.hasOwnProperty.call(source, key);
+  const includesInvoices = includes('tax_invoices');
+  const includesRecipient = includes('business_information') || includesInvoices;
+  const includesSupplier = includes('supplier_information') || includesInvoices;
+  const includesPayments = includes('payments');
+  return rows.map((row) => {
+    if (row.id !== mapped.id) return row;
+    return {
+      ...mapped,
+      recipient: includesRecipient ? mapped.recipient : row.recipient,
+      supplier: includesSupplier ? mapped.supplier : row.supplier,
+      invoice: includesInvoices ? mapped.invoice : row.invoice,
+      payments: includesPayments ? mapped.payments : row.payments,
+      transactions: includes('transactions') ? mapped.transactions : row.transactions,
+      payment: {
+        ...mapped.payment,
+        ...(!includes('due_date') ? {
+          scheduled_at: row.payment?.scheduled_at ?? null,
+        } : {}),
+        ...(!includesSupplier ? {
+          bank_name: row.payment?.bank_name ?? null,
+          account_number: row.payment?.account_number ?? null,
+          account_holder: row.payment?.account_holder ?? null,
+        } : {}),
+        ...(!includesPayments && !includes('paid_at') ? {
+          paid_at: row.payment?.paid_at ?? null,
+          amount: row.payment?.amount ?? 0,
+          memo: row.payment?.memo ?? null,
+        } : {}),
+      },
+    };
+  });
 }
 
 export function canConfirmAndRequest(row) {

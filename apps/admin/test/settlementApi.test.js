@@ -79,6 +79,34 @@ test('replaces a mutated settlement with its refreshed detail without losing bus
   assert.equal(rows[0].transactions[0].id, 'tx-1');
 });
 
+test('preserves hydrated detail fields when an action refresh returns only a summary', () => {
+  const previous = mapSettlement(detail);
+  const summary = {
+    id: detail.id,
+    period_ym: detail.period_ym,
+    period_from: detail.period_from,
+    period_to: detail.period_to,
+    total_amount: detail.total_amount,
+    supply_amount: detail.supply_amount,
+    vat_amount: detail.vat_amount,
+    settlement_status: 'revising',
+    tax_invoice_status: detail.tax_invoice_status,
+    payment_status: detail.payment_status,
+    updated_at: '2026-08-03T00:00:00Z',
+  };
+
+  const [row] = replaceSettlementDetail([previous], summary);
+
+  assert.equal(row.settlement_status, 'revising');
+  assert.equal(row.updated_at, '2026-08-03T00:00:00Z');
+  assert.deepEqual(row.recipient, previous.recipient);
+  assert.deepEqual(row.supplier, previous.supplier);
+  assert.deepEqual(row.invoice, previous.invoice);
+  assert.deepEqual(row.payments, previous.payments);
+  assert.deepEqual(row.payment, previous.payment);
+  assert.deepEqual(row.transactions, previous.transactions);
+});
+
 test('action eligibility exactly follows explicit review and payment lifecycle', () => {
   const sent = { settlement_status: 'sent', tax_invoice_status: 'not_requested' };
   assert.equal(canConfirmAndRequest(sent), true);

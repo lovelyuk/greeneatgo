@@ -1009,7 +1009,12 @@ function useSettlementV2Rows(token, isMerchant) {
     })();
     return () => controller.abort();
   }, [root, token, reloadKey]);
-  return { rows, error, warning, loading, reload: () => { if (!loading) setReloadKey((value) => value + 1); }, setRows };
+  return {
+    rows, error, warning, loading,
+    reload: () => { if (!loading) setReloadKey((value) => value + 1); },
+    clearMessages: () => { setError(''); setWarning(''); },
+    setRows,
+  };
 }
 
 function formatKoreanTimestamp(value) {
@@ -1034,7 +1039,7 @@ function SettlementV2Empty({ text = '내역이 없습니다' }) {
 
 function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInfo = null }) {
   const isMerchant = viewer === 'merchant';
-  const { rows: loadedRows, error: loadError, warning: loadWarning, loading, reload, setRows } = useSettlementV2Rows(token, isMerchant);
+  const { rows: loadedRows, error: loadError, warning: loadWarning, loading, reload, clearMessages, setRows } = useSettlementV2Rows(token, isMerchant);
   const rows = loadedRows ?? [];
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState('all');
@@ -1053,6 +1058,7 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
   const dialogRef = useRef(null);
   const dialogReturnRef = useRef(null);
   const evidenceRequestRef = useRef(0);
+  const selectedIdRef = useRef(null);
   const disputeIdempotencyKeyRef = useRef(null);
   const paymentIdempotencyKeyRef = useRef(null);
   useEffect(() => {
@@ -1090,7 +1096,9 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
   async function openSettlement(row) {
     const requestId = evidenceRequestRef.current + 1;
     evidenceRequestRef.current = requestId;
+    selectedIdRef.current = row.id;
     setSelectedId(row.id);
+    clearMessages();
     setDetailTab('evidence');
     setNotice('');
     setActionError('');
@@ -1129,10 +1137,49 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
   }
 
   async function refreshAfterAction(message) {
+    const settlementId = selected.id;
+    if (selectedIdRef.current !== settlementId) return false;
+    const requestId = evidenceRequestRef.current + 1;
+    evidenceRequestRef.current = requestId;
     const root = settlementApiRoot(isMerchant);
-    const detail = await apiFetch(`${root}/${encodeURIComponent(selected.id)}?include_transactions=true`, token);
-    setRows((current) => replaceSettlementDetail(current, detail));
-    setNotice(message);
+    try {
+      const detail = await apiFetch(`${root}/${encodeURIComponent(settlementId)}?include_transactions=true`, token);
+      if (evidenceRequestRef.current !== requestId || selectedIdRef.current !== settlementId) return false;
+      setRows((current) => replaceSettlementDetail(current, detail));
+      setNotice(message);
+      return true;
+    } catch (detailError) {
+      if (evidenceRequestRef.current === requestId && selectedIdRef.current === settlementId) {
+        setNotice(message);
+        setActionError(`처리는 완료됐지만 최신 상세 정보를 불러오지 못했습니다. 다시 시도해 주세요. (${detailError.message})`);
+      }
+      return false;
+    } finally {
+      if (evidenceRequestRef.current === requestId && selectedIdRef.current === settlementId) setEvidenceLoading(false);
+    }
+  }
+
+  async function retrySelectedDetail() {
+    if (!selected || pendingAction) return;
+    const settlementId = selected.id;
+    if (selectedIdRef.current !== settlementId) return;
+    const requestId = evidenceRequestRef.current + 1;
+    evidenceRequestRef.current = requestId;
+    setPendingAction('detail-refresh');
+    clearMessages();
+    setActionError('');
+    setEvidenceLoading(true);
+    try {
+      const root = settlementApiRoot(isMerchant);
+      const detail = await apiFetch(`${root}/${encodeURIComponent(settlementId)}?include_transactions=true`, token);
+      if (evidenceRequestRef.current !== requestId || selectedIdRef.current !== settlementId) return;
+      setRows((current) => replaceSettlementDetail(current, detail));
+    } catch (detailError) {
+      if (evidenceRequestRef.current === requestId && selectedIdRef.current === settlementId) setActionError(detailError.message);
+    } finally {
+      if (evidenceRequestRef.current === requestId && selectedIdRef.current === settlementId) setEvidenceLoading(false);
+      setPendingAction((current) => current === 'detail-refresh' ? '' : current);
+    }
   }
 
   async function confirmInvoiceAction() {
@@ -1157,7 +1204,6 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
       setActionError(actionFailure.code === 'POPBILL_RECONCILIATION_REQUIRED'
         ? '발행 결과가 불명확합니다. 중복 발행하지 말고 상태 새로고침으로 팝빌 결과를 확인해 주세요.'
         : actionFailure.message);
-      if (isMerchant) reload();
     } finally {
       setPendingAction('');
     }
@@ -1224,7 +1270,7 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
     try {
       await apiFetch(`/admin/merchant/settlements/${encodeURIComponent(selected.id)}/tax-invoice/refresh-status`, token, { method: 'POST', body: '{}' });
       await refreshAfterAction('팝빌과 국세청 처리 상태를 새로고침했습니다.');
-    } catch (refreshError) { setActionError(refreshError.message); reload(); }
+    } catch (refreshError) { setActionError(refreshError.message); }
     finally { setPendingAction(''); }
   }
 
@@ -1260,11 +1306,11 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
   const merchantCanMarkPaid = isMerchant && canMerchantMarkPaid(selected);
   return <AdminPage title={null} description="" showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
 
-    {loadError && <div className="alert error" role="alert">{loadError} <button type="button" className="ghost" onClick={reload} disabled={loading}>다시 시도</button></div>}
-    {loadWarning && <div className="alert warning" role="alert">{loadWarning} <button type="button" className="ghost" onClick={reload} disabled={loading}>다시 시도</button></div>}
-    {actionError && <div className="alert error" role="alert" aria-live="assertive">{actionError} <button type="button" className="ghost" onClick={reload} disabled={loading || Boolean(pendingAction)}>다시 시도</button></div>}
+    {loadError && <div className="alert error" role="alert">{loadError} <button type="button" className="ghost" onClick={retrySelectedDetail} disabled={Boolean(pendingAction)}>다시 시도</button></div>}
+    {loadWarning && <div className="alert warning" role="alert">{loadWarning} <button type="button" className="ghost" onClick={retrySelectedDetail} disabled={Boolean(pendingAction)}>다시 시도</button></div>}
+    {actionError && <div className="alert error" role="alert" aria-live="assertive">{actionError} <button type="button" className="ghost" onClick={retrySelectedDetail} disabled={Boolean(pendingAction)}>다시 시도</button></div>}
     {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
-    <div className="settlement-v2-detailbar"><button ref={backButtonRef} type="button" className="ghost" onClick={() => { evidenceRequestRef.current += 1; setEvidenceLoading(false); setSelectedId(null); setNotice(''); setActionError(''); }}>‹ 뒤로</button><div className="settlement-v2-detail-actions"><button type="button" className="ghost" onClick={() => setNotice('정산자료 엑셀 다운로드는 현재 제공되지 않습니다.')}><Download size={16}/> 엑셀 다운로드</button>{invoiceAvailable && <><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => openInvoiceDocument('view')}><FileText size={16}/> 보기</button><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => openInvoiceDocument('pdf')}><Download size={16}/> PDF</button></>}{isMerchant && canRefreshInvoiceStatus(selected) && <button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={refreshInvoiceStatus}><RefreshCw size={16}/> 상태 새로고침</button>}{merchantCanSend && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => settlementWorkflowAction('send')}>{selected.settlement_status === 'revising' ? '업체에 정산서 재발송' : '업체에 정산서 발송'}</button>}{merchantCanBeginRevision && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => settlementWorkflowAction('begin-revision')}>정산서 수정 시작</button>}{merchantCanIssue && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('issue'); }}>세금계산서 발행</button>}{companyCanRequest && <button ref={actionButtonRef} type="button" className="primary" disabled={!recipientReady || Boolean(pendingAction)} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('request'); }}>정산 내용 확인 및 세금계산서 발급 요청</button>}{companyCanDispute && <button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { disputeIdempotencyKeyRef.current = crypto.randomUUID(); setDisputeReason(''); setActionError(''); setDialog('dispute'); }}>정산 내용 이의 제기</button>}{merchantCanMarkPaid && <button ref={actionButtonRef} type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { paymentIdempotencyKeyRef.current = crypto.randomUUID(); setPaymentForm(paymentFormForSettlement(selected)); setActionError(''); dialogReturnRef.current = actionButtonRef.current; setDialog('payment'); }}>입금 등록</button>}</div></div>
+    <div className="settlement-v2-detailbar"><button ref={backButtonRef} type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { evidenceRequestRef.current += 1; selectedIdRef.current = null; setEvidenceLoading(false); setSelectedId(null); setNotice(''); setActionError(''); }}>‹ 뒤로</button><div className="settlement-v2-detail-actions"><button type="button" className="ghost" onClick={() => setNotice('정산자료 엑셀 다운로드는 현재 제공되지 않습니다.')}><Download size={16}/> 엑셀 다운로드</button>{invoiceAvailable && <><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => openInvoiceDocument('view')}><FileText size={16}/> 보기</button><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => openInvoiceDocument('pdf')}><Download size={16}/> PDF</button></>}{isMerchant && canRefreshInvoiceStatus(selected) && <button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={refreshInvoiceStatus}><RefreshCw size={16}/> 상태 새로고침</button>}{merchantCanSend && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => settlementWorkflowAction('send')}>{selected.settlement_status === 'revising' ? '업체에 정산서 재발송' : '업체에 정산서 발송'}</button>}{merchantCanBeginRevision && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => settlementWorkflowAction('begin-revision')}>정산서 수정 시작</button>}{merchantCanIssue && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('issue'); }}>세금계산서 발행</button>}{companyCanRequest && <button ref={actionButtonRef} type="button" className="primary" disabled={!recipientReady || Boolean(pendingAction)} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('request'); }}>정산 내용 확인 및 세금계산서 발급 요청</button>}{companyCanDispute && <button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { disputeIdempotencyKeyRef.current = crypto.randomUUID(); setDisputeReason(''); setActionError(''); setDialog('dispute'); }}>정산 내용 이의 제기</button>}{merchantCanMarkPaid && <button ref={actionButtonRef} type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { paymentIdempotencyKeyRef.current = crypto.randomUUID(); setPaymentForm(paymentFormForSettlement(selected)); setActionError(''); dialogReturnRef.current = actionButtonRef.current; setDialog('payment'); }}>입금 등록</button>}</div></div>
     {!isMerchant && !recipientReady && <div className="alert warning" role="alert">정산 확정에 필요한 회사 정보(사업자 정보, 세금계산서 이메일, 담당자명·연락처)가 미완성입니다. <button type="button" className="ghost" onClick={onCompanyInfo}>회사 정보에서 입력하기</button></div>}
     <article className="panel settlement-v2-overview">
       <div className="settlement-v2-overview-row"><span>정산 요약</span><div className="settlement-v2-summary-grid"><div><small>공급자</small><strong>{selected.supplier.name}</strong></div><div><small>정산금액</small><strong className="money">{krw(selected.total_amount)}</strong></div><div><small>정산</small><SettlementV2Status type="settlement" value={selected.settlement_status}/></div><div><small>세금계산서</small><SettlementV2Status type="invoice" value={selected.tax_invoice_status}/></div><div><small>입금</small><SettlementV2Status type="payment" value={selected.payment_status}/></div></div></div>

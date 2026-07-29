@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildPaymentPayload, canConfirmAndRequest, canMerchantIssue, canMerchantMarkPaid,
+  buildPaymentPayload, canCompanyDispute, canConfirmAndRequest, canMerchantBeginRevision,
+  canMerchantIssue, canMerchantMarkPaid, canMerchantSend,
   canRefreshInvoiceStatus, fetchAllSettlementSummaries, isBusinessPartyComplete,
   loadSettlementDetails, mapSettlement, openDocumentInNewWindow, paymentFormForSettlement,
   PAYMENT_STATUS_LABELS, requireHttpsUrl,
@@ -13,7 +14,7 @@ const detail = {
   supply_amount: 10000, vat_amount: 1000, settlement_status: 'confirmed',
   tax_invoice_status: 'issued', payment_status: 'partially_paid', due_date: '2026-08-10',
   business_information: { name: '현재 회사명', biz_reg_no: '000' },
-  supplier_information: { name: '현재 공급자', biz_reg_no: '999', representative_name: '현재 대표', owner_phone: 'private' },
+  supplier_information: { name: '현재 공급자', biz_reg_no: '999', representative_name: '현재 대표', owner_phone: 'private', bank_name: '그린은행', account_number: '123-456', account_holder: '현재 공급자 예금주' },
   tax_invoices: [{ id: 'provider-internal-id', document_type: 'original', write_date: '2026-07-31',
     supplier_snapshot: { name: '이전 공급자', registration_number: '123', representative: '이전 대표' },
     recipient_snapshot: { name: '발행 당시 회사', registration_number: '456', tax_email: 'tax@example.test' },
@@ -39,7 +40,9 @@ test('maps public supplier information first and preserves every payment without
     { amount: 4000, depositor_name: '첫 입금자', deposited_at: '2026-08-09T01:00:00Z', memo: '1차' },
     { amount: 3000, depositor_name: '두 번째 입금자', deposited_at: '2026-08-10T01:00:00Z', memo: '2차' },
   ]);
-  assert.equal(row.payment.account_holder, '두 번째 입금자');
+  assert.equal(row.payment.bank_name, '그린은행');
+  assert.equal(row.payment.account_number, '123-456');
+  assert.equal(row.payment.account_holder, '현재 공급자 예금주');
   assert.equal(row.payment.amount, 7000);
   assert.equal(row.payment.paid_at, '2026-08-10T01:00:00Z');
   assert.deepEqual(row.transactions, [{
@@ -62,20 +65,29 @@ test('does not invent invoice or payment metadata for list rows', () => {
   assert.deepEqual(row.transactions, []);
 });
 
-test('action eligibility exactly follows live backend lifecycle', () => {
-  assert.equal(canConfirmAndRequest({ settlement_status: 'sent', tax_invoice_status: 'not_requested' }), true);
-  assert.equal(canConfirmAndRequest({ settlement_status: 'pending', tax_invoice_status: 'not_requested' }), false);
+test('action eligibility exactly follows explicit review and payment lifecycle', () => {
+  const sent = { settlement_status: 'sent', tax_invoice_status: 'not_requested' };
+  assert.equal(canConfirmAndRequest(sent), true);
+  assert.equal(canCompanyDispute(sent), true);
+  assert.equal(canConfirmAndRequest({ settlement_status: 'draft', tax_invoice_status: 'not_requested' }), false);
+  assert.equal(canCompanyDispute({ settlement_status: 'revising', tax_invoice_status: 'not_requested' }), false);
+  assert.equal(canMerchantSend({ settlement_status: 'draft', tax_invoice_status: 'not_requested' }), true);
+  assert.equal(canMerchantSend({ settlement_status: 'revising', tax_invoice_status: 'not_requested' }), true);
+  assert.equal(canMerchantSend(sent), false);
+  assert.equal(canMerchantBeginRevision({ settlement_status: 'disputed', tax_invoice_status: 'not_requested' }), true);
+  assert.equal(canMerchantBeginRevision({ settlement_status: 'sent', tax_invoice_status: 'not_requested' }), false);
   for (const [settlement_status, tax_invoice_status] of [
-    ['sent', 'not_requested'], ['sent', 'failed'], ['confirmed', 'requested'], ['confirmed', 'failed'],
+    ['confirmed', 'requested'], ['confirmed', 'failed'],
   ]) assert.equal(canMerchantIssue({ settlement_status, tax_invoice_status }), true);
+  assert.equal(canMerchantIssue({ settlement_status: 'sent', tax_invoice_status: 'not_requested' }), false);
+  assert.equal(canMerchantIssue({ settlement_status: 'sent', tax_invoice_status: 'failed' }), false);
   assert.equal(canMerchantIssue({ settlement_status: 'finalized', tax_invoice_status: 'failed' }), false);
   assert.equal(canMerchantIssue({ settlement_status: 'confirmed', tax_invoice_status: 'issued' }), false);
   assert.equal(canMerchantMarkPaid({ settlement_status: 'confirmed', tax_invoice_status: 'nts_accepted', payment_status: 'unpaid' }), true);
+  assert.equal(canMerchantMarkPaid({ settlement_status: 'completed', tax_invoice_status: 'issued', payment_status: 'paid' }), true);
+  assert.equal(canMerchantMarkPaid({ settlement_status: 'sent', tax_invoice_status: 'issued', payment_status: 'unpaid' }), false);
   assert.equal(canMerchantMarkPaid({ settlement_status: 'disputed', tax_invoice_status: 'issued', payment_status: 'unpaid' }), false);
   assert.equal(canMerchantMarkPaid({ settlement_status: 'cancelled', tax_invoice_status: 'issued', payment_status: 'unpaid' }), false);
-  // The backend permits payment records for every other settlement lifecycle state,
-  // including adding a correcting/overpayment record after the total was reached.
-  assert.equal(canMerchantMarkPaid({ settlement_status: 'pending', tax_invoice_status: 'issued', payment_status: 'paid' }), true);
   assert.equal(canRefreshInvoiceStatus({ tax_invoice_status: 'issuing' }), true);
   assert.equal(canRefreshInvoiceStatus({ tax_invoice_status: 'requested' }), false);
 });

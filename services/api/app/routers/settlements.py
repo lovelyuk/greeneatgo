@@ -170,7 +170,7 @@ def company_list_alias(ym: str | None = Query(default=None, pattern=r"^\d{4}-\d{
     try:
         resolved_ym = ym or datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m")
         items = repo.list_company(actor.company_id, limit, offset, resolved_ym)
-        summary = repo.company_month_summary(actor.company_id, resolved_ym)
+        summary = repo.company_month_summary(actor, resolved_ym)
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
     # Keep the legacy month summary while exposing the canonical paginated item shape.
@@ -332,6 +332,18 @@ def merchant_send(settlement_id: UUID, token: str = Depends(bearer_token), repo:
         if repo.merchant_detail(settlement_id, actor.merchant_id) is None:
             raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
         return {"ok": True, "data": _public(repo.send(actor, settlement_id)), "error": None}
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+
+
+@merchant_router.post("/{settlement_id}/begin-revision")
+def merchant_begin_revision(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
+    try:
+        if repo.merchant_detail(settlement_id, actor.merchant_id) is None:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
+        return {"ok": True, "data": _public(repo.begin_revision(actor, settlement_id)), "error": None}
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
 

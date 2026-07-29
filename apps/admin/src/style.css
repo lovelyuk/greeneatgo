@@ -1663,8 +1663,12 @@ code { font-size: 12px; }
 .supplier-info-page h2, .supplier-info-page h3,
 .supplier-info-page button { font-weight: 500; }
 .supplier-settings-button { flex: 0 0 auto; border-radius: 12px; }
-.supplier-info-card { width: 100%; margin: 0; }
-.supplier-info-card-title { align-items: flex-start; justify-content: flex-end; }
+.supplier-info-card { display: grid; width: 100%; margin: 0; gap: 20px; }
+.supplier-info-card-title { align-items: flex-start; justify-content: flex-end; margin-bottom: 0; }
+.supplier-info-section { display: grid; gap: 14px; }
+.supplier-info-section h3 { margin: 0; }
+.supplier-deposit-section { padding-top: 20px; border-top: 1px solid var(--border); }
+.supplier-deposit-section .panel-note { margin: 5px 0 0; }
 .supplier-edit-actions { flex-wrap: wrap; justify-content: flex-end; }
 .supplier-capsule-button {
   width: auto;

@@ -1,4 +1,7 @@
-from app.repositories.settlements import LIST_FIELDS, PAYMENT_FIELDS, TRANSACTION_FIELDS, SettlementRepository
+from app.repositories.settlements import (
+    COMPANY_VISIBLE_SETTLEMENT_STATUSES, LIST_FIELDS, PAYMENT_FIELDS, TRANSACTION_FIELDS,
+    SettlementRepository,
+)
 
 
 class DetailClient:
@@ -27,7 +30,10 @@ class DetailClient:
         if table == "companies":
             return [{"id": "company-own", "name": "Company"}]
         if table == "merchants":
-            return [{"name": "Merchant"}]
+            return [{
+                "name": "Merchant", "bank_name": "그린은행",
+                "account_number": "123-456", "account_holder": "Merchant Owner",
+            }]
         if table == "settlement_payments":
             return [{
                 "id": "payment-1",
@@ -67,8 +73,12 @@ def test_company_detail_includes_same_ordered_public_payment_history_as_merchant
     assert merchant is not None
     assert company["payments"] == merchant["payments"]
     assert [payment["amount"] for payment in company["payments"]] == [400]
+    assert company["supplier_information"]["bank_name"] == "그린은행"
+    assert merchant["supplier_information"]["account_number"] == "123-456"
 
     for client in (company_client, merchant_client):
+        supplier_call = next(params for table, params in client.calls if table == "merchants")
+        assert {"bank_name", "account_number", "account_holder"} <= set(supplier_call["select"].split(","))
         payment_calls = [params for table, params in client.calls if table == "settlement_payments"]
         assert payment_calls == [{
             "select": PAYMENT_FIELDS,
@@ -115,8 +125,26 @@ def test_company_detail_cross_tenant_denial_does_not_query_payment_history():
         "id": "eq.settlement-1",
         "company_id": "eq.company-other",
         "limit": "1",
+        "settlement_status": f"in.({','.join(COMPANY_VISIBLE_SETTLEMENT_STATUSES)})",
     })]
     assert all(table != "settlement_payments" for table, _ in client.calls)
+
+
+def test_company_reads_apply_server_side_workflow_visibility_boundary():
+    client = DetailClient()
+    repository = repository_with(client)
+
+    repository.list_company("company-own", 20, 0, "2026-07")
+    repository.company_detail("settlement-1", "company-own")
+
+    expected = f"in.({','.join(COMPANY_VISIBLE_SETTLEMENT_STATUSES)})"
+    list_params = client.calls[0][1]
+    detail_params = next(params for table, params in client.calls
+                         if table == "normal_settlements" and "id" in params)
+    assert list_params["settlement_status"] == expected
+    assert detail_params["settlement_status"] == expected
+    assert not {"draft", "calculating", "revising"} & set(COMPANY_VISIBLE_SETTLEMENT_STATUSES)
+    assert {"sent", "disputed", "completed"} <= set(COMPANY_VISIBLE_SETTLEMENT_STATUSES)
 
 
 def test_demo_detail_explicitly_uses_base_table_while_normal_detail_uses_filtered_view():
@@ -128,3 +156,41 @@ def test_demo_detail_explicitly_uses_base_table_while_normal_detail_uses_filtere
     assert normal_client.calls[0][0] == "normal_settlements"
     assert demo_client.calls[0][0] == "settlement_demo_runs"
     assert demo_client.calls[1][0] == "settlements"
+
+
+class ListNameClient:
+    def __init__(self):
+        self.calls = []
+
+    def rest_get(self, table, params):
+        self.calls.append((table, params))
+        if table == "normal_settlements":
+            return [{
+                "id": "settlement-1", "company_id": "company-1",
+                "merchant_id": "merchant-1", "period_ym": "2026-07",
+            }]
+        if table == "merchants":
+            return [{"id": "merchant-1", "name": "그린 식당"}]
+        if table == "companies":
+            return [{"id": "company-1", "name": "그린 업체"}]
+        raise AssertionError(f"unexpected table: {table}")
+
+
+def test_lists_attach_only_safe_party_names_without_deposit_information():
+    company_client = ListNameClient()
+    company_rows = repository_with(company_client).list_company("company-1", 20, 0)
+    merchant_client = ListNameClient()
+    merchant_rows = repository_with(merchant_client).list_merchant("merchant-1", 20, 0)
+
+    assert company_rows[0]["supplier_information"] == {"name": "그린 식당"}
+    assert merchant_rows[0]["business_information"] == {"name": "그린 업체"}
+    assert company_client.calls[1] == (
+        "merchants", {"select": "id,name", "id": "in.(merchant-1)"},
+    )
+    assert merchant_client.calls[1] == (
+        "companies", {"select": "id,name", "id": "in.(company-1)"},
+    )
+    for client in (company_client, merchant_client):
+        selected = set(client.calls[1][1]["select"].split(","))
+        assert selected == {"id", "name"}
+        assert selected.isdisjoint({"bank_name", "account_number", "account_holder"})

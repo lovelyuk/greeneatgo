@@ -22,6 +22,9 @@ INVOICE_FIELDS = (
 )
 
 PAYMENT_FIELDS = "id,amount,depositor_name,deposited_at,memo,confirmed_at,created_at"
+COMPANY_VISIBLE_SETTLEMENT_STATUSES = (
+    "sent", "confirmed", "disputed", "finalized", "completed", "cancelled",
+)
 TRANSACTION_FIELDS = (
     "id,user_id,amount,kind,tx_code,meal_window,product_name,pay_type,is_demo,"
     "settlement_tax_type,settlement_supply_amount,settlement_vat_amount,"
@@ -44,25 +47,51 @@ class SettlementRepository:
             raise JoinFlowError(JoinErrorCode.FORBIDDEN, "이 정산을 처리할 권한이 없어요")
         return actor
 
+    @staticmethod
+    def _party_ids(rows: list[dict[str, Any]], key: str) -> list[str]:
+        return sorted({str(row[key]) for row in rows if row.get(key)})
+
+    def _attach_party_names(
+        self, rows: list[dict[str, Any]], *, id_key: str, table: str, output_key: str,
+    ) -> list[dict[str, Any]]:
+        ids = self._party_ids(rows, id_key)
+        if not ids:
+            return rows
+        parties = self.client.rest_get(table, {
+            "select": "id,name", "id": f"in.({','.join(ids)})",
+        })
+        names = {str(party["id"]): party.get("name") for party in parties if party.get("id")}
+        return [
+            {**row, output_key: {"name": names.get(str(row.get(id_key))) or ""}}
+            for row in rows
+        ]
+
     def list_company(self, company_id: str, limit: int, offset: int, period_ym: str | None = None) -> list[dict[str, Any]]:
         params = {
             "select": LIST_FIELDS, "company_id": f"eq.{company_id}",
+            "settlement_status": f"in.({','.join(COMPANY_VISIBLE_SETTLEMENT_STATUSES)})",
             "order": "created_at.desc,id.desc", "limit": str(limit), "offset": str(offset),
         }
         if period_ym is not None:
             params["period_ym"] = f"eq.{period_ym}"
-        return self.client.rest_get("normal_settlements", params)
+        rows = self.client.rest_get("normal_settlements", params)
+        return self._attach_party_names(
+            rows, id_key="merchant_id", table="merchants", output_key="supplier_information",
+        )
 
-    def company_month_summary(self, company_id: str, period_ym: str) -> dict[str, Any]:
+    def company_month_summary(self, actor: UserProfile, period_ym: str) -> dict[str, Any]:
         return self.client.rpc("company_settlement_month_summary", {
-            "p_company_id": company_id, "p_period_ym": period_ym,
+            "p_actor_id": actor.id, "p_company_id": actor.company_id, "p_period_ym": period_ym,
         })
 
     def list_merchant(self, merchant_id: str, limit: int, offset: int) -> list[dict[str, Any]]:
-        return self.client.rest_get("normal_settlements", {
+        rows = self.client.rest_get("normal_settlements", {
             "select": LIST_FIELDS, "merchant_id": f"eq.{merchant_id}",
             "order": "created_at.desc,id.desc", "limit": str(limit), "offset": str(offset),
         })
+        return self._attach_party_names(
+            rows, id_key="company_id", table="companies", output_key="business_information",
+        )
 
     def supplier_popbill_readiness(self, merchant_id: str, configured_corp_num: str) -> dict[str, bool]:
         rows = self.client.rest_get("merchants", {
@@ -141,10 +170,14 @@ class SettlementRepository:
     def _detail(
         self, settlement_id: str | UUID, tenant_column: str, tenant_id: str, *,
         include_demo: bool = False, include_transactions: bool = False,
+        company_visible_only: bool = False,
     ) -> dict[str, Any] | None:
-        rows = self.client.rest_get("settlements" if include_demo else "normal_settlements", {
+        params = {
             "select": LIST_FIELDS, "id": f"eq.{settlement_id}", tenant_column: f"eq.{tenant_id}", "limit": "1",
-        })
+        }
+        if company_visible_only:
+            params["settlement_status"] = f"in.({','.join(COMPANY_VISIBLE_SETTLEMENT_STATUSES)})"
+        rows = self.client.rest_get("settlements" if include_demo else "normal_settlements", params)
         if not rows:
             return None
         row = rows[0]
@@ -161,7 +194,7 @@ class SettlementRepository:
             "id": f"eq.{row['company_id']}", "limit": "1",
         })
         supplier = self.client.rest_get("merchants", {
-            "select": "name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,contact_phone:owner_phone",
+            "select": "name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,contact_phone:owner_phone,bank_name,account_number,account_holder",
             "id": f"eq.{row['merchant_id']}", "limit": "1",
         })
         payments = self.client.rest_get("settlement_payments", {
@@ -234,7 +267,10 @@ class SettlementRepository:
     def company_detail(
         self, settlement_id: str | UUID, company_id: str, *, include_transactions: bool = False,
     ) -> dict[str, Any] | None:
-        return self._detail(settlement_id, "company_id", company_id, include_transactions=include_transactions)
+        return self._detail(
+            settlement_id, "company_id", company_id,
+            include_transactions=include_transactions, company_visible_only=True,
+        )
 
     def merchant_detail(
         self, settlement_id: str | UUID, merchant_id: str, *, include_transactions: bool = False,
@@ -271,6 +307,12 @@ class SettlementRepository:
     def send(self, actor: UserProfile, settlement_id: str | UUID) -> dict[str, Any]:
         return self.client.rpc("merchant_send_settlement", {
             "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id, "p_settlement_id": settlement_id,
+        })
+
+    def begin_revision(self, actor: UserProfile, settlement_id: str | UUID) -> dict[str, Any]:
+        return self.client.rpc("merchant_begin_settlement_revision", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_settlement_id": settlement_id,
         })
 
     def mark_paid(self, actor: UserProfile, settlement_id: str | UUID, payload: Any) -> dict[str, Any]:

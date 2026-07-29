@@ -57,6 +57,10 @@ def settlement_db():
         conn.execute((MIGRATIONS / "0047_demo_transaction_integrated_reads.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0048_demo_generic_settlement_integration.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0048_demo_generic_settlement_integration.sql").read_text(encoding="utf-8"))
+        # Recovery tooling may replay older workflow files. The newest workflow
+        # migration must be replay-safe and remain the final authority afterward.
+        conn.execute((MIGRATIONS / "0049_recommended_settlement_workflow.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0049_recommended_settlement_workflow.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -240,8 +244,89 @@ def test_mark_paid_duplicate_conflict_and_automatic_status(pg):
             changed = list(args); changed[3] = 501
             pg.execute("select merchant_mark_settlement_paid(%s,%s,%s,%s,%s,%s,%s,%s)", changed)
     pg.execute("select merchant_mark_settlement_paid(%s,%s,%s,600,'Depositor','2026-07-02T00:00:00Z',null,'pay-key-two')", (actor, merchant, sid))
-    assert pg.execute("select payment_status from settlements where id=%s", (sid,)).fetchone()[0] == "paid"
+    assert pg.execute("select payment_status,settlement_status from settlements where id=%s", (sid,)).fetchone() == ("paid", "completed")
     assert pg.execute("select count(*) from settlement_payments where settlement_id=%s", (sid,)).fetchone()[0] == 2
+
+    # Reconciliation is reversible: if confirmed money falls below the total,
+    # completion evidence is cleared while the legacy axis remains confirmed.
+    pg.execute("delete from settlement_payments where settlement_id=%s and amount=600", (sid,))
+    assert pg.execute("select payment_status,settlement_status,finalized_at,status from settlements where id=%s", (sid,)).fetchone() == (
+        "partially_paid", "confirmed", None, "confirmed",
+    )
+
+
+def test_dispute_revision_resend_and_company_summary_visibility(pg):
+    company, _, merchant, other_merchant, company_actor, _, merchant_actor, _ = parties(pg)
+    hidden_draft = settlement(pg, company, other_merchant, "draft")
+    sent = settlement(pg, company, merchant, "sent")
+    pg.execute("update settlements set period_ym='2026-11' where id in (%s,%s)", (hidden_draft, sent))
+
+    initial = pg.execute(
+        "select company_settlement_month_summary(%s,%s,'2026-11')",
+        (company_actor, company),
+    ).fetchone()[0]
+    assert initial["settlement_count"] == 1
+    disputed = pg.execute(
+        "select company_dispute_settlement(%s,%s,%s,'금액 확인 필요','dispute-1')",
+        (company_actor, company, sent),
+    ).fetchone()[0]
+    assert disputed["settlement"]["settlement_status"] == "disputed"
+    revising = pg.execute(
+        "select merchant_begin_settlement_revision(%s,%s,%s)",
+        (merchant_actor, merchant, sent),
+    ).fetchone()[0]
+    assert revising["settlement"]["settlement_status"] == "revising"
+    assert pg.execute(
+        "select company_settlement_month_summary(%s,%s,'2026-11')",
+        (company_actor, company),
+    ).fetchone()[0]["settlement_count"] == 0
+    resent = pg.execute(
+        "select merchant_send_settlement(%s,%s,%s)", (merchant_actor, merchant, sent),
+    ).fetchone()[0]
+    assert resent["settlement"]["settlement_status"] == "sent"
+    assert pg.execute(
+        "select company_settlement_month_summary(%s,%s,'2026-11')",
+        (company_actor, company),
+    ).fetchone()[0]["settlement_count"] == 1
+    assert pg.execute("select array_agg(event_type order by id) from settlement_events where settlement_id=%s", (sent,)).fetchone()[0] == [
+        "company_disputed", "merchant_revision_started", "merchant_sent",
+    ]
+    assert pg.execute("select has_function_privilege('authenticated','merchant_begin_settlement_revision(uuid,uuid,uuid)','execute')").fetchone()[0] is False
+    assert pg.execute("select has_function_privilege('service_role','merchant_begin_settlement_revision(uuid,uuid,uuid)','execute')").fetchone()[0] is True
+
+
+def test_payment_and_issue_require_company_confirmation(pg):
+    import psycopg
+    company, _, merchant, _, _, _, merchant_actor, _ = parties(pg)
+    sent = settlement(pg, company, merchant, "sent", "not_requested")
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_STATE_CONFLICT"):
+        with pg.transaction():
+            pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (merchant_actor, merchant, sent))
+    pg.execute("update settlements set tax_invoice_status='issued' where id=%s", (sent,))
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_STATE_CONFLICT"):
+        with pg.transaction():
+            pg.execute("select merchant_mark_settlement_paid(%s,%s,%s,1100,'입금자',now(),null,'blocked-payment')", (merchant_actor, merchant, sent))
+
+
+def test_send_and_dispute_require_not_requested_invoice_state(pg):
+    import psycopg
+    company, _, merchant, _, company_actor, _, merchant_actor, _ = parties(pg)
+    sent_failed = settlement(pg, company, merchant, "sent", "failed")
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_STATE_CONFLICT"):
+        with pg.transaction():
+            pg.execute(
+                "select company_dispute_settlement(%s,%s,%s,'잘못된 상태','invalid-dispute')",
+                (company_actor, company, sent_failed),
+            )
+
+    for workflow_state in ("draft", "revising"):
+        invalid_send = settlement(pg, company, merchant, workflow_state, "failed")
+        with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_STATE_CONFLICT"):
+            with pg.transaction():
+                pg.execute(
+                    "select merchant_send_settlement(%s,%s,%s)",
+                    (merchant_actor, merchant, invalid_send),
+                )
 
 
 def test_legacy_confirm_payment_records_remaining_and_duplicate(pg):
@@ -284,17 +369,19 @@ def test_concurrent_confirm_creates_one_original(settlement_db):
         assert verify.execute("select count(*) from tax_invoices where settlement_id=%s", (sid,)).fetchone()[0] == 1
 
 
-def test_compact_key_write_date_and_frozen_direct_snapshot(pg):
-    company, _, merchant, _, _, _, actor, _ = parties(pg)
+def test_compact_key_write_date_and_frozen_requested_snapshot(pg):
+    company, _, merchant, _, company_actor, _, actor, _ = parties(pg)
     sid = settlement(pg, company, merchant)
     period_to = pg.execute("select period_to from settlements where id=%s", (sid,)).fetchone()[0]
+    pg.execute("select company_confirm_and_request_tax_invoice(%s,%s,%s)", (company_actor, company, sid))
     claim = pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, sid)).fetchone()[0]
     invoice = claim["tax_invoice"]
     assert claim["action"] == "issue"
     assert invoice["invoicer_mgt_key"] == "GE" + base64.urlsafe_b64encode(sid.bytes).decode().rstrip("=")
     assert len(invoice["invoicer_mgt_key"]) == 24
     assert invoice["write_date"] == period_to.isoformat()
-    assert invoice["requested_at"] is None and invoice["issue_requested_by"] is None
+    assert invoice["requested_at"] is not None
+    assert invoice["issue_requested_by"] == str(company_actor)
     frozen = invoice["supplier_snapshot"]
     pg.execute("update merchants set name='later edit' where id=%s", (merchant,))
     assert pg.execute("select supplier_snapshot from tax_invoices where settlement_id=%s", (sid,)).fetchone()[0] == frozen
@@ -318,8 +405,9 @@ def test_mixed_tax_types_rejected_without_settlement_write(pg):
 
 def test_claim_token_ambiguous_success_and_legal_nts_transitions(pg):
     import psycopg
-    company, _, merchant, _, _, _, actor, _ = parties(pg)
+    company, _, merchant, _, company_actor, _, actor, _ = parties(pg)
     sid = settlement(pg, company, merchant)
+    pg.execute("select company_confirm_and_request_tax_invoice(%s,%s,%s)", (company_actor, company, sid))
     claim = pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor,merchant,sid)).fetchone()[0]
     token = claim["attempt_token"]
     with pytest.raises(psycopg.errors.RaiseException, match="ISSUE_ATTEMPT_TOKEN_MISMATCH"):
@@ -355,10 +443,9 @@ def test_claim_requires_exact_settlement_invoice_state_pairs(pg):
                 pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, sid))
 
     direct = settlement(pg, company, merchant)
-    claim = pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, direct)).fetchone()[0]
-    pg.execute("select merchant_finalize_tax_invoice_issue(%s,%s,%s,%s,'rejected',null,null)",
-               (actor, merchant, direct, claim["attempt_token"]))
-    assert pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, direct)).fetchone()[0]["action"] == "issue"
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_STATE_CONFLICT"):
+        with pg.transaction():
+            pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, direct))
 
     requested = settlement(pg, company, merchant)
     pg.execute("select company_confirm_and_request_tax_invoice(%s,%s,%s)", (company_actor, company, requested))
@@ -370,8 +457,9 @@ def test_claim_requires_exact_settlement_invoice_state_pairs(pg):
 
 def test_claim_fails_closed_on_legal_mismatch_and_rpc_scrubs_raw_provider_fields(pg):
     import psycopg
-    company, _, merchant, _, _, _, actor, _ = parties(pg)
+    company, _, merchant, _, company_actor, _, actor, _ = parties(pg)
     sid = settlement(pg, company, merchant)
+    pg.execute("select company_confirm_and_request_tax_invoice(%s,%s,%s)", (company_actor, company, sid))
     first = pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, sid)).fetchone()[0]
     invoice_id = first["tax_invoice"]["id"]
     pg.execute("""update tax_invoices set provider_response='{"secret":"raw-pii"}'::jsonb,
@@ -389,8 +477,9 @@ def test_claim_fails_closed_on_legal_mismatch_and_rpc_scrubs_raw_provider_fields
 
 def test_apply_rejects_invalid_state_without_consuming_token_or_fabricating_time(pg):
     import psycopg
-    company, _, merchant, _, _, _, actor, _ = parties(pg)
+    company, _, merchant, _, company_actor, _, actor, _ = parties(pg)
     sid = settlement(pg, company, merchant)
+    pg.execute("select company_confirm_and_request_tax_invoice(%s,%s,%s)", (company_actor, company, sid))
     claim = pg.execute("select merchant_claim_tax_invoice_issue(%s,%s,%s)", (actor, merchant, sid)).fetchone()[0]
     token = uuid.UUID(claim["attempt_token"])
     for state in (None, 299, 306):
@@ -410,8 +499,9 @@ def test_apply_rejects_invalid_state_without_consuming_token_or_fabricating_time
 def test_concurrent_claim_has_one_issue_winner(settlement_db):
     import psycopg
     with psycopg.connect(settlement_db) as setup:
-        company, _, merchant, _, _, _, actor, _ = parties(setup)
+        company, _, merchant, _, company_actor, _, actor, _ = parties(setup)
         sid = settlement(setup, company, merchant)
+        setup.execute("select company_confirm_and_request_tax_invoice(%s,%s,%s)", (company_actor, company, sid))
         setup.commit()
 
     def claim():

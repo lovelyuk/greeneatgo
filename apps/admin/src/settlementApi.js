@@ -110,9 +110,9 @@ export function mapSettlement(row = {}) {
     payments,
     transactions,
     payment: {
-      bank_name: null,
-      account_number: null,
-      account_holder: latestPayment?.depositor_name || null,
+      bank_name: text(supplierSource?.bank_name) || null,
+      account_number: text(supplierSource?.account_number) || null,
+      account_holder: text(supplierSource?.account_holder) || null,
       scheduled_at: source.due_date ?? null,
       paid_at: paidAt,
       amount: paidAmount || (paidAt && payments.length === 0 ? Number(source.total_amount) || 0 : 0),
@@ -125,13 +125,26 @@ export function canConfirmAndRequest(row) {
   return row?.settlement_status === 'sent' && row?.tax_invoice_status === 'not_requested';
 }
 
+export function canCompanyDispute(row) {
+  return row?.settlement_status === 'sent' && row?.tax_invoice_status === 'not_requested';
+}
+
+export function canMerchantSend(row) {
+  return ['draft', 'revising'].includes(row?.settlement_status)
+    && row?.tax_invoice_status === 'not_requested';
+}
+
+export function canMerchantBeginRevision(row) {
+  return row?.settlement_status === 'disputed' && row?.tax_invoice_status === 'not_requested';
+}
+
 export function canMerchantIssue(row) {
   const state = `${row?.settlement_status}:${row?.tax_invoice_status}`;
-  return new Set(['sent:not_requested', 'sent:failed', 'confirmed:requested', 'confirmed:failed']).has(state);
+  return new Set(['confirmed:requested', 'confirmed:failed']).has(state);
 }
 
 export function canMerchantMarkPaid(row) {
-  return !['cancelled', 'disputed'].includes(row?.settlement_status)
+  return ['confirmed', 'completed'].includes(row?.settlement_status)
     && DOCUMENT_STATUSES.has(row?.tax_invoice_status);
 }
 

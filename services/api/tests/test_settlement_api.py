@@ -33,8 +33,8 @@ class FakeSettlements:
         self.calls.append(("list_company", company_id, limit, offset, period_ym))
         return [{"id": SETTLEMENT_ID, "company_id": company_id, "status": "draft"}]
 
-    def company_month_summary(self, company_id, period_ym):
-        self.calls.append(("company_month_summary", company_id, period_ym))
+    def company_month_summary(self, actor, period_ym):
+        self.calls.append(("company_month_summary", actor.id, actor.company_id, period_ym))
         return {"settlement_count": 7, "paid_count": 2, "tx_count": 9, "total_amount": 11000}
 
     def list_merchant(self, merchant_id, limit, offset):
@@ -70,6 +70,10 @@ class FakeSettlements:
 
     def send(self, actor, settlement_id):
         self.calls.append(("send", actor.merchant_id, settlement_id))
+        return {"idempotent": False}
+
+    def begin_revision(self, actor, settlement_id):
+        self.calls.append(("begin_revision", actor.merchant_id, settlement_id))
         return {"idempotent": False}
 
     def mark_paid(self, actor, settlement_id, payload):
@@ -214,7 +218,7 @@ def test_company_routes_scope_server_tenant_and_alias_is_company_only(client_fac
     alias = client.get("/v1/admin/settlements?ym=2026-07")
     assert alias.status_code == 200
     assert repo.calls[-2] == ("list_company", "company-own", 20, 0, "2026-07")
-    assert repo.calls[-1] == ("company_month_summary", "company-own", "2026-07")
+    assert repo.calls[-1] == ("company_month_summary", "actor", "company-own", "2026-07")
     assert "summary" in alias.json()["data"]
     assert alias.json()["data"]["summary"]["settlement_count"] == 7
     assert client.get(f"/v1/admin/settlements/{SETTLEMENT_ID}").status_code == 200
@@ -266,6 +270,8 @@ def test_company_dispute_and_merchant_actions_pass_tenant_and_idempotency(client
 
     client, repo = client_factory("merchant_admin")
     assert client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/send").status_code == 200
+    assert client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/begin-revision").status_code == 200
+    assert repo.calls[-1][0:2] == ("begin_revision", "merchant-own")
     paid = {"amount": 1100, "depositor_name": "Green Eat", "deposited_at": datetime.now(timezone.utc).isoformat(),
             "memo": "bank match", "idempotency_key": "payment-key"}
     assert client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/mark-paid", json=paid).status_code == 200

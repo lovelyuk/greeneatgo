@@ -449,22 +449,37 @@ def _safe_filename(value: str) -> str:
 def merchant_qr(token: str = Depends(bearer_token)):
     repo = JoinRepository()
     supplier_fields = ("representative_name", "business_type", "business_item", "tax_invoice_email")
+    deposit_fields = ("bank_name", "account_number", "account_holder")
+    base_select = "id,name,biz_reg_no,address,owner_phone,category,avg_price,qr_token,status"
+    supplier_select = f"id,name,biz_reg_no,{','.join(supplier_fields)},address,owner_phone,category,avg_price,qr_token,status"
     try:
         _, merchant_id = _merchant_admin(repo, token)
         try:
             rows = repo.client.rest_get(
                 "merchants",
-                {"select": "id,name,biz_reg_no,representative_name,address,business_type,business_item,owner_phone,tax_invoice_email,category,avg_price,qr_token,status", "id": f"eq.{merchant_id}", "limit": "1"},
+                {"select": f"{supplier_select},{','.join(deposit_fields)}", "id": f"eq.{merchant_id}", "limit": "1"},
             )
             migration_required = False
         except SupabaseHttpError as exc:
-            if "PGRST204" not in exc.body and not any(field in exc.body for field in supplier_fields):
+            optional_fields = (*supplier_fields, *deposit_fields)
+            if "PGRST204" not in exc.body and not any(field in exc.body for field in optional_fields):
                 raise
-            rows = repo.client.rest_get(
-                "merchants",
-                {"select": "id,name,biz_reg_no,address,owner_phone,category,avg_price,qr_token,status", "id": f"eq.{merchant_id}", "limit": "1"},
-            )
-            rows = [{**row, **{field: None for field in supplier_fields}} for row in rows]
+            # A deployment may have the older supplier-profile migration but not 0050.
+            # Retry without deposit columns so existing profile data remains visible.
+            try:
+                rows = repo.client.rest_get(
+                    "merchants",
+                    {"select": supplier_select, "id": f"eq.{merchant_id}", "limit": "1"},
+                )
+                rows = [{**row, **{field: None for field in deposit_fields}} for row in rows]
+            except SupabaseHttpError as legacy_exc:
+                if "PGRST204" not in legacy_exc.body and not any(field in legacy_exc.body for field in supplier_fields):
+                    raise
+                rows = repo.client.rest_get(
+                    "merchants",
+                    {"select": base_select, "id": f"eq.{merchant_id}", "limit": "1"},
+                )
+                rows = [{**row, **{field: None for field in optional_fields}} for row in rows]
             migration_required = True
         if not rows:
             raise _error(404, "MERCHANT_NOT_FOUND", "식당 정보를 찾을 수 없어요")
@@ -496,6 +511,12 @@ def update_merchant_profile(payload: MerchantProfileUpdateRequest, token: str = 
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
         supplier_fields = ("representative_name", "business_type", "business_item", "tax_invoice_email")
+        deposit_fields = ("bank_name", "account_number", "account_holder")
+        requested_fields = payload.model_fields_set
+        if any(field in exc.body for field in deposit_fields) or (
+            "PGRST204" in exc.body and any(field in requested_fields for field in deposit_fields)
+        ):
+            raise _error(400, "MIGRATION_REQUIRED", "0050_merchant_deposit_information.sql 적용 후 입금 정보를 저장할 수 있어요") from exc
         if "PGRST204" in exc.body or any(field in exc.body for field in supplier_fields):
             raise _error(400, "MIGRATION_REQUIRED", "0034_merchant_supplier_profile.sql 적용 후 공급자 정보를 저장할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "공급자 정보를 저장하는 중 오류가 발생했어요") from exc

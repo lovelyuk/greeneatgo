@@ -380,11 +380,9 @@ void main() {
 
   test('API exception identifies payment-pending responses', () {
     const pending = ApiException(
-        statusCode: 409,
-        reason: 'PAYMENT_PENDING',
-        message: '결제 승인 확인 중이에요');
-    const other = ApiException(
-        statusCode: 409, reason: 'OTHER', message: '다른 오류');
+        statusCode: 409, reason: 'PAYMENT_PENDING', message: '결제 승인 확인 중이에요');
+    const other =
+        ApiException(statusCode: 409, reason: 'OTHER', message: '다른 오류');
 
     expect(pending.isPaymentPending, isTrue);
     expect(other.isPaymentPending, isFalse);
@@ -398,6 +396,32 @@ void main() {
             pending, paymentConfirmationMaxAttempts - 1),
         isFalse);
     expect(shouldRetryPaymentConfirmation(other, 0), isFalse);
+  });
+
+  test('external payment app resume does not imply payment approval', () {
+    expect(
+      shouldConfirmPaymentOnResume(
+        externalAppOpened: true,
+        approvalPending: false,
+      ),
+      isFalse,
+      reason: 'card security-program return must continue the provider WebView',
+    );
+    expect(
+      shouldConfirmPaymentOnResume(
+        externalAppOpened: true,
+        approvalPending: true,
+      ),
+      isFalse,
+      reason: 'an external return can also be a user cancellation',
+    );
+    expect(
+      shouldConfirmPaymentOnResume(
+        externalAppOpened: false,
+        approvalPending: true,
+      ),
+      isTrue,
+    );
   });
 
   test('Firebase auth error codes have safe Korean messages', () {

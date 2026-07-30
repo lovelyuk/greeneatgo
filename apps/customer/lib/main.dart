@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -15,6 +16,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'auth_helpers.dart';
 import 'firebase_config.dart';
 import 'payment_completion.dart';
+import 'pending_payment.dart';
 import 'push_notifications.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
@@ -351,6 +353,12 @@ class ApiException implements Exception {
 }
 
 const paymentConfirmationMaxAttempts = 8;
+
+bool shouldConfirmPaymentOnResume({
+  required bool externalAppOpened,
+  required bool approvalPending,
+}) =>
+    !externalAppOpened && approvalPending;
 
 bool shouldRetryPaymentConfirmation(ApiException error, int attempt) =>
     error.isPaymentPending && attempt + 1 < paymentConfirmationMaxAttempts;
@@ -1790,7 +1798,243 @@ class _CommunityScreenState extends State<CommunityScreen> {
   }
 }
 
-class HomeScreen extends StatelessWidget {
+typedef PaymentConfirmer = Future<Map<String, dynamic>> Function({
+  required String orderId,
+  required int amount,
+});
+
+class PendingPaymentRecoveryBanner extends StatelessWidget {
+  const PendingPaymentRecoveryBanner({
+    super.key,
+    required this.load,
+    required this.onTap,
+  });
+
+  final PendingPaymentLoadResult load;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final malformed = load.validity == PendingPaymentValidity.malformed;
+    final stale = load.validity == PendingPaymentValidity.stale;
+    return Material(
+      color: const Color(0xFFFFF1C7),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(children: [
+            const Icon(Icons.sync_rounded, color: Color(0xFF9A6410)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    malformed ? '확인이 필요한 결제 기록이 있어요' : '결제 승인을 확인하고 있어요',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    malformed
+                        ? '기록을 삭제하지 않았어요. 눌러서 안내를 확인해 주세요.'
+                        : stale
+                            ? '오래된 기록이지만 결제 여부를 다시 안전하게 확인할 수 있어요.'
+                            : '눌러서 결제 상태를 바로 확인해 주세요.',
+                    style: const TextStyle(
+                      color: Color(0xFF6D5528),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class PendingPaymentRecoveryScreen extends StatefulWidget {
+  const PendingPaymentRecoveryScreen({
+    super.key,
+    required this.load,
+    required this.store,
+    required this.confirmPayment,
+    this.retryDelay = const Duration(seconds: 30),
+  });
+
+  final PendingPaymentLoadResult load;
+  final PendingPaymentStore store;
+  final PaymentConfirmer confirmPayment;
+  final Duration retryDelay;
+
+  @override
+  State<PendingPaymentRecoveryScreen> createState() =>
+      _PendingPaymentRecoveryScreenState();
+}
+
+class _PendingPaymentRecoveryScreenState
+    extends State<PendingPaymentRecoveryScreen> with WidgetsBindingObserver {
+  Timer? _retryTimer;
+  bool _confirming = false;
+  int _confirmationAttempt = 0;
+  PaymentCompletionData? _completion;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (widget.load.payment != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _confirm());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _retryTimer?.cancel();
+      unawaited(_confirm());
+    }
+  }
+
+  void _scheduleRetry() {
+    _retryTimer?.cancel();
+    if (!mounted || widget.load.payment == null) return;
+    _retryTimer = Timer(widget.retryDelay, () => unawaited(_confirm()));
+  }
+
+  Future<void> _confirm() async {
+    final payment = widget.load.payment;
+    if (payment == null || _confirming || _completion != null || !mounted) {
+      return;
+    }
+    _retryTimer?.cancel();
+    final attempt = _confirmationAttempt++;
+    setState(() {
+      _confirming = true;
+      _error = null;
+    });
+    try {
+      final confirmed = await widget.confirmPayment(
+        orderId: payment.orderId,
+        amount: payment.amount,
+      );
+      await widget.store.clear(payment);
+      if (!mounted) return;
+      setState(
+          () => _completion = PaymentCompletionData.fromConfirmDto(confirmed));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      if (error.isPaymentPending) {
+        final retry = shouldRetryPaymentConfirmation(error, attempt);
+        setState(() => _error = retry
+            ? '아직 결제 승인을 기다리고 있어요. 30초 후 다시 확인합니다.'
+            : '자동 확인을 마쳤어요. 결제를 완료했다면 아래 버튼으로 다시 확인해 주세요.');
+        if (retry) _scheduleRetry();
+      } else {
+        setState(() => _error = error.message);
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      _confirming = false;
+    }
+  }
+
+  void _leavePendingPaymentRecovery() {
+    if (_confirming) return;
+    _retryTimer?.cancel();
+    // A local declaration is not authoritative provider cancellation. Preserve
+    // the record so a delayed approval can still be recovered from Home.
+    if (mounted) Navigator.of(context).pop(false);
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final completion = _completion;
+    if (completion != null) {
+      return PaymentCompletionScreen(
+        payment: completion,
+        onDone: () => Navigator.of(context).pop(true),
+      );
+    }
+    if (widget.load.validity == PendingPaymentValidity.malformed) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('결제 기록 확인')),
+        body: const SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: BrandPanel(children: [
+              Icon(Icons.info_outline_rounded, size: 56, color: kCocoa),
+              SizedBox(height: 12),
+              Text('저장된 결제 기록을 안전하게 읽을 수 없어요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              SizedBox(height: 10),
+              Text(
+                '결제가 진행됐을 수 있어 기록은 삭제하지 않았습니다. 고객센터에 결제 확인을 요청해 주세요.',
+                textAlign: TextAlign.center,
+              ),
+            ]),
+          ),
+        ),
+      );
+    }
+    final stale = widget.load.validity == PendingPaymentValidity.stale;
+    return Scaffold(
+      appBar: AppBar(title: const Text('결제 상태 확인')),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: BrandPanel(children: [
+            if (_confirming) const CircularProgressIndicator(),
+            const SizedBox(height: 18),
+            Text(
+              _confirming ? '결제 승인을 확인하고 있어요' : '결제 확인이 아직 끝나지 않았어요',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
+            if (stale) ...[
+              const SizedBox(height: 10),
+              const Text('오래된 기록도 삭제하지 않고 서버에서 결제 여부를 확인합니다.',
+                  textAlign: TextAlign.center),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 14),
+              BrandNotice(text: _error!, kind: NoticeKind.success),
+            ],
+            const SizedBox(height: 18),
+            FilledButton(
+              onPressed: _confirming ? null : _confirm,
+              child: const Text('지금 다시 확인'),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _confirming ? null : _leavePendingPaymentRecovery,
+              child: const Text('결제창에서 취소했어요'),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
   const HomeScreen(
       {super.key,
       required this.session,
@@ -1801,6 +2045,93 @@ class HomeScreen extends StatelessWidget {
   final Map<String, dynamic> me;
   final Future<void> Function() onRefresh;
   final Future<void> Function() onSignOut;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  PendingPaymentStore? _pendingStore;
+  PendingPaymentLoadResult? _pendingLoad;
+  String? _lastOpenedPending;
+
+  User get session => widget.session;
+  Map<String, dynamic> get me => widget.me;
+  Future<void> Function() get onRefresh => widget.onRefresh;
+  Future<void> Function() get onSignOut => widget.onSignOut;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_loadPendingPayment());
+  }
+
+  @override
+  void didUpdateWidget(HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session.uid != widget.session.uid) {
+      _pendingLoad = null;
+      _lastOpenedPending = null;
+      unawaited(_loadPendingPayment());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _lastOpenedPending = null;
+      unawaited(_loadPendingPayment());
+    }
+  }
+
+  Future<void> _loadPendingPayment() async {
+    final expectedUid = widget.session.uid;
+    final store = _pendingStore ??= PendingPaymentStore(
+      SharedPreferencesPendingPaymentPreferences(
+        await SharedPreferences.getInstance(),
+      ),
+    );
+    final result = store.load(expectedUid);
+    if (!mounted || widget.session.uid != expectedUid) return;
+    setState(() => _pendingLoad = result);
+    final fingerprint = result == null ? null : _pendingFingerprint(result);
+    if (result != null && _lastOpenedPending != fingerprint) {
+      _lastOpenedPending = fingerprint;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+          unawaited(_openPendingRecovery());
+        }
+      });
+    }
+  }
+
+  String _pendingFingerprint(PendingPaymentLoadResult load) =>
+      load.payment?.fingerprint ?? 'malformed:${load.raw.hashCode}';
+
+  Future<void> _openPendingRecovery() async {
+    final load = _pendingLoad;
+    final store = _pendingStore;
+    if (load == null || store == null || !mounted) return;
+    final recovered = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => PendingPaymentRecoveryScreen(
+        load: load,
+        store: store,
+        confirmPayment: ({required orderId, required amount}) =>
+            ApiClient(widget.session)
+                .confirmPayment(orderId: orderId, amount: amount),
+      ),
+    ));
+    if (!mounted) return;
+    await _loadPendingPayment();
+    if (recovered == true) await widget.onRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1830,6 +2161,13 @@ class HomeScreen extends StatelessWidget {
             onPressed: onRefresh, icon: const Icon(Icons.refresh_rounded))
       ],
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (_pendingLoad != null) ...[
+          PendingPaymentRecoveryBanner(
+            load: _pendingLoad!,
+            onTap: _openPendingRecovery,
+          ),
+          const SizedBox(height: 16),
+        ],
         FutureBuilder<TodayMenu?>(
           future: DailyMenuClient().getTodayMenu(defaultMerchantQrToken),
           builder: (context, snapshot) => _TodayMenuCard(
@@ -1891,6 +2229,7 @@ class HomeScreen extends StatelessWidget {
             onPressed: () async {
               await Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => VoucherPurchaseScreen(session: session)));
+              await _loadPendingPayment();
               await onRefresh();
             },
             icon: const Icon(Icons.add_card_rounded),
@@ -1940,12 +2279,18 @@ class HomeScreen extends StatelessWidget {
         if (recentTransactions.isEmpty)
           const _EmptyHistoryCard()
         else
-          ...recentTransactions.map((tx) => _HistoryTile(
-                title: tx['title'] as String? ?? '식대 사용',
-                meta: recentMeta(tx),
-                price: '-${won(tx['amount'] as num?)}',
-                emoji: '🍽️',
-              )),
+          ...recentTransactions.map((tx) {
+            final isBonus = tx['is_bonus'] == true;
+            final title = tx['title'] as String? ?? '식대 사용';
+            return _HistoryTile(
+              title: '$title${isBonus ? ' (보너스)' : ''}',
+              meta: recentMeta(tx),
+              price: isBonus
+                  ? won(tx['amount'] as num?)
+                  : '-${won(tx['amount'] as num?)}',
+              emoji: '🍽️',
+            );
+          }),
       ]),
     );
   }
@@ -2897,6 +3242,11 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   bool _approvalPending = false;
   bool _cancellationAttempted = false;
   bool _checkoutStarted = false;
+  bool _checkoutTerminated = false;
+  int _confirmationAttempt = 0;
+  Timer? _confirmationTimer;
+  PendingPaymentStore? _pendingStore;
+  PendingPayment? _pendingPayment;
 
   @override
   void initState() {
@@ -2942,6 +3292,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
 
   @override
   void dispose() {
+    _confirmationTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     if (shouldReleaseSubsidizedReservation(
       isSubsidized: widget.isSubsidized,
@@ -2988,7 +3339,16 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     if (state == AppLifecycleState.resumed) {
       if (_externalAppOpened) {
         _externalAppOpened = false;
-        unawaited(_confirm(Uri()));
+        // Returning from a card security program or payment app is not proof of
+        // approval. Keep the provider WebView visible and wait for its explicit
+        // success (/p), failure (/f), or close (/c) redirect.
+        if (mounted) setState(() => _loading = false);
+        unawaited(_recoverCurrentExternalNavigation());
+      } else if (shouldConfirmPaymentOnResume(
+        externalAppOpened: _externalAppOpened,
+        approvalPending: _approvalPending,
+      )) {
+        unawaited(_confirm());
       } else {
         unawaited(_recoverCurrentExternalNavigation());
       }
@@ -2997,6 +3357,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
 
   Future<void> _recoverCurrentExternalNavigation() async {
     final uri = Uri.tryParse(await _controller.currentUrl() ?? '');
+    if (!mounted || _checkoutTerminated || _completed) return;
     if (uri?.scheme == 'intent') await _recoverExternalNavigation(uri!);
   }
 
@@ -3012,9 +3373,12 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       _externalAppOpened = false;
       _approvalPending = false;
       _checkoutStarted = false;
+      _checkoutTerminated = false;
+      _confirmationAttempt = 0;
     });
     _orderId = null;
     _orderAmount = null;
+    _pendingPayment = null;
     _cancellationAttempted = false;
     try {
       final order = widget.isSubsidized
@@ -3044,11 +3408,33 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       if (checkoutUrl == null || checkoutUrl.isEmpty) {
         throw const ApiException(statusCode: 502, message: '결제 주소를 받지 못했어요.');
       }
+      final orderId = _orderId;
+      final amount = _orderAmount;
+      final checkoutUri = Uri.tryParse(checkoutUrl);
+      if (orderId == null ||
+          orderId.trim().isEmpty ||
+          amount == null ||
+          amount <= 0 ||
+          checkoutUri == null ||
+          (checkoutUri.scheme != 'https' && checkoutUri.scheme != 'http')) {
+        throw const ApiException(
+            statusCode: 502, message: '결제 주문 정보가 올바르지 않아요.');
+      }
+      final pending = PendingPayment(
+        uid: widget.session.uid,
+        orderId: orderId,
+        amount: amount,
+        createdAt: DateTime.now().toUtc(),
+      );
+      final store = _pendingStore ??= await PendingPaymentStore.create();
+      await store.save(pending);
+      _pendingPayment = pending;
       // The checkout GET atomically records provider entry. Set this before
       // navigation so disposal can never race an automatic cancellation.
       _checkoutStarted = true;
-      await _controller.loadRequest(Uri.parse(checkoutUrl));
+      await _controller.loadRequest(checkoutUri);
     } catch (error) {
+      await _clearPendingPayment();
       await _releaseReservation(explicitCheckoutTermination: true);
       if (mounted) {
         setState(() {
@@ -3063,20 +3449,16 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     final uri = Uri.tryParse(request.url);
     if (uri == null) return NavigationDecision.prevent;
     if (uri.path == '/p' || uri.path.endsWith('/payments/redirect/success')) {
-      await _confirm(uri);
+      await _confirm();
       return NavigationDecision.prevent;
     }
     if (uri.path == '/f' ||
         uri.path == '/c' ||
         uri.path.endsWith('/payments/redirect/fail') ||
         uri.path.endsWith('/payments/redirect/close')) {
-      await _releaseReservation(explicitCheckoutTermination: true);
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = uri.queryParameters['message'] ?? '결제가 취소되었어요.';
-        });
-      }
+      await _terminateCheckout(
+        uri.queryParameters['message'] ?? '결제가 취소되었어요.',
+      );
       return NavigationDecision.prevent;
     }
     if (uri.scheme != 'http' && uri.scheme != 'https') {
@@ -3116,15 +3498,66 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     }
   }
 
-  Future<void> _confirm(Uri uri) async {
-    if (_confirming || _completed) return;
-    final orderId = uri.queryParameters['orderId'] ?? _orderId;
-    final amount =
-        int.tryParse(uri.queryParameters['amount'] ?? '') ?? _orderAmount;
-    if (orderId == null || amount == null) {
-      setState(() => _error = '결제 승인 정보가 올바르지 않아요.');
+  Future<void> _clearPendingPayment() async {
+    final pending = _pendingPayment;
+    if (pending == null) return;
+    try {
+      final store = _pendingStore ??= await PendingPaymentStore.create();
+      final cleared = await store.clear(pending);
+      if (cleared || store.load(pending.uid) == null) {
+        _pendingPayment = null;
+      }
+    } catch (error) {
+      debugPrint('Pending payment cleanup failed: ${error.runtimeType}');
+    }
+  }
+
+  void _leavePendingCheckout() {
+    _checkoutTerminated = true;
+    _confirmationTimer?.cancel();
+    _externalAppOpened = false;
+    _approvalPending = false;
+    // Do not clear the pending record or cancel the reservation here. A local
+    // exit is not proof that the provider rejected payment; delayed approval
+    // remains recoverable from Home.
+    if (mounted) Navigator.of(context).pop(false);
+  }
+
+  Future<void> _terminateCheckout(String message) async {
+    _checkoutTerminated = true;
+    _confirmationTimer?.cancel();
+    _externalAppOpened = false;
+    _approvalPending = false;
+    await _clearPendingPayment();
+    await _releaseReservation(explicitCheckoutTermination: true);
+    if (!mounted || _completed) return;
+    setState(() {
+      _loading = false;
+      _error = message;
+    });
+  }
+
+  void _scheduleConfirmation() {
+    _confirmationTimer?.cancel();
+    if (!mounted || !_approvalPending || _completed || _checkoutTerminated) {
       return;
     }
+    _confirmationTimer = Timer(
+      const Duration(seconds: 30),
+      () => unawaited(_confirm()),
+    );
+  }
+
+  Future<void> _confirm() async {
+    if (!mounted || _confirming || _completed || _checkoutTerminated) return;
+    final orderId = _orderId;
+    final amount = _orderAmount;
+    if (orderId == null || amount == null) {
+      if (mounted) setState(() => _error = '결제 승인 정보가 올바르지 않아요.');
+      return;
+    }
+    _confirmationTimer?.cancel();
+    final attempt = _confirmationAttempt++;
     setState(() {
       _confirming = true;
       _approvalPending = true;
@@ -3132,35 +3565,38 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       _error = null;
     });
     try {
-      // Vouchers are issued atomically by this confirm response; redirect alone is not success.
-      Map<String, dynamic>? confirmed;
-      // A provider result notification can arrive after the browser return.
-      // Keep the user on the approval screen while polling the authoritative
-      // server state instead of turning a slow callback into a payment error.
-      for (var attempt = 0;
-          attempt < paymentConfirmationMaxAttempts;
-          attempt += 1) {
-        try {
-          confirmed = await ApiClient(widget.session)
-              .confirmPayment(orderId: orderId, amount: amount);
-          break;
-        } on ApiException catch (error) {
-          if (!shouldRetryPaymentConfirmation(error, attempt)) rethrow;
-          await Future<void>.delayed(const Duration(seconds: 2));
-          if (!mounted) return;
-        }
-      }
-      if (confirmed == null) return;
+      // Vouchers are issued atomically by this authoritative response. Provider
+      // redirect query data is deliberately never used to create completion.
+      final confirmed = await ApiClient(widget.session)
+          .confirmPayment(orderId: orderId, amount: amount);
+      await _clearPendingPayment();
       if (mounted) {
         setState(() {
-          _completion = PaymentCompletionData.fromConfirmDto(confirmed!);
+          _completion = PaymentCompletionData.fromConfirmDto(confirmed);
           _completed = true;
           _approvalPending = false;
           _loading = false;
         });
       }
+    } on ApiException catch (error) {
+      if (!mounted || _checkoutTerminated) return;
+      if (error.isPaymentPending) {
+        final retry = shouldRetryPaymentConfirmation(error, attempt);
+        setState(() {
+          _loading = false;
+          _error = retry
+              ? '아직 결제 승인을 기다리고 있어요. 30초마다 자동으로 확인합니다.'
+              : '결제 승인이 확인되지 않았어요. 결제를 취소했다면 아래 버튼으로 돌아가 주세요.';
+        });
+        if (retry) _scheduleConfirmation();
+      } else {
+        setState(() {
+          _loading = false;
+          _error = error.message;
+        });
+      }
     } catch (error) {
-      if (mounted) {
+      if (mounted && !_checkoutTerminated) {
         setState(() {
           _loading = false;
           _error = error.toString();
@@ -3211,15 +3647,18 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
                           BrandNotice(text: _error!, kind: NoticeKind.error),
                           const SizedBox(height: 14),
                           FilledButton(
-                              onPressed: _approvalPending
-                                  ? () => _confirm(Uri())
-                                  : _createOrder,
+                              onPressed:
+                                  _approvalPending ? _confirm : _createOrder,
                               child: Text(_approvalPending
                                   ? '결제 상태 다시 확인'
                                   : '다시 결제하기')),
                           TextButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: const Text('상품 목록으로 돌아가기')),
+                              onPressed: _approvalPending
+                                  ? _leavePendingCheckout
+                                  : () => Navigator.of(context).pop(false),
+                              child: Text(_approvalPending
+                                  ? '결제를 취소했어요'
+                                  : '상품 목록으로 돌아가기')),
                         ])))),
         ]));
   }

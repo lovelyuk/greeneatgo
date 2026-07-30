@@ -32,21 +32,28 @@ end $$;
 -- authoritative: names and flags alone never select rows. Exact ordinary
 -- settlements for a mapped run also aggregated those rows under 0048, so their
 -- workflow snapshots are stale and are removed while real source rows remain.
-create temporary table _legacy_generated_transactions on commit drop as
- select distinct dt.transaction_id
+-- Keep every selected identifier and cleanup operation inside one statement: SQL
+-- editors may commit between top-level statements, but PL/pgSQL local arrays live
+-- for the complete atomic cleanup regardless of those statement boundaries.
+do $$
+declare
+ legacy_transaction_ids bigint[] := '{}'::bigint[];
+ legacy_settlement_ids uuid[] := '{}'::uuid[];
+begin
+ select coalesce(array_agg(distinct dt.transaction_id order by dt.transaction_id),'{}'::bigint[])
+ into legacy_transaction_ids
  from public.settlement_demo_transactions dt
  join public.settlement_demo_runs r on r.id=dt.run_id;
-do $$
-begin
+
  if exists(select 1 from public.meal_transactions child
-   where child.original_transaction_id in (select transaction_id from _legacy_generated_transactions)
-     and child.id not in (select transaction_id from _legacy_generated_transactions)) then
+   where child.original_transaction_id=any(legacy_transaction_ids)
+     and child.id<>all(legacy_transaction_ids)) then
   raise exception 'LEGACY_GENERATED_TRANSACTION_EXTERNAL_REFERENCE: an unmapped transaction references mapped legacy evidence'
     using errcode='P0001';
  end if;
-end $$;
-create temporary table _legacy_derived_settlements on commit drop as
- select distinct s.id
+
+ select coalesce(array_agg(distinct s.id order by s.id),'{}'::uuid[])
+ into legacy_settlement_ids
  from public.settlement_demo_runs r
  -- 0042 seed rejected every pre-existing exact-period settlement, and 0048's
  -- ordinary creator necessarily aggregated the mapped rows. Therefore this exact
@@ -55,50 +62,50 @@ create temporary table _legacy_derived_settlements on commit drop as
  join public.settlements s on s.merchant_id=r.merchant_id and s.company_id=r.company_id
    and s.period_ym=r.period_ym and s.period_from=r.period_from and s.period_to=r.period_to
    and (s.id=r.settlement_id or not s.is_demo);
--- Lock the exact mapped derived graph before deciding whether local evidence is
--- safe to retire. Issued/completed history is intentionally deletable here; only
--- a transient or ambiguous provider operation aborts the migration.
-do $$
-begin
- perform 1 from public.settlements s join _legacy_derived_settlements d on d.id=s.id
-   order by s.id for update of s;
- perform 1 from public.tax_invoices i join _legacy_derived_settlements d on d.id=i.settlement_id
-   order by i.id for update of i;
- perform 1 from public.settlement_payments p join _legacy_derived_settlements d on d.id=p.settlement_id
-   order by p.id for update of p;
+
+ -- Lock the exact mapped derived graph before deciding whether local evidence is
+ -- safe to retire. Issued/completed history is intentionally deletable here; only
+ -- a transient or ambiguous provider operation aborts the migration.
+ perform 1 from public.settlements s where s.id=any(legacy_settlement_ids)
+   order by s.id for update;
+ perform 1 from public.tax_invoices i where i.settlement_id=any(legacy_settlement_ids)
+   order by i.id for update;
+ perform 1 from public.settlement_payments p where p.settlement_id=any(legacy_settlement_ids)
+   order by p.id for update;
  if exists(select 1 from public.tax_invoices i
-   join _legacy_derived_settlements d on d.id=i.settlement_id
    join public.settlements s on s.id=i.settlement_id
-   where i.issue_attempt_token is not null
-     or (i.issue_lease_expires_at is not null and i.issue_lease_expires_at>clock_timestamp())
-     or i.reconciliation_required_at is not null
-     or (i.issue_attempt_started_at is not null and i.issued_at is null and not (
-       (i.popbill_status='issued' and s.tax_invoice_status in ('issued','nts_sending','nts_accepted'))
-       or (i.popbill_status='failed' and s.tax_invoice_status='failed')))) then
+   where i.settlement_id=any(legacy_settlement_ids)
+     and (i.issue_attempt_token is not null
+       or (i.issue_lease_expires_at is not null and i.issue_lease_expires_at>clock_timestamp())
+       or i.reconciliation_required_at is not null
+       or (i.issue_attempt_started_at is not null and i.issued_at is null and not (
+         (i.popbill_status='issued' and s.tax_invoice_status in ('issued','nts_sending','nts_accepted'))
+         or (i.popbill_status='failed' and s.tax_invoice_status='failed'))))) then
   raise exception 'LEGACY_GENERATED_STATE_PROVIDER_OPERATION_IN_FLIGHT' using errcode='P0001';
  end if;
+
+ insert into public.generated_reset_delete_guards(backend_pid,transaction_xid,settlement_id)
+  select pg_catalog.pg_backend_pid(),pg_catalog.txid_current(),unnest(legacy_settlement_ids)
+  on conflict do nothing;
+ delete from public.tax_invoice_events e using public.tax_invoices i
+  where e.tax_invoice_id=i.id and i.settlement_id=any(legacy_settlement_ids);
+ delete from public.settlement_events e where e.settlement_id=any(legacy_settlement_ids);
+ delete from public.settlement_payments p where p.settlement_id=any(legacy_settlement_ids);
+ delete from public.tax_invoices i where i.settlement_id=any(legacy_settlement_ids);
+ update public.settlement_demo_runs r set settlement_id=null
+  where r.settlement_id=any(legacy_settlement_ids);
+ delete from public.settlements s where s.id=any(legacy_settlement_ids);
+ delete from public.reviews v where v.transaction_id=any(legacy_transaction_ids);
+ delete from public.settlement_demo_transactions dt
+  where dt.transaction_id=any(legacy_transaction_ids);
+ delete from public.meal_transactions m where m.id=any(legacy_transaction_ids);
+ delete from public.settlement_demo_runs;
+ delete from public.settlement_demo_reset_requests;
+ delete from public.generated_reset_delete_guards
+  where backend_pid=pg_catalog.pg_backend_pid() and transaction_xid=pg_catalog.txid_current();
 end $$;
-insert into public.generated_reset_delete_guards(backend_pid,transaction_xid,settlement_id)
- select pg_catalog.pg_backend_pid(),pg_catalog.txid_current(),id from _legacy_derived_settlements
- on conflict do nothing;
-delete from public.tax_invoice_events e using public.tax_invoices i,_legacy_derived_settlements s
- where e.tax_invoice_id=i.id and i.settlement_id=s.id;
-delete from public.settlement_events e using _legacy_derived_settlements s where e.settlement_id=s.id;
-delete from public.settlement_payments p using _legacy_derived_settlements s where p.settlement_id=s.id;
-delete from public.tax_invoices i using _legacy_derived_settlements s where i.settlement_id=s.id;
-update public.settlement_demo_runs r set settlement_id=null
- from _legacy_derived_settlements s where r.settlement_id=s.id;
-delete from public.settlements x using _legacy_derived_settlements s where x.id=s.id;
-delete from public.reviews v using _legacy_generated_transactions t where v.transaction_id=t.transaction_id;
-delete from public.settlement_demo_transactions dt using _legacy_generated_transactions t
- where dt.transaction_id=t.transaction_id;
-delete from public.meal_transactions m using _legacy_generated_transactions t where m.id=t.transaction_id;
-delete from public.settlement_demo_runs;
-delete from public.settlement_demo_reset_requests;
 revoke insert,update,delete on table public.settlement_demo_runs,
  public.settlement_demo_transactions,public.settlement_demo_reset_requests from service_role;
-delete from public.generated_reset_delete_guards
- where backend_pid=pg_catalog.pg_backend_pid() and transaction_xid=pg_catalog.txid_current();
 
 -- Neutral invoice-profile predicate used only through owner-executed generated RPCs.
 create or replace function public.company_invoice_profile_complete(p_company_id uuid)

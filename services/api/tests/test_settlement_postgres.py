@@ -12,6 +12,37 @@ import pytest
 MIGRATIONS = Path(__file__).resolve().parents[3] / "infra" / "migrations"
 
 
+def test_0052_cleanup_has_no_temporary_relation_lifetime_dependency():
+    source = (MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8")
+    lowered = source.lower()
+    assert "_legacy_generated_transactions" not in lowered
+    assert "_legacy_derived_settlements" not in lowered
+    assert "on commit drop" not in lowered
+    assert "legacy_transaction_ids bigint[]" in lowered
+    assert "legacy_settlement_ids uuid[]" in lowered
+
+
+def test_0052_replays_after_sql_editor_commits_only_the_preamble(settlement_db):
+    """Model an editor committing CREATE TABLE/FUNCTION statements before cleanup."""
+    import psycopg
+
+    source = (MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8")
+    marker = "-- Replay-safe retirement of the legacy settlement-demo provenance."
+    preamble, separator, _ = source.partition(marker)
+    assert separator and preamble.lstrip().startswith("begin;")
+    with psycopg.connect(settlement_db, autocommit=True) as conn:
+        # The committed preamble is exactly the state left by the reported SQL
+        # Editor failure. The complete migration must then be safely replayable.
+        conn.execute(preamble + "\ncommit;")
+        conn.execute(source)
+        assert conn.execute(
+            "select to_regclass('public.generated_reset_delete_guards') is not null"
+        ).fetchone()[0] is True
+        assert conn.execute(
+            "select count(*) from generated_reset_delete_guards where backend_pid=pg_backend_pid()"
+        ).fetchone()[0] == 0
+
+
 @pytest.fixture(scope="module")
 def settlement_db():
     url = os.getenv("TEST_DATABASE_URL")

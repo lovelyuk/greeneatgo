@@ -354,6 +354,38 @@ class ApiException implements Exception {
 
 const paymentConfirmationMaxAttempts = 8;
 
+enum PaymentRedirectOutcome { success, failure, close }
+
+PaymentRedirectOutcome? trustedPaymentRedirectOutcome(
+  Uri uri,
+  String configuredApiBaseUrl,
+) {
+  final api = Uri.tryParse(configuredApiBaseUrl);
+  if (api == null ||
+      (api.scheme != 'https' && api.scheme != 'http') ||
+      uri.scheme != api.scheme ||
+      uri.host != api.host ||
+      uri.port != api.port) {
+    return null;
+  }
+  final basePath = api.path.endsWith('/')
+      ? api.path.substring(0, api.path.length - 1)
+      : api.path;
+  final successPath = '$basePath/payments/redirect/success';
+  final failPath = '$basePath/payments/redirect/fail';
+  final closePath = '$basePath/payments/redirect/close';
+  if (uri.path == '/p' || uri.path == successPath) {
+    return PaymentRedirectOutcome.success;
+  }
+  if (uri.path == '/f' || uri.path == failPath) {
+    return PaymentRedirectOutcome.failure;
+  }
+  if (uri.path == '/c' || uri.path == closePath) {
+    return PaymentRedirectOutcome.close;
+  }
+  return null;
+}
+
 bool shouldConfirmPaymentOnResume({
   required bool externalAppOpened,
   required bool approvalPending,
@@ -3236,14 +3268,19 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   PaymentCompletionData? _completion;
   String? _error;
   String? _lastExternalUrl;
+  Uri? _lastProviderWebUri;
   String? _orderId;
   int? _orderAmount;
   bool _externalAppOpened = false;
+  bool _hasOpenedExternalApp = false;
+  bool _externalLaunchInProgress = false;
   bool _approvalPending = false;
   bool _cancellationAttempted = false;
   bool _checkoutStarted = false;
   bool _checkoutTerminated = false;
   int _confirmationAttempt = 0;
+  bool _externalNavigationNeedsRestore = false;
+  Timer? _externalRestoreTimer;
   Timer? _confirmationTimer;
   PendingPaymentStore? _pendingStore;
   PendingPayment? _pendingPayment;
@@ -3264,11 +3301,18 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
           if (uri?.path.contains('/payments/checkout/') == true) {
             return;
           }
+          if (uri != null && (uri.scheme == 'https' || uri.scheme == 'http')) {
+            _lastProviderWebUri = uri;
+          }
           if (mounted) setState(() => _loading = false);
         },
         onWebResourceError: (error) {
           final uri = Uri.tryParse(error.url ?? '');
           if (uri != null && uri.scheme == 'intent') {
+            if (error.isForMainFrame == true) {
+              _externalNavigationNeedsRestore = true;
+              _scheduleExternalPageRestore();
+            }
             unawaited(_recoverExternalNavigation(uri));
             return;
           }
@@ -3292,6 +3336,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
 
   @override
   void dispose() {
+    _externalRestoreTimer?.cancel();
     _confirmationTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     if (shouldReleaseSubsidizedReservation(
@@ -3343,7 +3388,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
         // approval. Keep the provider WebView visible and wait for its explicit
         // success (/p), failure (/f), or close (/c) redirect.
         if (mounted) setState(() => _loading = false);
-        unawaited(_recoverCurrentExternalNavigation());
+        unawaited(_restoreProviderPageAfterExternalApp());
       } else if (shouldConfirmPaymentOnResume(
         externalAppOpened: _externalAppOpened,
         approvalPending: _approvalPending,
@@ -3361,6 +3406,32 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     if (uri?.scheme == 'intent') await _recoverExternalNavigation(uri!);
   }
 
+  Future<void> _restoreProviderPageAfterExternalApp() async {
+    if (!mounted || _checkoutTerminated || _completed) return;
+    final current = Uri.tryParse(await _controller.currentUrl() ?? '');
+    if (!mounted || _checkoutTerminated || _completed) return;
+    if (!_externalNavigationNeedsRestore &&
+        current != null &&
+        (current.scheme == 'https' || current.scheme == 'http')) {
+      return;
+    }
+    _externalNavigationNeedsRestore = false;
+    final providerUri = _lastProviderWebUri;
+    if (providerUri != null) await _controller.loadRequest(providerUri);
+  }
+
+  void _scheduleExternalPageRestore() {
+    _externalRestoreTimer?.cancel();
+    _externalRestoreTimer = Timer(const Duration(milliseconds: 250), () {
+      if (!_hasOpenedExternalApp ||
+          _externalAppOpened ||
+          _externalLaunchInProgress) {
+        return;
+      }
+      unawaited(_restoreProviderPageAfterExternalApp());
+    });
+  }
+
   Future<void> _createOrder() async {
     // A retry must release the previous subsidized reservation before creating
     // its replacement. Ordinary voucher orders never enter this branch.
@@ -3370,7 +3441,11 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       _loading = true;
       _error = null;
       _lastExternalUrl = null;
+      _lastProviderWebUri = null;
       _externalAppOpened = false;
+      _hasOpenedExternalApp = false;
+      _externalLaunchInProgress = false;
+      _externalNavigationNeedsRestore = false;
       _approvalPending = false;
       _checkoutStarted = false;
       _checkoutTerminated = false;
@@ -3448,24 +3523,23 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   FutureOr<NavigationDecision> _navigate(NavigationRequest request) async {
     final uri = Uri.tryParse(request.url);
     if (uri == null) return NavigationDecision.prevent;
-    if (uri.path == '/p' || uri.path.endsWith('/payments/redirect/success')) {
+    final redirect = trustedPaymentRedirectOutcome(uri, apiBaseUrl);
+    if (redirect == PaymentRedirectOutcome.success) {
       await _confirm();
       return NavigationDecision.prevent;
     }
-    if (uri.path == '/f' ||
-        uri.path == '/c' ||
-        uri.path.endsWith('/payments/redirect/fail') ||
-        uri.path.endsWith('/payments/redirect/close')) {
+    if (redirect == PaymentRedirectOutcome.failure ||
+        redirect == PaymentRedirectOutcome.close) {
       await _terminateCheckout(
         uri.queryParameters['message'] ?? '결제가 취소되었어요.',
       );
       return NavigationDecision.prevent;
     }
-    if (uri.scheme != 'http' && uri.scheme != 'https') {
-      await _recoverExternalNavigation(uri);
-      return NavigationDecision.prevent;
+    if (uri.scheme == 'http' || uri.scheme == 'https') {
+      return NavigationDecision.navigate;
     }
-    return NavigationDecision.navigate;
+    await _recoverExternalNavigation(uri);
+    return NavigationDecision.prevent;
   }
 
   Future<void> _recoverExternalNavigation(Uri uri) async {
@@ -3477,10 +3551,13 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
         _error = null;
       });
     }
+    _externalLaunchInProgress = true;
     final result = await _openExternalPaymentUri(uri);
+    _externalLaunchInProgress = false;
     if (!mounted) return;
     switch (result) {
       case ExternalPaymentOpenResult.app:
+        _hasOpenedExternalApp = true;
         _externalAppOpened = true;
         break;
       case ExternalPaymentOpenResult.fallback:

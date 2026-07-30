@@ -424,6 +424,57 @@ void main() {
     );
   });
 
+  test('payment redirects are accepted only from the configured API origin',
+      () {
+    const base = 'https://greeneatgo-api.onrender.com/v1';
+
+    expect(
+      trustedPaymentRedirectOutcome(
+        Uri.parse('https://greeneatgo-api.onrender.com/p'),
+        base,
+      ),
+      PaymentRedirectOutcome.success,
+    );
+    expect(
+      trustedPaymentRedirectOutcome(
+        Uri.parse(
+            'https://greeneatgo-api.onrender.com/v1/payments/redirect/close'),
+        base,
+      ),
+      PaymentRedirectOutcome.close,
+    );
+    expect(
+      trustedPaymentRedirectOutcome(
+        Uri.parse('https://pay.kiwoompay.co.kr/p'),
+        base,
+      ),
+      isNull,
+      reason:
+          'a provider/security-program path named /p is not our success URL',
+    );
+    expect(
+      trustedPaymentRedirectOutcome(
+        Uri.parse('https://greeneatgo-api.onrender.com.evil.example/p'),
+        base,
+      ),
+      isNull,
+    );
+    expect(
+      trustedPaymentRedirectOutcome(
+        Uri.parse('https://greeneatgo-api.onrender.com:444/p'),
+        base,
+      ),
+      isNull,
+    );
+    expect(
+      trustedPaymentRedirectOutcome(
+        Uri.parse('https://greeneatgo-api.onrender.com/not/p'),
+        base,
+      ),
+      isNull,
+    );
+  });
+
   test('Firebase auth error codes have safe Korean messages', () {
     expect(friendlyFirebaseAuthCode('invalid-credential'),
         '이메일 또는 비밀번호가 올바르지 않아요.');

@@ -2917,7 +2917,7 @@ function Dashboard({ session, onLogout }) {
 
   const merchantNavGroups = [
     [['main', '대시보드', Home], ['payment-history', '실시간 매출', CreditCard]],
-    [['companies', '업체 관리', Building2], ['settlements-by-company', '업체별 정산', WalletCards], ['tax-invoices', '세금계산서', FileText], ['prepurchase', '선구매 관리', Package]],
+    [['companies', '업체 정보', Building2], ['settlements-by-company', '매출 정산', WalletCards], ['tax-invoices', '세금계산서', FileText], ['prepurchase', '선구매 관리', Package]],
     [['restaurant-management', '식당 관리', Coffee], ['supplier-info', '공급자 정보', Settings]],
   ];
   const companyManagementTabs = [
@@ -2984,7 +2984,7 @@ function Dashboard({ session, onLogout }) {
     {isCompanyAdmin && companySection === 'company-usage' && <nav className="merchant-section-tabs" aria-label="이용 내역 페이지">
       {companyUsageTabs.map(([id, label]) => <button key={id} type="button" className={companyUsageTab === id ? 'active' : ''} onClick={() => setCompanyUsageTab(id)} aria-current={companyUsageTab === id ? 'page' : undefined}>{label}</button>)}
     </nav>}
-    {isMerchantAdmin && merchantSection === 'companies' && <nav className="merchant-section-tabs" aria-label="업체 관리 페이지">
+    {isMerchantAdmin && merchantSection === 'companies' && <nav className="merchant-section-tabs" aria-label="업체 정보 페이지">
       {companyManagementTabs.map(([id, label]) => <button key={id} type="button" className={companyManagementTab === id ? 'active' : ''} onClick={() => setCompanyManagementTab(id)} aria-current={companyManagementTab === id ? 'page' : undefined}>{label}</button>)}
     </nav>}
     {isMerchantAdmin && merchantSection === 'restaurant-management' && <nav className="merchant-section-tabs" aria-label="식당 관리 페이지">

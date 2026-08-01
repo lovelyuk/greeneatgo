@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AlertTriangle, BarChart3, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Home, LogOut, Package, QrCode, RefreshCw, RotateCcw, Search, Send, Settings, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
@@ -8,7 +8,7 @@ import { PaymentHistoryDashboard, RefundModal } from './PaymentFeatures.jsx';
 import SettlementDemoPanel from './SettlementDemoPanel.jsx';
 import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
 import { captureGeneration, generationIsCurrent } from './generationGuard.js';
-import { changePercent, currentPeriodYm, formatPeriodYm, mapCompanyUsage, shiftPeriodYm } from './companyUsage.js';
+import { currentPeriodYm, formatPeriodYm, mapCompanyUsage, shiftPeriodYm } from './companyUsage.js';
 import { filterMerchantTransactions, merchantMealPaymentIds, merchantRecentKpis, reconcileMerchantPaymentFeed } from './merchantPaymentFeed.js';
 import {
   buildPaymentPayload, canCompanyDispute, canConfirmAndRequest, canMerchantBeginRevision,
@@ -1727,7 +1727,8 @@ function MerchantSupplierInfoScreen({ merchant, busy, onSave, onSettings, token 
   </AdminPage>;
 }
 
-function MerchantScreen({ section, companyItems, onCompanyDetail, merchant, busy, onSaveSupplier, onSettings, token }) {
+function MerchantScreen({ section, companyItems, onCompanyDetail, merchant, busy, onSaveSupplier, onSettings, token, scopeId }) {
+  if (section === 'main') return <DashboardView kind="merchant" token={token} scopeId={scopeId}/>;
   if (section === 'company-list') return <MerchantCompanyListScreen items={companyItems} onDetail={onCompanyDetail} />;
   if (section === 'supplier-info') return <MerchantSupplierInfoScreen merchant={merchant} busy={busy} onSave={onSaveSupplier} onSettings={onSettings} token={token} />;
   if (section === 'settlement-evidence') return <MerchantTaxInvoiceScreen token={token} initialTab="evidence" />;
@@ -1756,14 +1757,268 @@ function CompanyUsageState({ loading, error, retry }) {
   return null;
 }
 
-function CompanyDashboard({ usage, comparisonPercent, comparisonUnavailable, ym, onYmChange, loading, error, retry }) {
-  const summary = usage?.summary;
-  return <AdminPage title={null} description="선택한 달의 회사 식대 이용 현황을 확인합니다." preview={false} className="merchant-regular-weight merchant-open-table company-usage-page">
-    <CompanyUsagePeriod value={ym} onChange={onYmChange} disabled={loading}/>
-    <CompanyUsageState loading={loading} error={error} retry={retry}/>
-    {usage && <><section className="grid merchant-kpi-grid"><article className="card merchant-kpi-card"><CreditCard size={22}/><span>사용액 (취소 반영)</span><strong className="money">{krw(summary.grossSpendAmount)}</strong></article><article className="card merchant-kpi-card warning-card"><AlertTriangle size={22}/><span>미납액</span><strong className="money">{krw(summary.outstandingSettlementAmount)}</strong></article><article className="card merchant-kpi-card"><Users size={22}/><span>등록 사원</span><strong className="money">{summary.totalEmployees.toLocaleString('ko-KR')}명</strong></article><article className="card merchant-kpi-card"><Coffee size={22}/><span>결제 / 취소</span><strong className="money">{summary.spendCount.toLocaleString('ko-KR')} / {summary.reversalCount.toLocaleString('ko-KR')}건</strong></article></section>
-    <article className="panel"><div className="panel-title"><div><h3>{formatPeriodYm(usage.periodYm)} 이용 요약</h3><p className="panel-note">API 집계 기준 시간대: {usage.timezone}</p></div></div><div className="usage-summary-strip"><div><span>이용 사원</span><strong className="money">{summary.usedEmployees.toLocaleString('ko-KR')}명</strong></div><div><span>결제 / 취소</span><strong className="money">{summary.spendCount.toLocaleString('ko-KR')} / {summary.reversalCount.toLocaleString('ko-KR')}건</strong></div><div><span>전월 대비 사용액</span><strong className="money">{comparisonPercent === null ? '-' : `${comparisonPercent > 0 ? '+' : ''}${comparisonPercent.toFixed(1)}%`}</strong>{comparisonUnavailable && <small className="panel-note">전월 비교를 불러올 수 없습니다.</small>}</div></div></article></>}
+const dashColors = ['#4C8BF5', '#8CB5FA'];
+
+function kstDateParts(date = new Date()) {
+  return Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+}
+
+function defaultDashboardPeriod(date = new Date()) {
+  const { year, month, day } = kstDateParts(date);
+  return { from: `${year}-${month}-01`, to: `${year}-${month}-${day}` };
+}
+
+function validDashboardDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? '')) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function dashboardPeriodFromUrl() {
+  const fallback = defaultDashboardPeriod();
+  const params = new URLSearchParams(window.location.search);
+  const from = params.get('from');
+  const to = params.get('to');
+  return validDashboardDate(from) && validDashboardDate(to) && from <= to ? { from, to } : fallback;
+}
+
+function dashNumber(value) {
+  return value.toLocaleString('ko-KR');
+}
+
+function dashboardContractError() {
+  return new Error('대시보드 응답 형식이 올바르지 않습니다. 다시 시도해 주세요.');
+}
+
+function assertDashboardObject(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw dashboardContractError();
+  return value;
+}
+
+function assertDashboardKeys(value, expected) {
+  const actual = Object.keys(value).sort();
+  const keys = [...expected].sort();
+  if (actual.length !== keys.length || actual.some((key, index) => key !== keys[index])) throw dashboardContractError();
+}
+
+function assertDashboardNumber(value, integer = false) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || (integer && !Number.isInteger(value))) throw dashboardContractError();
+  return value;
+}
+
+function assertDashboardString(value) {
+  if (typeof value !== 'string' || value.trim() === '') throw dashboardContractError();
+  return value;
+}
+
+function mapDashboardSummary(payload) {
+  const data = assertDashboardObject(payload);
+  assertDashboardKeys(data, ['total_amount', 'total_amount_delta_pct', 'total_count', 'total_count_delta_pct', 'by_meal_type', 'top_companies_by_amount', 'top_companies_by_count', 'series']);
+  const totalAmount = assertDashboardNumber(data.total_amount, true);
+  const totalCount = assertDashboardNumber(data.total_count, true);
+  const delta = (value) => value === null ? null : assertDashboardNumber(value);
+  if (!Array.isArray(data.by_meal_type) || !Array.isArray(data.top_companies_by_amount)
+      || !Array.isArray(data.top_companies_by_count) || !Array.isArray(data.series)) throw dashboardContractError();
+  const byMealType = data.by_meal_type.map((item) => {
+    const row = assertDashboardObject(item);
+    assertDashboardKeys(row, ['label', 'amount', 'count', 'ratio']);
+    const ratio = assertDashboardNumber(row.ratio);
+    if (ratio < 0 || ratio > 100) throw dashboardContractError();
+    return {
+      label: assertDashboardString(row.label),
+      amount: assertDashboardNumber(row.amount, true),
+      count: assertDashboardNumber(row.count, true),
+      ratio,
+    };
+  });
+  if (byMealType.length !== 2 || byMealType[0].label !== '중식' || byMealType[1].label !== '석식') throw dashboardContractError();
+  const rankRows = (items, valueKey) => items.map((item) => {
+    const row = assertDashboardObject(item);
+    assertDashboardKeys(row, ['rank', 'name', valueKey]);
+    return {
+      rank: assertDashboardNumber(row.rank, true),
+      name: assertDashboardString(row.name),
+      [valueKey]: assertDashboardNumber(row[valueKey], true),
+    };
+  });
+  const series = data.series.map((item) => {
+    const row = assertDashboardObject(item);
+    assertDashboardKeys(row, ['date', 'amount', 'count']);
+    if (!validDashboardDate(row.date)) throw dashboardContractError();
+    return { date: row.date, amount: assertDashboardNumber(row.amount, true), count: assertDashboardNumber(row.count, true) };
+  });
+  return {
+    total_amount: totalAmount,
+    total_amount_delta_pct: delta(data.total_amount_delta_pct),
+    total_count: totalCount,
+    total_count_delta_pct: delta(data.total_count_delta_pct),
+    by_meal_type: byMealType,
+    top_companies_by_amount: rankRows(data.top_companies_by_amount, 'amount'),
+    top_companies_by_count: rankRows(data.top_companies_by_count, 'count'),
+    series,
+  };
+}
+
+function DashCardTitle({ children, Icon, tone }) {
+  return <div className="dash-card-title"><span className={`dash-icon-badge dash-icon-${tone}`}><Icon size={19}/></span><h3>{children}</h3></div>;
+}
+
+function SummaryCard({ label, value, delta, money = false, Icon, tone }) {
+  const direction = delta === null || delta === 0 ? '' : delta > 0 ? 'up' : 'down';
+  return <article className={`dash-card dash-summary-card dash-summary-${tone}`}>
+    <span className={`dash-icon-badge dash-icon-${tone}`}><Icon size={21}/></span>
+    <div className="dash-summary-copy"><span>{label}</span>
+    <strong>{money ? krw(value) : `${dashNumber(value)}건`}</strong>
+    <small className={`dash-delta ${direction}`}>전 기간 대비 {delta === null ? '-' : `${delta > 0 ? '↑' : delta < 0 ? '↓' : ''} ${Math.abs(delta).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}%`}</small></div>
+  </article>;
+}
+
+function DonutCard({ rows, total }) {
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+  const segments = rows.map((row, index) => {
+    const arcRatio = Math.max(0, Math.min(1, row.ratio / 100));
+    const segment = { ...row, arcRatio, color: dashColors[index % dashColors.length], offset };
+    offset += arcRatio * circumference;
+    return segment;
+  });
+  return <article className="dash-card dash-donut-card">
+    <DashCardTitle Icon={Coffee} tone="blue">식사 구분</DashCardTitle>
+    {rows.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <div className="dash-donut-body">
+      <svg className="dash-donut" viewBox="0 0 120 120" role="img" aria-label="식사 구분 도넛 차트">
+        <circle cx="60" cy="60" r={radius} fill="none" stroke="#EEF2EF" strokeWidth="16" />
+        {segments.map((row) => <circle key={`${row.label}-${row.color}`} cx="60" cy="60" r={radius} fill="none" stroke={row.color} strokeWidth="16" strokeDasharray={`${row.arcRatio * circumference} ${circumference}`} strokeDashoffset={-row.offset} transform="rotate(-90 60 60)" />)}
+        <text x="60" y="57" textAnchor="middle" className="dash-donut-label">합계</text>
+        <text x="60" y="72" textAnchor="middle" className="dash-donut-total">{dashNumber(total)}건</text>
+      </svg>
+      <ul className="dash-legend">{segments.map((row) => <li key={row.label}><i style={{ background: row.color }} /><span>{row.label}</span><strong>{row.ratio.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}%</strong></li>)}</ul>
+    </div>}
+  </article>;
+}
+
+function RankTable({ title, rows, valueKey, money = false, secondHeader }) {
+  return <article className="dash-card dash-detail-card"><div className="dash-table-heading"><h3>{title}</h3><span>(단위: {money ? '원' : '건'})</span></div>
+    {rows.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <div className="dash-table-wrap"><table><thead><tr><th>순위</th><th>{secondHeader}</th><th className="money">값</th></tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.name}-${index}`} className={row.isTotal ? 'dash-total-row' : ''}><td>{row.isTotal ? '' : row.rank}</td><td>{row.name}</td><td className="money">{dashNumber(row[valueKey])}</td></tr>)}</tbody></table></div>}
+  </article>;
+}
+
+function compactMoneyTick(value) {
+  const absolute = Math.abs(value);
+  if (absolute >= 1000000) return `${(value / 1000000).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}M`;
+  if (absolute >= 1000) return `${(value / 1000).toLocaleString('ko-KR', { maximumFractionDigits: 0 })}K`;
+  return dashNumber(value);
+}
+
+function TrendChart({ title, series, valueKey, money = false, color }) {
+  const reactId = useId();
+  const gradientId = `dash-area-${valueKey}-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const width = 640; const height = 250; const left = 54; const right = 16; const top = 18; const bottom = 42;
+  if (series.length === 0) return <article className="dash-card dash-detail-card"><h3>{title}</h3><p className="dash-empty">조회 기간의 데이터가 없습니다.</p></article>;
+  const values = series.map((row) => row[valueKey]);
+  const min = Math.min(...values, 0); const max = Math.max(...values, 0);
+  const range = max - min || 1;
+  const plotWidth = width - left - right; const plotHeight = height - top - bottom;
+  const points = series.map((row, index) => ({
+    x: left + (series.length === 1 ? plotWidth / 2 : (index / (series.length - 1)) * plotWidth),
+    y: top + plotHeight - ((row[valueKey] - min) / range) * plotHeight,
+    row,
+  }));
+  const line = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
+  const zeroY = top + plotHeight - ((0 - min) / range) * plotHeight;
+  const area = `${line} L ${points.at(-1).x} ${zeroY} L ${points[0].x} ${zeroY} Z`;
+  const labelStep = Math.max(1, Math.ceil(series.length / 6));
+  const ticks = [min, min + range / 2, max];
+  return <article className="dash-card dash-detail-card"><h3>{title}</h3><div className="dash-chart-scroll"><svg className="dash-trend" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
+    <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={color} stopOpacity=".28"/><stop offset="1" stopColor={color} stopOpacity=".03"/></linearGradient></defs>
+    {ticks.map((tick, index) => { const y = top + plotHeight - (index / 2) * plotHeight; return <g key={`${tick}-${index}`}><line x1={left} x2={width - right} y1={y} y2={y} className="dash-gridline"/><text x={left - 8} y={y + 4} textAnchor="end" className="dash-axis-label">{money ? compactMoneyTick(tick) : Math.round(tick).toLocaleString('ko-KR')}</text></g>; })}
+    <path d={area} fill={`url(#${gradientId})`} /><path d={line} className="dash-line" style={{ stroke: color }} />
+    {points.map((point, index) => <g key={`${point.row.date}-${index}`}><circle cx={point.x} cy={point.y} r="3.5" className="dash-point" style={{ stroke: color }}><title>{`${point.row.date}: ${money ? krw(point.row[valueKey]) : `${dashNumber(point.row[valueKey])}건`}`}</title></circle>{(index % labelStep === 0 || index === points.length - 1) && <text x={point.x} y={height - 14} textAnchor="middle" className="dash-axis-label">{point.row.date.slice(5).replace('-', '.')}</text>}</g>)}
+  </svg></div></article>;
+}
+
+function PeriodPicker({ draft, onChange, onApply, loading }) {
+  return <form className="dash-period" onSubmit={(event) => { event.preventDefault(); onApply(); }} aria-label="대시보드 조회 기간">
+    <label><span>시작일</span><input type="date" value={draft.from} onChange={(event) => onChange({ ...draft, from: event.target.value })}/></label>
+    <span className="dash-period-separator" aria-hidden="true">~</span>
+    <label><span>종료일</span><input type="date" value={draft.to} onChange={(event) => onChange({ ...draft, to: event.target.value })}/></label>
+    <button type="submit" className="primary" disabled={loading}>조회</button>
+  </form>;
+}
+
+function DashboardView({ kind, token, scopeId }) {
+  const initialPeriod = useMemo(dashboardPeriodFromUrl, []);
+  const [draft, setDraft] = useState(initialPeriod);
+  const [applied, setApplied] = useState(initialPeriod);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
+  const scopeKey = kind === 'merchant' ? 'merchant_id' : 'company_id';
+  const merchant = kind === 'merchant';
+
+  useEffect(() => {
+    if (!scopeId) { setLoading(false); setError('대시보드 조회 권한 정보를 확인할 수 없습니다.'); return undefined; }
+    const controller = new AbortController();
+    const params = new URLSearchParams(window.location.search);
+    params.set('from', applied.from); params.set('to', applied.to); params.set(scopeKey, scopeId);
+    params.delete(merchant ? 'company_id' : 'merchant_id');
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+    setLoading(true); setError(''); setSummary(null);
+    apiFetch(`/admin/dashboard/summary?from=${encodeURIComponent(applied.from)}&to=${encodeURIComponent(applied.to)}&${scopeKey}=${encodeURIComponent(scopeId)}`, token, { signal: controller.signal })
+      .then(mapDashboardSummary)
+      .then((data) => { if (!controller.signal.aborted) setSummary(data); })
+      .catch((loadError) => { if (!controller.signal.aborted) setError(loadError.message || '대시보드를 불러오지 못했어요.'); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [applied, kind, reload, scopeId, scopeKey, token]);
+
+  function applyPeriod() {
+    if (!validDashboardDate(draft.from) || !validDashboardDate(draft.to) || draft.from > draft.to) { setError('올바른 조회 기간을 입력해 주세요.'); return; }
+    setApplied({ ...draft });
+  }
+
+  const mealRows = summary?.by_meal_type ?? [];
+  const hasDashboardData = Boolean(summary && (
+    summary.total_amount !== 0 || summary.total_count !== 0
+    || mealRows.some((row) => row.amount !== 0 || row.count !== 0)
+    || summary.top_companies_by_amount.length > 0 || summary.top_companies_by_count.length > 0
+    || summary.series.some((row) => row.amount !== 0 || row.count !== 0)
+  ));
+  const amountRank = !hasDashboardData ? [] : merchant ? summary.top_companies_by_amount : [
+    ...mealRows.map((row, index) => ({ rank: index + 1, name: row.label, amount: row.amount })),
+    { rank: '', name: '합계', amount: summary.total_amount, isTotal: true },
+  ];
+  const countRank = !hasDashboardData ? [] : merchant ? summary.top_companies_by_count : [
+    ...mealRows.map((row, index) => ({ rank: index + 1, name: row.label, count: row.count })),
+    { rank: '', name: '합계', count: summary.total_count, isTotal: true },
+  ];
+  const labels = merchant ? {
+    subtitle: '기간 설정에 따른 매출 및 수량 현황을 한눈에 확인할 수 있습니다.', amount: '총 매출', count: '총 수량',
+    rankAmount: '거래처별 매출 합계', rankCount: '거래처별 수량 합계',
+    trendAmount: '기간별 매출 그래프', trendCount: '기간별 수량 그래프',
+  } : {
+    subtitle: '기간 설정에 따른 식당 이용 현황을 한눈에 확인할 수 있습니다.', amount: '총 이용액', count: '총 이용 수량',
+    rankAmount: '식사 구분별 이용액 합계', rankCount: '식사 구분별 이용 수량 합계',
+    trendAmount: '기간별 이용액 그래프', trendCount: '기간별 이용 수량 그래프',
+  };
+
+  return <AdminPage title="대시보드" description={labels.subtitle} preview={false} className="dash-page merchant-regular-weight">
+    <PeriodPicker draft={draft} onChange={setDraft} onApply={applyPeriod} loading={loading}/>
+    {error && <div className="dash-error" role="alert">{error}<button type="button" className="ghost" onClick={() => setReload((value) => value + 1)} disabled={loading}>다시 시도</button></div>}
+    {loading && <div className="dash-loading" role="status" aria-label="대시보드를 불러오는 중"><div className="dash-summary-grid">{[0, 1, 2].map((key) => <div key={key} className="dash-card dash-skeleton" />)}</div><div className="dash-two-grid">{[0, 1, 2, 3].map((key) => <div key={key} className="dash-card dash-skeleton dash-skeleton-large" />)}</div></div>}
+    {summary && !loading && <>
+      <section className="dash-summary-grid"><SummaryCard label={labels.amount} value={summary.total_amount} delta={summary.total_amount_delta_pct} money Icon={WalletCards} tone="green"/><DonutCard rows={mealRows} total={summary.total_count}/><SummaryCard label={labels.count} value={summary.total_count} delta={summary.total_count_delta_pct} Icon={BarChart3} tone="orange"/></section>
+      <section className="dash-two-grid"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'}/></section>
+      <section className="dash-two-grid"><TrendChart title={labels.trendAmount} series={hasDashboardData ? summary.series : []} valueKey="amount" money color="#2FB865"/><TrendChart title={labels.trendCount} series={hasDashboardData ? summary.series : []} valueKey="count" color="#4C8BF5"/></section>
+    </>}
   </AdminPage>;
+}
+
+function CompanyDashboard({ token, scopeId }) {
+  return <DashboardView kind="company" token={token} scopeId={scopeId}/>;
 }
 
 function CompanyMonthlyUsage({ usage, ym, onYmChange, loading, error, retry }) {
@@ -1841,14 +2096,12 @@ function CompanyInfoScreen({ company, busy, onSave, onSettings }) {
   </AdminPage>;
 }
 
-function CompanyScreen({ section, company, busy, onSaveCompany, onSettings, onCompanyInfo, token }) {
-  const usageSection = ['company-dashboard', 'monthly-usage', 'employee-usage'].includes(section);
+function CompanyScreen({ section, company, busy, onSaveCompany, onSettings, onCompanyInfo, token, scopeId }) {
+  const usageSection = ['monthly-usage', 'employee-usage'].includes(section);
   const [usageYm, setUsageYm] = useState(currentPeriodYm);
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState('');
-  const [comparisonPercent, setComparisonPercent] = useState(null);
-  const [comparisonUnavailable, setComparisonUnavailable] = useState(false);
   const [usageReload, setUsageReload] = useState(0);
 
   useEffect(() => {
@@ -1857,37 +2110,15 @@ function CompanyScreen({ section, company, busy, onSaveCompany, onSettings, onCo
     setUsageLoading(true);
     setUsageError('');
     setUsage(null);
-    setComparisonPercent(null);
-    setComparisonUnavailable(false);
-    const previousYm = shiftPeriodYm(usageYm, -1);
-    Promise.allSettled([
-      apiFetch(`/admin/company-usage?ym=${encodeURIComponent(usageYm)}`, token, { signal: controller.signal }),
-      apiFetch(`/admin/company-usage?ym=${encodeURIComponent(previousYm)}`, token, { signal: controller.signal }),
-    ]).then(([currentResult, previousResult]) => {
+    apiFetch(`/admin/company-usage?ym=${encodeURIComponent(usageYm)}`, token, { signal: controller.signal }).then((payload) => {
       if (controller.signal.aborted) return;
-      if (currentResult.status === 'rejected') {
-        setUsageError(currentResult.reason?.message || '이용 현황을 불러오지 못했어요.');
-        return;
-      }
-      let currentUsage;
       try {
-        currentUsage = mapCompanyUsage(currentResult.value, usageYm);
+        setUsage(mapCompanyUsage(payload, usageYm));
       } catch (contractError) {
         setUsageError(contractError.message || '이용 현황 응답을 확인할 수 없어요.');
-        return;
       }
-      setUsage(currentUsage);
-      if (previousResult.status === 'fulfilled') {
-        try {
-          const previousUsage = mapCompanyUsage(previousResult.value, previousYm);
-          setComparisonPercent(changePercent(currentUsage.summary.grossSpendAmount, previousUsage.summary.grossSpendAmount));
-        } catch {
-          setComparisonUnavailable(true);
-        }
-      } else {
-        setComparisonUnavailable(true);
-      }
-    }).finally(() => { if (!controller.signal.aborted) setUsageLoading(false); });
+    }).catch((loadError) => { if (!controller.signal.aborted) setUsageError(loadError.message || '이용 현황을 불러오지 못했어요.'); })
+      .finally(() => { if (!controller.signal.aborted) setUsageLoading(false); });
     return () => controller.abort();
   }, [token, usageYm, usageReload, usageSection]);
 
@@ -1900,7 +2131,7 @@ function CompanyScreen({ section, company, busy, onSaveCompany, onSettings, onCo
     'employee-usage': CompanyEmployeeUsage,
   };
   const Screen = screens[section];
-  return Screen ? <Screen usage={usage} comparisonPercent={comparisonPercent} comparisonUnavailable={comparisonUnavailable} ym={usageYm} onYmChange={setUsageYm} loading={usageLoading} error={usageError} retry={() => setUsageReload((value) => value + 1)} /> : null;
+  return Screen ? <Screen token={token} scopeId={scopeId} usage={usage} ym={usageYm} onYmChange={setUsageYm} loading={usageLoading} error={usageError} retry={() => setUsageReload((value) => value + 1)} /> : null;
 }
 
 function Dashboard({ session, onLogout }) {
@@ -2667,8 +2898,8 @@ function Dashboard({ session, onLogout }) {
       {restaurantManagementTabs.map(([id, label]) => <button key={id} type="button" className={restaurantManagementTab === id ? 'active' : ''} onClick={() => setRestaurantManagementTab(id)} aria-current={restaurantManagementTab === id ? 'page' : undefined}>{label}</button>)}
     </nav>}
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantContentSection) && <AnnouncementReviewPanel token={token} section={merchantContentSection}/>}
-    {isMerchantAdmin && <MerchantScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} token={token} />}
-    {isCompanyAdmin && !showCompanyLegacy && <CompanyScreen section={companyContentSection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} onSettings={openAccountSettings} onCompanyInfo={() => setCompanySection('company-info')} token={token} />}
+    {isMerchantAdmin && <MerchantScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} token={token} scopeId={me?.merchant_id} />}
+    {isCompanyAdmin && !showCompanyLegacy && <CompanyScreen section={companyContentSection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} onSettings={openAccountSettings} onCompanyInfo={() => setCompanySection('company-info')} token={token} scopeId={me?.company_id} />}
 
     {error && <div className="alert error">{error}</div>}
     {message && <div className="alert success">{message}</div>}
@@ -2781,7 +3012,7 @@ function Dashboard({ session, onLogout }) {
       <div><QrCode size={20}/><span>초대코드</span><strong>{me?.invite_code ?? '-'}</strong><button type="button" className="ghost" onClick={copyCompanyInviteCode} disabled={!me?.invite_code}>복사</button></div>
     </section>}
 
-    {(isPlatformAdmin || (isMerchantAdmin && merchantSection === 'main')) && <section className={`grid${isMerchantAdmin ? ' merchant-kpi-grid' : ''}`}>
+    {isPlatformAdmin && <section className="grid">
       {cards.map(([label, value, Icon, tone]) => <article className={`card ${tone}${isMerchantAdmin ? ' merchant-kpi-card' : ''}`} key={label}>
         <Icon size={28}/><span>{label}</span><strong>{value}</strong>
       </article>)}

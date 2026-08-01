@@ -31,6 +31,19 @@ def _configure_card_refund_repo(repo, *, order_id="GE-V-safety", transaction_id=
     }]
 
 
+def test_direct_payment_refunds_full_remaining_charge_without_vouchers():
+    order = {"status": "done", "pay_type": "direct", "amount": 8_000, "point_amount": 0}
+    full = calculate_refund(order, [])
+    partial_balance = calculate_refund(order, [], already_refunded=3_000)
+    exhausted = calculate_refund(order, [], already_refunded=8_000)
+
+    assert (full.refundable, full.refund_amount, full.refunded_voucher_count) == (True, 8_000, 0)
+    assert (partial_balance.refundable, partial_balance.refund_amount) == (True, 5_000)
+    assert (exhausted.refundable, exhausted.refund_amount, exhausted.reason) == (
+        False, 0, "ORDER_ALREADY_REFUNDED"
+    )
+
+
 def test_ten_plus_one_one_used_refunds_nine_and_forfeits_bonus():
     order = {"status": "done", "pay_type": "voucher", "amount": 80_000, "paid_voucher_count": 10}
     quote = calculate_refund(order, _vouchers(used=1, paid=10, bonus=1))
@@ -599,6 +612,7 @@ def test_payment_history_separates_usage_payments_and_refunds(repo_class, settin
     assert [item["employee_name"] for item in result["data"]["payment"]["items"]] == ["홍고객", "홍고객"]
     assert [item["payment_type_label"] for item in result["data"]["payment"]["items"]] == ["보조금", "보조금"]
     assert result["data"]["payment"]["items"][0]["product_name"] == "보조금 식권"
+    assert result["data"]["payment"]["items"][0]["payment_method"] == "CARD"
     assert result["data"]["payment"]["items"][0]["receipt"] == {
         "entry_kind": "refund", "entry_id": "refund", "types": ["sales_slip"], "source": "original_payment",
     }

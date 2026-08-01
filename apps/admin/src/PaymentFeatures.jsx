@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { CalendarDays, CheckCircle2, ChevronDown, ReceiptText, RotateCcw, Search, X } from 'lucide-react';
 import { receiptApiPath, receiptTypeLabel, validateReceiptUrl } from './receiptUtils.js';
 import { paymentHistoryPeriod } from './paymentHistoryPeriod.js';
+import { paymentMethodLabel, refundButtonState } from './paymentHistoryDisplay.js';
 
 const money = (value) => `₩${Number(value ?? 0).toLocaleString('ko-KR')}`;
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
@@ -16,11 +17,11 @@ const dateTime = (value) => {
 };
 const periodModes = [['year', '올해'], ['month', '월별'], ['date', '날짜'], ['range', '기간']];
 
-function Rows({ items, kind, onOpenReceipt }) {
+function Rows({ items, kind, onOpenReceipt, onRefund }) {
   const rows = Array.isArray(items) ? items : [];
   if (!rows.length) return <p className="history-list-empty">선택한 날짜의 내역이 없어요.</p>;
   return <div className="history-rows">{rows.map((item, index) => {
-    const refunded = item.kind === 'refund' || Number(item.refund_amount ?? 0) > 0;
+    const refundEntry = item.kind === 'refund' || Number(item.refund_amount ?? 0) > 0;
     const person = item.customer_name ?? item.employee_name ?? '-';
     const amount = item.is_bonus ? '0원' : money(Math.abs(Number(item.amount ?? item.total ?? item.payment_amount ?? item.refund_amount ?? 0)));
     if (kind === 'transaction') {
@@ -37,23 +38,32 @@ function Rows({ items, kind, onOpenReceipt }) {
         <b>{amount}</b>
       </div>;
     }
-    const subsidized = item.pay_type === 'subsidized' || item.payment_type_label === '보조금';
-    const paymentType = subsidized ? '보조금' : '일반';
+    const paymentType = paymentMethodLabel(item);
+    const paymentTone = paymentType === '현금' ? 'cash' : paymentType === '포인트' ? 'point' : 'card';
     const receiptAvailable = Array.isArray(item.receipt?.types) && item.receipt.types.length > 0;
-    return <div className={`history-row history-row-columns history-row-payment${refunded ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}>
+    const refundState = refundButtonState(item);
+    return <div className={`history-row history-row-columns history-row-payment${refundEntry ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}>
       <time dateTime={item.created_at}>{dateTime(item.created_at)}</time>
-      <span className="history-product">{refunded ? '환불' : item.product_name ?? '상품'}</span>
+      <span className="history-product">{refundEntry ? '환불' : item.product_name ?? '상품'}</span>
       <strong className="history-person">{person}</strong>
-      <span className={`payment-type-badge ${subsidized ? 'subsidized' : 'direct'}`}>{paymentType}</span>
+      <span className={`payment-type-badge ${paymentTone}`}>{paymentType}</span>
       <b>{amount}</b>
       <button
         type="button"
         className="receipt-trigger"
         disabled={!receiptAvailable}
-        aria-label={receiptAvailable ? `${refunded ? '환불 원결제' : item.product_name ?? '결제'} 영수증 보기` : '조회 가능한 영수증 없음'}
+        aria-label={receiptAvailable ? `${refundEntry ? '환불 원결제' : item.product_name ?? '결제'} 영수증 보기` : '조회 가능한 영수증 없음'}
         title={receiptAvailable ? '영수증 보기' : '조회 가능한 영수증이 없습니다'}
         onClick={(event) => receiptAvailable && onOpenReceipt(item.receipt, event.currentTarget)}
       ><ReceiptText size={14} aria-hidden="true"/><span>영수증</span></button>
+      <button
+        type="button"
+        className="refund-row-trigger"
+        disabled={refundState.disabled}
+        aria-label={refundState.completed ? '환불 완료된 결제' : `${item.product_name ?? '결제'} 환불`}
+        title={refundState.completed ? '이미 환불된 결제입니다' : refundState.disabled ? '환불할 수 없는 결제입니다' : '환불 처리'}
+        onClick={(event) => !refundState.disabled && onRefund(item, event.currentTarget)}
+      ><RotateCcw size={13} aria-hidden="true"/><span>{refundState.label}</span></button>
     </div>;
   })}</div>;
 }
@@ -140,7 +150,7 @@ function ReceiptModal({ modal, onClose, onSelectType }) {
   </div>, document.body);
 }
 
-export function PaymentHistoryDashboard({ request, refreshKey }) {
+export function PaymentHistoryDashboard({ request }) {
   const current = today();
   const [mode, setMode] = useState('date');
   const [date, setDate] = useState(current);
@@ -151,8 +161,11 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [receiptModal, setReceiptModal] = useState(null);
+  const [refundTarget, setRefundTarget] = useState(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const receiptRequestId = useRef(0);
   const receiptTrigger = useRef(null);
+  const refundTrigger = useRef(null);
 
   async function loadReceipt(descriptor, type) {
     const path = receiptApiPath(descriptor, type);
@@ -186,6 +199,22 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
     requestAnimationFrame(() => trigger?.isConnected && trigger.focus());
   }
 
+  function openRefund(item, trigger) {
+    refundTrigger.current = trigger;
+    setRefundTarget(item);
+  }
+
+  function closeRefund() {
+    setRefundTarget(null);
+    const trigger = refundTrigger.current;
+    refundTrigger.current = null;
+    requestAnimationFrame(() => trigger?.isConnected && trigger.focus());
+  }
+
+  async function handleRefunded() {
+    setHistoryRefreshKey((key) => key + 1);
+  }
+
   useEffect(() => {
     let cancelled = false;
     const { baseDate, granularity, end } = paymentHistoryPeriod({ mode, current, date, month, range });
@@ -194,7 +223,7 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
       if (!cancelled) { setTransaction(data?.transaction ?? {}); setPayment(data?.payment ?? {}); setError(''); }
     }).catch((e) => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [mode, date, month, range.from, range.to, request, refreshKey, current]);
+  }, [mode, date, month, range.from, range.to, request, historyRefreshKey, current]);
 
   const period = paymentHistoryPeriod({ mode, current, date, month, range });
   const filterLabel = period.label ?? (mode === 'range' ? `${range.from} ~ ${range.to}` : new Date(`${date}T00:00:00`).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }));
@@ -212,9 +241,10 @@ export function PaymentHistoryDashboard({ request, refreshKey }) {
     {error && <div className="alert error">결제내역을 불러오지 못했어요: {error}</div>}
     <div className="payment-history-grid is-detail-only">
       <article className="panel history-detail-card"><header><div><span>거래내역 및 총합</span><strong>{Number(transaction.detail_count ?? (transaction.items ?? []).length).toLocaleString('ko-KR')}건</strong></div><b>{money(transaction.total)}</b></header>{loading ? <p className="history-list-empty">거래내역을 불러오는 중...</p> : <Rows items={transaction.items} kind="transaction"/>}</article>
-      <article className="panel history-detail-card payment-detail-card"><header><div><span>결제 · 환불 및 총합</span><strong>{Number(payment.detail_count ?? (payment.items ?? []).length).toLocaleString('ko-KR')}건</strong></div><div className="history-payment-totals"><small>환불 {money(payment.refund_total)}</small><b>순결제 {money(payment.total)}</b></div></header>{loading ? <p className="history-list-empty">결제내역을 불러오는 중...</p> : <Rows items={payment.items} kind="payment" onOpenReceipt={openReceipt}/>}</article>
+      <article className="panel history-detail-card payment-detail-card"><header><div><span>결제 · 환불 및 총합</span><strong>{Number(payment.detail_count ?? (payment.items ?? []).length).toLocaleString('ko-KR')}건</strong></div><div className="history-payment-totals"><small>환불 {money(payment.refund_total)}</small><b>순결제 {money(payment.total)}</b></div></header>{loading ? <p className="history-list-empty">결제내역을 불러오는 중...</p> : <Rows items={payment.items} kind="payment" onOpenReceipt={openReceipt} onRefund={openRefund}/>}</article>
     </div>
     {receiptModal && <ReceiptModal modal={receiptModal} onClose={closeReceipt} onSelectType={(type) => loadReceipt(receiptModal.descriptor, type)}/>}
+    {refundTarget && <RefundModal request={request} initialPayment={refundTarget} onClose={closeRefund} onRefunded={handleRefunded}/>}
   </section>;
 }
 function maskPhone(phone) {
@@ -223,16 +253,46 @@ function maskPhone(phone) {
   return value.replace(/(\d{3})-?(\d{3,4})-?(\d{4})/, (_, a, b, c) => `${a}-${'*'.repeat(b.length)}-${c}`);
 }
 
-export function RefundModal({ request, onClose, onRefunded }) {
-  const [step, setStep] = useState('search');
+export function RefundModal({ request, onClose, onRefunded, initialPayment = null }) {
+  const initialCustomer = initialPayment ? {
+    id: initialPayment.user_id,
+    account_id: initialPayment.user_id,
+    name: initialPayment.customer_name ?? initialPayment.employee_name ?? '고객',
+  } : null;
+  const [step, setStep] = useState(initialPayment ? 'loading-order' : 'search');
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState([]);
-  const [customer, setCustomer] = useState(null);
+  const [customer, setCustomer] = useState(initialCustomer);
   const [orders, setOrders] = useState([]);
   const [order, setOrder] = useState(null);
-  const [account, setAccount] = useState({ bank: '', accountNumber: '', holderName: '' });
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(Boolean(initialPayment));
   const [error, setError] = useState('');
+  useEffect(() => {
+    if (!initialPayment) return undefined;
+    let cancelled = false;
+    const accountId = initialPayment.user_id;
+    setBusy(true);
+    setError('');
+    request(`/admin/merchant/customers/${encodeURIComponent(accountId)}/refundable-orders`).then((data) => {
+      if (cancelled) return;
+      const items = Array.isArray(data) ? data : data?.items ?? data?.orders ?? [];
+      const match = items.find((item) => String(item.purchase_order_id ?? item.id) === String(initialPayment.order_id));
+      setOrders(items);
+      if (match) {
+        setOrder(match);
+        setStep('confirm');
+      } else {
+        setError('남아 있는 환불 가능 식권이 없는 결제입니다.');
+        setStep('orders');
+      }
+    }).catch((loadError) => {
+      if (!cancelled) {
+        setError(loadError.message);
+        setStep('orders');
+      }
+    }).finally(() => { if (!cancelled) setBusy(false); });
+    return () => { cancelled = true; };
+  }, [initialPayment, request]);
 
   async function searchCustomers(event) {
     event.preventDefault(); if (!query.trim()) return; setBusy(true); setError('');
@@ -244,23 +304,23 @@ export function RefundModal({ request, onClose, onRefunded }) {
     try { const data = await request(`/admin/merchant/customers/${encodeURIComponent(item.id)}/refundable-orders`); setOrders(Array.isArray(data) ? data : data?.items ?? data?.orders ?? []); setStep('orders'); }
     catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-  async function refund(manual = false) {
+  async function refund() {
     if (!order) return; setBusy(true); setError('');
-    const body = { order_id: order.purchase_order_id ?? order.id, account_id: order.account_id ?? customer?.account_id ?? customer?.id, ...(manual ? { refund_account: account } : {}) };
-    try { await request('/admin/merchant/refunds', { method: 'POST', body: JSON.stringify(body) }); setStep('success'); await onRefunded(); }
-    catch (e) { const marker = `${e.code ?? ''} ${e.message}`.toLowerCase(); if (!manual && (marker.includes('account') || marker.includes('계좌') || e.status === 422)) setStep('account'); else setError(e.message); }
+    const body = { order_id: order.purchase_order_id ?? order.id, account_id: order.account_id ?? customer?.account_id ?? customer?.id };
+    try { await request('/admin/merchant/refunds', { method: 'POST', body: JSON.stringify(body) }); setStep('success'); await onRefunded?.(); }
+    catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
   const amount = order?.refund_amount ?? 0;
   return <div className="modal-backdrop refund-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}><section className="refund-modal" role="dialog" aria-modal="true" aria-labelledby="refund-title">
-    <header className="refund-modal-header"><div className="refund-modal-icon"><RotateCcw size={24}/></div><div><span className="eyebrow">GREENEAT REFUND</span><h2 id="refund-title">결제 환불</h2><p>{step === 'search' ? '고객을 검색해 환불 가능한 주문을 확인하세요.' : step === 'orders' ? `${customer?.name ?? customer?.display_name ?? '고객'} · ${maskPhone(customer?.masked_phone ?? customer?.phone)}` : step === 'confirm' ? '환불 내용을 마지막으로 확인해 주세요.' : step === 'account' ? '환불받을 계좌정보가 필요합니다.' : '환불 처리가 완료됐어요.'}</p></div><button className="icon-button" onClick={onClose} disabled={busy} aria-label="환불 창 닫기"><X size={20}/></button></header>
+    <header className="refund-modal-header"><div className="refund-modal-icon"><RotateCcw size={24}/></div><div><span className="eyebrow">GREENEAT REFUND</span><h2 id="refund-title">결제 환불</h2><p>{step === 'loading-order' ? '선택한 결제의 환불 가능 금액을 확인하고 있어요.' : step === 'search' ? '고객을 검색해 환불 가능한 주문을 확인하세요.' : step === 'orders' ? `${customer?.name ?? customer?.display_name ?? '고객'} · ${maskPhone(customer?.masked_phone ?? customer?.phone)}` : step === 'confirm' ? '환불 내용을 마지막으로 확인해 주세요.' : '환불 처리가 완료됐어요.'}</p></div><button className="icon-button" onClick={onClose} disabled={busy} aria-label="환불 창 닫기"><X size={20}/></button></header>
     <div className="refund-modal-body">{error && <div className="alert error">{error}</div>}
+      {step === 'loading-order' && <p className="history-list-empty" role="status">환불 가능 주문을 확인하는 중...</p>}
       {step === 'search' && <><form className="refund-search" onSubmit={searchCustomers}><label>고객 검색<input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름 또는 전화번호"/></label><button className="primary" disabled={busy || !query.trim()}><Search size={17}/>{busy ? '검색 중...' : '검색'}</button></form><div className="refund-customer-list">{customers.map((item) => <button type="button" className="refund-select-row" key={item.id} onClick={() => chooseCustomer(item)} disabled={busy}><span><strong>{item.name ?? item.display_name ?? '고객'}</strong><small>{maskPhone(item.masked_phone ?? item.phone)}</small></span><ChevronDown size={18}/></button>)}{!customers.length && query && !busy && <p className="history-list-empty">검색 결과가 없어요.</p>}</div></>}
             {step === 'orders' && <div className="refund-order-list">{!orders.length ? <p className="empty-state">환불 가능한 주문이 없어요.</p> : orders.map((item) => <button type="button" className="refund-order-card" key={item.purchase_order_id ?? item.id} onClick={() => { setOrder(item); setStep('confirm'); }}><div><strong>{item.product_name ?? item.name ?? '결제 상품'}</strong><span>{item.purchased_at || item.created_at ? new Date(item.purchased_at ?? item.created_at).toLocaleString('ko-KR') : '-'}</span></div><dl><div><dt>전체</dt><dd>{Number(item.total_count ?? 0)}장</dd></div><div><dt>사용</dt><dd>{Number(item.used_count ?? 0)}장</dd></div><div><dt>잔여</dt><dd>{Number(item.remaining_count ?? 0)}장</dd></div><div className="estimate"><dt>환불 예상</dt><dd>{money(item.refund_amount)}</dd></div>{Number(item.forfeited_bonus_count ?? 0) > 0 && <div><dt>회수 보너스</dt><dd>{Number(item.forfeited_bonus_count)}장</dd></div>}{Number(item.point_amount ?? 0) > 0 && <div className="point-refund"><dt>포인트 복원</dt><dd>{Number(item.point_amount).toLocaleString('ko-KR')} P</dd></div>}</dl></button>)}</div>}
             {step === 'confirm' && <div className="refund-confirm"><div className="refund-confirm-amount"><span>환불 예정 금액</span><strong>{money(amount)}</strong></div><div className="profile-grid"><span>고객</span><strong>{customer?.name ?? customer?.display_name ?? '-'}</strong><span>연락처</span><strong>{maskPhone(customer?.masked_phone ?? customer?.phone)}</strong><span>상품</span><strong>{order?.product_name ?? order?.name ?? '-'}</strong><span>전체 / 사용 / 잔여</span><strong>{Number(order?.total_count ?? 0)}장 / {Number(order?.used_count ?? 0)}장 / {Number(order?.remaining_count ?? 0)}장</strong><span>보너스 회수</span><strong>{Number(order?.forfeited_bonus_count ?? 0)}장</strong>{Number(order?.point_amount ?? 0) > 0 && <><span>포인트 복원</span><strong className="point-refund-text">{Number(order.point_amount).toLocaleString('ko-KR')} P</strong></>}</div><p className="refund-warning">환불 후에는 되돌릴 수 없습니다. 환불액과 보너스 회수 수량을 확인해 주세요.</p></div>}
-            {step === 'account' && <form className="refund-account-form" onSubmit={(e) => { e.preventDefault(); refund(true); }}><div className="alert warning">등록된 환불 계좌가 없어 수동 계좌정보를 입력해야 합니다.</div><label>은행 코드<input value={account.bank} onChange={(e) => setAccount((s) => ({ ...s, bank: e.target.value }))} placeholder="예: 20 (우리은행)" required/></label><label>계좌번호<input value={account.accountNumber} onChange={(e) => setAccount((s) => ({ ...s, accountNumber: e.target.value }))} inputMode="numeric" placeholder="숫자만 입력" required/></label><label>예금주<input value={account.holderName} onChange={(e) => setAccount((s) => ({ ...s, holderName: e.target.value }))} required/></label><button className="primary" disabled={busy}>{busy ? '환불 처리 중...' : `${money(amount)} 환불하기`}</button></form>}
       {step === 'success' && <div className="refund-success"><CheckCircle2 size={54}/><h3>환불 완료</h3><strong>{money(amount)}</strong><p>결제내역 대시보드가 최신 정보로 갱신됐어요.</p></div>}
     </div>
-    <footer className="refund-modal-footer">{step === 'orders' && <button className="ghost" onClick={() => setStep('search')}>고객 다시 찾기</button>}{step === 'confirm' && <><button className="ghost" onClick={() => setStep('orders')} disabled={busy}>이전</button><button className="primary" onClick={() => refund(false)} disabled={busy}>{busy ? '처리 중...' : '환불 확정'}</button></>}{step === 'success' && <button className="primary" onClick={onClose}>완료</button>}</footer>
+    <footer className="refund-modal-footer">{step === 'orders' && (initialPayment ? <button className="ghost" onClick={onClose}>닫기</button> : <button className="ghost" onClick={() => setStep('search')}>고객 다시 찾기</button>)}{step === 'confirm' && <>{!initialPayment && <button className="ghost" onClick={() => setStep('orders')} disabled={busy}>이전</button>}<button className="primary" onClick={refund} disabled={busy}>{busy ? '처리 중...' : '환불 확정'}</button></>}{step === 'success' && <button className="primary" onClick={onClose}>완료</button>}</footer>
   </section></div>;
 }

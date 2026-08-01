@@ -1051,7 +1051,7 @@ def search_refund_customers(query: str = Query(min_length=1, max_length=80), tok
         _, merchant_id = _merchant_admin(repo, token)
         orders = _paged_get(repo, "payment_orders", {
             "select": "user_id", "merchant_id": f"eq.{merchant_id}",
-            "pay_type": "in.(voucher,subsidized)", "status": "in.(done,refunded)",
+            "pay_type": "in.(direct,voucher,subsidized)", "status": "in.(done,refunded)",
         })
         user_ids = sorted({str(row["user_id"]) for row in orders if row.get("user_id")})
         users = repo.client.rest_get("app_users", {
@@ -1073,7 +1073,7 @@ def refundable_orders(account_id: str, token: str = Depends(bearer_token)):
         _, merchant_id = _merchant_admin(repo, token)
         orders = _paged_get(repo, "payment_orders", {
             "select": _REFUND_ORDER_SELECT, "merchant_id": f"eq.{merchant_id}",
-            "user_id": f"eq.{account_id}", "pay_type": "in.(voucher,subsidized)",
+            "user_id": f"eq.{account_id}", "pay_type": "in.(direct,voucher,subsidized)",
             "status": "eq.done", "order": "approved_at.desc,created_at.desc",
         })
         return {"ok": True, "data": {"items": _order_quotes(repo, orders)}, "error": None}
@@ -1342,6 +1342,7 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
             order = refund_order_details.get(str(row.get("order_id")), {})
             row["pay_type"] = order.get("pay_type") or "direct"
             row["product_name"] = order.get("product_name") or "환불"
+            row["payment_method"] = order.get("payment_method")
         decorate_bonus_voucher_transactions(repo, txs)
         for row in txs:
             if row.get("is_demo"):

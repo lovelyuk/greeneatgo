@@ -15,8 +15,11 @@ class RefundQuote:
 
 def calculate_refund(order: dict, vouchers: list[dict], *, already_refunded: int = 0) -> RefundQuote:
     """Pure quote helper; the claim RPC repeats this under row locks at confirmation."""
-    if order.get("status") != "done" or order.get("pay_type") not in {"voucher", "subsidized"}:
+    if order.get("status") != "done" or order.get("pay_type") not in {"direct", "voucher", "subsidized"}:
         return RefundQuote(False, 0, 0, 0, 0, "ORDER_NOT_REFUNDABLE")
+    if order["pay_type"] == "direct":
+        amount = max(int(order.get("amount") or 0) - int(already_refunded), 0)
+        return RefundQuote(amount > 0, amount, 0, 0, 0, None if amount > 0 else "ORDER_ALREADY_REFUNDED")
     used = sum(1 for voucher in vouchers if voucher.get("status") == "used")
     if order["pay_type"] == "subsidized":
         paid = int(order.get("paid_voucher_count") or 1)

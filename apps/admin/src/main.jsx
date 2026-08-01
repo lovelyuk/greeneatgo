@@ -1,10 +1,10 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, BarChart3, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Home, LogOut, Package, QrCode, RefreshCw, RotateCcw, Search, Send, Settings, Users, WalletCards, X, XCircle } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Home, LogOut, Package, QrCode, RefreshCw, Search, Send, Settings, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
-import { PaymentHistoryDashboard, RefundModal } from './PaymentFeatures.jsx';
+import { PaymentHistoryDashboard } from './PaymentFeatures.jsx';
 import SettlementDemoPanel from './SettlementDemoPanel.jsx';
 import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
 import { captureGeneration, generationIsCurrent } from './generationGuard.js';
@@ -2263,8 +2263,6 @@ function Dashboard({ session, onLogout }) {
   const [companySection, setCompanySection] = useState('company-dashboard');
   const [companyUsageTab, setCompanyUsageTab] = useState('employee-usage');
   const companyContentSection = companySection === 'company-usage' ? companyUsageTab : companySection;
-  const [refundOpen, setRefundOpen] = useState(false);
-  const [paymentHistoryRefreshKey, setPaymentHistoryRefreshKey] = useState(0);
   const [newCompanyForm, setNewCompanyForm] = useState({ name: '', contact_email: '', contact_phone: '' });
   const [transactions, setTransactions] = useState(null);
   const [employees, setEmployees] = useState(null);
@@ -3011,8 +3009,6 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
 
-    {refundOpen && <RefundModal request={merchantRequest} onClose={() => setRefundOpen(false)} onRefunded={async () => { setPaymentHistoryRefreshKey((key) => key + 1); await load(); }} />}
-
     {employeeBulkOpen && <EmployeeBulkModal token={token} onClose={() => setEmployeeBulkOpen(false)} onConfirmed={async (count) => { setEmployeeBulkOpen(false); setMessage(`직원 ${count}명의 초대를 등록했어요.`); await load(); }} />}
 
     {contractModal && <div className="modal-backdrop" onClick={() => setContractModal(null)}>
@@ -3136,9 +3132,7 @@ function Dashboard({ session, onLogout }) {
         </article>)}</div>}
     </section>}
 
-    {isMerchantAdmin && merchantSection === 'main' && <aside className="merchant-refund-dock"><div><span>결제 취소가 필요하신가요?</span><strong>고객 주문을 조회해 안전하게 환불하세요.</strong></div><button className="refund-open-button" type="button" onClick={() => setRefundOpen(true)}><RotateCcw size={19}/> 환불하기</button></aside>}
-
-    {isMerchantAdmin && merchantSection === 'payment-history' && <PaymentHistoryDashboard request={merchantRequest} refreshKey={paymentHistoryRefreshKey}/>}
+    {isMerchantAdmin && merchantSection === 'payment-history' && <PaymentHistoryDashboard request={merchantRequest}/>}
 
     {isPlatformAdmin && <section className="two-col">
       <article className="panel profile-panel">

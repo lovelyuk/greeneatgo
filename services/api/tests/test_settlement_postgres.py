@@ -107,6 +107,8 @@ def settlement_db():
         # replays the older generated-transaction implementation.
         conn.execute((MIGRATIONS / "0053_auto_draft_settlements.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0053_auto_draft_settlements.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0054_backfill_existing_settlement_drafts.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0054_backfill_existing_settlement_drafts.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -180,6 +182,49 @@ def test_legacy_create_uses_exact_snapshots_and_can_send_then_confirm(pg):
     confirmed = pg.execute("select company_confirm_and_request_tax_invoice(%s,%s,%s)", (company_actor,company,created["id"])).fetchone()[0]
     assert confirmed["settlement"]["settlement_status"] == "confirmed"
     assert confirmed["tax_invoice"]["total_amount"] == 1380
+
+
+def test_backfill_existing_month_creates_one_draft_and_links_exact_generated_run(pg):
+    company, _, merchant, _, company_actor, _, merchant_actor, _ = parties(pg)
+    pg.execute("insert into merchant_companies(merchant_id,company_id,status,created_by) values(%s,%s,'active',%s)",
+               (merchant, company, merchant_actor))
+    user_id = pg.execute("insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,'employee','employee','active') returning id", (company,)).fetchone()[0]
+    period_from = date(2026, 6, 1)
+    period_to = date(2026, 6, 30)
+    run_id = pg.execute("""insert into generated_transaction_runs
+      (merchant_id,company_id,company_actor_id,period_from,period_to,period_ym,created_by)
+      values(%s,%s,%s,%s,%s,'2026-06',%s) returning id""",
+      (merchant, company, company_actor, period_from, period_to, merchant_actor)).fetchone()[0]
+
+    pg.commit()
+    pg.execute("alter table meal_transactions disable trigger trg_meal_transaction_refresh_monthly_draft")
+    pg.commit()
+    try:
+        tx_id = pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+          settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+          values(%s,%s,%s,-1100,'spend','ledger','taxable',1000,100,1100,
+          '2026-06-05 03:00:00+00') returning id""", (user_id, company, merchant)).fetchone()[0]
+        pg.commit()
+    except Exception:
+        pg.rollback()
+        pg.execute("alter table meal_transactions enable trigger trg_meal_transaction_refresh_monthly_draft")
+        pg.commit()
+        raise
+    pg.execute("alter table meal_transactions enable trigger trg_meal_transaction_refresh_monthly_draft")
+    pg.commit()
+    pg.execute("insert into generated_transaction_members(run_id,transaction_id) values(%s,%s)", (run_id, tx_id))
+
+    migration = (MIGRATIONS / "0054_backfill_existing_settlement_drafts.sql").read_text(encoding="utf-8")
+    pg.execute(migration)
+    first = pg.execute("""select s.id,s.tx_count,s.total_amount,r.settlement_id
+      from generated_transaction_runs r join settlements s on s.id=r.settlement_id where r.id=%s""", (run_id,)).fetchone()
+    assert first[1:] == (1, 1100, first[0])
+
+    pg.execute(migration)
+    second = pg.execute("""select count(*),min(id::text) from settlements
+      where merchant_id=%s and company_id=%s and period_ym='2026-06' and not is_demo""",
+      (merchant, company)).fetchone()
+    assert second == (1, str(first[0]))
 
 
 def test_eligible_transactions_auto_create_and_refresh_hidden_monthly_draft(pg):

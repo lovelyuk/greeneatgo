@@ -1340,9 +1340,7 @@ function CompanySettlementScreen({ token, company, onCompanyInfo }) {
   return <SettlementV2Screen viewer="company" token={token} companyProfile={company} onCompanyInfo={onCompanyInfo} />;
 }
 
-function SettlementEvidenceScreen({ token }) {
-  const { rows: loadedRows, error, warning, loading, reload } = useSettlementV2Rows(token, true);
-  const settlementRows = loadedRows ?? [];
+function SettlementEvidencePanel({ settlementRows }) {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [kind, setKind] = useState('전체');
   const [type, setType] = useState('전체');
@@ -1350,18 +1348,17 @@ function SettlementEvidenceScreen({ token }) {
   const evidenceRecords = settlementRows.filter((row) => ['issued', 'nts_sending', 'nts_accepted'].includes(row.tax_invoice_status)).map(settlementV2Evidence);
   const evidenceYears = [...new Set([String(new Date().getFullYear()), ...evidenceRecords.map((row) => row.writtenAt.slice(0, 4))])].sort().reverse();
   const rows = evidenceRecords.filter((row) => row.writtenAt.startsWith(year) && (kind === '전체' || row.kind === kind) && (type === '전체' || row.type === type));
-  return <AdminPage title="증빙 내역" description="전 기간·모든 업체의 매출증빙을 통합 조회합니다." showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
-    {error && <div className="alert error" role="alert">{error} <button type="button" className="ghost" onClick={reload} disabled={loading}>다시 시도</button></div>}
-    {warning && <div className="alert warning" role="alert">{warning} <button type="button" className="ghost" onClick={reload} disabled={loading}>다시 시도</button></div>}
+  return <section id="tax-invoice-evidence-panel" role="tabpanel" aria-labelledby="tax-invoice-evidence-tab">
     {notice && <div className="alert success">{notice}</div>}
     <article className="panel"><div className="settlement-v2-evidence-head"><div className="settlement-v2-evidence-filters"><label>조회기간<select value={year} onChange={(event) => setYear(event.target.value)}>{evidenceYears.map((value) => <option key={value}>{value}</option>)}</select></label><label>증빙 구분<select value={kind} onChange={(event) => setKind(event.target.value)}><option>전체</option><option>매출</option><option>매입</option></select></label><label>증빙 유형<select value={type} onChange={(event) => setType(event.target.value)}><option>전체</option><option>세금계산서</option><option>현금영수증</option><option>카드</option></select></label></div><button type="button" className="primary" onClick={() => setNotice('증빙내역 엑셀 다운로드는 현재 제공되지 않습니다.')}><Download size={16}/> 부가가치세 신고 참고자료 엑셀 다운로드</button></div><div className="settlement-v2-guide"><span>· 조회기간은 각 증빙의 작성일자 기준입니다.</span><span>· 국세청 부가가치세 신고 참고자료로써 증빙내역을 표시합니다. 상세는 매출 정산에서 확인해 주세요.</span></div><div className="table-wrap"><table><thead><tr><th>증빙 구분</th><th>품목명</th><th>증빙 유형</th><th>공급받는자</th><th>발급수단(사업자)번호</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">총액</th><th>작성일자</th><th>승인번호</th><th>승인일자</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><SettlementV2Status value={row.kind}/></td><td>{row.item}</td><td>{row.type}</td><td>{row.recipient}</td><td>{row.bizNo}</td><td className="money">{krw(row.supply)}</td><td className="money">{krw(row.vat)}</td><td className="money">{krw(row.total)}</td><td>{row.writtenAt}</td><td>{row.approvalNo}</td><td>{row.approvedAt}</td></tr>)}</tbody></table></div>{rows.length === 0 && <SettlementV2Empty text="증빙 내역이 없습니다"/>}</article>
-  </AdminPage>;
+  </section>;
 }
 
-function MerchantTaxInvoiceScreen({ token }) {
+function MerchantTaxInvoiceScreen({ token, initialTab = 'issue' }) {
   const { rows: loadedItems, error: loadError, warning: loadWarning, loading, reload } = useSettlementV2Rows(token, true);
   const items = loadedItems ?? [];
   const [notice, setNotice] = useState('');
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [issueError, setIssueError] = useState('');
   const [pendingId, setPendingId] = useState('');
   async function mutate(id, action) {
@@ -1380,12 +1377,31 @@ function MerchantTaxInvoiceScreen({ token }) {
       reload();
     } finally { setPendingId(''); }
   }
-  return <AdminPage title="세금계산서" description="월 합계 세금계산서 발행 대상을 검토합니다." showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
+  function handleTabKeyDown(event) {
+    let nextTab = null;
+    if (event.key === 'Home') nextTab = 'issue';
+    else if (event.key === 'End') nextTab = 'evidence';
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      nextTab = activeTab === 'issue' ? 'evidence' : 'issue';
+    }
+    if (!nextTab) return;
+    event.preventDefault();
+    setActiveTab(nextTab);
+    event.currentTarget.parentElement
+      ?.querySelector(`#tax-invoice-${nextTab}-tab`)
+      ?.focus();
+  }
+  return <AdminPage title="세금계산서" description="발행 관리부터 완료된 증빙 조회까지 한곳에서 처리합니다." showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
     {loadError && <div className="alert error" role="alert">{loadError} <button type="button" className="ghost" onClick={reload} disabled={loading}>다시 시도</button></div>}
     {loadWarning && <div className="alert warning" role="alert">{loadWarning} <button type="button" className="ghost" onClick={reload} disabled={loading}>다시 시도</button></div>}
     {issueError && <div className="alert error" role="alert">{issueError} <button type="button" className="ghost" onClick={reload} disabled={loading || Boolean(pendingId)}>다시 시도</button></div>}
     {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
-    <article className="panel">{loadedItems === null ? <SettlementV2Empty text="세금계산서 내역을 불러오는 중입니다"/> : <><div className="table-wrap"><table><thead><tr><th>정산월</th><th>업체명</th><th className="money">공급가액</th><th className="money">부가세</th><th>상태</th><th>처리</th></tr></thead><tbody>{items.map((item) => { const legal = canMerchantIssue(item); const refreshable = canRefreshInvoiceStatus(item); return <tr key={item.id}><td>{item.period_start.slice(0, 7)}</td><td><strong>{item.recipient.name || '확인 필요'}</strong></td><td className="money">{krw(item.supply_amount)}</td><td className="money">{krw(item.vat_amount)}</td><td><SettlementV2Status type="invoice" value={item.tax_invoice_status}/></td><td><div className="row-actions">{legal && <button type="button" className="ghost" disabled={Boolean(pendingId)} onClick={() => mutate(item.id, 'issue')}>발행</button>}{refreshable && <button type="button" className="ghost" disabled={Boolean(pendingId)} onClick={() => mutate(item.id, 'refresh-status')}><RefreshCw size={14}/> 상태 새로고침</button>}{!legal && !refreshable && <span className="panel-note">처리 불가</span>}</div></td></tr>; })}</tbody></table></div>{items.length === 0 && <SettlementV2Empty />}</>}</article>
+    <div className="settlement-v2-tabs" role="tablist" aria-label="세금계산서 관리">
+      <button id="tax-invoice-issue-tab" type="button" role="tab" aria-selected={activeTab === 'issue'} aria-controls="tax-invoice-issue-panel" tabIndex={activeTab === 'issue' ? 0 : -1} className={activeTab === 'issue' ? 'active' : ''} onKeyDown={handleTabKeyDown} onClick={() => setActiveTab('issue')}>발행 관리</button>
+      <button id="tax-invoice-evidence-tab" type="button" role="tab" aria-selected={activeTab === 'evidence'} aria-controls="tax-invoice-evidence-panel" tabIndex={activeTab === 'evidence' ? 0 : -1} className={activeTab === 'evidence' ? 'active' : ''} onKeyDown={handleTabKeyDown} onClick={() => setActiveTab('evidence')}>발행 완료·증빙 내역</button>
+    </div>
+    {activeTab === 'issue' && <article id="tax-invoice-issue-panel" role="tabpanel" aria-labelledby="tax-invoice-issue-tab" className="panel">{loadedItems === null ? <SettlementV2Empty text="세금계산서 내역을 불러오는 중입니다"/> : <><div className="table-wrap"><table><thead><tr><th>정산월</th><th>업체명</th><th className="money">공급가액</th><th className="money">부가세</th><th>상태</th><th>처리</th></tr></thead><tbody>{items.map((item) => { const legal = canMerchantIssue(item); const refreshable = canRefreshInvoiceStatus(item); return <tr key={item.id}><td>{item.period_start.slice(0, 7)}</td><td><strong>{item.recipient.name || '확인 필요'}</strong></td><td className="money">{krw(item.supply_amount)}</td><td className="money">{krw(item.vat_amount)}</td><td><SettlementV2Status type="invoice" value={item.tax_invoice_status}/></td><td><div className="row-actions">{legal && <button type="button" className="ghost" disabled={Boolean(pendingId)} onClick={() => mutate(item.id, 'issue')}>발행</button>}{refreshable && <button type="button" className="ghost" disabled={Boolean(pendingId)} onClick={() => mutate(item.id, 'refresh-status')}><RefreshCw size={14}/> 상태 새로고침</button>}{!legal && !refreshable && <span className="panel-note">처리 불가</span>}</div></td></tr>; })}</tbody></table></div>{items.length === 0 && <SettlementV2Empty />}</>}</article>}
+    {activeTab === 'evidence' && <SettlementEvidencePanel settlementRows={items} />}
   </AdminPage>;
 }
 function MerchantPrepurchaseMock() {
@@ -1526,9 +1542,9 @@ function MerchantSupplierInfoScreen({ merchant, busy, onSave, onSettings, token 
 function MerchantScreen({ section, companyItems, onCompanyDetail, merchant, busy, onSaveSupplier, onSettings, token }) {
   if (section === 'company-list') return <MerchantCompanyListScreen items={companyItems} onDetail={onCompanyDetail} />;
   if (section === 'supplier-info') return <MerchantSupplierInfoScreen merchant={merchant} busy={busy} onSave={onSaveSupplier} onSettings={onSettings} token={token} />;
+  if (section === 'settlement-evidence') return <MerchantTaxInvoiceScreen token={token} initialTab="evidence" />;
   const screens = {
     'settlements-by-company': MerchantSettlementScreen,
-    'settlement-evidence': SettlementEvidenceScreen,
     'tax-invoices': MerchantTaxInvoiceScreen,
     'prepurchase': MerchantPrepurchaseMock,
   };
@@ -2373,7 +2389,7 @@ function Dashboard({ session, onLogout }) {
 
   const merchantNavGroups = [
     [['main', '대시보드', Home], ['payment-history', '실시간 매출', CreditCard]],
-    [['companies', '업체 관리', Building2], ['settlements-by-company', '업체별 정산', WalletCards], ['settlement-evidence', '증빙 내역', FileSpreadsheet], ['tax-invoices', '세금계산서 발행', FileText], ['prepurchase', '선구매 관리', Package]],
+    [['companies', '업체 관리', Building2], ['settlements-by-company', '업체별 정산', WalletCards], ['tax-invoices', '세금계산서', FileText], ['prepurchase', '선구매 관리', Package]],
     [['restaurant-management', '식당 관리', Coffee], ['supplier-info', '공급자 정보', Settings]],
   ];
   const companyManagementTabs = [

@@ -20,6 +20,10 @@ INVOICE_FIELDS = (
     "popbill_status,nts_status,nts_confirm_num,requested_at,issue_requested_at,issued_at,nts_sent_at,"
     "nts_accepted_at,failure_code,failed_at,created_at,updated_at"
 )
+LIST_INVOICE_FIELDS = (
+    "settlement_id,document_type,write_date,recipient_snapshot,"
+    "nts_confirm_num,issued_at"
+)
 
 PAYMENT_FIELDS = "id,amount,depositor_name,deposited_at,memo,confirmed_at,created_at"
 COMPANY_VISIBLE_SETTLEMENT_STATUSES = (
@@ -66,6 +70,43 @@ class SettlementRepository:
             for row in rows
         ]
 
+    @staticmethod
+    def _public_list_invoice(invoice: dict[str, Any]) -> dict[str, Any]:
+        recipient = invoice.get("recipient_snapshot") or {}
+        return {
+            "document_type": invoice.get("document_type"),
+            "write_date": invoice.get("write_date"),
+            "nts_confirm_num": invoice.get("nts_confirm_num"),
+            "issued_at": invoice.get("issued_at"),
+            "recipient_snapshot": {
+                "name": recipient.get("name") or "",
+                "biz_reg_no": (
+                    recipient.get("biz_reg_no")
+                    or recipient.get("registration_number")
+                    or recipient.get("corp_num")
+                    or ""
+                ),
+            },
+        }
+
+    def _attach_original_invoices(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        settlement_ids = self._party_ids(rows, "id")
+        if not settlement_ids:
+            return rows
+        invoices = self.client.rest_get("tax_invoices", {
+            "select": LIST_INVOICE_FIELDS,
+            "settlement_id": f"in.({','.join(settlement_ids)})",
+            "document_type": "eq.original",
+        })
+        by_settlement = {
+            str(invoice["settlement_id"]): self._public_list_invoice(invoice)
+            for invoice in invoices
+        }
+        return [
+            {**row, "tax_invoices": [by_settlement[str(row["id"])]] if str(row["id"]) in by_settlement else []}
+            for row in rows
+        ]
+
     def list_company(self, company_id: str, limit: int, offset: int, period_ym: str | None = None) -> list[dict[str, Any]]:
         params = {
             "select": LIST_FIELDS, "company_id": f"eq.{company_id}",
@@ -92,9 +133,10 @@ class SettlementRepository:
             "select": LIST_FIELDS, "merchant_id": f"eq.{merchant_id}",
             "order": "created_at.desc,id.desc", "limit": str(limit), "offset": str(offset),
         })
-        return self._attach_party_names(
+        rows = self._attach_party_names(
             rows, id_key="company_id", table="companies", output_key="business_information",
         )
+        return self._attach_original_invoices(rows)
 
     def supplier_popbill_readiness(self, merchant_id: str, configured_corp_num: str) -> dict[str, bool]:
         rows = self.client.rest_get("merchants", {

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from uuid import UUID
 
 from app.repositories.settlements import (
-    COMPANY_VISIBLE_SETTLEMENT_STATUSES, LIST_FIELDS, PAYMENT_FIELDS, TRANSACTION_FIELDS,
+    COMPANY_VISIBLE_SETTLEMENT_STATUSES, LIST_FIELDS, LIST_INVOICE_FIELDS, PAYMENT_FIELDS, TRANSACTION_FIELDS,
     SettlementRepository,
 )
 from app.services.join_flow import UserProfile
@@ -226,6 +226,18 @@ class ListNameClient:
             return [{"id": "merchant-1", "name": "그린 식당"}]
         if table == "companies":
             return [{"id": "company-1", "name": "그린 업체"}]
+        if table == "tax_invoices":
+            return [{
+                "id": "invoice-1", "settlement_id": "settlement-1",
+                "document_type": "original", "write_date": "2026-07-31",
+                "nts_confirm_num": "NTS-1", "issued_at": "2026-08-01T01:00:00Z",
+                "failure_message": "provider internal detail",
+                "supplier_snapshot": {"bank_name": "비공개 은행"},
+                "recipient_snapshot": {
+                    "name": "그린 업체", "biz_reg_no": "1234567890",
+                    "tax_email": "private@example.test",
+                },
+            }]
         raise AssertionError(f"unexpected table: {table}")
 
 
@@ -237,6 +249,11 @@ def test_lists_attach_only_safe_party_names_without_deposit_information():
 
     assert company_rows[0]["supplier_information"] == {"name": "그린 식당"}
     assert merchant_rows[0]["business_information"] == {"name": "그린 업체"}
+    assert merchant_rows[0]["tax_invoices"] == [{
+        "document_type": "original", "write_date": "2026-07-31",
+        "nts_confirm_num": "NTS-1", "issued_at": "2026-08-01T01:00:00Z",
+        "recipient_snapshot": {"name": "그린 업체", "biz_reg_no": "1234567890"},
+    }]
     assert merchant_rows[0]["is_demo"] is True
     assert merchant_client.calls[0][0] == "settlements"
     assert company_client.calls[1] == (
@@ -244,6 +261,13 @@ def test_lists_attach_only_safe_party_names_without_deposit_information():
     )
     assert merchant_client.calls[1] == (
         "companies", {"select": "id,name", "id": "in.(company-1)"},
+    )
+    assert merchant_client.calls[2] == (
+        "tax_invoices", {
+            "select": LIST_INVOICE_FIELDS,
+            "settlement_id": "in.(settlement-1)",
+            "document_type": "eq.original",
+        },
     )
     for client in (company_client, merchant_client):
         selected = set(client.calls[1][1]["select"].split(","))

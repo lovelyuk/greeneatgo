@@ -4,10 +4,11 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
+from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.merchant_admin import _ensure_settlements
 from app.routers.payments import confirm
 from app.routers.transactions import scan
-from app.routers.voucher_products import active_products, purchase_subsidized, subsidized_price
+from app.routers.voucher_products import active_products, cancel_subsidized_order, purchase_subsidized, subsidized_price
 from app.schemas import PaymentConfirmRequest, TransactionScanRequest, VoucherPurchaseRequest
 
 
@@ -61,6 +62,25 @@ class SubsidizedLedgerTests(unittest.TestCase):
     def _employee_repo(self, repo):
         repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="employee@example.com")
         repo.get_profile.return_value = SimpleNamespace(id="user-1", role="employee", status="active", company_id="company-1")
+
+    @patch("app.routers.voucher_products.get_settings")
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_subsidized_endpoints_map_invalid_tokens_to_401(self, repo_class, _settings):
+        repo = repo_class.return_value
+        repo.auth_user_from_token.side_effect = SupabaseHttpError(401, "invalid jwt")
+        operations = (
+            lambda: subsidized_price("bad-token"),
+            lambda: purchase_subsidized(None, "bad-token"),
+            lambda: cancel_subsidized_order("order-1", "bad-token"),
+        )
+
+        for operation in operations:
+            with self.subTest(operation=operation), self.assertRaises(HTTPException) as context:
+                operation()
+            self.assertEqual(context.exception.status_code, 401)
+            self.assertEqual(context.exception.detail, {
+                "code": "UNAUTHENTICATED", "message": "로그인 정보가 올바르지 않아요",
+            })
 
     @patch("app.routers.voucher_products.get_settings")
     @patch("app.routers.voucher_products.JoinRepository")

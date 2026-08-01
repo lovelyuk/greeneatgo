@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.routers.boards import ReviewCreate, _mask, create_review, reviews, update_review
+from app.routers.boards import ReviewCreate, _mask, create_review, delete_announcement, reviews, update_review
 
 
 def repo_with_customer():
@@ -56,7 +56,7 @@ def test_duplicate_transaction_returns_conflict(repo_class):
 def test_public_average_excludes_hidden_by_query(repo_class, _merchant):
     repo = repo_class.return_value
     repo.client.rest_get.side_effect = [
-        [{"id": "r1", "account_id": "u1", "rating": 5, "content": None}],
+        [{"id": "r1", "account_id": "u1", "rating": 5, "content": None, "status": "visible"}],
         [{"id": "u1", "display_name": "홍길동"}],
     ]
     result = reviews()["data"]
@@ -74,3 +74,44 @@ def test_admin_patch_is_tenant_scoped(repo_class, _admin):
     update_review("r1", __import__("app.routers.boards", fromlist=["ReviewUpdate"]).ReviewUpdate(status="hidden"), "token")
     params = repo.client.rest_patch.call_args.args[1]
     assert params == {"id": "eq.r1", "merchant_id": "eq.m-1"}
+
+
+@patch("app.routers.boards._pilot_merchant", return_value={"id": "m-1"})
+@patch("app.routers.boards.JoinRepository")
+def test_authenticated_author_can_see_own_hidden_review(repo_class, _merchant):
+    repo = repo_with_customer(); repo_class.return_value = repo
+    repo.client.rest_get.side_effect = [
+        [
+            {"id": "visible", "account_id": "other", "rating": 5, "status": "visible"},
+            {"id": "hidden-own", "account_id": "user-1", "rating": 1, "status": "hidden"},
+        ],
+        [
+            {"id": "other", "display_name": "홍길동"},
+            {"id": "user-1", "display_name": "김수"},
+        ],
+    ]
+
+    result = reviews("token")["data"]
+
+    query = repo.client.rest_get.call_args_list[0].args[1]
+    assert query["or"] == "(status.eq.visible,account_id.eq.user-1)"
+    assert result["review_count"] == 1
+    assert result["average_rating"] == 5.0
+    own = next(item for item in result["items"] if item["id"] == "hidden-own")
+    assert own["is_own"] is True
+    assert own["status"] == "hidden"
+    assert own["account_id"] is None
+
+
+@patch("app.routers.boards._merchant_admin", return_value=(SimpleNamespace(id="admin"), "m-1"))
+@patch("app.routers.boards.JoinRepository")
+def test_announcement_delete_is_tenant_scoped(repo_class, _admin):
+    repo = repo_class.return_value
+    repo.client.rest_delete.return_value = [{"id": "notice-1"}]
+
+    result = delete_announcement("notice-1", "token")
+
+    assert result["data"] == {"deleted": True, "id": "notice-1"}
+    assert repo.client.rest_delete.call_args.args == (
+        "announcements", {"id": "eq.notice-1", "merchant_id": "eq.m-1"},
+    )

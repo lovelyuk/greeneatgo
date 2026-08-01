@@ -19,7 +19,7 @@ from app.services.vouchers import calculate_sale_price, krw_amount, per_voucher_
 
 router = APIRouter(tags=["voucher-products"])
 logger = logging.getLogger(__name__)
-_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,kiwoom_pay_method,image_url,is_event,event_start_at,event_end_at,tax_type,created_at,updated_at"
+_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,discount_amount_per_voucher,sale_price,status,display_order,kiwoom_pay_method,image_url,is_event,event_start_at,event_end_at,tax_type,deleted_at,created_at,updated_at"
 _LEGACY_PRODUCT_SELECT = "id,merchant_id,name,voucher_count,bonus_count,unit_price,discount_rate,sale_price,status,display_order,image_url,created_at,updated_at"
 
 
@@ -54,7 +54,10 @@ def subsidized_price(token: str = Depends(bearer_token)):
         unit, company, restaurant = int(contract["unit_price"]), int(contract["company_subsidy_amount"]), int(contract["restaurant_subsidy_amount"])
         return {"ok": True, "data": {"merchant_id": merchant["id"], "merchant_name": merchant["name"], "unit_price": unit, "employee_pay_amount": unit-company-restaurant, "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant}, "error": None}
     except HTTPException: raise
-    except SupabaseHttpError as exc: raise _error(502, "SUPABASE_ERROR", "보조금 가격을 불러오지 못했어요") from exc
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요") from exc
+        raise _error(502, "SUPABASE_ERROR", "보조금 가격을 불러오지 못했어요") from exc
 
 
 @router.post("/vouchers/subsidized-orders/{order_id}/cancel")
@@ -71,6 +74,8 @@ def cancel_subsidized_order(order_id: str, token: str = Depends(bearer_token)):
     except SupabaseHttpError as exc:
         if "CHECKOUT_ALREADY_STARTED" in exc.body:
             raise _error(409, "CHECKOUT_ALREADY_STARTED", "결제가 시작된 주문은 자동 취소할 수 없어요. 결제 상태를 다시 확인해 주세요") from exc
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요") from exc
         raise _error(502, "ORDER_CANCEL_FAILED", "포인트 예약을 해제하지 못했어요") from exc
 
 
@@ -82,13 +87,13 @@ def purchase_subsidized(payload: LegacyCompatibleVoucherPurchaseRequest | None =
         _expire_stale_subsidized_orders(repo, profile.id)
         company, restaurant = int(contract["company_subsidy_amount"]), int(contract["restaurant_subsidy_amount"])
         if payload is not None and payload.product_id:
-            products, _ = _load_products(repo, {"id": f"eq.{payload.product_id}", "merchant_id": f"eq.{merchant['id']}", "status": "eq.active", "limit": "1"})
+            products, _ = _load_products(repo, {"id": f"eq.{payload.product_id}", "merchant_id": f"eq.{merchant['id']}", "status": "eq.active", "deleted_at": "is.null", "limit": "1"}, allow_legacy=True)
         else:
             # Temporary compatibility for deployed clients which POSTed no body.
             candidates, _ = _load_products(repo, {
-                "merchant_id": f"eq.{merchant['id']}", "status": "eq.active",
+                "merchant_id": f"eq.{merchant['id']}", "status": "eq.active", "deleted_at": "is.null",
                 "order": "display_order.asc,created_at.asc",
-            })
+            }, allow_legacy=True)
             unit_price = int(contract["unit_price"])
             products = [
                 product for product in candidates
@@ -122,11 +127,27 @@ def purchase_subsidized(payload: LegacyCompatibleVoucherPurchaseRequest | None =
             fulfilled = repo.client.rpc("fulfill_subsidized_order", {"p_order_id": order["id"], "p_provider_payment_key": None, "p_payment_method": "POINT", "p_provider_response": None, "p_approved_at": datetime.now(timezone.utc).isoformat()})
         return {"ok": True, "data": {"order_id": order_id, "amount": card_amount, "employee_pay_amount": employee_due, "point_amount": point_amount, "card_amount": card_amount, "point_only": card_amount == 0, "product_id": product["id"], "product_name": product["name"], "total_count": paid + bonus, "paid_voucher_count": paid, "bonus_voucher_count": bonus, "payment_method": product.get("kiwoom_pay_method") or "TOTAL", "checkout_url": None if card_amount == 0 else f"{settings.public_api_base_url}/payments/checkout/{checkout_token}", "fulfillment": fulfilled}, "error": None}
     except HTTPException: raise
-    except SupabaseHttpError as exc: raise _error(502, "SUPABASE_ERROR", "보조금 식권 주문을 만들지 못했어요") from exc
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요") from exc
+        raise _error(502, "SUPABASE_ERROR", "보조금 식권 주문을 만들지 못했어요") from exc
 
 
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
+
+
+def _product_migration_missing(exc: SupabaseHttpError) -> bool:
+    body = exc.body.lower()
+    return any(column in body for column in ("is_event", "event_start_at", "discount_amount_per_voucher", "deleted_at", "pgrst204"))
+
+
+def _product_supabase_error(exc: SupabaseHttpError, message: str) -> HTTPException:
+    if exc.status in (401, 403):
+        return _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요")
+    if _product_migration_missing(exc):
+        return _error(503, "MIGRATION_REQUIRED", "0020·0030·0055 마이그레이션 적용이 필요해요")
+    return _error(502, "SUPABASE_ERROR", message)
 
 
 def _as_utc(value: object) -> datetime | None:
@@ -145,8 +166,10 @@ def _as_utc(value: object) -> datetime | None:
 
 
 def _event_status(row: dict, now: datetime | None = None) -> tuple[str, str]:
+    if row.get("status") in {"sold_out", "inactive"}:
+        return "sold_out", "일시품절"
     if row.get("status") != "active":
-        return "hidden", "숨김(수동)"
+        return "sold_out", "일시품절"
     if not row.get("is_event"):
         return "active", "판매중"
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -198,12 +221,23 @@ def _load_products(repo: JoinRepository, params: dict[str, str], *, allow_legacy
     try:
         return repo.client.rest_get("voucher_products", {"select": _PRODUCT_SELECT, **params}), False
     except SupabaseHttpError as exc:
-        if not ("is_event" in exc.body or "event_start_at" in exc.body or "PGRST204" in exc.body):
+        if not _product_migration_missing(exc):
             raise
         if not allow_legacy:
-            raise _error(503, "MIGRATION_REQUIRED", "0020_voucher_product_events.sql 또는 0030_kiwoom_product_payment_method.sql 적용이 필요해요") from exc
-        rows = repo.client.rest_get("voucher_products", {"select": _LEGACY_PRODUCT_SELECT, **params})
-        return [{**row, "kiwoom_pay_method": "TOTAL", "is_event": False, "event_start_at": None, "event_end_at": None, "tax_type": "unclassified"} for row in rows], True
+            raise _error(503, "MIGRATION_REQUIRED", "0020·0030·0055 마이그레이션 적용이 필요해요") from exc
+        legacy_params = {key: value for key, value in params.items() if key != "deleted_at"}
+        rows = repo.client.rest_get("voucher_products", {"select": _LEGACY_PRODUCT_SELECT, **legacy_params})
+        return [{
+            **row,
+            "status": "sold_out" if row.get("status") == "inactive" else row.get("status"),
+            "discount_amount_per_voucher": 0,
+            "deleted_at": None,
+            "kiwoom_pay_method": "TOTAL",
+            "is_event": False,
+            "event_start_at": None,
+            "event_end_at": None,
+            "tax_type": "unclassified",
+        } for row in rows], True
 
 
 def _delete_replaced_image(repo: JoinRepository, merchant_id: str, old_url: str | None, new_url: str | None) -> None:
@@ -227,7 +261,10 @@ def _values(payload: VoucherProductCreateRequest | VoucherProductUpdateRequest, 
         values["name"] = values["name"].strip()
     # Validate the same formula used by the generated DB column. sale_price is never accepted.
     if not partial:
-        calculate_sale_price(values["unit_price"], values["voucher_count"], values["discount_rate"])
+        calculate_sale_price(
+            values["unit_price"], values["voucher_count"], values["discount_rate"],
+            values["discount_amount_per_voucher"],
+        )
         _validate_event_window(values)
         if not values.get("is_event"):
             values.pop("is_event", None)
@@ -243,13 +280,14 @@ def admin_list_products(token: str = Depends(bearer_token)):
         _, merchant_id = _merchant_admin(repo, token)
         rows, migration_required = _load_products(repo, {
             "merchant_id": f"eq.{merchant_id}",
+            "deleted_at": "is.null",
             "order": "display_order.asc,created_at.asc",
         }, allow_legacy=True)
         return {"ok": True, "data": {"items": [_present(row) for row in rows], "migration_required": migration_required}, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
-        raise _error(502, "SUPABASE_ERROR", "식권 상품을 불러오지 못했어요") from exc
+        raise _product_supabase_error(exc, "식권 상품을 불러오지 못했어요") from exc
 
 
 @router.post("/admin/voucher-products", status_code=201)
@@ -263,7 +301,7 @@ def admin_create_product(payload: VoucherProductCreateRequest, token: str = Depe
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
-        raise _error(502, "SUPABASE_ERROR", "식권 상품을 저장하지 못했어요") from exc
+        raise _product_supabase_error(exc, "식권 상품을 저장하지 못했어요") from exc
 
 
 @router.patch("/admin/voucher-products/{product_id}")
@@ -272,7 +310,7 @@ def admin_update_product(product_id: str, payload: VoucherProductUpdateRequest, 
     try:
         _, merchant_id = _merchant_admin(repo, token)
         current, _ = _load_products(repo, {
-            "id": f"eq.{product_id}", "merchant_id": f"eq.{merchant_id}", "limit": "1",
+            "id": f"eq.{product_id}", "merchant_id": f"eq.{merchant_id}", "deleted_at": "is.null", "limit": "1",
         }, allow_legacy=True)
         if not current:
             raise _error(404, "VOUCHER_PRODUCT_NOT_FOUND", "식권 상품을 찾을 수 없어요")
@@ -280,21 +318,54 @@ def admin_update_product(product_id: str, payload: VoucherProductUpdateRequest, 
         if not values:
             return {"ok": True, "data": _present(current[0]), "error": None}
         merged = {**current[0], **values}
-        calculate_sale_price(merged["unit_price"], int(merged["voucher_count"]), merged["discount_rate"])
+        calculate_sale_price(
+            merged["unit_price"], int(merged["voucher_count"]), merged["discount_rate"],
+            merged.get("discount_amount_per_voucher") or 0,
+        )
         _validate_event_window(merged)
         values["updated_at"] = datetime.now(timezone.utc).isoformat()
-        row = repo.client.rest_patch("voucher_products", {
-            "id": f"eq.{product_id}", "merchant_id": f"eq.{merchant_id}"
-        }, values)[0]
+        rows = repo.client.rest_patch("voucher_products", {
+            "id": f"eq.{product_id}", "merchant_id": f"eq.{merchant_id}", "deleted_at": "is.null",
+        }, values)
+        if not rows:
+            raise _error(404, "VOUCHER_PRODUCT_NOT_FOUND", "식권 상품을 찾을 수 없어요")
+        row = rows[0]
         if "image_url" in values:
             _delete_replaced_image(repo, merchant_id, current[0].get("image_url"), values.get("image_url"))
         return {"ok": True, "data": _present(row), "error": None}
     except HTTPException:
         raise
+    except ValueError as exc:
+        raise _error(422, "INVALID_VOUCHER_PRICE", "할인 후 판매가가 허용 범위를 벗어났어요") from exc
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
-        raise _error(502, "SUPABASE_ERROR", "식권 상품을 수정하지 못했어요") from exc
+        raise _product_supabase_error(exc, "식권 상품을 수정하지 못했어요") from exc
+
+
+@router.delete("/admin/voucher-products/{product_id}")
+def admin_delete_product(product_id: str, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        rows = repo.client.rest_patch("voucher_products", {
+            "id": f"eq.{product_id}",
+            "merchant_id": f"eq.{merchant_id}",
+            "deleted_at": "is.null",
+        }, {
+            "status": "sold_out",
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        if not rows:
+            raise _error(404, "VOUCHER_PRODUCT_NOT_FOUND", "식권 상품을 찾을 수 없어요")
+        return {"ok": True, "data": {"deleted": True, "id": product_id}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        raise _product_supabase_error(exc, "식권 상품을 삭제하지 못했어요") from exc
 
 
 @router.get("/vouchers/products")
@@ -322,8 +393,8 @@ def active_products(token: str | None = Depends(optional_bearer_token)):
             contract = links[0]
         rows, _ = _load_products(repo, {
             "merchant_id": f"eq.{merchant['id']}",
-            "status": "eq.active", "order": "display_order.asc,created_at.asc",
-        })
+            "status": "eq.active", "deleted_at": "is.null", "order": "display_order.asc,created_at.asc",
+        }, allow_legacy=True)
         items = [_present(row) for row in rows if _is_exposed(row)]
         mode = "voucher"
         if contract is not None:
@@ -372,8 +443,8 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
             raise _error(404, "MERCHANT_NOT_FOUND", "식당을 찾을 수 없어요")
         products, _ = _load_products(repo, {
             "id": f"eq.{payload.product_id}",
-            "merchant_id": f"eq.{merchant['id']}", "status": "eq.active", "limit": "1",
-        })
+            "merchant_id": f"eq.{merchant['id']}", "status": "eq.active", "deleted_at": "is.null", "limit": "1",
+        }, allow_legacy=True)
         if not products:
             raise _error(404, "VOUCHER_PRODUCT_NOT_FOUND", "판매 중인 식권 상품을 찾을 수 없어요")
         product = products[0]

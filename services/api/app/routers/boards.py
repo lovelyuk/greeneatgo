@@ -3,13 +3,13 @@ from __future__ import annotations
 import io
 import uuid
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field, field_validator
 
-from app.auth import bearer_token
+from app.auth import bearer_token, optional_bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
@@ -82,13 +82,18 @@ def _mask(name: str | None) -> str:
     return f"{value[0]}{'*' * (len(value)-2)}{value[-1]}님"
 
 
-def _decorate_reviews(repo: JoinRepository, rows: list[dict]) -> list[dict]:
+def _decorate_reviews(repo: JoinRepository, rows: list[dict], viewer_id: str | None = None) -> list[dict]:
     ids = sorted({str(row["account_id"]) for row in rows})
     names: dict[str, str] = {}
     if ids:
         users = repo.client.rest_get("app_users", {"select": "id,display_name", "id": f"in.({','.join(ids)})"})
         names = {str(user["id"]): user.get("display_name") or "사용자" for user in users}
-    return [{**row, "author_name": _mask(names.get(str(row["account_id"]))), "account_id": None} for row in rows]
+    return [{
+        **row,
+        "author_name": _mask(names.get(str(row["account_id"]))),
+        "is_own": viewer_id is not None and str(row["account_id"]) == str(viewer_id),
+        "account_id": None,
+    } for row in rows]
 
 
 @router.get("/admin/announcements")
@@ -124,6 +129,18 @@ def update_announcement(announcement_id: str, payload: AnnouncementUpdate, token
     rows = repo.client.rest_patch("announcements", {"id": f"eq.{announcement_id}", "merchant_id": f"eq.{merchant_id}"}, values)
     if not rows: raise error(404, "ANNOUNCEMENT_NOT_FOUND", "공지를 찾을 수 없어요")
     return {"ok": True, "data": rows[0], "error": None}
+
+
+@router.delete("/admin/announcements/{announcement_id}")
+def delete_announcement(announcement_id: str, token: str = Depends(bearer_token)):
+    repo = JoinRepository(); _, merchant_id = _merchant_admin(repo, token)
+    rows = repo.client.rest_delete("announcements", {
+        "id": f"eq.{announcement_id}",
+        "merchant_id": f"eq.{merchant_id}",
+    })
+    if not rows:
+        raise error(404, "ANNOUNCEMENT_NOT_FOUND", "공지를 찾을 수 없어요")
+    return {"ok": True, "data": {"deleted": True, "id": announcement_id}, "error": None}
 
 
 @router.get("/announcements")
@@ -181,12 +198,23 @@ async def upload_review_image(file: UploadFile = File(...), token: str = Depends
 
 
 @router.get("/reviews")
-def reviews():
+def reviews(token: Annotated[str | None, Depends(optional_bearer_token)] = None):
     repo = JoinRepository(); merchant = _pilot_merchant(repo)
-    rows = repo.client.rest_get("normal_reviews", {"select": "id,account_id,rating,content,image_urls,owner_reply,owner_reply_at,created_at", "merchant_id": f"eq.{merchant['id']}", "status": "eq.visible", "order": "created_at.desc"})
-    items = _decorate_reviews(repo, rows)
-    average = round(sum(int(r["rating"]) for r in rows) / len(rows), 1) if rows else 0.0
-    return {"ok": True, "data": {"items": items, "average_rating": average, "review_count": len(rows)}, "error": None}
+    profile = _customer(repo, token) if token is not None else None
+    params = {
+        "select": "id,account_id,rating,content,image_urls,status,owner_reply,owner_reply_at,created_at",
+        "merchant_id": f"eq.{merchant['id']}",
+        "order": "created_at.desc",
+    }
+    if profile is None:
+        params["status"] = "eq.visible"
+    else:
+        params["or"] = f"(status.eq.visible,account_id.eq.{profile.id})"
+    rows = repo.client.rest_get("normal_reviews", params)
+    visible = [row for row in rows if row.get("status") == "visible"]
+    items = _decorate_reviews(repo, rows, viewer_id=profile.id if profile else None)
+    average = round(sum(int(row["rating"]) for row in visible) / len(visible), 1) if visible else 0.0
+    return {"ok": True, "data": {"items": items, "average_rating": average, "review_count": len(visible)}, "error": None}
 
 
 @router.get("/admin/reviews")

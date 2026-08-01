@@ -1868,3 +1868,70 @@ code { font-size: 12px; }
 }
 
 .pagination-controls span { color: var(--muted); font-size: 0.9rem; }
+
+/* Restaurant management: coupons, product availability, QR, and review controls. */
+.status-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  font-weight: 700;
+  cursor: pointer;
+}
+.status-switch > span {
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.7);
+  position: relative;
+}
+.status-switch > span::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  left: 3px;
+  top: 3px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .18s ease;
+}
+.status-switch.on { color: #176b3a; border-color: #9ed9b4; background: #effaf3; }
+.status-switch.on > span { background: #2fb865; }
+.status-switch.on > span::after { transform: translateX(12px); }
+.status-switch:disabled { opacity: .55; cursor: not-allowed; }
+.delete-button { color: #b42318 !important; border-color: #f3b3ad !important; }
+.product-admin-actions { align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.coupon-type-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.coupon-type-cards button { display: grid; gap: 5px; min-height: 82px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; text-align: left; color: var(--text-primary); background: var(--bg-surface); cursor: pointer; }
+.coupon-type-cards button span { color: var(--text-secondary); font-size: 13px; }
+.coupon-type-cards button.active { border-color: #2fb865; background: #effaf3; box-shadow: 0 0 0 2px rgba(47,184,101,.12); }
+.coupon-form { display: grid; grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(140px, .7fr)); gap: 12px; align-items: end; margin-bottom: 20px; }
+.coupon-form label, .review-filter-bar label { display: grid; gap: 6px; color: var(--text-secondary); font-size: 13px; }
+.coupon-form .checkbox { align-self: center; display: flex; }
+.coupon-form .row-actions { grid-column: 1 / -1; }
+.coupon-icon { display: grid; place-items: center; flex: 0 0 48px; width: 48px; height: 48px; border-radius: 14px; color: #176b3a; background: #dcf5e5; font-size: 22px; font-weight: 900; }
+.payment-qr-management { margin-top: 0; }
+.review-filter-bar { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg-subtle, #f8faf9); }
+.review-filter-bar input, .review-filter-bar select { min-height: 40px; }
+.review-filter-bar .badge { margin-left: auto; margin-bottom: 7px; }
+.review-visibility-note { margin: 0 0 14px; }
+.review-visibility-checkbox { align-items: center !important; gap: 8px !important; padding: 10px 12px; border-radius: 12px; background: #fff8e8; }
+.review-visibility-checkbox span { color: var(--text-secondary); font-size: 12px; }
+@media (max-width: 900px) {
+  .coupon-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .payment-qr-management { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .coupon-type-cards, .coupon-form { grid-template-columns: 1fr; }
+  .review-filter-bar { align-items: stretch; }
+  .review-filter-bar label { width: 100%; }
+  .review-filter-bar .badge { margin: 0; width: fit-content; }
+  .product-admin-actions { justify-content: flex-start; }
+}

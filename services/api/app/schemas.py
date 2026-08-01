@@ -4,6 +4,9 @@ import re
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.services.vouchers import calculate_sale_price
+
+
 class GPSPoint(BaseModel):
     lat: float
     lng: float
@@ -202,7 +205,8 @@ class VoucherProductCreateRequest(BaseModel):
     bonus_count: int = Field(default=0, ge=0, le=1000)
     unit_price: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
     discount_rate: Decimal = Field(default=Decimal("0"), ge=0, lt=100, max_digits=5, decimal_places=2)
-    status: str = Field(default="active", pattern="^(active|inactive)$")
+    discount_amount_per_voucher: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
+    status: str = Field(default="active", pattern="^(active|sold_out)$")
     display_order: int = Field(default=0, ge=-100000, le=100000)
     kiwoom_pay_method: str = Field(default="TOTAL", pattern="^(TOTAL|BANK)$")
     image_url: str | None = Field(default=None, max_length=500)
@@ -218,6 +222,17 @@ class VoucherProductCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_event_period(self):
+        if self.discount_rate > 0 and self.discount_amount_per_voucher > 0:
+            raise ValueError("할인율과 장당 할인금액은 동시에 적용할 수 없어요")
+        discounted_unit = self.unit_price * (Decimal("100") - self.discount_rate) / Decimal("100") - self.discount_amount_per_voucher
+        if discounted_unit <= 0:
+            raise ValueError("할인 후 장당 금액은 0원보다 커야 해요")
+        try:
+            calculate_sale_price(
+                self.unit_price, self.voucher_count, self.discount_rate, self.discount_amount_per_voucher,
+            )
+        except ValueError as exc:
+            raise ValueError("할인 후 판매가는 0원보다 크고 허용 금액 범위 안이어야 해요") from exc
         if not self.is_event:
             return self
         if self.event_start_at is None or self.event_end_at is None:
@@ -237,7 +252,8 @@ class VoucherProductUpdateRequest(BaseModel):
     bonus_count: int | None = Field(default=None, ge=0, le=1000)
     unit_price: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
     discount_rate: Decimal | None = Field(default=None, ge=0, lt=100, max_digits=5, decimal_places=2)
-    status: str | None = Field(default=None, pattern="^(active|inactive)$")
+    discount_amount_per_voucher: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    status: str | None = Field(default=None, pattern="^(active|sold_out)$")
     display_order: int | None = Field(default=None, ge=-100000, le=100000)
     kiwoom_pay_method: str | None = Field(default=None, pattern="^(TOTAL|BANK)$")
     image_url: str | None = Field(default=None, max_length=500)
@@ -246,7 +262,7 @@ class VoucherProductUpdateRequest(BaseModel):
     event_end_at: datetime | None = None
     tax_type: str | None = Field(default=None, pattern="^(taxable|tax_free|unclassified)$")
 
-    @field_validator("name", "voucher_count", "bonus_count", "unit_price", "discount_rate", "status", "display_order", "kiwoom_pay_method", "is_event", "tax_type", mode="before")
+    @field_validator("name", "voucher_count", "bonus_count", "unit_price", "discount_rate", "discount_amount_per_voucher", "status", "display_order", "kiwoom_pay_method", "is_event", "tax_type", mode="before")
     @classmethod
     def reject_explicit_null(cls, value: object) -> object:
         if value is None:

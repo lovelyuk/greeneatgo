@@ -4,14 +4,27 @@ from decimal import Decimal, ROUND_HALF_UP
 from urllib.parse import parse_qs, unquote, urlparse
 
 
-def calculate_sale_price(unit_price: Decimal | str | int, voucher_count: int, discount_rate: Decimal | str | int) -> Decimal:
+def calculate_sale_price(
+    unit_price: Decimal | str | int,
+    voucher_count: int,
+    discount_rate: Decimal | str | int,
+    discount_amount_per_voucher: Decimal | str | int = 0,
+) -> Decimal:
     price = Decimal(str(unit_price))
     discount = Decimal(str(discount_rate))
-    if price <= 0 or voucher_count <= 0 or discount < 0 or discount >= 100:
+    fixed_discount = Decimal(str(discount_amount_per_voucher))
+    discounted_unit = price * (Decimal("100") - discount) / Decimal("100") - fixed_discount
+    if (
+        price <= 0 or voucher_count <= 0 or discount < 0 or discount >= 100
+        or fixed_discount < 0 or (discount > 0 and fixed_discount > 0) or discounted_unit <= 0
+    ):
         raise ValueError("invalid voucher product price")
-    return (price * voucher_count * (Decimal("100") - discount) / Decimal("100")).quantize(
+    sale_price = (discounted_unit * voucher_count).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )
+    if sale_price <= 0 or sale_price > Decimal("999999999999.99"):
+        raise ValueError("invalid voucher product sale price")
+    return sale_price
 
 
 def krw_amount(value: Decimal | str | int) -> int:

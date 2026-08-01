@@ -214,7 +214,7 @@ class ApiClient {
   Future<Map<String, dynamic>> getAnnouncements() =>
       _request('/announcements', authenticated: false);
   Future<Map<String, dynamic>> getReviews() =>
-      _request('/reviews', authenticated: false);
+      _request('/reviews');
   Future<Map<String, dynamic>> getReviewableTransactions() =>
       _request('/vouchers/reviewable-transactions');
   Future<Map<String, dynamic>> createReview(
@@ -1787,6 +1787,17 @@ class _CommunityScreenState extends State<CommunityScreen> {
                                 style: const TextStyle(
                                     fontSize: 17, fontWeight: FontWeight.w900),
                               ),
+                              if (reviews && item['status'] == 'hidden' && item['is_own'] == true)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFF4D8),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: const Text('관리자 숨김 · 나에게만 표시',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                ),
                               if (reviews)
                                 Text(List.filled(
                                         (item['rating'] as num).toInt(), '⭐')

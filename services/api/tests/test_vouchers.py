@@ -13,7 +13,7 @@ from app.routers.me import _customer_usage
 from app.routers.merchant_admin import list_transactions
 from app.routers.payments import confirm
 from app.routers.transactions import scan
-from app.routers.voucher_products import _delete_replaced_image, _event_status, _is_exposed, _values, active_products
+from app.routers.voucher_products import _delete_replaced_image, _event_status, _is_exposed, _values, active_products, admin_delete_product
 from app.schemas import (
     PaymentConfirmRequest,
     TransactionScanRequest,
@@ -30,7 +30,7 @@ class VoucherCoreTests(unittest.TestCase):
             "tax_type": "tax_free",
         })
         update = VoucherProductUpdateRequest.model_validate({"tax_type": "unclassified"})
-        status_only = VoucherProductUpdateRequest.model_validate({"status": "inactive"})
+        status_only = VoucherProductUpdateRequest.model_validate({"status": "sold_out"})
 
         self.assertEqual(_values(create, partial=False)["tax_type"], "taxable")
         self.assertEqual(_values(update, partial=True)["tax_type"], "taxable")
@@ -50,6 +50,29 @@ class VoucherCoreTests(unittest.TestCase):
         self.assertEqual(data["purchase_mode"], "voucher")
         self.assertEqual(data["items"][0]["id"], "public-product")
         repo.auth_user_from_token.assert_not_called()
+        product_params = repo.client.rest_get.call_args_list[1].args[1]
+        self.assertEqual(product_params["deleted_at"], "is.null")
+
+    @patch("app.routers.voucher_products.JoinRepository")
+    def test_public_catalog_falls_back_safely_before_0055_migration(self, repo_class):
+        repo = repo_class.return_value
+        legacy_product = {
+            "id": "legacy-product", "merchant_id": "merchant-pilot", "name": "기존 상품",
+            "voucher_count": 1, "bonus_count": 0, "unit_price": 8000, "discount_rate": 0,
+            "sale_price": 8000, "status": "active", "display_order": 0, "image_url": None,
+            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+        }
+        repo.client.rest_get.side_effect = [
+            [{"id": "merchant-pilot", "name": "돈토"}],
+            SupabaseHttpError(400, "PGRST204 deleted_at column is missing"),
+            [legacy_product],
+        ]
+
+        data = active_products(None)["data"]
+
+        self.assertEqual(data["items"][0]["id"], "legacy-product")
+        legacy_params = repo.client.rest_get.call_args_list[2].args[1]
+        self.assertNotIn("deleted_at", legacy_params)
 
     @patch("app.routers.voucher_products.JoinRepository")
     def test_invalid_presented_catalog_token_never_downgrades_to_public(self, repo_class):
@@ -116,9 +139,40 @@ class VoucherCoreTests(unittest.TestCase):
     def test_discount_and_bonus_price_snapshots(self):
         sale = calculate_sale_price(8000, 10, 10)
         self.assertEqual(sale, Decimal("72000.00"))
+        fixed_sale = calculate_sale_price(8000, 10, 0, 500)
+        self.assertEqual(fixed_sale, Decimal("75000.00"))
         self.assertEqual(krw_amount(sale), 72000)
         self.assertEqual(per_voucher_price(80000, 11), Decimal("7272.7273"))
         self.assertEqual(per_voucher_price(100, 3), Decimal("33.3333"))
+        with self.assertRaises(ValueError):
+            calculate_sale_price("0.01", 1, 99)
+        with self.assertRaises(ValueError):
+            calculate_sale_price("999999999999.99", 1000, 0)
+
+    def test_product_accepts_only_one_discount_mode(self):
+        fixed = VoucherProductCreateRequest.model_validate({
+            "name": "500원 할인", "voucher_count": 10, "unit_price": 8000,
+            "discount_amount_per_voucher": 500,
+        })
+        self.assertEqual(fixed.discount_amount_per_voucher, Decimal("500"))
+        with self.assertRaises(ValidationError):
+            VoucherProductCreateRequest.model_validate({
+                "name": "중복 할인", "voucher_count": 10, "unit_price": 8000,
+                "discount_rate": 10, "discount_amount_per_voucher": 500,
+            })
+        with self.assertRaises(ValidationError):
+            VoucherProductCreateRequest.model_validate({
+                "name": "무료 오류", "voucher_count": 1, "unit_price": 8000,
+                "discount_amount_per_voucher": 8000,
+            })
+        with self.assertRaises(ValidationError):
+            VoucherProductCreateRequest.model_validate({
+                "name": "반올림 무료 오류", "voucher_count": 1, "unit_price": "0.01", "discount_rate": 99,
+            })
+        with self.assertRaises(ValidationError):
+            VoucherProductCreateRequest.model_validate({
+                "name": "최대 금액 초과", "voucher_count": 1000, "unit_price": "999999999999.99",
+            })
 
     def test_discount_must_be_below_one_hundred(self):
         with self.assertRaises(ValidationError):
@@ -185,7 +239,7 @@ class VoucherCoreTests(unittest.TestCase):
         self.assertTrue(_is_exposed(ongoing, now))
         self.assertFalse(_is_exposed(ended, now))
         self.assertTrue(_is_exposed({"status": "active", "is_event": False}, now))
-        self.assertFalse(_is_exposed({"status": "inactive", "is_event": False}, now))
+        self.assertFalse(_is_exposed({"status": "sold_out", "is_event": False}, now))
 
     def test_voucher_image_replacement_deletes_previous_managed_object(self):
         repo = MagicMock()
@@ -368,6 +422,24 @@ class VoucherCoreTests(unittest.TestCase):
         self.assertEqual(usage["voucher_use_history"][1]["amount"], 8000)
         self.assertFalse(usage["voucher_use_history"][1]["is_bonus"])
         repo.client.rpc.assert_called_once_with("voucher_balance", {"p_user_id": "user-1"})
+
+
+@patch("app.routers.voucher_products._merchant_admin", return_value=(SimpleNamespace(id="admin"), "merchant-1"))
+@patch("app.routers.voucher_products.JoinRepository")
+def test_admin_product_delete_is_tenant_scoped_soft_delete(repo_class, _merchant_admin):
+    repo = repo_class.return_value
+    repo.client.rest_patch.return_value = [{"id": "product-1"}]
+
+    result = admin_delete_product("product-1", "token")
+
+    assert result["data"] == {"deleted": True, "id": "product-1"}
+    params = repo.client.rest_patch.call_args.args[1]
+    values = repo.client.rest_patch.call_args.args[2]
+    assert params == {
+        "id": "eq.product-1", "merchant_id": "eq.merchant-1", "deleted_at": "is.null",
+    }
+    assert values["status"] == "sold_out"
+    assert values["deleted_at"]
 
 
 if __name__ == "__main__":

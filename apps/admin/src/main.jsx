@@ -640,7 +640,7 @@ function TransactionSkeleton() {
 }
 
 function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage, uploadImage, deleteImage, onChanged, setBusy, setError, setMessage }) {
-  const blank = { name: '', voucher_count: '0', bonus_count: '0', unit_price: '', discount_rate: '0', status: 'active', display_order: '0', kiwoom_pay_method: 'TOTAL', image_url: '', is_event: false, event_start_at: '', event_end_at: '' };
+  const blank = { name: '', voucher_count: '0', bonus_count: '0', unit_price: '', discount_rate: '0', discount_amount_per_voucher: '0', status: 'active', display_order: '0', kiwoom_pay_method: 'TOTAL', image_url: '', is_event: false, event_start_at: '', event_end_at: '' };
   const [form, setForm] = useState(blank);
   const [editingId, setEditingId] = useState(null);
   const [pendingImage, setPendingImage] = useState(null);
@@ -648,7 +648,9 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
   const count = Number(form.voucher_count || 0);
   const bonus = Number(form.bonus_count || 0);
   const discount = Number(form.discount_rate || 0);
-  const salePrice = Math.round(Number(form.unit_price || 0) * count * (100 - discount) / 100 * 100) / 100;
+  const fixedDiscount = Number(form.discount_amount_per_voucher || 0);
+  const discountedUnitPrice = Number(form.unit_price || 0) * (100 - discount) / 100 - fixedDiscount;
+  const salePrice = Math.round(discountedUnitPrice * count * 100) / 100;
 
   function dateTimeInput(value) {
     if (!value) return '';
@@ -689,7 +691,9 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
   }
   async function save(event) {
     event.preventDefault();
-    if (bonus > 0 && discount > 0 && !window.confirm('보너스와 할인을 동시에 적용하시겠어요?')) return;
+    if (discount > 0 && fixedDiscount > 0) { setError('할인율과 장당 할인금액은 한 가지만 적용해 주세요.'); return; }
+    if (discountedUnitPrice <= 0) { setError('할인 후 장당 금액은 0원보다 커야 해요.'); return; }
+    if (bonus > 0 && (discount > 0 || fixedDiscount > 0) && !window.confirm('보너스와 할인을 동시에 적용하시겠어요?')) return;
     if (form.is_event && (!form.event_start_at || !form.event_end_at)) { setError('이벤트 시작일시와 종료일시를 모두 입력해 주세요.'); return; }
     if (form.is_event && new Date(form.event_end_at) <= new Date(form.event_start_at)) { setError('이벤트 종료일시는 시작일시보다 늦어야 해요.'); return; }
     let uploadedImageUrl = '';
@@ -699,7 +703,8 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
       if (pendingImage) uploadedImageUrl = await uploadImage(pendingImage);
       const body = {
         name: form.name.trim(), voucher_count: count, bonus_count: bonus,
-        unit_price: Number(form.unit_price), discount_rate: discount, status: form.status, tax_type: 'taxable',
+        unit_price: Number(form.unit_price), discount_rate: discount,
+        discount_amount_per_voucher: fixedDiscount, status: form.status, tax_type: 'taxable',
         display_order: Number(form.display_order || 0), image_url: uploadedImageUrl || form.image_url || null,
         ...(!migrationRequired ? {
           kiwoom_pay_method: form.kiwoom_pay_method,
@@ -720,21 +725,31 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
   async function toggle(item) {
     setBusy(true); setError('');
     try {
-      await apiFetch(`/admin/voucher-products/${item.id}`, token, { method: 'PATCH', body: JSON.stringify({ status: item.status === 'active' ? 'inactive' : 'active' }) });
-      setMessage(item.status === 'active' ? '식권 패키지를 숨겼어요.' : '식권 패키지 판매를 재개했어요.'); await onChanged();
+      const nextStatus = item.status === 'active' ? 'sold_out' : 'active';
+      await apiFetch(`/admin/voucher-products/${item.id}`, token, { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) });
+      setMessage(nextStatus === 'sold_out' ? '상품을 일시품절로 변경했어요.' : '상품 판매를 재개했어요.'); await onChanged();
     } catch (toggleError) { setError(toggleError.message); } finally { setBusy(false); }
   }
+  async function remove(item) {
+    if (!window.confirm(`'${item.name}' 상품을 삭제하시겠어요? 기존 주문 이력은 보존됩니다.`)) return;
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/admin/voucher-products/${item.id}`, token, { method: 'DELETE' });
+      if (editingId === item.id) { setEditingId(null); setForm(blank); resetPendingImage(); }
+      setMessage('판매 상품을 삭제했어요.'); await onChanged();
+    } catch (deleteError) { setError(deleteError.message); } finally { setBusy(false); }
+  }
   return <section className="panel voucher-panel">
-    <div className="panel-title"><div><p className="panel-note titleless-guidance">삭제하지 않고 숨김/판매 재개합니다. 이벤트 상품은 설정 기간에만 자동 노출됩니다.</p></div><span className="badge">{items.length}개</span></div>
-    {migrationRequired && <div className="alert error">상품 DB 마이그레이션이 아직 적용되지 않았어요. 0020과 0030 마이그레이션 적용 후 이벤트·결제방식 설정이 활성화됩니다.</div>}
+    <div className="panel-title"><div><p className="panel-note titleless-guidance">등록 상품의 판매 상태를 바로 전환하고, 더 이상 쓰지 않는 상품은 삭제할 수 있어요.</p></div><span className="badge">{items.length}개</span></div>
+    {migrationRequired && <div className="alert error">상품 DB 마이그레이션이 아직 적용되지 않았어요. 0020·0030·0055 적용 후 할인금액·판매상태·삭제를 사용할 수 있어요.</div>}
     <form className="voucher-form" onSubmit={save}>
       <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="패키지명" required />
       <label>기본 장수<input type="number" min="1" max="1000" value={form.voucher_count} onChange={(e) => setForm((p) => ({ ...p, voucher_count: e.target.value }))} required /></label>
       <div className="quick-buttons">{[1, 5, 10].map((n) => <button type="button" className="ghost" key={n} onClick={() => setForm((p) => ({ ...p, voucher_count: String(Math.min(1000, Math.max(0, Number(p.voucher_count) || 0) + n)) }))}>+{n}장</button>)}</div>
       <label>보너스 장수<input type="number" min="0" max="1000" value={form.bonus_count} onChange={(e) => setForm((p) => ({ ...p, bonus_count: e.target.value }))} /></label>
       <label>장당 정가<input type="number" min="1" step="0.01" value={form.unit_price} onChange={(e) => setForm((p) => ({ ...p, unit_price: e.target.value }))} required /></label>
-      <label>할인율(%)<input type="number" min="0" max="99.99" step="0.01" value={form.discount_rate} onChange={(e) => setForm((p) => ({ ...p, discount_rate: e.target.value }))} /></label>
-      <label>상태<select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}><option value="active">판매중</option><option value="inactive">숨김</option></select></label>
+      <label>할인율(%)<input type="number" min="0" max="99.99" step="0.01" value={form.discount_rate} onChange={(e) => setForm((p) => ({ ...p, discount_rate: e.target.value, ...(Number(e.target.value) > 0 ? { discount_amount_per_voucher: '0' } : {}) }))} /></label>
+      <label>장당 할인금액<input type="number" min="0" step="1" value={form.discount_amount_per_voucher} onChange={(e) => setForm((p) => ({ ...p, discount_amount_per_voucher: e.target.value, ...(Number(e.target.value) > 0 ? { discount_rate: '0' } : {}) }))} disabled={migrationRequired} /></label>
       <label>결제 방식<select value={form.kiwoom_pay_method} onChange={(e) => setForm((p) => ({ ...p, kiwoom_pay_method: e.target.value }))} disabled={migrationRequired}><option value="TOTAL">통합결제창</option><option value="BANK">계좌이체 전용</option></select></label>
       <label>노출순서<input type="number" value={form.display_order} onChange={(e) => setForm((p) => ({ ...p, display_order: e.target.value }))} /></label>
       <label className="event-toggle"><input type="checkbox" checked={form.is_event} onChange={(e) => setForm((p) => ({ ...p, is_event: e.target.checked }))} disabled={migrationRequired}/> 🎉 이벤트 상품으로 등록</label>
@@ -743,11 +758,11 @@ function VoucherProductsPanel({ items, migrationRequired, token, busy, cropImage
         <label>이벤트 종료일시<input type="datetime-local" min={form.event_start_at} value={form.event_end_at} onChange={(e) => setForm((p) => ({ ...p, event_end_at: e.target.value }))} required /></label>
       </>}
       <label className="image-picker compact">패키지 이미지<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={chooseImage} disabled={busy}/></label>
-      <div className="voucher-preview">미리보기 <strong>{count + bonus}장 · {krw(salePrice)}</strong><span>장당 {krw((count + bonus) ? salePrice / (count + bonus) : 0)}</span>{form.is_event && <span>🎉 노출 기간: {form.event_start_at || '시작일시'} ~ {form.event_end_at || '종료일시'} · 종료 후 자동 숨김</span>}{(pendingPreview || form.image_url) && <img src={pendingPreview || form.image_url} alt="식권 패키지 미리보기"/>}</div>
-      {bonus > 0 && discount > 0 && <div className="alert warning">보너스와 할인율이 동시에 적용됩니다. 판매가와 총 장수를 다시 확인하세요.</div>}
-      <div className="row-actions"><button className="primary" disabled={busy}>{editingId ? '수정 저장' : '상품 등록'}</button>{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(blank); resetPendingImage(); }}>취소</button>}</div>
+      <div className="voucher-preview">미리보기 <strong>{count + bonus}장 · {krw(Math.max(0, salePrice))}</strong><span>유료 1장당 {krw(Math.max(0, discountedUnitPrice))}</span>{form.is_event && <span>🎉 노출 기간: {form.event_start_at || '시작일시'} ~ {form.event_end_at || '종료일시'} · 종료 후 자동 숨김</span>}{(pendingPreview || form.image_url) && <img src={pendingPreview || form.image_url} alt="식권 패키지 미리보기"/>}</div>
+      {bonus > 0 && (discount > 0 || fixedDiscount > 0) && <div className="alert warning">보너스와 할인이 동시에 적용됩니다. 판매가와 총 장수를 다시 확인하세요.</div>}
+      <div className="row-actions"><button className="primary" disabled={busy || migrationRequired}>{editingId ? '수정 저장' : '상품 등록'}</button>{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(blank); resetPendingImage(); }}>취소</button>}</div>
     </form>
-    <div className="product-list">{items.map((item) => <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}장{Number(item.bonus_count) > 0 ? ` + ${item.bonus_count}장` : ''} · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span><span className="badge">{item.kiwoom_pay_method === 'BANK' ? '계좌이체 전용' : '통합결제창'}</span><span className={`exposure-status ${item.exposure_status}`}>{item.exposure_label}</span>{item.is_event && <span className="event-period">{displayEventPeriod(item)}</span>}</div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button className="ghost" onClick={() => toggle(item)}>{item.status === 'active' ? '숨김' : '판매 재개'}</button></div></article>)}</div>
+    <div className="product-list">{items.map((item) => <article className={item.status === 'active' ? 'product-item' : 'product-item off'} key={item.id}>{item.image_url ? <img className="product-image-preview" src={item.image_url} alt=""/> : <div className="product-image-placeholder">이미지 없음</div>}<div className="product-copy"><strong>{item.name}</strong><span>{item.voucher_count}장{Number(item.bonus_count) > 0 ? ` + ${item.bonus_count}장` : ''} · 판매가 {krw(item.sale_price)} · 순서 {item.display_order}</span><span>{Number(item.discount_amount_per_voucher) > 0 ? `장당 ${krw(item.discount_amount_per_voucher)} 할인` : Number(item.discount_rate) > 0 ? `${item.discount_rate}% 할인` : '할인 없음'}</span><span className="badge">{item.kiwoom_pay_method === 'BANK' ? '계좌이체 전용' : '통합결제창'}</span><span className={`exposure-status ${item.exposure_status}`}>{item.exposure_label}</span>{item.is_event && <span className="event-period">{displayEventPeriod(item)}</span>}</div><div className="row-actions product-admin-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button type="button" role="switch" aria-checked={item.status === 'active'} className={`status-switch ${item.status === 'active' ? 'on' : ''}`} onClick={() => toggle(item)} disabled={busy || migrationRequired}><span aria-hidden="true"/>{item.status === 'active' ? '판매중' : '일시품절'}</button><button type="button" className="ghost delete-button" onClick={() => remove(item)} disabled={busy || migrationRequired}>삭제</button></div></article>)}</div>
   </section>;
 }
 
@@ -954,17 +969,190 @@ function EmployeeBulkModal({ token, onClose, onConfirmed }) {
   </div>;
 }
 
+function CouponManagementPanel({ token, items, migrationRequired, loadError, busy, onChanged, setBusy, setError, setMessage }) {
+  const blank = { name: '', discount_type: 'percent', discount_value: '', valid_from: '', valid_until: '', is_active: true };
+  const [form, setForm] = useState(blank);
+  const [editingId, setEditingId] = useState(null);
+  function edit(item) {
+    setEditingId(item.id);
+    setForm({
+      name: item.name ?? '', discount_type: item.discount_type ?? 'percent',
+      discount_value: String(item.discount_value ?? ''), valid_from: item.valid_from ?? '',
+      valid_until: item.valid_until ?? '', is_active: item.is_active !== false,
+    });
+  }
+  function reset() { setEditingId(null); setForm(blank); }
+  async function save(event) {
+    event.preventDefault();
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/admin/coupons${editingId ? `/${editingId}` : ''}`, token, {
+        method: editingId ? 'PATCH' : 'POST',
+        body: JSON.stringify({
+          ...form,
+          name: form.name.trim(),
+          discount_value: Number(form.discount_value),
+          valid_from: form.valid_from || null,
+          valid_until: form.valid_until || null,
+        }),
+      });
+      const successMessage = editingId ? '쿠폰을 수정했어요.' : '쿠폰을 등록했어요.';
+      reset(); await onChanged();
+      setMessage(successMessage);
+    } catch (couponError) { setError(couponError.message); }
+    finally { setBusy(false); }
+  }
+  async function toggle(item) {
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/admin/coupons/${item.id}`, token, {
+        method: 'PATCH', body: JSON.stringify({ is_active: !item.is_active }),
+      });
+      const successMessage = item.is_active ? '쿠폰 적용을 중지했어요.' : '쿠폰 적용을 시작했어요.';
+      await onChanged();
+      setMessage(successMessage);
+    } catch (couponError) { setError(couponError.message); }
+    finally { setBusy(false); }
+  }
+  async function remove(item) {
+    if (!window.confirm(`'${item.name}' 쿠폰을 삭제하시겠어요?`)) return;
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/admin/coupons/${item.id}`, token, { method: 'DELETE' });
+      if (editingId === item.id) reset();
+      await onChanged(); setMessage('쿠폰을 삭제했어요.');
+    } catch (couponError) { setError(couponError.message); }
+    finally { setBusy(false); }
+  }
+  return <section className="panel coupon-panel">
+    <div className="panel-title"><div><p className="panel-note titleless-guidance">할인율 쿠폰과 정액 금액 쿠폰을 등록하고 적용 상태를 관리합니다.</p></div><span className="badge">{items.length}개</span></div>
+    {migrationRequired && <div className="alert error">쿠폰 기능 업데이트가 적용 중이에요. API와 0055 마이그레이션 적용 후 사용할 수 있어요.</div>}
+    {loadError && <div className="alert error">쿠폰 목록을 불러오지 못했어요. {loadError}</div>}
+    <div className="coupon-type-cards" role="radiogroup" aria-label="쿠폰 종류">
+      <button type="button" role="radio" aria-checked={form.discount_type === 'percent'} className={form.discount_type === 'percent' ? 'active' : ''} onClick={() => setForm((current) => ({ ...current, discount_type: 'percent', discount_value: '' }))}><strong>할인쿠폰</strong><span>결제금액의 일정 비율(%) 할인</span></button>
+      <button type="button" role="radio" aria-checked={form.discount_type === 'fixed'} className={form.discount_type === 'fixed' ? 'active' : ''} onClick={() => setForm((current) => ({ ...current, discount_type: 'fixed', discount_value: '' }))}><strong>금액쿠폰</strong><span>정해진 금액(원) 할인</span></button>
+    </div>
+    <form className="coupon-form" onSubmit={save}>
+      <label>쿠폰명<input value={form.name} maxLength="120" onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder={form.discount_type === 'percent' ? '예: 점심 10% 할인' : '예: 1,000원 할인'} required /></label>
+      <label>{form.discount_type === 'percent' ? '할인율(%)' : '할인금액(원)'}<input type="number" min="0.01" max={form.discount_type === 'percent' ? '99.99' : undefined} step={form.discount_type === 'percent' ? '0.01' : '1'} value={form.discount_value} onChange={(event) => setForm((current) => ({ ...current, discount_value: event.target.value }))} required /></label>
+      <label>시작일<input type="date" value={form.valid_from} onChange={(event) => setForm((current) => ({ ...current, valid_from: event.target.value }))} /></label>
+      <label>종료일<input type="date" min={form.valid_from || undefined} value={form.valid_until} onChange={(event) => setForm((current) => ({ ...current, valid_until: event.target.value }))} /></label>
+      <label className="checkbox"><input type="checkbox" checked={form.is_active} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} /> 등록 즉시 적용</label>
+      <div className="row-actions"><button className="primary" disabled={busy || migrationRequired}>{editingId ? '쿠폰 수정' : '쿠폰 등록'}</button>{editingId && <button type="button" className="ghost" onClick={reset}>취소</button>}</div>
+    </form>
+    <div className="product-list coupon-list">{items.map((item) => <article className={`product-item ${item.is_active ? '' : 'off'}`} key={item.id}><div className="coupon-icon" aria-hidden="true">{item.discount_type === 'percent' ? '%' : '₩'}</div><div className="product-copy"><strong>{item.name}</strong><span>{item.discount_type === 'percent' ? `${item.discount_value}% 할인` : `${krw(item.discount_value)} 할인`}</span><span>{item.valid_from || '즉시'} ~ {item.valid_until || '종료일 없음'}</span></div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button type="button" role="switch" aria-checked={!!item.is_active} className={`status-switch ${item.is_active ? 'on' : ''}`} onClick={() => toggle(item)} disabled={busy}><span aria-hidden="true"/>{item.is_active ? '적용중' : '중지'}</button><button className="ghost delete-button" onClick={() => remove(item)} disabled={busy}>삭제</button></div></article>)}</div>
+  </section>;
+}
+
+function PaymentQrPanel({ recentPaymentAlerts, merchantQr, merchantQrImageUrl, merchantPayUrl, onDownload, onCopy }) {
+  return <section className="two-col merchant-main-panels payment-qr-management">
+    <article className="panel payment-alert-panel">
+      <div className="panel-title payment-alert-heading"><div><h2><Bell size={21}/> 오늘의 결제 알림</h2><p className="panel-note">오늘 승인된 최근 결제 10건을 실시간으로 표시합니다.</p></div><span className="badge">{recentPaymentAlerts.length}건</span></div>
+      {recentPaymentAlerts.length === 0 ? <p className="empty-state">오늘 들어온 결제가 아직 없어요.</p> : <div className="payment-alert-list">
+        {recentPaymentAlerts.map((item) => {
+          const paymentType = item.is_bonus
+            ? '식권 (보너스)'
+            : item.pay_type === 'voucher'
+              ? '식권'
+              : item.payment_type_label ?? (item.pay_type === 'ledger' ? '장부' : item.pay_type === 'subsidized' ? '보조금' : '일반');
+          return <div className="payment-alert-row" key={item.id}>
+            <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false })}</time>
+            <strong className="payment-alert-company">{item.company_name ?? '일반 고객'}</strong>
+            <span className="payment-alert-person">{item.employee_name ?? '-'}</span>
+            <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{paymentType}</span>
+            <b>{item.is_bonus ? '0원' : krw(Math.abs(Number(item.amount ?? 0)))}</b>
+          </div>;
+        })}
+      </div>}
+    </article>
+    <article className="panel merchant-qr-panel">
+      <div className="panel-title"><div><h2>내 매장 결제 QR</h2><p className="panel-note">카운터에 비치할 직원 결제용 QR입니다.</p></div><QrCode size={24}/></div>
+      {merchantQrImageUrl ? <div className="qr-card-body">
+        <img className="merchant-qr-image" src={merchantQrImageUrl} alt="매장 결제 QR 코드" />
+        <div className="qr-card-copy"><strong>{merchantQr?.merchant?.name ?? '내 매장'}</strong><span>직원 앱 또는 휴대폰 카메라로 스캔</span><input value={merchantPayUrl} readOnly onFocus={(event) => event.target.select()} /></div>
+        <div className="row-actions qr-actions"><button className="primary" onClick={onDownload}>PDF 다운로드</button><button className="ghost" onClick={onCopy}>링크 복사</button></div>
+      </div> : <p className="empty-state">매장 QR 정보를 불러오고 있어요.</p>}
+    </article>
+  </section>;
+}
+
 function AnnouncementReviewPanel({ token, section }) {
+  const today = todayInput();
   const [data, setData] = useState({ items: [] });
   const [error, setError] = useState('');
   const [form, setForm] = useState({ title: '', content: '', pinned: false, send_push: false });
   const [sort, setSort] = useState('latest');
-  const load = async () => { try { setData(await apiFetch(section === 'announcements' ? '/admin/announcements' : `/admin/reviews?sort=${sort}`, token)); setError(''); } catch (e) { setError(e.message); } };
+  const [reviewFilter, setReviewFilter] = useState('all');
+  const [period, setPeriod] = useState({ from: `${today.slice(0, 7)}-01`, to: today });
+  const [replyDrafts, setReplyDrafts] = useState({});
+  const load = async () => {
+    try {
+      const next = await apiFetch(section === 'announcements' ? '/admin/announcements' : `/admin/reviews?sort=${sort}`, token);
+      setData(next);
+      if (section === 'reviews') {
+        setReplyDrafts((current) => Object.fromEntries((next.items ?? []).map((item) => [
+          item.id,
+          Object.prototype.hasOwnProperty.call(current, item.id) ? current[item.id] : item.owner_reply ?? '',
+        ])));
+      }
+      setError('');
+    } catch (loadError) { setError(loadError.message); }
+  };
   useEffect(() => { load(); }, [section, sort]);
-  async function publish(e) { e.preventDefault(); try { await apiFetch('/admin/announcements', token, { method: 'POST', body: JSON.stringify(form) }); setForm({ title: '', content: '', pinned: false, send_push: false }); await load(); } catch (ex) { setError(ex.message); } }
-  async function patchItem(id, values) { try { await apiFetch(`/admin/${section}/${id}`, token, { method: 'PATCH', body: JSON.stringify(values) }); await load(); } catch (ex) { setError(ex.message); } }
-  if (section === 'announcements') return <section className="panel"><div className="panel-title"><div><p className="panel-note titleless-guidance">앱에 계속 노출할 소식을 작성하고 관리합니다.</p></div></div>{error && <div className="alert error">{error}</div>}<form className="form" onSubmit={publish}><label>제목<input value={form.title} maxLength="120" onChange={e=>setForm({...form,title:e.target.value})} required/></label><label>내용<textarea rows="5" value={form.content} onChange={e=>setForm({...form,content:e.target.value})} required/></label><label className="checkbox"><input type="checkbox" checked={form.pinned} onChange={e=>setForm({...form,pinned:e.target.checked})}/> 상단 고정</label><label className="checkbox"><input type="checkbox" checked={form.send_push} onChange={e=>setForm({...form,send_push:e.target.checked})}/> 푸시 알림도 함께 발송</label><button className="primary">게시하기</button></form><div className="list">{data.items.map(item=><article className={`card ${item.status === 'hidden' ? 'muted' : ''}`} key={item.id}><h3>{item.pinned && '📌 '}{item.title} {item.status === 'hidden' && '(숨김)'}</h3><p>{item.content}</p><small>{new Date(item.created_at).toLocaleString('ko-KR')}</small><div className="actions"><button className="ghost" onClick={()=>patchItem(item.id,{pinned:!item.pinned})}>{item.pinned?'고정 해제':'상단 고정'}</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'published':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김'}</button></div></article>)}</div></section>;
-  return <section className="panel"><div className="panel-title"><div><p className="panel-note titleless-guidance">평균 별점 ⭐️ {data.average_rating ?? 0} ({data.review_count ?? 0}개)</p></div><select value={sort} onChange={e=>setSort(e.target.value)}><option value="latest">최신순</option><option value="rating_asc">낮은 별점순</option></select></div>{error && <div className="alert error">{error}</div>}<div className="list">{data.items.map(item=><article className={`card ${item.status==='hidden'?'muted':''}`} key={item.id}><h3>{item.author_name} {'⭐'.repeat(item.rating)} {item.status==='hidden'&&'(숨김)'}</h3><p>{item.content || '내용 없이 별점만 남긴 리뷰예요.'}</p>{item.image_urls?.length>0&&<div className="review-images">{item.image_urls.map(url=><img src={url} key={url} alt="리뷰"/>)}</div>}<label>사장님 답글<textarea defaultValue={item.owner_reply ?? ''} id={`reply-${item.id}`}/></label><div className="actions"><button className="primary" onClick={()=>patchItem(item.id,{owner_reply:document.getElementById(`reply-${item.id}`).value})}>답글 저장</button><button className="ghost" onClick={()=>patchItem(item.id,{status:item.status==='hidden'?'visible':'hidden'})}>{item.status==='hidden'?'노출로 복원':'숨김 처리'}</button></div></article>)}</div></section>;
+  async function publish(event) {
+    event.preventDefault();
+    try {
+      await apiFetch('/admin/announcements', token, { method: 'POST', body: JSON.stringify(form) });
+      setForm({ title: '', content: '', pinned: false, send_push: false }); await load();
+    } catch (publishError) { setError(publishError.message); }
+  }
+  async function patchItem(id, values) {
+    try {
+      await apiFetch(`/admin/${section}/${id}`, token, { method: 'PATCH', body: JSON.stringify(values) });
+      await load();
+    } catch (patchError) { setError(patchError.message); }
+  }
+  async function deleteAnnouncement(item) {
+    if (!window.confirm(`'${item.title}' 공지사항을 삭제하시겠어요?`)) return;
+    try {
+      await apiFetch(`/admin/announcements/${item.id}`, token, { method: 'DELETE' });
+      await load();
+    } catch (deleteError) { setError(deleteError.message); }
+  }
+  if (section === 'announcements') return <section className="panel">
+    <div className="panel-title"><div><p className="panel-note titleless-guidance">앱에 계속 노출할 소식을 작성하고 관리합니다.</p></div></div>
+    {error && <div className="alert error">{error}</div>}
+    <form className="form" onSubmit={publish}><label>제목<input value={form.title} maxLength="120" onChange={(event) => setForm({ ...form, title: event.target.value })} required/></label><label>내용<textarea rows="5" value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })} required/></label><label className="checkbox"><input type="checkbox" checked={form.pinned} onChange={(event) => setForm({ ...form, pinned: event.target.checked })}/> 상단 고정</label><label className="checkbox"><input type="checkbox" checked={form.send_push} onChange={(event) => setForm({ ...form, send_push: event.target.checked })}/> 푸시 알림도 함께 발송</label><button className="primary">게시하기</button></form>
+    <div className="list">{data.items.map((item) => <article className={`card ${item.status === 'hidden' ? 'muted' : ''}`} key={item.id}><h3>{item.pinned && '📌 '}{item.title} {item.status === 'hidden' && '(숨김)'}</h3><p>{item.content}</p><small>{new Date(item.created_at).toLocaleString('ko-KR')}</small><div className="actions"><button className="ghost" onClick={() => patchItem(item.id, { pinned: !item.pinned })}>{item.pinned ? '고정 해제' : '상단 고정'}</button><button className="ghost" onClick={() => patchItem(item.id, { status: item.status === 'hidden' ? 'published' : 'hidden' })}>{item.status === 'hidden' ? '노출로 복원' : '숨김'}</button><button className="ghost delete-button" onClick={() => deleteAnnouncement(item)}>삭제</button></div></article>)}</div>
+  </section>;
+  const filteredItems = data.items.filter((item) => {
+    const reviewDate = item.created_at ? new Date(item.created_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) : '';
+    const inPeriod = (!period.from || reviewDate >= period.from) && (!period.to || reviewDate <= period.to);
+    const matchesStatus = reviewFilter === 'all'
+      || (reviewFilter === 'unanswered' && !String(item.owner_reply ?? '').trim())
+      || (reviewFilter === 'hidden' && item.status === 'hidden');
+    return inPeriod && matchesStatus;
+  });
+  return <section className="panel review-management-panel">
+    <div className="panel-title"><div><p className="panel-note titleless-guidance">평균 별점 ⭐️ {data.average_rating ?? 0} ({data.review_count ?? 0}개)</p></div><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="latest">최신순</option><option value="rating_asc">낮은 별점순</option></select></div>
+    <div className="review-filter-bar">
+      <label>조회 시작일<input type="date" value={period.from} max={period.to || today} onChange={(event) => setPeriod((current) => ({ ...current, from: event.target.value }))}/></label>
+      <label>조회 종료일<input type="date" value={period.to} min={period.from || undefined} max={today} onChange={(event) => setPeriod((current) => ({ ...current, to: event.target.value }))}/></label>
+      <label>필터<select value={reviewFilter} onChange={(event) => setReviewFilter(event.target.value)}><option value="all">전체</option><option value="unanswered">미답변</option><option value="hidden">숨김</option></select></label>
+      <span className="badge">조회 {filteredItems.length}건</span>
+    </div>
+    <p className="panel-note review-visibility-note">숨김을 켜면 해당 리뷰는 글쓴이와 식당 관리자에게만 보입니다.</p>
+    {error && <div className="alert error">{error}</div>}
+    <div className="list">{filteredItems.length === 0 ? <p className="empty-state">조건에 맞는 리뷰가 없어요.</p> : filteredItems.map((item) => <article className={`card ${item.status === 'hidden' ? 'muted' : ''}`} key={item.id}>
+      <h3>{item.author_name} {'⭐'.repeat(item.rating)} {item.status === 'hidden' && '(숨김)'}</h3>
+      <small>{item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '-'}</small>
+      <p>{item.content || '내용 없이 별점만 남긴 리뷰예요.'}</p>
+      {item.image_urls?.length > 0 && <div className="review-images">{item.image_urls.map((url) => <img src={url} key={url} alt="리뷰"/>)}</div>}
+      <label>사장님 답글<textarea value={replyDrafts[item.id] ?? ''} onChange={(event) => setReplyDrafts((current) => ({ ...current, [item.id]: event.target.value }))}/></label>
+      <label className="checkbox review-visibility-checkbox"><input type="checkbox" checked={item.status === 'hidden'} onChange={(event) => patchItem(item.id, { status: event.target.checked ? 'hidden' : 'visible' })}/> 사용자 앱에서 숨김 <span>글쓴이와 관리자만 볼 수 있음</span></label>
+      <div className="actions"><button className="primary" onClick={() => patchItem(item.id, { owner_reply: replyDrafts[item.id] ?? '' })}>답글 저장</button></div>
+    </article>)}</div>
+  </section>;
 }
 
 function AdminPage({ title, description, children, actions = null, preview = true, showHeader = true, className = '' }) {
@@ -1724,13 +1912,16 @@ function Dashboard({ session, onLogout }) {
   const [settlements, setSettlements] = useState(null);
   const [voucherProducts, setVoucherProducts] = useState([]);
   const [voucherProductsMigrationRequired, setVoucherProductsMigrationRequired] = useState(false);
+  const [coupons, setCoupons] = useState([]);
+  const [couponsMigrationRequired, setCouponsMigrationRequired] = useState(false);
+  const [couponLoadError, setCouponLoadError] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [notificationsMigrationRequired, setNotificationsMigrationRequired] = useState(false);
   const [paymentAlertDay, setPaymentAlertDay] = useState(todayInput());
   const [unreadPaymentCount, setUnreadPaymentCount] = useState(0);
   const notifiedPaymentIdsRef = useRef(new Set());
   const paymentFeedReadyRef = useRef(false);
-  const merchantSectionRef = useRef('main');
+  const paymentAlertsVisibleRef = useRef(false);
   const transactionRefreshVersionRef = useRef(0);
   const [cropRequest, setCropRequest] = useState(null);
   const [dailyMenu, setDailyMenu] = useState(null);
@@ -1945,13 +2136,21 @@ function Dashboard({ session, onLogout }) {
         }
         if (meData.role === 'merchant_admin') {
           let voucherData;
+          let couponData;
           let notificationData;
           const transactionRequestVersion = ++transactionRefreshVersionRef.current;
-          [merchantCompanyData, transactionData, merchantQrData, voucherData, notificationData] = await Promise.all([
+          [merchantCompanyData, transactionData, merchantQrData, voucherData, couponData, notificationData] = await Promise.all([
             apiFetch('/admin/merchant/companies', token),
             apiFetch('/admin/merchant/transactions', token),
             apiFetch('/admin/merchant/qr', token),
             apiFetch('/admin/voucher-products', token),
+            apiFetch('/admin/coupons', token).catch((couponError) => {
+              const migrationRequired = couponError.code === 'MIGRATION_REQUIRED' || couponError.status === 404;
+              return {
+                items: [], migration_required: migrationRequired,
+                load_error: migrationRequired ? '' : couponError.message,
+              };
+            }),
             apiFetch('/admin/notifications', token),
           ]);
           transactionData = filterMerchantTransactions(transactionData);
@@ -1963,6 +2162,9 @@ function Dashboard({ session, onLogout }) {
           }
           setVoucherProducts(voucherData.items ?? []);
           setVoucherProductsMigrationRequired(!!voucherData.migration_required);
+          setCoupons(couponData.items ?? []);
+          setCouponsMigrationRequired(!!couponData.migration_required);
+          setCouponLoadError(couponData.load_error ?? '');
           setNotifications(notificationData.items ?? []);
           setNotificationsMigrationRequired(!!notificationData.migration_required);
         }
@@ -2305,9 +2507,10 @@ function Dashboard({ session, onLogout }) {
   }, [paymentAlertDay]);
 
   useEffect(() => {
-    merchantSectionRef.current = merchantSection;
-    if (merchantSection === 'main') setUnreadPaymentCount(0);
-  }, [merchantSection]);
+    const visible = merchantSection === 'restaurant-management' && merchantContentSection === 'payment-qr';
+    paymentAlertsVisibleRef.current = visible;
+    if (visible) setUnreadPaymentCount(0);
+  }, [merchantSection, merchantContentSection]);
 
   useEffect(() => {
     if (!isMerchantAdmin) return undefined;
@@ -2335,7 +2538,7 @@ function Dashboard({ session, onLogout }) {
         notifiedPaymentIdsRef.current = result.nextNotifiedIds;
         if (paymentFeedReadyRef.current && result.newIds.length > 0) {
           playPaymentChime();
-          if (merchantSectionRef.current !== 'main') {
+          if (!paymentAlertsVisibleRef.current) {
             setUnreadPaymentCount((count) => count + result.newIds.length);
           }
         }
@@ -2374,7 +2577,7 @@ function Dashboard({ session, onLogout }) {
           notifiedPaymentIdsRef.current = result.nextNotifiedIds;
           if (paymentFeedReadyRef.current && result.newIds.length > 0) {
             playPaymentChime();
-            if (merchantSectionRef.current !== 'main') setUnreadPaymentCount((count) => count + result.newIds.length);
+            if (!paymentAlertsVisibleRef.current) setUnreadPaymentCount((count) => count + result.newIds.length);
           }
           paymentFeedReadyRef.current = true;
           setTransactions(result.list);
@@ -2399,6 +2602,8 @@ function Dashboard({ session, onLogout }) {
   const restaurantManagementTabs = [
     ['daily-menu', '오늘 뷔페 메뉴'],
     ['vouchers', '판매 상품'],
+    ['coupons', '쿠폰 관리'],
+    ['payment-qr', '결제 QR'],
     ['notifications', '알림'],
     ['announcements', '공지사항'],
     ['reviews', '리뷰'],
@@ -2428,7 +2633,7 @@ function Dashboard({ session, onLogout }) {
     </header>
 
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
-      {merchantNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'main' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
+      {merchantNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'restaurant-management' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
       <div className="merchant-nav-divider merchant-nav-divider-before-logout" role="separator" />
       <button type="button" className="merchant-sidebar-logout" onClick={load} disabled={busy}><RefreshCw size={18}/><span>새로고침</span></button>
       <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
@@ -2451,7 +2656,7 @@ function Dashboard({ session, onLogout }) {
       </div>
     </nav>}
 
-    <div className={isMerchantAdmin ? `merchant-content${merchantSection === 'main' || merchantSection === 'payment-history' || merchantContentSection === 'vouchers' ? ' merchant-regular-weight' : ''}` : isCompanyAdmin ? 'company-content merchant-regular-weight' : undefined}>
+    <div className={isMerchantAdmin ? `merchant-content${merchantSection === 'main' || merchantSection === 'payment-history' || ['vouchers', 'coupons', 'payment-qr', 'announcements', 'reviews'].includes(merchantContentSection) ? ' merchant-regular-weight' : ''}` : isCompanyAdmin ? 'company-content merchant-regular-weight' : undefined}>
     {isCompanyAdmin && companySection === 'company-usage' && <nav className="merchant-section-tabs" aria-label="이용 내역 페이지">
       {companyUsageTabs.map(([id, label]) => <button key={id} type="button" className={companyUsageTab === id ? 'active' : ''} onClick={() => setCompanyUsageTab(id)} aria-current={companyUsageTab === id ? 'page' : undefined}>{label}</button>)}
     </nav>}
@@ -2605,43 +2810,6 @@ function Dashboard({ session, onLogout }) {
         </article>)}</div>}
     </section>}
 
-    {isMerchantAdmin && merchantSection === 'main' && <section className="two-col merchant-main-panels">
-      <article className="panel payment-alert-panel">
-        <div className="panel-title payment-alert-heading"><div><h2><Bell size={21}/> 오늘의 결제 알림</h2><p className="panel-note">오늘 승인된 최근 결제 10건을 실시간으로 표시합니다.</p></div><span className="badge">{recentPaymentAlerts.length}건</span></div>
-        {recentPaymentAlerts.length === 0 ? <p className="empty-state">오늘 들어온 결제가 아직 없어요.</p> : <div className="payment-alert-list">
-          {recentPaymentAlerts.map((item) => {
-            const paymentType = item.is_bonus
-              ? '식권 (보너스)'
-              : item.pay_type === 'voucher'
-                ? '식권'
-                : item.payment_type_label ?? (item.pay_type === 'ledger' ? '장부' : item.pay_type === 'subsidized' ? '보조금' : '일반');
-            return <div className="payment-alert-row" key={item.id}>
-              <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false })}</time>
-              <strong className="payment-alert-company">{item.company_name ?? '일반 고객'}</strong>
-              <span className="payment-alert-person">{item.employee_name ?? '-'}</span>
-              <span className={`payment-type-badge ${item.pay_type ?? 'direct'}`}>{paymentType}</span>
-              <b>{item.is_bonus ? '0원' : krw(Math.abs(Number(item.amount ?? 0)))}</b>
-            </div>;
-          })}
-        </div>}
-      </article>
-      <article className="panel merchant-qr-panel">
-        <div className="panel-title"><div><h2>내 매장 결제 QR</h2><p className="panel-note">카운터에 비치할 직원 결제용 QR입니다.</p></div><QrCode size={24}/></div>
-        {merchantQrImageUrl ? <div className="qr-card-body">
-          <img className="merchant-qr-image" src={merchantQrImageUrl} alt="매장 결제 QR 코드" />
-          <div className="qr-card-copy">
-            <strong>{merchantQr?.merchant?.name ?? '내 매장'}</strong>
-            <span>직원 앱 또는 휴대폰 카메라로 스캔</span>
-            <input value={merchantPayUrl} readOnly onFocus={(event) => event.target.select()} />
-          </div>
-          <div className="row-actions qr-actions">
-            <button className="primary" onClick={downloadMerchantQrPdf}>PDF 다운로드</button>
-            <button className="ghost" onClick={copyMerchantPayUrl}>링크 복사</button>
-          </div>
-        </div> : <p className="empty-state">매장 QR 정보를 불러오고 있어요.</p>}
-      </article>
-    </section>}
-
     {isMerchantAdmin && merchantSection === 'main' && <aside className="merchant-refund-dock"><div><span>결제 취소가 필요하신가요?</span><strong>고객 주문을 조회해 안전하게 환불하세요.</strong></div><button className="refund-open-button" type="button" onClick={() => setRefundOpen(true)}><RotateCcw size={19}/> 환불하기</button></aside>}
 
     {isMerchantAdmin && merchantSection === 'payment-history' && <PaymentHistoryDashboard request={merchantRequest} refreshKey={paymentHistoryRefreshKey}/>}
@@ -2697,6 +2865,10 @@ function Dashboard({ session, onLogout }) {
 
 
     {isMerchantAdmin && merchantContentSection === 'vouchers' && <VoucherProductsPanel items={voucherProducts} migrationRequired={voucherProductsMigrationRequired} token={token} busy={busy} cropImage={requestImageCrop} uploadImage={uploadProductImage} deleteImage={deleteProductImage} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
+
+    {isMerchantAdmin && merchantContentSection === 'coupons' && <CouponManagementPanel token={token} items={coupons} migrationRequired={couponsMigrationRequired} loadError={couponLoadError} busy={busy} onChanged={load} setBusy={setBusy} setError={setError} setMessage={setMessage} />}
+
+    {isMerchantAdmin && merchantContentSection === 'payment-qr' && <PaymentQrPanel recentPaymentAlerts={recentPaymentAlerts} merchantQr={merchantQr} merchantQrImageUrl={merchantQrImageUrl} merchantPayUrl={merchantPayUrl} onDownload={downloadMerchantQrPdf} onCopy={copyMerchantPayUrl} />}
 
     {isMerchantAdmin && merchantContentSection === 'notifications' && <NotificationPanel token={token} history={notifications} migrationRequired={notificationsMigrationRequired} onSent={load} setMessage={setMessage} />}
 

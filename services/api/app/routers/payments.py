@@ -205,19 +205,35 @@ def _decode_form(raw: bytes) -> dict[str, str]:
     return {}
 
 
+TRUSTED_LOCAL_PEERS = frozenset({"127.0.0.1", "::1", "testclient"})
+
+
 def _notification_ip(request: Request) -> str:
-    # The ingress proxy appends its peer at the right. Taking the rightmost
-    # non-empty XFF value avoids trusting a client-prepended leftmost value.
-    forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
-    candidate = forwarded[-1] if forwarded else (request.client.host if request.client else "")
-    if candidate == "testclient":
-        return candidate
-    return str(ipaddress.ip_address(candidate))
+    # Render's ingress delivers the real caller as the socket peer, so
+    # request.client.host is the authoritative, unspoofable source (the access
+    # log shows the true Kiwoom IP there). X-Forwarded-For instead trails an
+    # internal proxy hop (e.g. a 10.x address) that must never be mistaken for
+    # the caller. Only when the peer is a loopback/test sentinel do we honour the
+    # forwarded chain, since those legitimately front a real caller (and inject a
+    # simulated source IP in tests). A direct attacker therefore cannot smuggle an
+    # allowed IP through a forged X-Forwarded-For header.
+    peer = request.client.host if request.client else ""
+    if peer in TRUSTED_LOCAL_PEERS:
+        forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+        if forwarded:
+            return str(ipaddress.ip_address(forwarded[-1]))
+        return peer
+    return str(ipaddress.ip_address(peer))
 
 
 def _ack(success: bool, status_code: int = 200) -> Response:
     result = "SUCCESS" if success else "FAIL"
     return Response(f"<html><body><RESULT>{result}</RESULT></body></html>", status_code=status_code, media_type="text/html")
+
+
+def _log_notification_outcome(event: str, reason: str, *, level: int = logging.WARNING) -> None:
+    """Log a callback outcome without attaching provider or request data."""
+    logger.log(level, "%s reason=%s", event, reason, extra={"reason": reason})
 
 
 def _is_successful_notification_outcome(values: dict[str, str]) -> bool:
@@ -263,39 +279,47 @@ async def _notification(request: Request) -> Response:
     try:
         source_ip = _notification_ip(request)
     except ValueError:
-        logger.warning("kiwoom_notification_rejected reason=invalid_source_ip")
+        _log_notification_outcome("kiwoom_notification_rejected", "invalid_source_ip")
         return _ack(False, 400)
-    if source_ip not in {"127.0.0.1", "::1", "testclient"} and source_ip not in settings.kiwoompay_notification_ips:
-        logger.warning("kiwoom_notification_rejected reason=source_ip_not_allowed source_ip=%s", source_ip)
+    if source_ip not in TRUSTED_LOCAL_PEERS and source_ip not in settings.kiwoompay_notification_ips:
+        _log_notification_outcome("kiwoom_notification_rejected", "source_ip_not_allowed")
         return _ack(False, 403)
     values = dict(request.query_params)
     if request.method == "POST":
         values.update(_decode_form(await request.body()))
     try:
         if values.get("CPID") != settings.kiwoompay_cpid:
+            _log_notification_outcome("kiwoom_notification_rejected", "cpid_mismatch")
             return _ack(False, 400)
         pay_method = str(values.get("PAYMETHOD") or "")
         if not _is_successful_notification_outcome(values):
             # SUCCESS acknowledges receipt. Cancellation and explicit failures
             # are terminal provider outcomes, not payment approvals.
+            _log_notification_outcome("kiwoom_notification_acknowledged", "explicit_failure_or_cancel")
             return _ack(True)
         order_id, transaction_id = values.get("ORDERNO"), values.get("DAOUTRX")
         if not order_id or not transaction_id:
+            _log_notification_outcome("kiwoom_notification_rejected", "missing_keys")
             return _ack(False, 400)
         rows = repo.client.rest_get("payment_orders", {
             "select": ORDER_SELECT, "order_id": f"eq.{order_id}", "limit": "1",
         })
         if not rows:
+            _log_notification_outcome("kiwoom_notification_rejected", "order_not_found")
             return _ack(False, 404)
         order = rows[0]
         if int(values.get("AMOUNT") or 0) != int(order["amount"]):
+            _log_notification_outcome("kiwoom_notification_rejected", "amount_mismatch")
             return _ack(False, 409)
         requested_method = str(order.get("requested_payment_method") or "TOTAL")
         if requested_method == "BANK" and pay_method != "BANK":
+            _log_notification_outcome("kiwoom_notification_rejected", "method_mismatch")
             return _ack(False, 409)
         if not pay_method:
+            _log_notification_outcome("kiwoom_notification_rejected", "missing_method")
             return _ack(False, 400)
         if order.get("status") not in {"ready", "done"}:
+            _log_notification_outcome("kiwoom_notification_rejected", "invalid_status")
             return _ack(False, 409)
         legacy_subsidized = (
             order.get("voucher_product_id") is None
@@ -306,6 +330,7 @@ async def _notification(request: Request) -> Response:
         if (order.get("status") == "ready" and order.get("pay_type") == "subsidized"
                 and int(order.get("amount") or 0) > 0 and not order.get("checkout_started_at")
                 and not legacy_subsidized):
+            _log_notification_outcome("kiwoom_notification_rejected", "checkout_boundary")
             return _ack(False, 409)
         provider_response = _normalized_notification_payload(values, source_ip)
         # Kiwoom's validated result notification is the final approval. The RPC
@@ -319,17 +344,19 @@ async def _notification(request: Request) -> Response:
         })
         return _ack(True)
     except HTTPException as exc:
+        _log_notification_outcome("kiwoom_notification_failed", "unexpected", level=logging.ERROR)
         return _ack(False, exc.status_code)
     except SupabaseHttpError as exc:
-        logger.error(
-            "kiwoom_notification_failed reason=supabase status=%s",
-            exc.status,
-        )
         if "TAX_TYPE_UNCLASSIFIED" in exc.body:
+            _log_notification_outcome("kiwoom_notification_failed", "tax", level=logging.ERROR)
             return _ack(False, 409)
+        _log_notification_outcome("kiwoom_notification_failed", "supabase", level=logging.ERROR)
         return _ack(False, 500)
-    except (ValueError, TypeError) as exc:
-        logger.error("kiwoom_notification_failed reason=%s", type(exc).__name__)
+    except (ValueError, TypeError):
+        _log_notification_outcome("kiwoom_notification_failed", "value", level=logging.ERROR)
+        return _ack(False, 500)
+    except Exception:
+        _log_notification_outcome("kiwoom_notification_failed", "unexpected", level=logging.ERROR)
         return _ack(False, 500)
 
 
@@ -388,6 +415,7 @@ def redirect_success():
 
 
 @short_redirect_router.get("/p", response_class=HTMLResponse)
+@short_redirect_router.post("/p", response_class=HTMLResponse)
 def short_redirect_success():
     return redirect_success()
 

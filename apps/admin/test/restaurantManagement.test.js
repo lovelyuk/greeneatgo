@@ -21,8 +21,13 @@ test('product management has fixed discount, sold-out switch, and delete', () =>
   assert.match(source, /apiFetch\(`\/admin\/voucher-products\/\$\{item\.id\}`.*method: 'DELETE'/s);
 });
 
-test('announcement delete and review visibility controls are wired', () => {
+test('announcement edit/delete and review visibility controls are wired', () => {
   assert.match(source, /apiFetch\(`\/admin\/announcements\/\$\{item\.id\}`.*method: 'DELETE'/s);
+  assert.match(source, /const \[editingAnnouncementId, setEditingAnnouncementId\] = useState\(''\)/);
+  assert.match(source, /method: editingAnnouncementId \? 'PATCH' : 'POST'/);
+  assert.match(source, /editingAnnouncementId \? '수정 저장' : '게시하기'/);
+  assert.match(source, />수정<\/button>/);
+  assert.doesNotMatch(source, /'노출로 복원' : '숨김'/);
   assert.match(source, /<option value="unanswered">미답변<\/option>/);
   assert.match(source, /<option value="hidden">숨김<\/option>/);
   assert.match(source, /사용자 앱에서 숨김/);

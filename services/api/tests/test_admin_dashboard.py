@@ -28,6 +28,7 @@ def payload():
         ],
         "top_companies_by_amount": [{"rank": 1, "name": "회사", "amount": 900}],
         "top_companies_by_count": [{"rank": 1, "name": "회사", "count": 2}],
+        "unit": "day",
         "series": [{"date": "2026-07-01", "amount": 900, "count": 2}],
     }
 
@@ -98,6 +99,14 @@ def test_dashboard_nested_models_enforce_exact_public_keys():
 def test_dashboard_rejects_out_of_range_meal_ratios(ratio):
     invalid = payload()
     invalid["by_meal_type"][0]["ratio"] = ratio
+    with pytest.raises(ValidationError):
+        AdminDashboardSummary.model_validate(invalid)
+
+
+@pytest.mark.parametrize("unit", [None, "hour", "quarter"])
+def test_dashboard_rejects_unknown_series_unit(unit):
+    invalid = payload()
+    invalid["unit"] = unit
     with pytest.raises(ValidationError):
         AdminDashboardSummary.model_validate(invalid)
 

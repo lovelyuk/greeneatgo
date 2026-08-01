@@ -23,16 +23,23 @@ test('merchant and company dashboards use the shared dashboard and strict API co
   assert.match(main, /row\.label/);
   assert.match(main, /row\.rank/);
   assert.match(main, /row\.name/);
+  assert.match(main, /\['day', 'week', 'month'\]\.includes\(data\.unit\)/);
   assert.doesNotMatch(main, /row\.meal_type/);
   assert.doesNotMatch(main, /row\.company_name/);
   assert.doesNotMatch(dashboardMain, /total_amount \?\? 0/);
   assert.match(dashboardMain, /assertDashboardKeys\(data,/);
 });
 
+test('dashboard header is removed while period controls remain flat', () => {
+  assert.match(dashboardMain, /<AdminPage showHeader=\{false\}/);
+  assert.doesNotMatch(dashboardMain, /title="대시보드"/);
+  assert.doesNotMatch(dashboardMain, /기간 설정에 따른 매출 및 수량 현황/);
+  assert.doesNotMatch(dashboardMain, /기간 설정에 따른 식당 이용 현황/);
+  assert.match(dashboardMain, /<PeriodPicker/);
+  assert.match(css, /\.dash-period \{[^}]*padding: 0;[^}]*border: 0;[^}]*background: transparent;/s);
+});
+
 test('summary is exactly amount, meal ratio, and count with required presentation', () => {
-  assert.match(main, /title="대시보드"/);
-  assert.match(main, /기간 설정에 따른 매출 및 수량 현황을 한눈에 확인할 수 있습니다\./);
-  assert.match(main, /기간 설정에 따른 식당 이용 현황을 한눈에 확인할 수 있습니다\./);
   assert.match(main, /<section className="dash-summary-grid"><SummaryCard[\s\S]*?<DonutCard[\s\S]*?<SummaryCard/);
   assert.match(main, /식사 구분/);
   assert.match(main, /row\.ratio\.toLocaleString/);
@@ -66,15 +73,32 @@ test('all-zero dashboard data renders empty tables and charts instead of believa
   assert.match(dashboardMain, /series=\{hasDashboardData \? summary\.series : \[\]\}/);
 });
 
-test('charts have independent gradients and explicit amount/count colors', () => {
-  assert.match(main, /function TrendChart\(\{ title, series, valueKey, money = false, color \}\)/);
+test('charts share fixed y-axis, scrollable plot, unit label, and tooltips', () => {
+  assert.match(main, /function TrendChart\(\{ title, series, unit, valueKey, money = false, color \}\)/);
   assert.match(main, /useId\(\)/);
+  assert.match(main, /const MIN_POINT_GAP = 40/);
+  assert.match(main, /ResizeObserver/);
+  assert.match(main, /scrollLeft = .*scrollWidth - .*clientWidth/);
   assert.match(main, /const gradientId = `dash-area-/);
   assert.match(main, /style=\{\{ stroke: color \}\}/);
   assert.match(main, /color="#2FB865"/);
   assert.match(main, /color="#4C8BF5"/);
   assert.match(main, /compactMoneyTick/);
-  assert.match(main, /Math\.ceil\(series\.length \/ 6\)/);
+  assert.match(main, /const minValue = Math\.min\(\.\.\.values, 0\)/);
+  assert.match(main, /const zeroY = yFor\(0\)/);
+  assert.match(main, /dash-chart-y-axis/);
+  assert.match(main, /dash-chart-scroll/);
+  assert.match(main, /dash-tooltip/);
+  assert.match(main, /unit=\{summary\.unit\}/);
+  assert.match(main, /단위: \{money \? '원' : '건'\} · \{dashboardUnitLabel\(unit\)\}/);
+  assert.match(css, /\.dash-chart-layout \{[^}]*grid-template-columns:/s);
+  assert.match(css, /\.dash-chart-scroll \{[^}]*overflow-x: auto;[^}]*overflow-y: hidden;/s);
+});
+
+test('sidebar hides entity names and centers the brand', () => {
+  assert.doesNotMatch(main, /sidebar-entity-name/);
+  assert.match(css, /\.merchant-topbar \.brand-row, \.company-topbar \.brand-row \{[^}]*justify-content: center;/s);
+  assert.doesNotMatch(css, /\.brandmark::after/);
 });
 
 test('dashboard breakpoints keep summary at three columns and details stacked until desktop', () => {

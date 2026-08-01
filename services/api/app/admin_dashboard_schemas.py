@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,6 +41,7 @@ class AdminDashboardSummary(_StableModel):
     by_meal_type: list[MealTypeSummary]
     top_companies_by_amount: list[TopCompanyByAmount]
     top_companies_by_count: list[TopCompanyByCount]
+    unit: Literal["day", "week", "month"]
     series: list[DashboardSeriesPoint]
 
 

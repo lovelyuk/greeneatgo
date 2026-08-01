@@ -1081,6 +1081,7 @@ function AnnouncementReviewPanel({ token, section }) {
   const [data, setData] = useState({ items: [] });
   const [error, setError] = useState('');
   const [form, setForm] = useState({ title: '', content: '', pinned: false, send_push: false });
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState('');
   const [sort, setSort] = useState('latest');
   const [reviewFilter, setReviewFilter] = useState('all');
   const [period, setPeriod] = useState({ from: `${today.slice(0, 7)}-01`, to: today });
@@ -1102,9 +1103,26 @@ function AnnouncementReviewPanel({ token, section }) {
   async function publish(event) {
     event.preventDefault();
     try {
-      await apiFetch('/admin/announcements', token, { method: 'POST', body: JSON.stringify(form) });
-      setForm({ title: '', content: '', pinned: false, send_push: false }); await load();
+      const editing = Boolean(editingAnnouncementId);
+      const payload = editing
+        ? { title: form.title, content: form.content, pinned: form.pinned }
+        : form;
+      await apiFetch(`/admin/announcements${editing ? `/${editingAnnouncementId}` : ''}`, token, {
+        method: editingAnnouncementId ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload),
+      });
+      setEditingAnnouncementId('');
+      setForm({ title: '', content: '', pinned: false, send_push: false });
+      await load();
     } catch (publishError) { setError(publishError.message); }
+  }
+  function editAnnouncement(item) {
+    setEditingAnnouncementId(item.id);
+    setForm({ title: item.title, content: item.content, pinned: item.pinned, send_push: false });
+  }
+  function cancelAnnouncementEdit() {
+    setEditingAnnouncementId('');
+    setForm({ title: '', content: '', pinned: false, send_push: false });
   }
   async function patchItem(id, values) {
     try {
@@ -1120,10 +1138,16 @@ function AnnouncementReviewPanel({ token, section }) {
     } catch (deleteError) { setError(deleteError.message); }
   }
   if (section === 'announcements') return <section className="panel">
-    <div className="panel-title"><div><p className="panel-note titleless-guidance">앱에 계속 노출할 소식을 작성하고 관리합니다.</p></div></div>
+    <div className="panel-title"><div><p className="panel-note titleless-guidance">{editingAnnouncementId ? '공지사항 내용을 수정하고 저장합니다.' : '앱에 계속 노출할 소식을 작성하고 관리합니다.'}</p></div></div>
     {error && <div className="alert error">{error}</div>}
-    <form className="form" onSubmit={publish}><label>제목<input value={form.title} maxLength="120" onChange={(event) => setForm({ ...form, title: event.target.value })} required/></label><label>내용<textarea rows="5" value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })} required/></label><label className="checkbox"><input type="checkbox" checked={form.pinned} onChange={(event) => setForm({ ...form, pinned: event.target.checked })}/> 상단 고정</label><label className="checkbox"><input type="checkbox" checked={form.send_push} onChange={(event) => setForm({ ...form, send_push: event.target.checked })}/> 푸시 알림도 함께 발송</label><button className="primary">게시하기</button></form>
-    <div className="list">{data.items.map((item) => <article className={`card ${item.status === 'hidden' ? 'muted' : ''}`} key={item.id}><h3>{item.pinned && '📌 '}{item.title} {item.status === 'hidden' && '(숨김)'}</h3><p>{item.content}</p><small>{new Date(item.created_at).toLocaleString('ko-KR')}</small><div className="actions"><button className="ghost" onClick={() => patchItem(item.id, { pinned: !item.pinned })}>{item.pinned ? '고정 해제' : '상단 고정'}</button><button className="ghost" onClick={() => patchItem(item.id, { status: item.status === 'hidden' ? 'published' : 'hidden' })}>{item.status === 'hidden' ? '노출로 복원' : '숨김'}</button><button className="ghost delete-button" onClick={() => deleteAnnouncement(item)}>삭제</button></div></article>)}</div>
+    <form className="form" onSubmit={publish}>
+      <label>제목<input value={form.title} maxLength="120" onChange={(event) => setForm({ ...form, title: event.target.value })} required/></label>
+      <label>내용<textarea rows="5" value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })} required/></label>
+      <label className="checkbox"><input type="checkbox" checked={form.pinned} onChange={(event) => setForm({ ...form, pinned: event.target.checked })}/> 상단 고정</label>
+      {!editingAnnouncementId && <label className="checkbox"><input type="checkbox" checked={form.send_push} onChange={(event) => setForm({ ...form, send_push: event.target.checked })}/> 푸시 알림도 함께 발송</label>}
+      <div className="actions"><button className="primary">{editingAnnouncementId ? '수정 저장' : '게시하기'}</button>{editingAnnouncementId && <button type="button" className="ghost" onClick={cancelAnnouncementEdit}>수정 취소</button>}</div>
+    </form>
+    <div className="list">{data.items.map((item) => <article className={`card ${item.status === 'hidden' ? 'muted' : ''}`} key={item.id}><h3>{item.pinned && '📌 '}{item.title} {item.status === 'hidden' && '(숨김)'}</h3><p>{item.content}</p><small>{new Date(item.created_at).toLocaleString('ko-KR')}</small><div className="actions"><button className="ghost" onClick={() => patchItem(item.id, { pinned: !item.pinned })}>{item.pinned ? '고정 해제' : '상단 고정'}</button><button className="ghost" onClick={() => editAnnouncement(item)}>수정</button><button className="ghost delete-button" onClick={() => deleteAnnouncement(item)}>삭제</button></div></article>)}</div>
   </section>;
   const filteredItems = data.items.filter((item) => {
     const reviewDate = item.created_at ? new Date(item.created_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) : '';
@@ -1815,12 +1839,13 @@ function assertDashboardString(value) {
 
 function mapDashboardSummary(payload) {
   const data = assertDashboardObject(payload);
-  assertDashboardKeys(data, ['total_amount', 'total_amount_delta_pct', 'total_count', 'total_count_delta_pct', 'by_meal_type', 'top_companies_by_amount', 'top_companies_by_count', 'series']);
+  assertDashboardKeys(data, ['total_amount', 'total_amount_delta_pct', 'total_count', 'total_count_delta_pct', 'by_meal_type', 'top_companies_by_amount', 'top_companies_by_count', 'unit', 'series']);
   const totalAmount = assertDashboardNumber(data.total_amount, true);
   const totalCount = assertDashboardNumber(data.total_count, true);
   const delta = (value) => value === null ? null : assertDashboardNumber(value);
   if (!Array.isArray(data.by_meal_type) || !Array.isArray(data.top_companies_by_amount)
-      || !Array.isArray(data.top_companies_by_count) || !Array.isArray(data.series)) throw dashboardContractError();
+      || !Array.isArray(data.top_companies_by_count) || !Array.isArray(data.series)
+      || !['day', 'week', 'month'].includes(data.unit)) throw dashboardContractError();
   const byMealType = data.by_meal_type.map((item) => {
     const row = assertDashboardObject(item);
     assertDashboardKeys(row, ['label', 'amount', 'count', 'ratio']);
@@ -1857,6 +1882,7 @@ function mapDashboardSummary(payload) {
     by_meal_type: byMealType,
     top_companies_by_amount: rankRows(data.top_companies_by_amount, 'amount'),
     top_companies_by_count: rankRows(data.top_companies_by_count, 'count'),
+    unit: data.unit,
     series,
   };
 }
@@ -1912,31 +1938,101 @@ function compactMoneyTick(value) {
   return dashNumber(value);
 }
 
-function TrendChart({ title, series, valueKey, money = false, color }) {
+const MIN_POINT_GAP = 40;
+const DASH_CHART_HEIGHT = 250;
+const DASH_CHART_TOP = 18;
+const DASH_CHART_BOTTOM = 42;
+const DASH_CHART_SIDE = MIN_POINT_GAP / 2;
+
+function dashboardUnitLabel(unit) {
+  return unit === 'week' ? '주별' : unit === 'month' ? '월별' : '일별';
+}
+
+function dashboardAxisDate(value, unit) {
+  const [year, month, day] = value.split('-').map(Number);
+  if (unit === 'month') return `${year}.${String(month).padStart(2, '0')}`;
+  if (unit === 'week') return `${String(month).padStart(2, '0')}월 ${Math.ceil(day / 7)}주`;
+  return `${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')}`;
+}
+
+function dashboardTooltipDate(value, unit) {
+  const [year, month, day] = value.split('-').map(Number);
+  if (unit === 'month') return `${year}년 ${month}월`;
+  if (unit === 'week') return `${year}.${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')} 시작 주`;
+  return `${year}.${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')}`;
+}
+
+function TrendChart({ title, series, unit, valueKey, money = false, color }) {
   const reactId = useId();
   const gradientId = `dash-area-${valueKey}-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
-  const width = 640; const height = 250; const left = 54; const right = 16; const top = 18; const bottom = 42;
-  if (series.length === 0) return <article className="dash-card dash-detail-card"><h3>{title}</h3><p className="dash-empty">조회 기간의 데이터가 없습니다.</p></article>;
+  const viewportRef = useRef(null);
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const [hoveredIndex, setHoveredIndex] = useState(null);
   const values = series.map((row) => row[valueKey]);
-  const min = Math.min(...values, 0); const max = Math.max(...values, 0);
-  const range = max - min || 1;
-  const plotWidth = width - left - right; const plotHeight = height - top - bottom;
+  const minValue = Math.min(...values, 0);
+  const maxValue = Math.max(...values, 0);
+  const valueRange = maxValue - minValue || 1;
+  const plotHeight = DASH_CHART_HEIGHT - DASH_CHART_TOP - DASH_CHART_BOTTOM;
+  const plotWidth = Math.max(viewportWidth, series.length * MIN_POINT_GAP);
+  const innerWidth = Math.max(0, plotWidth - DASH_CHART_SIDE * 2);
+  const yFor = (value) => DASH_CHART_TOP + plotHeight - ((value - minValue) / valueRange) * plotHeight;
   const points = series.map((row, index) => ({
-    x: left + (series.length === 1 ? plotWidth / 2 : (index / (series.length - 1)) * plotWidth),
-    y: top + plotHeight - ((row[valueKey] - min) / range) * plotHeight,
+    x: series.length === 1 ? plotWidth / 2 : DASH_CHART_SIDE + (index / (series.length - 1)) * innerWidth,
+    y: yFor(row[valueKey]),
     row,
   }));
   const line = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
-  const zeroY = top + plotHeight - ((0 - min) / range) * plotHeight;
-  const area = `${line} L ${points.at(-1).x} ${zeroY} L ${points[0].x} ${zeroY} Z`;
-  const labelStep = Math.max(1, Math.ceil(series.length / 6));
-  const ticks = [min, min + range / 2, max];
-  return <article className="dash-card dash-detail-card"><h3>{title}</h3><div className="dash-chart-scroll"><svg className="dash-trend" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
-    <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={color} stopOpacity=".28"/><stop offset="1" stopColor={color} stopOpacity=".03"/></linearGradient></defs>
-    {ticks.map((tick, index) => { const y = top + plotHeight - (index / 2) * plotHeight; return <g key={`${tick}-${index}`}><line x1={left} x2={width - right} y1={y} y2={y} className="dash-gridline"/><text x={left - 8} y={y + 4} textAnchor="end" className="dash-axis-label">{money ? compactMoneyTick(tick) : Math.round(tick).toLocaleString('ko-KR')}</text></g>; })}
-    <path d={area} fill={`url(#${gradientId})`} /><path d={line} className="dash-line" style={{ stroke: color }} />
-    {points.map((point, index) => <g key={`${point.row.date}-${index}`}><circle cx={point.x} cy={point.y} r="3.5" className="dash-point" style={{ stroke: color }}><title>{`${point.row.date}: ${money ? krw(point.row[valueKey]) : `${dashNumber(point.row[valueKey])}건`}`}</title></circle>{(index % labelStep === 0 || index === points.length - 1) && <text x={point.x} y={height - 14} textAnchor="middle" className="dash-axis-label">{point.row.date.slice(5).replace('-', '.')}</text>}</g>)}
-  </svg></div></article>;
+  const zeroY = yFor(0);
+  const area = points.length === 0 ? '' : `${line} L ${points.at(-1).x} ${zeroY} L ${points[0].x} ${zeroY} Z`;
+  const ticks = minValue === maxValue ? [0]
+    : minValue < 0 && maxValue > 0
+      ? [minValue, 0, maxValue / 2, maxValue]
+      : [minValue, minValue + valueRange / 3, minValue + valueRange * 2 / 3, maxValue];
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return undefined;
+    const measure = () => setViewportWidth(Math.max(0, Math.floor(viewport.clientWidth)));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const scroll = viewportRef.current;
+    if (!scroll) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      scroll.scrollLeft = scroll.scrollWidth - scroll.clientWidth;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [plotWidth, series.length, unit]);
+
+  useEffect(() => { setHoveredIndex(null); }, [series, valueKey]);
+
+  return <article className="dash-card dash-detail-card">
+    <div className="dash-table-heading"><h3>{title}</h3><span>(단위: {money ? '원' : '건'} · {dashboardUnitLabel(unit)})</span></div>
+    {series.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <div className="dash-chart-layout">
+      <svg className="dash-chart-y-axis" viewBox={`0 0 58 ${DASH_CHART_HEIGHT}`} role="presentation" aria-hidden="true">
+        {ticks.map((tick, index) => { const y = yFor(tick); return <text key={`${tick}-${index}`} x="54" y={y + 4} textAnchor="end" className="dash-axis-label">{money ? compactMoneyTick(tick) : Math.round(tick).toLocaleString('ko-KR')}</text>; })}
+      </svg>
+      <div className="dash-chart-scroll" ref={viewportRef} onScroll={() => setHoveredIndex(null)}>
+        <div className="dash-chart-plot" style={{ width: `${plotWidth}px` }}>
+          <svg className="dash-trend" width={plotWidth} height={DASH_CHART_HEIGHT} viewBox={`0 0 ${plotWidth} ${DASH_CHART_HEIGHT}`} role="img" aria-label={title}>
+            <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={color} stopOpacity=".28"/><stop offset="1" stopColor={color} stopOpacity=".03"/></linearGradient></defs>
+            {ticks.map((tick, index) => { const y = yFor(tick); return <line key={`${tick}-${index}`} x1="0" x2={plotWidth} y1={y} y2={y} className="dash-gridline"/>; })}
+            <path d={area} fill={`url(#${gradientId})`} /><path d={line} className="dash-line" style={{ stroke: color }} />
+            {points.map((point, index) => <g key={`${point.row.date}-${index}`} tabIndex="0" role="img" aria-label={`${dashboardTooltipDate(point.row.date, unit)}, ${money ? krw(point.row[valueKey]) : `${dashNumber(point.row[valueKey])}건`}`} onFocus={() => setHoveredIndex(index)} onBlur={() => setHoveredIndex(null)} onMouseEnter={() => setHoveredIndex(index)} onMouseLeave={() => setHoveredIndex(null)} onPointerDown={() => setHoveredIndex(index)} onPointerLeave={() => setHoveredIndex(null)}>
+              <circle cx={point.x} cy={point.y} r="4" className="dash-point" style={{ stroke: color }}><title>{`${dashboardTooltipDate(point.row.date, unit)}: ${money ? krw(point.row[valueKey]) : `${dashNumber(point.row[valueKey])}건`}`}</title></circle>
+              <text x={point.x} y={DASH_CHART_HEIGHT - 14} textAnchor="middle" className="dash-axis-label">{dashboardAxisDate(point.row.date, unit)}</text>
+            </g>)}
+          </svg>
+          {hoveredIndex !== null && points[hoveredIndex] && <div className="dash-tooltip" role="tooltip" style={{ left: `${Math.min(plotWidth - 70, Math.max(70, points[hoveredIndex].x))}px`, top: `${Math.max(4, points[hoveredIndex].y - 54)}px` }}><span>{dashboardTooltipDate(points[hoveredIndex].row.date, unit)}</span><strong>{money ? krw(points[hoveredIndex].row[valueKey]) : `${dashNumber(points[hoveredIndex].row[valueKey])}건`}</strong></div>}
+        </div>
+      </div>
+    </div>}
+  </article>;
 }
 
 function PeriodPicker({ draft, onChange, onApply, loading }) {
@@ -1996,23 +2092,23 @@ function DashboardView({ kind, token, scopeId }) {
     { rank: '', name: '합계', count: summary.total_count, isTotal: true },
   ];
   const labels = merchant ? {
-    subtitle: '기간 설정에 따른 매출 및 수량 현황을 한눈에 확인할 수 있습니다.', amount: '총 매출', count: '총 수량',
+    amount: '총 매출', count: '총 수량',
     rankAmount: '거래처별 매출 합계', rankCount: '거래처별 수량 합계',
     trendAmount: '기간별 매출 그래프', trendCount: '기간별 수량 그래프',
   } : {
-    subtitle: '기간 설정에 따른 식당 이용 현황을 한눈에 확인할 수 있습니다.', amount: '총 이용액', count: '총 이용 수량',
+    amount: '총 이용액', count: '총 이용 수량',
     rankAmount: '식사 구분별 이용액 합계', rankCount: '식사 구분별 이용 수량 합계',
     trendAmount: '기간별 이용액 그래프', trendCount: '기간별 이용 수량 그래프',
   };
 
-  return <AdminPage title="대시보드" description={labels.subtitle} preview={false} className="dash-page merchant-regular-weight">
+  return <AdminPage showHeader={false} preview={false} className="dash-page merchant-regular-weight">
     <PeriodPicker draft={draft} onChange={setDraft} onApply={applyPeriod} loading={loading}/>
     {error && <div className="dash-error" role="alert">{error}<button type="button" className="ghost" onClick={() => setReload((value) => value + 1)} disabled={loading}>다시 시도</button></div>}
     {loading && <div className="dash-loading" role="status" aria-label="대시보드를 불러오는 중"><div className="dash-summary-grid">{[0, 1, 2].map((key) => <div key={key} className="dash-card dash-skeleton" />)}</div><div className="dash-two-grid">{[0, 1, 2, 3].map((key) => <div key={key} className="dash-card dash-skeleton dash-skeleton-large" />)}</div></div>}
     {summary && !loading && <>
       <section className="dash-summary-grid"><SummaryCard label={labels.amount} value={summary.total_amount} delta={summary.total_amount_delta_pct} money Icon={WalletCards} tone="green"/><DonutCard rows={mealRows} total={summary.total_count}/><SummaryCard label={labels.count} value={summary.total_count} delta={summary.total_count_delta_pct} Icon={BarChart3} tone="orange"/></section>
       <section className="dash-two-grid"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'}/></section>
-      <section className="dash-two-grid"><TrendChart title={labels.trendAmount} series={hasDashboardData ? summary.series : []} valueKey="amount" money color="#2FB865"/><TrendChart title={labels.trendCount} series={hasDashboardData ? summary.series : []} valueKey="count" color="#4C8BF5"/></section>
+      <section className="dash-two-grid"><TrendChart title={labels.trendAmount} series={hasDashboardData ? summary.series : []} unit={summary.unit} valueKey="amount" money color="#2FB865"/><TrendChart title={labels.trendCount} series={hasDashboardData ? summary.series : []} unit={summary.unit} valueKey="count" color="#4C8BF5"/></section>
     </>}
   </AdminPage>;
 }
@@ -2852,7 +2948,6 @@ function Dashboard({ session, onLogout }) {
       <div className="top-copy">
         <div className="brand-row">
           <BrandMark />
-          {(isMerchantAdmin || isCompanyAdmin) && <strong className="sidebar-entity-name" title={isMerchantAdmin ? merchantQr?.merchant?.name : me?.company?.name}>{isMerchantAdmin ? merchantQr?.merchant?.name : me?.company?.name}</strong>}
           <span className="pill">OPERATIONS</span>
         </div>
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>

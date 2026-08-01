@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 MIGRATION = Path(__file__).parents[3] / "infra" / "migrations" / "0056_admin_dashboard_summary.sql"
+TREND_MIGRATION = Path(__file__).parents[3] / "infra" / "migrations" / "0057_admin_dashboard_trend_buckets.sql"
 
 
 def test_admin_dashboard_migration_security_and_contract():
@@ -49,3 +50,15 @@ def test_meal_ratio_uses_spend_distribution_not_signed_net_count():
     sql = MIGRATION.read_text(encoding="utf-8").lower()
     assert "count(*) filter (where f.direction = 1)::bigint as spend_count" in sql
     assert "round(m.spend_count::numeric * 100.0 / rt.spend_count, 1)" in sql
+
+
+def test_trend_migration_selects_unit_and_excludes_zero_buckets_server_side():
+    sql = TREND_MIGRATION.read_text(encoding="utf-8").lower()
+    assert "when v_days <= 31 then 'day'" in sql
+    assert "when v_days <= 120 then 'week'" in sql
+    assert "else 'month'" in sql
+    assert "date_trunc('week'" in sql
+    assert "date_trunc('month'" in sql
+    assert "where amount <> 0 or count <> 0" in sql
+    assert "'unit', v_unit" in sql
+    assert "generate_series" not in sql

@@ -35,7 +35,7 @@ test('defines the exact five-stage demo timeline and stage progression', () => {
 
 test('enables only the action matching the exact current stage', () => {
   const ready = { configured: true, is_test: true, certificate_verified: true, supplier_ready: true, corp_matches: true };
-  assert.deepEqual(nextDemoAction('seeded', ready), { endpoint: 'create', label: '다음 단계: 정산 생성', enabled: true });
+  assert.equal(nextDemoAction('seeded', ready), null);
   assert.equal(nextDemoAction('draft', ready).endpoint, 'confirm');
   assert.deepEqual(nextDemoAction('confirmed', ready), { endpoint: 'issue', label: '세금계산서 발행', enabled: true });
   assert.equal(nextDemoAction('issued', ready).endpoint, 'mark-paid');
@@ -50,7 +50,7 @@ test('readiness requires all five gates and production disables every next actio
     ready: true, production: false,
   });
   assert.equal(nextDemoAction('confirmed', { ...ready, certificate_verified: false }).enabled, false);
-  assert.equal(nextDemoAction('seeded', { ...ready, is_test: false }).enabled, false);
+  assert.equal(nextDemoAction('draft', { ...ready, is_test: false }).enabled, false);
   assert.equal(readinessState({ ...ready, is_test: false }).production, true);
   // Non-provider steps may proceed in an explicitly test environment while another issuance gate is pending.
   assert.equal(nextDemoAction('draft', { ...ready, certificate_verified: false }).enabled, true);

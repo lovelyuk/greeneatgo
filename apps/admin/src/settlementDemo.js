@@ -7,7 +7,6 @@ export const DEMO_STAGES = Object.freeze([
 ]);
 
 export const DEMO_ACTIONS = Object.freeze({
-  seeded: { endpoint: 'create', label: '다음 단계: 정산 생성' },
   draft: { endpoint: 'confirm', label: '다음 단계: 정산 확정' },
   confirmed: { endpoint: 'issue', label: '세금계산서 발행' },
   issued: { endpoint: 'mark-paid', label: '다음 단계: 입금 완료 처리' },

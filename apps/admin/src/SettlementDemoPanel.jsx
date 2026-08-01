@@ -10,7 +10,7 @@ const READINESS_BADGES = [
   ['configured', '팝빌 설정'], ['is_test', '개발 환경'], ['certificate', '인증서'],
   ['supplier_ready', '공급자 정보'], ['corp_matches', '사업자번호 일치'],
 ];
-const ACTION_ORDER = ['seeded', 'draft', 'confirmed', 'issued'];
+const ACTION_ORDER = ['draft', 'confirmed', 'issued'];
 const STALE_AFTER_ACTION_MESSAGE = '작업은 성공했지만 최신 상태를 불러오지 못했습니다. 다시 시도해 최신 상태를 불러와 주세요.';
 
 function idempotencyKey() {

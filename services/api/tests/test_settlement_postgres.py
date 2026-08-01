@@ -35,12 +35,16 @@ def test_0052_replays_after_sql_editor_commits_only_the_preamble(settlement_db):
         # Editor failure. The complete migration must then be safely replayable.
         conn.execute(preamble + "\ncommit;")
         conn.execute(source)
+        conn.execute((MIGRATIONS / "0053_auto_draft_settlements.sql").read_text(encoding="utf-8"))
         assert conn.execute(
             "select to_regclass('public.generated_reset_delete_guards') is not null"
         ).fetchone()[0] is True
         assert conn.execute(
             "select count(*) from generated_reset_delete_guards where backend_pid=pg_backend_pid()"
         ).fetchone()[0] == 0
+        assert conn.execute(
+            "select count(*) from pg_trigger where tgname='trg_meal_transaction_refresh_monthly_draft' and not tgisinternal"
+        ).fetchone()[0] == 1
 
 
 @pytest.fixture(scope="module")
@@ -99,6 +103,10 @@ def settlement_db():
         # Ordinary generation/reset remains the final authority after recovery replays.
         conn.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
+        # Automatic monthly drafts remain authoritative after recovery tooling
+        # replays the older generated-transaction implementation.
+        conn.execute((MIGRATIONS / "0053_auto_draft_settlements.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0053_auto_draft_settlements.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -172,6 +180,44 @@ def test_legacy_create_uses_exact_snapshots_and_can_send_then_confirm(pg):
     confirmed = pg.execute("select company_confirm_and_request_tax_invoice(%s,%s,%s)", (company_actor,company,created["id"])).fetchone()[0]
     assert confirmed["settlement"]["settlement_status"] == "confirmed"
     assert confirmed["tax_invoice"]["total_amount"] == 1380
+
+
+def test_eligible_transactions_auto_create_and_refresh_hidden_monthly_draft(pg):
+    company, _, merchant, _, company_actor, _, merchant_actor, _ = parties(pg)
+    pg.execute("insert into merchant_companies(merchant_id,company_id,status,created_by) values(%s,%s,'active',%s)",
+               (merchant, company, merchant_actor))
+    user_id = pg.execute("insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,'employee','employee','active') returning id", (company,)).fetchone()[0]
+
+    first_id = pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-1100,'spend','ledger','taxable',1000,100,1100,
+      '2026-07-05 03:00:00+00') returning id""", (user_id, company, merchant)).fetchone()[0]
+    draft = pg.execute("""select id,tx_count,supply_amount,vat_amount,total_amount,settlement_status,
+      tax_invoice_status,payment_status from settlements
+      where merchant_id=%s and company_id=%s and period_ym='2026-07' and not is_demo""",
+      (merchant, company)).fetchone()
+    assert draft[1:] == (1, 1000, 100, 1100, "draft", "not_requested", "unpaid")
+    sid = draft[0]
+    assert pg.execute("select company_settlement_month_summary(%s,%s,'2026-07')",
+                      (company_actor, company)).fetchone()[0]["settlement_count"] == 0
+
+    pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-550,'spend','ledger','taxable',500,50,550,
+      '2026-07-06 03:00:00+00')""", (user_id, company, merchant))
+    assert pg.execute("select id,tx_count,supply_amount,vat_amount,total_amount from settlements where id=%s",
+                      (sid,)).fetchone() == (sid, 2, 1500, 150, 1650)
+
+    pg.execute("select merchant_send_settlement(%s,%s,%s)", (merchant_actor, merchant, sid))
+    late_id = pg.execute("""insert into meal_transactions(user_id,company_id,merchant_id,amount,kind,pay_type,
+      settlement_tax_type,settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at)
+      values(%s,%s,%s,-220,'spend','ledger','taxable',200,20,220,
+      '2026-07-07 03:00:00+00') returning id""", (user_id, company, merchant)).fetchone()[0]
+    assert late_id not in (None, first_id)
+    assert pg.execute("select tx_count,total_amount,settlement_status from settlements where id=%s",
+                      (sid,)).fetchone() == (2, 1650, "sent")
+    assert pg.execute("select company_settlement_month_summary(%s,%s,'2026-07')",
+                      (company_actor, company)).fetchone()[0]["settlement_count"] == 1
 
 
 def test_legacy_create_rejects_unclassified_and_sent_month_conflict(pg):
@@ -1777,6 +1823,7 @@ def test_0052_cleanup_deletes_legacy_demo_rows_and_exact_derived_evidence_but_ke
 
     pg.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
     pg.execute((MIGRATIONS / "0052_ordinary_generated_transaction_state.sql").read_text(encoding="utf-8"))
+    pg.execute((MIGRATIONS / "0053_auto_draft_settlements.sql").read_text(encoding="utf-8"))
 
     assert pg.execute("select count(*) from meal_transactions where id=any(%s)", (generated_ids,)).fetchone()[0] == 0
     assert pg.execute("select count(*) from meal_transactions where id=%s and not is_demo", (real_id,)).fetchone()[0] == 1

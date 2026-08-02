@@ -153,6 +153,15 @@ def present_payment_completion(order: dict[str, Any], *, base_url: str, cpid: st
         "product_name": _text(order.get("product_name")),
         "merchant_name": _text(order.get("merchant_name")),
         "amount": order.get("amount"),
+        "pricing": {
+            "gross_amount": order.get("gross_amount"),
+            "coupon_id": _text(order.get("coupon_id")),
+            "coupon_discount_amount": order.get("coupon_discount_amount"),
+            "coupon": order.get("coupon_snapshot") if isinstance(order.get("coupon_snapshot"), dict) else None,
+            "requested_point_amount": order.get("requested_point_amount"),
+            "point_amount": order.get("point_amount"),
+            "payment_amount": order.get("amount"),
+        },
         "pay_type": _text(order.get("pay_type")),
         "payment": {
             "method": method,

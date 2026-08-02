@@ -51,7 +51,8 @@ ORDER_SELECT = (
     "product_name,amount,status,provider_payment_key,payment_method,approved_at,created_at,"
     "pay_type,voucher_product_id,voucher_count,voucher_purchase_price,fulfilled_at,provider_response,"
     "company_id,company_subsidy_amount,restaurant_subsidy_amount,point_amount,point_reserved,"
-    "requested_payment_method,paid_voucher_count,bonus_voucher_count,total_employee_burden,checkout_started_at,tax_type,tax_review_required"
+    "requested_payment_method,paid_voucher_count,bonus_voucher_count,total_employee_burden,checkout_started_at,tax_type,tax_review_required,"
+    "gross_amount,coupon_id,coupon_discount_amount,coupon_snapshot,requested_point_amount"
 )
 
 

@@ -18,6 +18,8 @@ import 'firebase_config.dart';
 import 'payment_completion.dart';
 import 'pending_payment.dart';
 import 'push_notifications.dart';
+import 'screens/coupon_wallet.dart';
+import 'screens/user_dashboard_shell.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 const legalBaseUrl = String.fromEnvironment('LEGAL_BASE_URL',
@@ -213,8 +215,7 @@ class ApiClient {
 
   Future<Map<String, dynamic>> getAnnouncements() =>
       _request('/announcements', authenticated: false);
-  Future<Map<String, dynamic>> getReviews() =>
-      _request('/reviews');
+  Future<Map<String, dynamic>> getReviews() => _request('/reviews');
   Future<Map<String, dynamic>> getReviewableTransactions() =>
       _request('/vouchers/reviewable-transactions');
   Future<Map<String, dynamic>> createReview(
@@ -249,15 +250,45 @@ class ApiClient {
     return VoucherCatalog.fromJson(data);
   }
 
-  Future<Map<String, dynamic>> createVoucherOrder({required String productId}) {
-    return _request('/vouchers/purchase',
-        method: 'POST', body: {'product_id': productId});
+  Future<CouponWallet> getCoupons() async =>
+      CouponWallet.fromJson(await _request('/coupons'));
+
+  Future<VoucherQuote> quoteVoucherOrder({
+    required String productId,
+    String? couponId,
+    required int pointAmount,
+  }) async {
+    final body = <String, dynamic>{
+      'product_id': productId,
+      'requested_point_amount': pointAmount,
+      if (couponId != null) 'coupon_id': couponId,
+    };
+    return VoucherQuote.fromJson(
+        await _request('/vouchers/quote', method: 'POST', body: body));
   }
 
-  Future<Map<String, dynamic>> createSubsidizedVoucherOrder(
-          {required String productId}) =>
-      _request('/vouchers/purchase-subsidized',
-          method: 'POST', body: {'product_id': productId});
+  Future<Map<String, dynamic>> createVoucherOrder({
+    required String productId,
+    String? couponId,
+    required int pointAmount,
+  }) {
+    return _request('/vouchers/purchase', method: 'POST', body: {
+      'product_id': productId,
+      'requested_point_amount': pointAmount,
+      if (couponId != null) 'coupon_id': couponId,
+    });
+  }
+
+  Future<Map<String, dynamic>> createSubsidizedVoucherOrder({
+    required String productId,
+    String? couponId,
+    required int pointAmount,
+  }) =>
+      _request('/vouchers/purchase-subsidized', method: 'POST', body: {
+        'product_id': productId,
+        'requested_point_amount': pointAmount,
+        if (couponId != null) 'coupon_id': couponId,
+      });
 
   Future<Map<String, dynamic>> cancelSubsidizedVoucherOrder(String orderId) =>
       _request('/vouchers/subsidized-orders/$orderId/cancel', method: 'POST');
@@ -355,6 +386,30 @@ class ApiException implements Exception {
 const paymentConfirmationMaxAttempts = 8;
 
 enum PaymentRedirectOutcome { success, failure, close }
+
+bool isMVaccineIntent(Uri intentUri) {
+  if (intentUri.scheme != 'intent' || intentUri.host != 'mvaccine') {
+    return false;
+  }
+  return intentUri.fragment
+      .split(';')
+      .contains('package=com.TouchEn.mVaccine.webs');
+}
+
+String paymentWebUriLogLabel(String? rawUrl) {
+  final uri = Uri.tryParse(rawUrl ?? '');
+  if (uri == null) return 'invalid-url';
+  final scheme = uri.scheme.isEmpty ? 'unknown' : uri.scheme;
+  final host = uri.host.isEmpty ? 'no-host' : uri.host;
+  if (scheme != 'http' && scheme != 'https') return '$scheme://$host';
+  final port = uri.hasPort ? ':${uri.port}' : '';
+  final pathWithoutParameters = uri.path.split(';').first;
+  final safePath = pathWithoutParameters.replaceAll(
+    RegExp(r'[A-Za-z0-9_-]{24,}'),
+    '[id]',
+  );
+  return '$scheme://$host$port$safePath';
+}
 
 PaymentRedirectOutcome? trustedPaymentRedirectOutcome(
   Uri uri,
@@ -1787,16 +1842,21 @@ class _CommunityScreenState extends State<CommunityScreen> {
                                 style: const TextStyle(
                                     fontSize: 17, fontWeight: FontWeight.w900),
                               ),
-                              if (reviews && item['status'] == 'hidden' && item['is_own'] == true)
+                              if (reviews &&
+                                  item['status'] == 'hidden' &&
+                                  item['is_own'] == true)
                                 Container(
                                   margin: const EdgeInsets.only(top: 6),
-                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 9, vertical: 5),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFFFF4D8),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: const Text('관리자 숨김 · 나에게만 표시',
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800)),
                                 ),
                               if (reviews)
                                 Text(List.filled(
@@ -2178,6 +2238,65 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final isConsumer =
+        me['account_type'] == 'voucher' || me['role'] == 'customer';
+    return UserDashboardShell(
+      data: me,
+      onRefresh: onRefresh,
+      pendingBanner: _pendingLoad == null
+          ? null
+          : PendingPaymentRecoveryBanner(
+              load: _pendingLoad!,
+              onTap: _openPendingRecovery,
+            ),
+      onScanQr: () async {
+        await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => UnifiedQrScanScreen(
+                  session: session,
+                  isConsumer: isConsumer,
+                )));
+        await onRefresh();
+      },
+      onBuyVoucher: () async {
+        await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => VoucherPurchaseScreen(
+                session: session,
+                pointBalance: (me['point_balance'] as num?)?.round() ?? 0)));
+        await _loadPendingPayment();
+        await onRefresh();
+      },
+      onCoupons: () async {
+        await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => CouponWalletScreen(
+                loadCoupons: ApiClient(session).getCoupons)));
+      },
+      onOpenSettings: () async {
+        final changed = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(
+                builder: (_) => AccountSettingsScreen(
+                    session: session, me: me, onSignOut: onSignOut)));
+        if (changed == true) await onRefresh();
+      },
+      onAnnouncements: () async {
+        await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) =>
+                CommunityScreen(session: session, initialReviews: false)));
+      },
+      onReviews: () async {
+        await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) =>
+                CommunityScreen(session: session, initialReviews: true)));
+      },
+      onTerms: () => openLegalDocument(context, 'terms.html'),
+      onPrivacy: () => openLegalDocument(context, 'privacy.html'),
+      onSignOut: onSignOut,
+    );
+  }
+
+  // Preserved while the redesign is validated; it contains pre-existing flows
+  // that must not be deleted as part of a style-only migration.
+  // ignore: unused_element
+  Widget _buildLegacyHome(BuildContext context) {
     final isConsumer =
         me['account_type'] == 'voucher' || me['role'] == 'customer';
     final monthUsed = (me['month_used'] as num?) ?? 0;
@@ -3037,10 +3156,12 @@ class VoucherPurchaseScreen extends StatefulWidget {
     super.key,
     required this.session,
     this.initialCatalog,
+    this.pointBalance = 0,
   });
 
   final User session;
   final VoucherCatalog? initialCatalog;
+  final int pointBalance;
 
   @override
   State<VoucherPurchaseScreen> createState() => _VoucherPurchaseScreenState();
@@ -3097,12 +3218,25 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
                         product: product,
                         purchaseMode: catalog.purchaseMode,
                         onBuy: () async {
+                          final api = ApiClient(widget.session);
+                          final selection = await Navigator.of(context)
+                              .push<CheckoutSelection>(MaterialPageRoute(
+                                  builder: (_) => CheckoutOptionsScreen(
+                                        productId: product.id,
+                                        productName: product.name,
+                                        pointBalance: widget.pointBalance,
+                                        loadCoupons: api.getCoupons,
+                                        loadQuote: api.quoteVoucherOrder,
+                                      )));
+                          if (selection == null || !context.mounted) return;
                           final paid = await Navigator.of(context).push<bool>(
                               MaterialPageRoute(
                                   builder: (_) => VoucherKiwoomPaymentScreen(
                                       session: widget.session,
                                       product: product,
-                                      purchaseMode: catalog.purchaseMode)));
+                                      purchaseMode: catalog.purchaseMode,
+                                      couponId: selection.couponId,
+                                      pointAmount: selection.pointAmount)));
                           if (paid == true && context.mounted) {
                             Navigator.of(context).pop(true);
                           }
@@ -3256,11 +3390,15 @@ class VoucherKiwoomPaymentScreen extends StatefulWidget {
     required this.session,
     required this.product,
     required this.purchaseMode,
+    this.couponId,
+    this.pointAmount = 0,
   });
 
   final User session;
   final VoucherProduct product;
   final VoucherPurchaseMode purchaseMode;
+  final String? couponId;
+  final int pointAmount;
 
   bool get isSubsidized => purchaseMode == VoucherPurchaseMode.subsidized;
   String get paymentTitle => product.name;
@@ -3285,12 +3423,13 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   bool _externalAppOpened = false;
   bool _hasOpenedExternalApp = false;
   bool _externalLaunchInProgress = false;
+  bool _mVaccineExternal = false;
+  bool _externalReturnRestored = false;
   bool _approvalPending = false;
   bool _cancellationAttempted = false;
   bool _checkoutStarted = false;
   bool _checkoutTerminated = false;
   int _confirmationAttempt = 0;
-  bool _externalNavigationNeedsRestore = false;
   Timer? _externalRestoreTimer;
   Timer? _confirmationTimer;
   PendingPaymentStore? _pendingStore;
@@ -3304,6 +3443,9 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (url) {
+          debugPrint(
+            '[GreenEatPaymentWebView] finished ${paymentWebUriLogLabel(url)}',
+          );
           final uri = Uri.tryParse(url);
           if (uri?.scheme == 'intent') {
             unawaited(_recoverExternalNavigation(uri!));
@@ -3318,10 +3460,15 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
           if (mounted) setState(() => _loading = false);
         },
         onWebResourceError: (error) {
+          debugPrint(
+            '[GreenEatPaymentWebView] error code=${error.errorCode} '
+            'main=${error.isForMainFrame} '
+            'url=${paymentWebUriLogLabel(error.url)} '
+            'description=${error.description}',
+          );
           final uri = Uri.tryParse(error.url ?? '');
           if (uri != null && uri.scheme == 'intent') {
             if (error.isForMainFrame == true) {
-              _externalNavigationNeedsRestore = true;
               _scheduleExternalPageRestore();
             }
             unawaited(_recoverExternalNavigation(uri));
@@ -3335,6 +3482,10 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
           }
         },
         onUrlChange: (change) {
+          debugPrint(
+            '[GreenEatPaymentWebView] url-change '
+            '${paymentWebUriLogLabel(change.url)}',
+          );
           final uri = Uri.tryParse(change.url ?? '');
           if (uri?.scheme == 'intent') {
             unawaited(_recoverExternalNavigation(uri!));
@@ -3418,17 +3569,31 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   }
 
   Future<void> _restoreProviderPageAfterExternalApp() async {
-    if (!mounted || _checkoutTerminated || _completed) return;
-    final current = Uri.tryParse(await _controller.currentUrl() ?? '');
-    if (!mounted || _checkoutTerminated || _completed) return;
-    if (!_externalNavigationNeedsRestore &&
-        current != null &&
-        (current.scheme == 'https' || current.scheme == 'http')) {
+    if (!mounted ||
+        _checkoutTerminated ||
+        _completed ||
+        _externalReturnRestored) {
       return;
     }
-    _externalNavigationNeedsRestore = false;
+    _externalReturnRestored = true;
+    _externalRestoreTimer?.cancel();
+    if (_mVaccineExternal) {
+      await _controller.reload();
+      return;
+    }
     final providerUri = _lastProviderWebUri;
     if (providerUri != null) await _controller.loadRequest(providerUri);
+  }
+
+  Future<void> _rememberCurrentProviderPage() async {
+    final current = Uri.tryParse(await _controller.currentUrl() ?? '');
+    if (current == null ||
+        (current.scheme != 'https' && current.scheme != 'http') ||
+        current.path.contains('/payments/checkout/') ||
+        trustedPaymentRedirectOutcome(current, apiBaseUrl) != null) {
+      return;
+    }
+    _lastProviderWebUri = current;
   }
 
   void _scheduleExternalPageRestore() {
@@ -3456,7 +3621,8 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       _externalAppOpened = false;
       _hasOpenedExternalApp = false;
       _externalLaunchInProgress = false;
-      _externalNavigationNeedsRestore = false;
+      _mVaccineExternal = false;
+      _externalReturnRestored = false;
       _approvalPending = false;
       _checkoutStarted = false;
       _checkoutTerminated = false;
@@ -3468,10 +3634,14 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     _cancellationAttempted = false;
     try {
       final order = widget.isSubsidized
-          ? await ApiClient(widget.session)
-              .createSubsidizedVoucherOrder(productId: widget.product.id)
-          : await ApiClient(widget.session)
-              .createVoucherOrder(productId: widget.product.id);
+          ? await ApiClient(widget.session).createSubsidizedVoucherOrder(
+              productId: widget.product.id,
+              couponId: widget.couponId,
+              pointAmount: widget.pointAmount)
+          : await ApiClient(widget.session).createVoucherOrder(
+              productId: widget.product.id,
+              couponId: widget.couponId,
+              pointAmount: widget.pointAmount);
       final checkoutUrl = order['checkout_url'] as String?;
       _orderId = order['order_id'] as String?;
       _orderAmount = (order['amount'] as num?)?.round();
@@ -3532,6 +3702,10 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   }
 
   FutureOr<NavigationDecision> _navigate(NavigationRequest request) async {
+    debugPrint(
+      '[GreenEatPaymentWebView] navigate main=${request.isMainFrame} '
+      '${paymentWebUriLogLabel(request.url)}',
+    );
     final uri = Uri.tryParse(request.url);
     if (uri == null) return NavigationDecision.prevent;
     final redirect = trustedPaymentRedirectOutcome(uri, apiBaseUrl);
@@ -3556,6 +3730,10 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   Future<void> _recoverExternalNavigation(Uri uri) async {
     if (_lastExternalUrl == uri.toString()) return;
     _lastExternalUrl = uri.toString();
+    _mVaccineExternal = isMVaccineIntent(uri);
+    _externalReturnRestored = false;
+    await _rememberCurrentProviderPage();
+    if (!mounted || _checkoutTerminated || _completed) return;
     if (mounted) {
       setState(() {
         _loading = true;
@@ -3563,21 +3741,25 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       });
     }
     _externalLaunchInProgress = true;
+    _hasOpenedExternalApp = true;
+    _externalAppOpened = true;
     final result = await _openExternalPaymentUri(uri);
     _externalLaunchInProgress = false;
     if (!mounted) return;
     switch (result) {
       case ExternalPaymentOpenResult.app:
-        _hasOpenedExternalApp = true;
-        _externalAppOpened = true;
         break;
       case ExternalPaymentOpenResult.fallback:
+        _externalAppOpened = false;
+        _hasOpenedExternalApp = false;
         setState(() {
           _loading = false;
           _error = '결제 앱이 설치되어 있지 않아 설치 화면을 열었어요. 설치를 마친 뒤 다시 결제해 주세요.';
         });
         break;
       case ExternalPaymentOpenResult.failed:
+        _externalAppOpened = false;
+        _hasOpenedExternalApp = false;
         setState(() {
           _loading = false;
           _error = '결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.';

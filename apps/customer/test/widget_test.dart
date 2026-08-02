@@ -424,6 +424,45 @@ void main() {
     );
   });
 
+  test('payment WebView log labels redact session and query data', () {
+    final label = paymentWebUriLogLabel(
+      'https://vbv.shinhancard.com/mobilev2/VCRUN.jsp;JSESSIONID=secret'
+      '?callback_token=secret-token#private',
+    );
+    expect(label, 'https://vbv.shinhancard.com/mobilev2/VCRUN.jsp');
+    expect(label, isNot(contains('secret')));
+    expect(label, isNot(contains('callback_token')));
+  });
+
+  test('only the exact mVaccine intent uses history restoration', () {
+    expect(
+      isMVaccineIntent(
+        Uri.parse(
+          'intent://mvaccine?siteid=shinhancard'
+          '#Intent;scheme=mvaccinestart;package=com.TouchEn.mVaccine.webs;end',
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      isMVaccineIntent(
+        Uri.parse(
+          'intent://mvaccine?siteid=shinhancard'
+          '#Intent;scheme=mvaccinestart;package=com.evil.fake;end',
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      isMVaccineIntent(
+        Uri.parse(
+          'intent://other#Intent;package=com.TouchEn.mVaccine.webs;end',
+        ),
+      ),
+      isFalse,
+    );
+  });
+
   test('payment redirects are accepted only from the configured API origin',
       () {
     const base = 'https://greeneatgo-api.onrender.com/v1';

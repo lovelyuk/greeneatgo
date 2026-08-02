@@ -1,7 +1,7 @@
 name: greeneatgo_customer
 description: greeneatGo employee Flutter app
 publish_to: none
-version: 0.1.1+20
+version: 0.1.7+27
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -30,3 +30,14 @@ flutter:
   uses-material-design: true
   assets:
     - assets/brand/
+  fonts:
+    - family: Pretendard
+      fonts:
+        - asset: assets/fonts/Pretendard-Regular.otf
+          weight: 400
+        - asset: assets/fonts/Pretendard-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/Pretendard-Bold.otf
+          weight: 700
+        - asset: assets/fonts/Pretendard-ExtraBold.otf
+          weight: 800

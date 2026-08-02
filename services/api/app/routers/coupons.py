@@ -8,10 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.auth import bearer_token
+from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.merchant_admin import _merchant_admin
+from app.services.coupon_pricing import coupon_is_valid
 from app.services.join_flow import JoinFlowError
+from app.services.vouchers import resolve_voucher_merchant
 
 router = APIRouter(tags=["merchant-coupons"])
 _COUPON_SELECT = "id,merchant_id,name,discount_type,discount_value,valid_from,valid_until,is_active,created_at,updated_at"
@@ -89,6 +92,34 @@ def _supabase_error(exc: SupabaseHttpError, message: str) -> HTTPException:
     if _migration_missing(exc):
         return _error(503, "MIGRATION_REQUIRED", "0055 마이그레이션 적용이 필요해요")
     return _error(502, "SUPABASE_ERROR", message)
+
+
+@router.get("/coupons")
+def customer_coupons(token: str = Depends(bearer_token)):
+    """List reusable, currently valid promotions for the pilot merchant."""
+    repo = JoinRepository()
+    try:
+        auth = repo.auth_user_from_token(token)
+        profile = repo.get_profile(auth.id, email=auth.email)
+        if profile is None or profile.status != "active" or profile.role not in {"customer", "employee"}:
+            raise _error(403, "VOUCHER_ACCOUNT_ONLY", "식권 계정만 쿠폰을 조회할 수 있어요")
+        merchant = resolve_voucher_merchant(repo, get_settings().pilot_merchant_id)
+        if not merchant:
+            return {"ok": True, "data": {"merchant": None, "items": []}, "error": None}
+        rows = repo.client.rest_get("merchant_coupons", {
+            "select": _COUPON_SELECT,
+            "merchant_id": f"eq.{merchant['id']}",
+            "is_active": "eq.true",
+            "order": "created_at.desc",
+        })
+        return {"ok": True, "data": {
+            "merchant": {"id": merchant["id"], "name": merchant["name"]},
+            "items": [row for row in rows if coupon_is_valid(row)],
+        }, "error": None}
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        raise _supabase_error(exc, "쿠폰을 불러오지 못했어요") from exc
 
 
 @router.get("/admin/coupons")

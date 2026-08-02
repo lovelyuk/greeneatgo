@@ -1,12 +1,18 @@
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import pytest
+from fastapi import HTTPException
+
+from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.coupons import customer_coupons
-from app.routers.voucher_products import purchase
+from app.routers.voucher_products import (_reserve_issued_coupon,
+                                          _selected_coupon, purchase)
 from app.schemas import VoucherPurchaseRequest
 from app.services.coupon_pricing import build_quote, calculate_coupon_discount, coupon_is_valid
+
 
 
 def coupon(**overrides):
@@ -58,6 +64,7 @@ def test_customer_coupon_catalog_is_pilot_scoped_date_filtered_and_reusable(repo
     repo.client.rest_get.side_effect = [
         [{"id": "merchant-1", "name": "pilot"}],
         [coupon(), coupon(id="expired-1", valid_until="2020-01-01")],
+        [],
     ]
 
     data = customer_coupons("token")["data"]
@@ -66,7 +73,60 @@ def test_customer_coupon_catalog_is_pilot_scoped_date_filtered_and_reusable(repo
     assert data["merchant"] == {"id": "merchant-1", "name": "pilot"}
     params = repo.client.rest_get.call_args_list[1].args[1]
     assert params["merchant_id"] == "eq.merchant-1"
+    assert params["is_public"] == "eq.true"
     assert "user_id" not in params
+
+
+@pytest.mark.parametrize("rows", [
+    [],
+    [{"id": "issued-1", "coupon_id": "coupon-123", "merchant_id": "merchant-1",
+      "status": "used", "coupon_snapshot": {}}],
+    [{"id": "issued-1", "coupon_id": "coupon-123", "merchant_id": "merchant-1",
+      "status": "available", "coupon_snapshot": {"id": "wrong", "merchant_id": "merchant-1"}}],
+])
+def test_unusable_issued_coupon_has_one_public_error_contract(rows):
+    repo = MagicMock()
+    repo.client.rest_get.return_value = rows
+    with pytest.raises(HTTPException) as caught:
+        _selected_coupon(repo, "merchant-1", None, "issued-1", "user-1")
+    assert caught.value.status_code == 400
+    assert isinstance(caught.value.detail, dict)
+    assert caught.value.detail["code"] == "COUPON_NOT_USABLE"
+
+
+def test_losing_issued_coupon_reservation_has_public_error_contract():
+    repo = MagicMock()
+    repo.client.rpc.side_effect = SupabaseHttpError(400, "USER_COUPON_NOT_AVAILABLE")
+    with pytest.raises(HTTPException) as caught:
+        _reserve_issued_coupon(
+            repo,
+            {"id": "order-1"},
+            {"_user_coupon_id": "issued-1"},
+            "user-1",
+            "merchant-1",
+        )
+    assert caught.value.status_code == 400
+    assert isinstance(caught.value.detail, dict)
+    assert caught.value.detail["code"] == "COUPON_NOT_USABLE"
+    repo.client.rest_patch.assert_called_once()
+
+
+@patch("app.routers.coupons.get_settings")
+@patch("app.routers.coupons.JoinRepository")
+def test_customer_coupon_issued_snapshot_envelope_is_exact(repo_class, settings):
+    repo = repo_class.return_value
+    settings.return_value.pilot_merchant_id = "merchant-1"
+    repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="user@example.com")
+    repo.get_profile.return_value = SimpleNamespace(id="user-1", role="customer", status="active")
+    issued = {"id": "issued-1", "user_id": "user-1", "merchant_id": "merchant-1", "coupon_id": "coupon-123",
+              "coupon_snapshot": {"id": "coupon-123", "merchant_id": "merchant-1", "name": "발급 당시 이름",
+                                  "discount_type": "fixed", "discount_value": 1000},
+              "valid_from": "2026-08-01T00:00:00+00:00", "valid_until": "2099-08-08T00:00:00+00:00",
+              "status": "available", "created_at": "2026-08-01T00:00:00+00:00"}
+    repo.client.rest_get.side_effect = [[{"id": "merchant-1", "name": "pilot"}], [], [issued]]
+    result = customer_coupons("token")
+    assert result == {"ok": True, "data": {"merchant": {"id": "merchant-1", "name": "pilot"},
+                                             "items": [], "issued": [issued]}, "error": None}
 
 
 @patch("app.routers.voucher_products.get_settings")

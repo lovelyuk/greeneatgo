@@ -119,7 +119,10 @@ def purchase_subsidized(payload: LegacyCompatibleVoucherPurchaseRequest | None =
         gross_amount = krw_amount(product["sale_price"]) - (company + restaurant) * paid
         if gross_amount <= 0:
             raise _error(409, "INVALID_SUBSIDIZED_PRICE", "직원 결제 금액이 올바르지 않아요")
-        coupon = _selected_coupon(repo, merchant["id"], payload.coupon_id if payload else None)
+        coupon = _selected_coupon(
+            repo, merchant["id"], payload.coupon_id if payload else None,
+            payload.user_coupon_id if payload else None, profile.id,
+        )
         requested_points = payload.requested_point_amount if payload else None
         quote = build_quote(
             gross_amount=gross_amount, coupon=coupon, requested_point_amount=requested_points,
@@ -135,6 +138,7 @@ def purchase_subsidized(payload: LegacyCompatibleVoucherPurchaseRequest | None =
             "voucher_product_id": product["id"], "merchant_name": merchant["name"], "product_name": product["name"],
             "amount": employee_due, "gross_amount": gross_amount,
             "coupon_id": coupon["id"] if coupon else None,
+            "user_coupon_id": coupon.get("_user_coupon_id") if coupon else None,
             "coupon_discount_amount": int(quote["coupon_discount_amount"]),
             "coupon_snapshot": coupon_snapshot(coupon) if coupon else None,
             "requested_point_amount": requested_points,
@@ -144,14 +148,20 @@ def purchase_subsidized(payload: LegacyCompatibleVoucherPurchaseRequest | None =
             "voucher_purchase_price": str(per_voucher_price(employee_due, paid)),
             "company_subsidy_amount": company, "restaurant_subsidy_amount": restaurant,
         })[0]
-        split = repo.client.rpc("reserve_subsidized_order_points", {"p_order_id": order["id"]})
-        point_amount, card_amount = int(split["point_amount"]), int(split["card_amount"])
-        fulfilled = None
-        if card_amount == 0:
-            fulfilled = repo.client.rpc("fulfill_subsidized_order", {"p_order_id": order["id"], "p_provider_payment_key": None, "p_payment_method": "POINT", "p_provider_response": None, "p_approved_at": datetime.now(timezone.utc).isoformat()})
+        _reserve_issued_coupon(repo, order, coupon, profile.id, merchant["id"])
+        try:
+            split = repo.client.rpc("reserve_subsidized_order_points", {"p_order_id": order["id"]})
+            point_amount, card_amount = int(split["point_amount"]), int(split["card_amount"])
+            fulfilled = None
+            if card_amount == 0:
+                fulfilled = repo.client.rpc("fulfill_subsidized_order", {"p_order_id": order["id"], "p_provider_payment_key": None, "p_payment_method": "POINT", "p_provider_response": None, "p_approved_at": datetime.now(timezone.utc).isoformat()})
+        except Exception:
+            _cancel_ready_order(repo, order["id"])
+            raise
         return {"ok": True, "data": {
             "order_id": order_id, "amount": card_amount, "gross_amount": gross_amount,
             "employee_pay_amount": employee_due, "coupon_id": coupon["id"] if coupon else None,
+            "user_coupon_id": coupon.get("_user_coupon_id") if coupon else None,
             "coupon_discount_amount": int(quote["coupon_discount_amount"]),
             "requested_point_amount": requested_points, "point_amount": point_amount,
             "card_amount": card_amount, "point_only": card_amount == 0,
@@ -172,7 +182,29 @@ def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
 
 
-def _selected_coupon(repo: JoinRepository, merchant_id: str, coupon_id: str | None) -> dict | None:
+def _selected_coupon(repo: JoinRepository, merchant_id: str, coupon_id: str | None,
+                     user_coupon_id: str | None = None, user_id: str | None = None) -> dict | None:
+    # Issued instances take priority over the public catalog selection.
+    if user_coupon_id is not None:
+        rows = repo.client.rest_get("user_coupons", {
+            "select": "id,user_id,merchant_id,coupon_id,coupon_snapshot,valid_from,valid_until,status",
+            "id": f"eq.{user_coupon_id}", "user_id": f"eq.{user_id}",
+            "merchant_id": f"eq.{merchant_id}", "limit": "1",
+        })
+        if not rows:
+            raise _error(400, "COUPON_NOT_USABLE", "사용할 수 없는 쿠폰이에요")
+        issued = rows[0]
+        now = datetime.now(timezone.utc)
+        valid_from = _as_utc(issued.get("valid_from"))
+        valid_until = _as_utc(issued.get("valid_until"))
+        if issued.get("status") != "available" or (valid_from and valid_from > now) or (valid_until and valid_until <= now):
+            raise _error(400, "COUPON_NOT_USABLE", "이미 사용했거나 만료된 쿠폰이에요")
+        snapshot = dict(issued.get("coupon_snapshot") or {})
+        if snapshot.get("id") != issued.get("coupon_id") or snapshot.get("merchant_id") != merchant_id:
+            raise _error(400, "COUPON_NOT_USABLE", "사용할 수 없는 쿠폰이에요")
+        snapshot.update({"is_active": True, "valid_from": None, "valid_until": None,
+                         "_user_coupon_id": user_coupon_id})
+        return snapshot
     if coupon_id is None:
         return None
     rows = repo.client.rest_get("merchant_coupons", {
@@ -184,6 +216,36 @@ def _selected_coupon(repo: JoinRepository, merchant_id: str, coupon_id: str | No
     if not coupon_is_valid(rows[0]):
         raise _error(409, "COUPON_NOT_AVAILABLE", "현재 사용할 수 없는 쿠폰이에요")
     return rows[0]
+
+
+def _reserve_issued_coupon(repo: JoinRepository, order: dict, coupon: dict | None,
+                           user_id: str, merchant_id: str) -> None:
+    user_coupon_id = coupon.get("_user_coupon_id") if coupon else None
+    if not user_coupon_id:
+        return
+    try:
+        repo.client.rpc("reserve_user_coupon", {
+            "p_order_id": order["id"], "p_user_coupon_id": user_coupon_id,
+            "p_user_id": user_id, "p_merchant_id": merchant_id,
+        })
+    except SupabaseHttpError as exc:
+        # A losing concurrent order is made authoritatively non-payable.
+        _cancel_ready_order(repo, order["id"])
+        raise _error(
+            400,
+            "COUPON_NOT_USABLE",
+            "이미 다른 결제에서 사용 중이거나 사용할 수 없는 쿠폰이에요",
+        ) from exc
+
+
+def _cancel_ready_order(repo: JoinRepository, order_id: str) -> None:
+    """Best-effort setup rollback; the DB trigger releases any issued coupon."""
+    try:
+        repo.client.rest_patch("payment_orders", {
+            "id": f"eq.{order_id}", "status": "eq.ready", "provider_payment_key": "is.null",
+        }, {"status": "canceled"})
+    except Exception:
+        logger.exception("Failed to cancel ready order after checkout setup error: %s", order_id)
 
 
 def _available_points(repo: JoinRepository, user_id: str) -> int:
@@ -206,6 +268,7 @@ def _quote_payload(*, product: dict, merchant: dict, gross: int, coupon: dict | 
         "merchant_id": merchant["id"], "merchant_name": merchant["name"],
         "product_id": product["id"], "product_name": product["name"],
         "coupon": coupon_snapshot(coupon) if coupon else None,
+        "user_coupon_id": coupon.get("_user_coupon_id") if coupon else None,
     }
 
 
@@ -521,7 +584,7 @@ def quote_purchase(payload: VoucherQuoteRequest, token: str = Depends(bearer_tok
             raise _error(404, "VOUCHER_PRODUCT_NOT_FOUND", "판매 중인 식권 상품을 찾을 수 없어요")
         product = products[0]
         _require_classified_product(product)
-        coupon = _selected_coupon(repo, merchant["id"], payload.coupon_id)
+        coupon = _selected_coupon(repo, merchant["id"], payload.coupon_id, payload.user_coupon_id, profile.id)
         if profile.role == "customer":
             if payload.requested_point_amount not in (None, 0):
                 raise _error(422, "POINTS_NOT_AVAILABLE", "개인 식권 계정에는 포인트를 사용할 수 없어요")
@@ -586,7 +649,7 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
         gross_amount = krw_amount(product["sale_price"])
         if payload.requested_point_amount not in (None, 0):
             raise _error(422, "POINTS_NOT_AVAILABLE", "개인 식권 계정에는 포인트를 사용할 수 없어요")
-        coupon = _selected_coupon(repo, merchant["id"], payload.coupon_id)
+        coupon = _selected_coupon(repo, merchant["id"], payload.coupon_id, payload.user_coupon_id, profile.id)
         quote = build_quote(
             gross_amount=gross_amount, coupon=coupon, requested_point_amount=0,
             available_point_amount=0, points_allowed=False,
@@ -601,6 +664,7 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
             "merchant_id": merchant["id"], "product_id": None, "voucher_product_id": product["id"],
             "merchant_name": merchant["name"], "product_name": product["name"], "amount": amount,
             "gross_amount": gross_amount, "coupon_id": coupon["id"] if coupon else None,
+            "user_coupon_id": coupon.get("_user_coupon_id") if coupon else None,
             "coupon_discount_amount": int(quote["coupon_discount_amount"]),
             "coupon_snapshot": coupon_snapshot(coupon) if coupon else None,
             "requested_point_amount": 0,
@@ -611,9 +675,11 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
             # Paid vouchers conserve the exact charged KRW; bonus vouchers carry zero purchase cost.
             "voucher_purchase_price": str(per_voucher_price(amount, int(product["voucher_count"]))),
         })[0]
+        _reserve_issued_coupon(repo, order, coupon, profile.id, merchant["id"])
         return {"ok": True, "data": {
             "order_id": order_id, "amount": int(order["amount"]), "gross_amount": gross_amount,
             "coupon_id": coupon["id"] if coupon else None,
+            "user_coupon_id": coupon.get("_user_coupon_id") if coupon else None,
             "coupon_discount_amount": int(quote["coupon_discount_amount"]),
             "point_amount": 0, "product_id": product["id"],
             "product_name": product["name"], "total_count": total_count,

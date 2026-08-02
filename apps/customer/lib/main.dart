@@ -14,12 +14,14 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'auth_helpers.dart';
+import 'data/banner_api.dart';
 import 'firebase_config.dart';
 import 'payment_completion.dart';
 import 'pending_payment.dart';
 import 'push_notifications.dart';
 import 'screens/coupon_wallet.dart';
 import 'screens/user_dashboard_shell.dart';
+import 'widgets/partner_banner_slot.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 const legalBaseUrl = String.fromEnvironment('LEGAL_BASE_URL',
@@ -183,15 +185,15 @@ class GreeneatGoApp extends StatelessWidget {
 }
 
 class ApiClient {
-  ApiClient(this.user);
-  final User user;
+  ApiClient([this.user]);
+  final User? user;
 
   Future<String> _freshIdToken() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null || !currentUser.emailVerified) {
       throw const ApiException(statusCode: 401, message: '로그인이 필요해요.');
     }
-    if (user.uid != currentUser.uid) {
+    if (user != null && user!.uid != currentUser.uid) {
       throw const ApiException(
           statusCode: 401, message: '계정이 변경됐어요. 다시 시도해 주세요.');
     }
@@ -203,7 +205,7 @@ class ApiClient {
     final latestUser = FirebaseAuth.instance.currentUser;
     if (latestUser == null ||
         !latestUser.emailVerified ||
-        latestUser.uid != user.uid ||
+        (user != null && latestUser.uid != user!.uid) ||
         latestUser.uid != currentUser.uid) {
       throw const ApiException(
           statusCode: 401, message: '계정이 변경됐어요. 다시 시도해 주세요.');
@@ -212,6 +214,28 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> getMe() async => _request('/me');
+
+  Future<BannerTransportResponse> bannerTransport(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    BannerAuthentication authentication = BannerAuthentication.required,
+  }) async {
+    final request = http.Request(method, Uri.parse('$apiBaseUrl$path'))
+      ..headers['Content-Type'] = 'application/json';
+    if (authentication != BannerAuthentication.none) {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (authentication == BannerAuthentication.required ||
+          currentUser != null) {
+        // Invalid presented credentials fail instead of silently downgrading.
+        request.headers['Authorization'] = 'Bearer ${await _freshIdToken()}';
+      }
+    }
+    if (body != null) request.body = jsonEncode(body);
+    final response = await request.send();
+    return BannerTransportResponse(
+        response.statusCode, await response.stream.bytesToString());
+  }
 
   Future<Map<String, dynamic>> getAnnouncements() =>
       _request('/announcements', authenticated: false);
@@ -256,12 +280,16 @@ class ApiClient {
   Future<VoucherQuote> quoteVoucherOrder({
     required String productId,
     String? couponId,
+    String? userCouponId,
     required int pointAmount,
   }) async {
     final body = <String, dynamic>{
       'product_id': productId,
       'requested_point_amount': pointAmount,
-      if (couponId != null) 'coupon_id': couponId,
+      if (userCouponId != null)
+        'user_coupon_id': userCouponId
+      else if (couponId != null)
+        'coupon_id': couponId,
     };
     return VoucherQuote.fromJson(
         await _request('/vouchers/quote', method: 'POST', body: body));
@@ -270,24 +298,32 @@ class ApiClient {
   Future<Map<String, dynamic>> createVoucherOrder({
     required String productId,
     String? couponId,
+    String? userCouponId,
     required int pointAmount,
   }) {
     return _request('/vouchers/purchase', method: 'POST', body: {
       'product_id': productId,
       'requested_point_amount': pointAmount,
-      if (couponId != null) 'coupon_id': couponId,
+      if (userCouponId != null)
+        'user_coupon_id': userCouponId
+      else if (couponId != null)
+        'coupon_id': couponId,
     });
   }
 
   Future<Map<String, dynamic>> createSubsidizedVoucherOrder({
     required String productId,
     String? couponId,
+    String? userCouponId,
     required int pointAmount,
   }) =>
       _request('/vouchers/purchase-subsidized', method: 'POST', body: {
         'product_id': productId,
         'requested_point_amount': pointAmount,
-        if (couponId != null) 'coupon_id': couponId,
+        if (userCouponId != null)
+          'user_coupon_id': userCouponId
+        else if (couponId != null)
+          'coupon_id': couponId,
       });
 
   Future<Map<String, dynamic>> cancelSubsidizedVoucherOrder(String orderId) =>
@@ -2240,9 +2276,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final isConsumer =
         me['account_type'] == 'voucher' || me['role'] == 'customer';
+    final api = ApiClient(session);
+    void openCouponWallet() {
+      unawaited(Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => CouponWalletScreen(loadCoupons: api.getCoupons))));
+    }
+
     return UserDashboardShell(
       data: me,
       onRefresh: onRefresh,
+      partnerBanner: PartnerBannerSlot(
+        api: BannerApi(api.bannerTransport),
+        placement: BannerPlacement.homeBottom,
+        padding: const EdgeInsets.only(top: 24),
+        onCouponIssued: openCouponWallet,
+      ),
       pendingBanner: _pendingLoad == null
           ? null
           : PendingPaymentRecoveryBanner(
@@ -3180,69 +3228,94 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
         showBrand: false,
         title: '돈토 식권 구매',
         subtitle: '원하는 식권 패키지를 고르고 키움페이에서 결제해요.',
-        child: FutureBuilder<VoucherCatalog>(
-          future: _catalog,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const BrandPanel(
-                  children: [Center(child: CircularProgressIndicator())]);
-            }
-            if (snapshot.hasError) {
-              return BrandPanel(children: [
-                BrandNotice(
-                    text: snapshot.error.toString(), kind: NoticeKind.error),
-                const SizedBox(height: 12),
-                OutlinedButton(onPressed: _reload, child: const Text('다시 불러오기'))
-              ]);
-            }
-            final catalog = snapshot.data ??
-                const VoucherCatalog(
-                    purchaseMode: VoucherPurchaseMode.none, items: []);
-            if (catalog.purchaseMode == VoucherPurchaseMode.none) {
-              return const BrandPanel(children: [
-                Text('구매할 수 있는 식권 상품이 없어요.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontWeight: FontWeight.w900))
-              ]);
-            }
-            if (catalog.items.isEmpty) {
-              return const BrandPanel(children: [
-                Text('현재 판매 중인 식권 상품이 없어요.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontWeight: FontWeight.w900))
-              ]);
-            }
-            return Column(
-                children: catalog.items
-                    .map((product) => VoucherProductCard(
-                        product: product,
-                        purchaseMode: catalog.purchaseMode,
-                        onBuy: () async {
-                          final api = ApiClient(widget.session);
-                          final selection = await Navigator.of(context)
-                              .push<CheckoutSelection>(MaterialPageRoute(
-                                  builder: (_) => CheckoutOptionsScreen(
-                                        productId: product.id,
-                                        productName: product.name,
-                                        pointBalance: widget.pointBalance,
-                                        loadCoupons: api.getCoupons,
-                                        loadQuote: api.quoteVoucherOrder,
-                                      )));
-                          if (selection == null || !context.mounted) return;
-                          final paid = await Navigator.of(context).push<bool>(
-                              MaterialPageRoute(
-                                  builder: (_) => VoucherKiwoomPaymentScreen(
-                                      session: widget.session,
-                                      product: product,
-                                      purchaseMode: catalog.purchaseMode,
-                                      couponId: selection.couponId,
-                                      pointAmount: selection.pointAmount)));
-                          if (paid == true && context.mounted) {
-                            Navigator.of(context).pop(true);
-                          }
-                        }))
-                    .toList());
-          },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            PartnerBannerSlot(
+              api: BannerApi(ApiClient(widget.session).bannerTransport),
+              placement: BannerPlacement.eventPage,
+              padding: const EdgeInsets.only(bottom: 18),
+              onCouponIssued: () {
+                final api = ApiClient(widget.session);
+                unawaited(Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) =>
+                        CouponWalletScreen(loadCoupons: api.getCoupons))));
+              },
+            ),
+            FutureBuilder<VoucherCatalog>(
+              future: _catalog,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const BrandPanel(
+                      children: [Center(child: CircularProgressIndicator())]);
+                }
+                if (snapshot.hasError) {
+                  return BrandPanel(children: [
+                    BrandNotice(
+                        text: snapshot.error.toString(),
+                        kind: NoticeKind.error),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                        onPressed: _reload, child: const Text('다시 불러오기'))
+                  ]);
+                }
+                final catalog = snapshot.data ??
+                    const VoucherCatalog(
+                        purchaseMode: VoucherPurchaseMode.none, items: []);
+                if (catalog.purchaseMode == VoucherPurchaseMode.none) {
+                  return const BrandPanel(children: [
+                    Text('구매할 수 있는 식권 상품이 없어요.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.w900))
+                  ]);
+                }
+                if (catalog.items.isEmpty) {
+                  return const BrandPanel(children: [
+                    Text('현재 판매 중인 식권 상품이 없어요.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.w900))
+                  ]);
+                }
+                return Column(
+                    children: catalog.items
+                        .map((product) => VoucherProductCard(
+                            product: product,
+                            purchaseMode: catalog.purchaseMode,
+                            onBuy: () async {
+                              final api = ApiClient(widget.session);
+                              final selection = await Navigator.of(context)
+                                  .push<CheckoutSelection>(MaterialPageRoute(
+                                      builder: (_) => CheckoutOptionsScreen(
+                                            productId: product.id,
+                                            productName: product.name,
+                                            pointBalance: widget.pointBalance,
+                                            loadCoupons: api.getCoupons,
+                                            loadQuote: api.quoteVoucherOrder,
+                                            loadIssuedQuote:
+                                                api.quoteVoucherOrder,
+                                          )));
+                              if (selection == null || !context.mounted) return;
+                              final paid = await Navigator.of(context)
+                                  .push<bool>(MaterialPageRoute(
+                                      builder: (_) =>
+                                          VoucherKiwoomPaymentScreen(
+                                              session: widget.session,
+                                              product: product,
+                                              purchaseMode:
+                                                  catalog.purchaseMode,
+                                              couponId: selection.couponId,
+                                              userCouponId:
+                                                  selection.userCouponId,
+                                              pointAmount:
+                                                  selection.pointAmount)));
+                              if (paid == true && context.mounted) {
+                                Navigator.of(context).pop(true);
+                              }
+                            }))
+                        .toList());
+              },
+            ),
+          ],
         ),
       );
 }
@@ -3391,6 +3464,7 @@ class VoucherKiwoomPaymentScreen extends StatefulWidget {
     required this.product,
     required this.purchaseMode,
     this.couponId,
+    this.userCouponId,
     this.pointAmount = 0,
   });
 
@@ -3398,6 +3472,7 @@ class VoucherKiwoomPaymentScreen extends StatefulWidget {
   final VoucherProduct product;
   final VoucherPurchaseMode purchaseMode;
   final String? couponId;
+  final String? userCouponId;
   final int pointAmount;
 
   bool get isSubsidized => purchaseMode == VoucherPurchaseMode.subsidized;
@@ -3637,10 +3712,12 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
           ? await ApiClient(widget.session).createSubsidizedVoucherOrder(
               productId: widget.product.id,
               couponId: widget.couponId,
+              userCouponId: widget.userCouponId,
               pointAmount: widget.pointAmount)
           : await ApiClient(widget.session).createVoucherOrder(
               productId: widget.product.id,
               couponId: widget.couponId,
+              userCouponId: widget.userCouponId,
               pointAmount: widget.pointAmount);
       final checkoutUrl = order['checkout_url'] as String?;
       _orderId = order['order_id'] as String?;

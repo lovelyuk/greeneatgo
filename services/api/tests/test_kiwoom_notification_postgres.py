@@ -183,8 +183,9 @@ def test_voucher_and_subsidized_fulfillment_and_transaction_rollback(pg):
     user, merchant, company = parties(pg)
     vp = pg.execute("insert into voucher_products(merchant_id,name,voucher_count,unit_price,tax_type) values(%s,'voucher',2,1100,'taxable') returning id", (merchant,)).fetchone()[0]
     voucher = pg.execute("""insert into payment_orders(order_id,checkout_token,user_id,merchant_id,merchant_name,product_name,
-      amount,status,pay_type,voucher_product_id,voucher_count,paid_voucher_count,bonus_voucher_count,voucher_purchase_price)
-      values('GE-voucher','tok-voucher',%s,%s,'merchant','voucher',2200,'ready','voucher',%s,2,2,0,1100) returning id,order_id""",
+      amount,status,pay_type,voucher_product_id,voucher_count,paid_voucher_count,bonus_voucher_count,voucher_purchase_price,
+      gross_amount,requested_point_amount)
+      values('GE-voucher','tok-voucher',%s,%s,'merchant','voucher',2200,'ready','voucher',%s,2,2,0,1100,2200,0) returning id,order_id""",
       (user, merchant, vp)).fetchone()
     from psycopg.types.json import Jsonb
     body = {"CPID": "CPID", "ORDERNO": voucher[1], "AMOUNT": "2200", "PAYMETHOD": "CARD", "DAOUTRX": "trx-voucher"}
@@ -195,9 +196,10 @@ def test_voucher_and_subsidized_fulfillment_and_transaction_rollback(pg):
     pg.execute("set local session_replication_role=replica")
     subsidized = pg.execute("""insert into payment_orders(order_id,checkout_token,user_id,merchant_id,merchant_name,product_name,
       amount,status,pay_type,voucher_product_id,voucher_count,paid_voucher_count,bonus_voucher_count,voucher_purchase_price,
-      company_id,company_subsidy_amount,restaurant_subsidy_amount,total_employee_burden,point_amount,point_reserved,tax_type,tax_review_required)
+      company_id,company_subsidy_amount,restaurant_subsidy_amount,total_employee_burden,point_amount,point_reserved,tax_type,tax_review_required,
+      gross_amount)
       values('GE-subsidy','tok-subsidy',%s,%s,'merchant','legacy subsidy',1000,'ready','subsidized',null,1,1,0,1100,
-      %s,50,50,1100,100,true,'unclassified',true) returning id,order_id""", (user, merchant, company)).fetchone()
+      %s,50,50,1100,100,true,'unclassified',true,1100) returning id,order_id""", (user, merchant, company)).fetchone()
     pg.execute("set local session_replication_role=origin")
     with pytest.raises(psycopg.errors.RaiseException, match="POINT_RESERVATION_CONFLICT"):
         with pg.transaction():

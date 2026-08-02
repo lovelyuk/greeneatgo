@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.logging_filters import install_payment_notification_access_log_filter
 
-from app.routers import admin, admin_dashboard, auth_pages, boards, company_usage, consumer, coupons, health, invites, join, me, merchant_admin, pay, payments, platform, products, push_notifications, settlements, transactions, voucher_products
+from app.routers import admin, admin_dashboard, auth_pages, banners, boards, company_usage, consumer, coupons, health, invites, join, me, merchant_admin, pay, payments, platform, products, push_notifications, settlements, transactions, voucher_products
 
 settings = get_settings()
 install_payment_notification_access_log_filter()
@@ -30,6 +30,7 @@ app.include_router(transactions.router, prefix="/v1")
 app.include_router(push_notifications.router, prefix="/v1")
 app.include_router(boards.router, prefix="/v1")
 app.include_router(coupons.router, prefix="/v1")
+app.include_router(banners.router, prefix="/v1")
 app.include_router(me.router, prefix="/v1")
 app.include_router(join.router, prefix="/v1")
 app.include_router(admin.router, prefix="/v1")

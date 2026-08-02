@@ -142,4 +142,100 @@ void main() {
     expect(find.text('10,000원 결제하기'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('coupon wallet renders issued and public coupon sections',
+      (tester) async {
+    final parsed = CouponWallet.fromJson({
+      'merchant': {'name': '돈토식당'},
+      'issued': [
+        {
+          'id': 'user-coupon-1',
+          'coupon_id': 'coupon-issued',
+          'coupon_snapshot': {
+            'name': '발급 쿠폰',
+            'discount_type': 'fixed',
+            'discount_value': 2000,
+            'source': '배너',
+          },
+        },
+      ],
+      'items': [
+        {
+          'id': 'coupon-public',
+          'name': '공개 쿠폰',
+          'discount_type': 'percent',
+          'discount_value': 10,
+        },
+      ],
+    });
+
+    await pumpAtPhoneSize(
+      tester,
+      CouponWalletScreen(loadCoupons: () async => parsed),
+    );
+
+    expect(find.text('내 쿠폰'), findsOneWidget);
+    expect(find.text('공개 쿠폰'), findsNWidgets(2));
+    expect(find.text('발급 쿠폰'), findsOneWidget);
+    expect(find.byType(CouponTicketCard), findsNWidgets(2));
+    expect(parsed.issued.single.id, 'coupon-issued');
+    expect(parsed.issued.single.userCouponId, 'user-coupon-1');
+    expect(parsed.issued.single.source, '배너');
+  });
+
+  testWidgets('issued coupon checkout sends user_coupon_id to quote',
+      (tester) async {
+    const issued = CouponItem(
+      id: 'coupon-template',
+      name: '배너 발급 쿠폰',
+      discountType: 'fixed',
+      discountValue: 1000,
+      userCouponId: 'user-coupon-77',
+    );
+    String? quotedUserCouponId;
+    await pumpAtPhoneSize(
+      tester,
+      CheckoutOptionsScreen(
+        productId: 'product-1',
+        productName: '돈토 식권 10장',
+        pointBalance: 0,
+        loadCoupons: () async => const CouponWallet(
+          merchantName: '돈토식당',
+          items: [],
+          issued: [issued],
+        ),
+        loadQuote: ({
+          required String productId,
+          String? couponId,
+          required int pointAmount,
+        }) async =>
+            const VoucherQuote(
+          grossAmount: 10000,
+          couponDiscountAmount: 0,
+          pointAmount: 0,
+          amount: 10000,
+        ),
+        loadIssuedQuote: ({
+          required String productId,
+          String? couponId,
+          String? userCouponId,
+          required int pointAmount,
+        }) async {
+          quotedUserCouponId = userCouponId;
+          return const VoucherQuote(
+            grossAmount: 10000,
+            couponDiscountAmount: 1000,
+            pointAmount: 0,
+            amount: 9000,
+          );
+        },
+      ),
+    );
+
+    await tester.tap(find.byType(CouponTicketCard));
+    await tester.pumpAndSettle();
+
+    expect(quotedUserCouponId, 'user-coupon-77');
+    expect(find.text('9,000원 결제하기'), findsOneWidget);
+  });
 }

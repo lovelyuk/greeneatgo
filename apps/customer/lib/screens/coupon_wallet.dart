@@ -26,6 +26,8 @@ class CouponItem {
     required this.discountValue,
     this.validFrom,
     this.validUntil,
+    this.userCouponId,
+    this.source,
   });
 
   final String id;
@@ -34,7 +36,10 @@ class CouponItem {
   final double discountValue;
   final DateTime? validFrom;
   final DateTime? validUntil;
+  final String? userCouponId;
+  final String? source;
 
+  bool get isIssued => userCouponId != null && userCouponId!.isNotEmpty;
   bool get isPercent => discountType.toLowerCase() == 'percent';
   String get benefit {
     if (!isPercent) return couponWon(discountValue.floor());
@@ -57,6 +62,17 @@ class CouponItem {
     return '사용 기한 제한 없음';
   }
 
+  String get dDayLabel {
+    if (validUntil == null) return '기한 없음';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final end = validUntil!.toLocal();
+    final days =
+        DateTime(end.year, end.month, end.day).difference(today).inDays;
+    if (days == 0) return 'D-DAY';
+    return days > 0 ? 'D-$days' : '기간 만료';
+  }
+
   factory CouponItem.fromJson(Map<String, dynamic> json) => CouponItem(
         id: '${json['id'] ?? json['coupon_id'] ?? ''}',
         name: '${json['name'] ?? json['title'] ?? '할인 쿠폰'}',
@@ -64,29 +80,58 @@ class CouponItem {
         discountValue: _asDouble(json['discount_value']),
         validFrom: DateTime.tryParse('${json['valid_from'] ?? ''}'),
         validUntil: DateTime.tryParse('${json['valid_until'] ?? ''}'),
+        userCouponId:
+            (json['user_coupon_id'] ?? json['issued_coupon_id'])?.toString(),
+        source: (json['source'] ?? json['issued_source'])?.toString(),
       );
 }
 
 class CouponWallet {
-  const CouponWallet({required this.merchantName, required this.items});
+  const CouponWallet({
+    required this.merchantName,
+    required this.items,
+    this.issued = const [],
+  });
   final String merchantName;
   final List<CouponItem> items;
+  final List<CouponItem> issued;
 
   factory CouponWallet.fromJson(Map<String, dynamic> json) {
     final merchant = json['merchant'];
     final merchantName = merchant is Map
         ? '${merchant['name'] ?? merchant['merchant_name'] ?? ''}'
         : '${merchant ?? ''}';
-    final rawItems = json['items'];
+    List<CouponItem> parse(Object? value, {bool issued = false}) => value
+            is List
+        ? value
+            .whereType<Map>()
+            .map((raw) {
+              final map = raw.cast<String, dynamic>();
+              final nested = map['coupon_snapshot'] ?? map['coupon'];
+              final merged = nested is Map
+                  ? <String, dynamic>{
+                      ...map,
+                      ...nested.cast<String, dynamic>(),
+                      if (issued) ...{
+                        // Outer ids belong to the issuance, not its snapshot.
+                        'id': map['coupon_id'],
+                        'user_coupon_id': map['id'],
+                      },
+                    }
+                  : <String, dynamic>{
+                      ...map,
+                      if (issued)
+                        'user_coupon_id': map['user_coupon_id'] ?? map['id'],
+                    };
+              return CouponItem.fromJson(merged);
+            })
+            .where((item) => item.id.isNotEmpty && (!issued || item.isIssued))
+            .toList()
+        : const [];
     return CouponWallet(
       merchantName: merchantName.trim().isEmpty ? '돈토식당' : merchantName,
-      items: rawItems is List
-          ? rawItems
-              .whereType<Map>()
-              .map((item) => CouponItem.fromJson(item.cast<String, dynamic>()))
-              .where((item) => item.id.isNotEmpty)
-              .toList()
-          : const [],
+      items: parse(json['items']),
+      issued: parse(json['issued'], issued: true),
     );
   }
 }
@@ -118,6 +163,12 @@ typedef QuoteLoader = Future<VoucherQuote> Function({
   String? couponId,
   required int pointAmount,
 });
+typedef IssuedQuoteLoader = Future<VoucherQuote> Function({
+  required String productId,
+  String? couponId,
+  String? userCouponId,
+  required int pointAmount,
+});
 
 class CouponTicketCard extends StatelessWidget {
   const CouponTicketCard({
@@ -145,7 +196,7 @@ class CouponTicketCard extends StatelessWidget {
             clipper: const _CouponTicketClipper(),
             child: Container(
               key: ValueKey('coupon-${coupon.id}'),
-              height: 154,
+              height: coupon.isIssued ? 192 : 154,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
@@ -187,7 +238,25 @@ class CouponTicketCard extends StatelessWidget {
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700)),
                           ),
-                          if (selected)
+                          if (coupon.isIssued)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.white24,
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                              child: Text(
+                                '${coupon.dDayLabel}${coupon.source?.trim().isNotEmpty == true ? ' · ${coupon.source}' : ''}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            )
+                          else if (selected)
                             const Icon(Icons.check_circle_rounded,
                                 color: Colors.white, size: 20),
                         ]),
@@ -312,13 +381,25 @@ class _CouponWalletScreenState extends State<CouponWalletScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
                     children: [
-                      Text('${wallet.items.length}장의 쿠폰',
+                      Text('${wallet.items.length + wallet.issued.length}장의 쿠폰',
                           style: AppTextStyles.screenTitle),
                       const SizedBox(height: 6),
                       Text('${wallet.merchantName}에서 사용할 수 있어요.',
                           style: AppTextStyles.caption),
                       const SizedBox(height: 22),
-                      if (wallet.items.isEmpty)
+                      if (wallet.issued.isNotEmpty) ...[
+                        const Text('내 쿠폰', style: AppTextStyles.cardTitle),
+                        const SizedBox(height: 10),
+                        for (final coupon in wallet.issued) ...[
+                          CouponTicketCard(
+                              coupon: coupon,
+                              merchantName: wallet.merchantName),
+                          const SizedBox(height: 14),
+                        ],
+                        const Text('공개 쿠폰', style: AppTextStyles.cardTitle),
+                        const SizedBox(height: 10),
+                      ],
+                      if (wallet.items.isEmpty && wallet.issued.isEmpty)
                         const _EmptyCoupons()
                       else
                         for (final coupon in wallet.items) ...[
@@ -338,8 +419,13 @@ class _CouponWalletScreenState extends State<CouponWalletScreen> {
 }
 
 class CheckoutSelection {
-  const CheckoutSelection({required this.couponId, required this.pointAmount});
+  const CheckoutSelection({
+    required this.couponId,
+    required this.pointAmount,
+    this.userCouponId,
+  });
   final String? couponId;
+  final String? userCouponId;
   final int pointAmount;
 }
 
@@ -351,6 +437,7 @@ class CheckoutOptionsScreen extends StatefulWidget {
     required this.pointBalance,
     required this.loadCoupons,
     required this.loadQuote,
+    this.loadIssuedQuote,
   });
 
   final String productId;
@@ -358,6 +445,7 @@ class CheckoutOptionsScreen extends StatefulWidget {
   final int pointBalance;
   final CouponLoader loadCoupons;
   final QuoteLoader loadQuote;
+  final IssuedQuoteLoader? loadIssuedQuote;
 
   @override
   State<CheckoutOptionsScreen> createState() => _CheckoutOptionsScreenState();
@@ -420,10 +508,16 @@ class _CheckoutOptionsScreenState extends State<CheckoutOptionsScreen> {
       _error = null;
     });
     try {
-      final quote = await widget.loadQuote(
-          productId: widget.productId,
-          couponId: _coupon?.id,
-          pointAmount: points);
+      final issuedId = _coupon?.userCouponId;
+      final quote = issuedId != null && widget.loadIssuedQuote != null
+          ? await widget.loadIssuedQuote!(
+              productId: widget.productId,
+              userCouponId: issuedId,
+              pointAmount: points)
+          : await widget.loadQuote(
+              productId: widget.productId,
+              couponId: _coupon?.id,
+              pointAmount: points);
       if (mounted && generation == _generation) setState(() => _quote = quote);
     } catch (error) {
       if (mounted && generation == _generation) {
@@ -490,7 +584,10 @@ class _CheckoutOptionsScreenState extends State<CheckoutOptionsScreen> {
                         ]),
                       ],
                       if (_wallet != null)
-                        for (final coupon in _wallet!.items) ...[
+                        for (final coupon in [
+                          ..._wallet!.issued,
+                          ..._wallet!.items,
+                        ]) ...[
                           const SizedBox(height: 12),
                           CouponTicketCard(
                             coupon: coupon,
@@ -561,7 +658,10 @@ class _CheckoutOptionsScreenState extends State<CheckoutOptionsScreen> {
                       onPressed: _quote == null || _quoting
                           ? null
                           : () => Navigator.of(context).pop(CheckoutSelection(
-                              couponId: _coupon?.id,
+                              couponId: _coupon?.isIssued == true
+                                  ? null
+                                  : _coupon?.id,
+                              userCouponId: _coupon?.userCouponId,
                               pointAmount: _pointIntent)),
                       child: Text(_quote == null
                           ? '금액 확인 중...'

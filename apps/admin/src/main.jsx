@@ -10,6 +10,7 @@ import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js'
 import { captureGeneration, generationIsCurrent } from './generationGuard.js';
 import { currentPeriodYm, formatPeriodYm, mapCompanyUsage, shiftPeriodYm } from './companyUsage.js';
 import { filterMerchantTransactions, merchantMealPaymentIds, merchantRecentKpis, reconcileMerchantPaymentFeed } from './merchantPaymentFeed.js';
+import { BANNER_PLACEMENTS, apiItems, bannerCtr, bannerFormFromItem, bannerListQuery, bannerStatsContract, bannerStatus, imageRatioStatus, isHttpsUrl, normalizeBannerPayload, utcIsoToLocalDateTime } from './partnerBanner.js';
 import {
   buildPaymentPayload, canCompanyDispute, canConfirmAndRequest, canMerchantBeginRevision,
   canMerchantIssue, canMerchantMarkPaid, canMerchantSend, canRefreshInvoiceStatus,
@@ -1042,6 +1043,152 @@ function CouponManagementPanel({ token, items, migrationRequired, loadError, bus
     </form>
     <div className="product-list coupon-list">{items.map((item) => <article className={`product-item ${item.is_active ? '' : 'off'}`} key={item.id}><div className="coupon-icon" aria-hidden="true">{item.discount_type === 'percent' ? '%' : '₩'}</div><div className="product-copy"><strong>{item.name}</strong><span>{item.discount_type === 'percent' ? `${item.discount_value}% 할인` : `${krw(item.discount_value)} 할인`}</span><span>{item.valid_from || '즉시'} ~ {item.valid_until || '종료일 없음'}</span></div><div className="row-actions"><button className="ghost" onClick={() => edit(item)}>수정</button><button type="button" role="switch" aria-checked={!!item.is_active} className={`status-switch ${item.is_active ? 'on' : ''}`} onClick={() => toggle(item)} disabled={busy}><span aria-hidden="true"/>{item.is_active ? '적용중' : '중지'}</button><button className="ghost delete-button" onClick={() => remove(item)} disabled={busy}>삭제</button></div></article>)}</div>
   </section>;
+}
+
+const blankPartner = { name: '', site_url: '', logo_url: '', contact_name: '', contact_email: '', contact_phone: '', memo: '', status: 'active' };
+
+function PartnerManagementScreen({ token }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState('');
+  const [form, setForm] = useState(blankPartner);
+  const load = async () => {
+    setLoading(true); setError('');
+    try { setItems(apiItems(await apiFetch('/admin/partners', token))); }
+    catch (loadError) { setError(loadError.message); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [token]);
+  function edit(item) {
+    setEditingId(item.id);
+    setForm({ name: item.name ?? '', site_url: item.site_url ?? '', logo_url: item.logo_url ?? '', contact_name: item.contact_name ?? '', contact_email: item.contact_email ?? '', contact_phone: item.contact_phone ?? '', memo: item.memo ?? '', status: item.status ?? 'active' });
+  }
+  function reset() { setEditingId(''); setForm(blankPartner); }
+  async function save(event) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    try {
+      await apiFetch(`/admin/partners${editingId ? `/${editingId}` : ''}`, token, { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify({ ...form, name: form.name.trim(), site_url: form.site_url.trim(), logo_url: form.logo_url.trim() || null, contact_name: form.contact_name.trim() || null, contact_email: form.contact_email.trim() || null, contact_phone: form.contact_phone.trim() || null, memo: form.memo.trim() || null }) });
+      setNotice(editingId ? '제휴사를 수정했어요.' : '제휴사를 등록했어요.'); reset(); await load();
+    } catch (saveError) { setError(saveError.message); } finally { setBusy(false); }
+  }
+  async function remove(item) {
+    if (!window.confirm(`'${item.name}' 제휴사를 삭제하시겠어요?`)) return;
+    setBusy(true); setError('');
+    try { await apiFetch(`/admin/partners/${item.id}`, token, { method: 'DELETE' }); if (editingId === item.id) reset(); setNotice('제휴사를 삭제했어요.'); await load(); }
+    catch (deleteError) { setError(deleteError.message); } finally { setBusy(false); }
+  }
+  return <AdminPage title="제휴사" description="배너 광고에 연결할 제휴사와 담당자 정보를 관리합니다." preview={false} className="partner-admin-page">
+    <section className="panel partner-management-panel">
+      {error && <div className="alert error">{error} <button type="button" className="ghost inline-retry" onClick={load}>다시 시도</button></div>}
+      {notice && <div className="alert success">{notice}</div>}
+      <form className="partner-form" onSubmit={save}>
+        <label>제휴사명<input value={form.name} maxLength="120" required onChange={(event) => setForm({ ...form, name: event.target.value })}/></label>
+        <label>사이트 URL (HTTPS)<input type="url" value={form.site_url} required pattern="https://.*" placeholder="https://" onChange={(event) => setForm({ ...form, site_url: event.target.value })}/></label>
+        <label>로고 URL<input type="url" value={form.logo_url} placeholder="https://" onChange={(event) => setForm({ ...form, logo_url: event.target.value })}/></label>
+        <label>담당자명<input value={form.contact_name} onChange={(event) => setForm({ ...form, contact_name: event.target.value })}/></label>
+        <label>담당자 이메일<input type="email" value={form.contact_email} onChange={(event) => setForm({ ...form, contact_email: event.target.value })}/></label>
+        <label>담당자 연락처<input value={form.contact_phone} onChange={(event) => setForm({ ...form, contact_phone: event.target.value })}/></label>
+        <label className="partner-memo-field">메모<input value={form.memo} maxLength="500" onChange={(event) => setForm({ ...form, memo: event.target.value })}/></label>
+        <label>상태<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option value="active">활성</option><option value="paused">일시중지</option><option value="ended">종료</option></select></label>
+        <div className="row-actions"><button className="primary" disabled={busy}>{editingId ? '수정 저장' : '제휴사 등록'}</button>{editingId && <button type="button" className="ghost" onClick={reset}>취소</button>}</div>
+      </form>
+      {loading ? <p className="empty-state">제휴사 목록을 불러오고 있어요.</p> : items.length === 0 ? <p className="empty-state">등록된 제휴사가 없어요.</p> : <div className="table-wrap partner-table-wrap"><table><thead><tr><th>제휴사</th><th>사이트</th><th>담당자</th><th>이메일</th><th>연락처</th><th>상태</th><th>관리</th></tr></thead><tbody>{items.map((item) => { const partnerState = { active: { label: '활성', className: 'live' }, paused: { label: '일시중지', className: 'paused' }, ended: { label: '종료', className: 'ended' } }[item.status] ?? { label: item.status, className: 'paused' }; return <tr key={item.id}><td><div className="partner-cell">{item.logo_url ? <img src={item.logo_url} alt=""/> : <span aria-hidden="true">P</span>}<strong>{item.name}</strong></div></td><td><a href={item.site_url} target="_blank" rel="noreferrer">사이트</a></td><td>{item.contact_name || '-'}</td><td>{item.contact_email || '-'}</td><td>{item.contact_phone || '-'}</td><td><span className={`banner-status ${partnerState.className}`}>{partnerState.label}</span></td><td><div className="row-actions"><button type="button" className="ghost" onClick={() => edit(item)}>수정</button><button type="button" className="ghost delete-button" disabled={busy} onClick={() => remove(item)}>삭제</button></div></td></tr>; })}</tbody></table></div>}
+    </section>
+  </AdminPage>;
+}
+
+const blankBanner = bannerFormFromItem(null);
+const formatCount = (value) => Number(value ?? 0).toLocaleString('ko-KR');
+
+function BannerPreview({ form, dimensions }) {
+  const reward = form.reward_type === 'point' ? `${formatCount(form.point_amount)}P` : form.reward_type === 'coupon' ? '쿠폰' : '';
+  const ratio = dimensions?.width && dimensions?.height ? dimensions.width / dimensions.height : BANNER_PLACEMENTS[form.placement]?.ratio;
+  return <aside className="banner-phone-preview" aria-label="사용자 앱 배너 미리보기"><div className="phone-speaker"/><div className="phone-screen"><div className="preview-banner" style={{ aspectRatio: ratio || 3 }}>{form.image_url ? <img src={form.image_url} alt={form.image_alt || ''}/> : <span>이미지 미리보기</span>}<b className="ad-badge">광고</b>{reward && <b className="reward-badge">{reward}</b>}<strong>{form.title || '배너 제목'}</strong></div></div></aside>;
+}
+
+function BannerEditorModal({ token, item, partners, coupons, placement, onClose, onSaved }) {
+  const [form, setForm] = useState(() => bannerFormFromItem(item, placement));
+  const [dimensions, setDimensions] = useState(item ? { width: item.image_width, height: item.image_height } : null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const titleRef = useRef(null);
+  useEffect(() => { titleRef.current?.focus(); }, []);
+  useEffect(() => {
+    if (!form.image_url || (dimensions?.width && dimensions?.height)) return;
+    const image = new Image(); image.onload = () => setDimensions({ width: image.naturalWidth, height: image.naturalHeight }); image.src = form.image_url;
+  }, [form.image_url]);
+  const recommendation = BANNER_PLACEMENTS[form.placement];
+  const ratioState = dimensions?.width && dimensions?.height ? imageRatioStatus(dimensions.width, dimensions.height, form.placement) : null;
+  async function upload(event) {
+    const file = event.target.files?.[0]; if (!file) return;
+    if (!form.partner_id) { setError('이미지를 업로드하려면 먼저 제휴사를 선택해 주세요.'); event.target.value = ''; return; }
+    setBusy(true); setError('');
+    const data = new FormData(); data.append('partner_id', form.partner_id); data.append('placement', form.placement); data.append('image', file);
+    try { const uploaded = await apiFetch('/admin/banners/upload-image', token, { method: 'POST', body: data }); setForm((current) => ({ ...current, image_url: uploaded.image_url ?? uploaded.url })); setDimensions({ width: uploaded.width, height: uploaded.height }); }
+    catch (uploadError) { setError(uploadError.message); } finally { setBusy(false); event.target.value = ''; }
+  }
+  async function save(event) {
+    event.preventDefault(); setError('');
+    if (!isHttpsUrl(form.link_url)) { setError('이동 URL은 https://로 시작해야 해요.'); return; }
+    if (form.ends_at && form.starts_at && new Date(form.ends_at) <= new Date(form.starts_at)) { setError('종료 일시는 시작 일시보다 늦어야 해요.'); return; }
+    if (form.reward_type === 'point' && !form.total_budget && !window.confirm('총 예산이 없는 무제한 포인트 배너입니다. 계속 저장하시겠어요?')) return;
+    setBusy(true);
+    try { await apiFetch(`/admin/banners${item?.id ? `/${item.id}` : ''}`, token, { method: item?.id ? 'PATCH' : 'POST', body: JSON.stringify(normalizeBannerPayload(form)) }); await onSaved(); }
+    catch (saveError) { setError(saveError.message); } finally { setBusy(false); }
+  }
+  return <div className="modal-backdrop banner-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
+    <section className="banner-editor-modal" role="dialog" aria-modal="true" aria-labelledby="banner-editor-title" onKeyDown={(event) => event.key === 'Escape' && !busy && onClose()}>
+      <header className="banner-modal-header"><div><h2 id="banner-editor-title">{item ? '제휴 배너 수정' : '제휴 배너 등록'}</h2><p>필수 정보와 리워드 정책을 입력하고 앱 노출 모습을 확인하세요.</p></div><button type="button" className="ghost icon-button" aria-label="닫기" onClick={onClose} disabled={busy}><X size={20}/></button></header>
+      <div className="banner-modal-layout"><form className="banner-editor-form" onSubmit={save}>
+        {error && <div className="alert error banner-form-wide">{error}</div>}
+        <label className="banner-form-wide">제휴사<select value={form.partner_id} required onChange={(event) => setForm({ ...form, partner_id: event.target.value })}><option value="">선택해 주세요</option>{partners.filter((partner) => partner.status === 'active' || (item && partner.id === form.partner_id)).map((partner) => <option value={partner.id} key={partner.id}>{partner.name}{partner.status !== 'active' ? ` (${partner.status === 'paused' ? '일시중지' : '종료'})` : ''}</option>)}</select></label>
+        <label className="banner-form-wide">배너 제목<input ref={titleRef} value={form.title} maxLength="120" required onChange={(event) => setForm({ ...form, title: event.target.value })}/></label>
+        <label>노출 위치<select value={form.placement} onChange={(event) => setForm({ ...form, placement: event.target.value })}><option value="home_bottom">홈 하단</option><option value="event_page">이벤트 페이지</option></select><small>권장 이미지 {recommendation.width}×{recommendation.height}px ({recommendation.ratio}:1)</small></label>
+        <label className="banner-form-wide">배너 이미지<input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} disabled={busy || !form.partner_id}/><input type="url" value={form.image_url} placeholder="또는 HTTPS 이미지 URL" required onChange={(event) => { setDimensions(null); setForm({ ...form, image_url: event.target.value }); }}/>{!form.partner_id && <small>파일 업로드 전에 제휴사를 선택해 주세요.</small>}{ratioState && <small className={ratioState.matches ? 'ratio-ok' : 'ratio-warning'}>실제 {dimensions.width}×{dimensions.height}px · {ratioState.matches ? '권장 비율과 일치' : `권장 ${recommendation.ratio}:1 비율과 다름`}</small>}</label>
+        <label className="banner-form-wide">대체 텍스트<input value={form.image_alt} maxLength="200" required placeholder="이미지를 보지 못하는 사용자를 위한 설명" onChange={(event) => setForm({ ...form, image_alt: event.target.value })}/></label>
+        <label className="banner-form-wide">이동 URL (HTTPS)<input type="url" value={form.link_url} required pattern="https://.*" placeholder="https://" onChange={(event) => setForm({ ...form, link_url: event.target.value })}/></label>
+        <fieldset className="banner-radio banner-form-wide"><legend>열기 방식</legend><label><input type="radio" name="open-mode" value="webview" checked={form.open_mode === 'webview'} onChange={(event) => setForm({ ...form, open_mode: event.target.value })}/> 앱 내 웹뷰</label><label><input type="radio" name="open-mode" value="external" checked={form.open_mode === 'external'} onChange={(event) => setForm({ ...form, open_mode: event.target.value })}/> 외부 브라우저</label></fieldset>
+        <label>노출 시작 일시 (선택)<input type="datetime-local" value={form.starts_at} onChange={(event) => setForm({ ...form, starts_at: event.target.value })}/></label>
+        <label>노출 종료 일시 (선택)<input type="datetime-local" value={form.ends_at} min={form.starts_at || undefined} onChange={(event) => setForm({ ...form, ends_at: event.target.value })}/></label>
+        <label className="banner-form-wide">리워드 유형<select value={form.reward_type} onChange={(event) => setForm({ ...form, reward_type: event.target.value })}><option value="none">없음</option><option value="point">포인트</option><option value="coupon">쿠폰</option></select></label>
+        {form.reward_type === 'point' && <label>지급 포인트<input type="number" min="1" step="1" value={form.point_amount} required onChange={(event) => setForm({ ...form, point_amount: event.target.value })}/><small>단위: P</small></label>}
+        {form.reward_type === 'coupon' && <label>지급 쿠폰<select value={form.coupon_id} required onChange={(event) => setForm({ ...form, coupon_id: event.target.value })}><option value="">선택해 주세요</option>{coupons.map((coupon) => <option value={coupon.id} key={coupon.id}>{coupon.name}</option>)}</select></label>}
+        {form.reward_type === 'coupon' && <label>쿠폰 유효 일수<input type="number" min="1" step="1" value={form.coupon_valid_days} onChange={(event) => setForm({ ...form, coupon_valid_days: event.target.value })}/></label>}
+        {form.reward_type !== 'none' && <><label>지급 정책<select value={form.grant_policy} onChange={(event) => setForm({ ...form, grant_policy: event.target.value })}><option value="once">최초 1회</option><option value="daily">매일 1회</option><option value="unlimited">반복 지급</option></select></label>{form.grant_policy === 'unlimited' && <label>사용자별 지급 한도<input type="number" min="1" step="1" value={form.per_user_limit} onChange={(event) => setForm({ ...form, per_user_limit: event.target.value })}/><small>비워두면 무제한</small></label>}</>}
+        {form.reward_type === 'point' && <label className="banner-form-wide">총 포인트 예산<input type="number" min="1" step="1" value={form.total_budget} placeholder="비워두면 무제한 (저장 시 확인)" onChange={(event) => setForm({ ...form, total_budget: event.target.value })}/><small>단위: P · 지급 포인트 합계 기준</small></label>}
+        <label className="checkbox banner-form-wide"><input type="checkbox" checked={form.is_active} onChange={(event) => setForm({ ...form, is_active: event.target.checked })}/> 활성화 (기간 안에 사용자 앱에 노출)</label>
+        <footer className="banner-modal-actions banner-form-wide"><button type="button" className="ghost" onClick={onClose} disabled={busy}>취소</button><button className="primary" disabled={busy}>{busy ? '저장 중...' : '저장'}</button></footer>
+      </form><BannerPreview form={form} dimensions={dimensions}/></div>
+    </section>
+  </div>;
+}
+
+function BannerStatsModal({ token, banner, onClose }) {
+  const today = todayInput(); const [range, setRange] = useState({ from: `${today.slice(0, 7)}-01`, to: today });
+  const [stats, setStats] = useState(null); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
+  async function load() { setLoading(true); setError(''); try { setStats(bannerStatsContract(await apiFetch(`/admin/banners/${banner.id}/stats?from=${range.from}&to=${range.to}`, token))); } catch (loadError) { setError(loadError.message); } finally { setLoading(false); } }
+  useEffect(() => { load(); }, [banner.id]);
+  const { items: rows, totals } = bannerStatsContract(stats);
+  return <div className="modal-backdrop banner-modal-backdrop"><section className="banner-stats-modal" role="dialog" aria-modal="true" aria-labelledby="banner-stats-title"><header className="banner-modal-header"><div><h2 id="banner-stats-title">배너 상세 통계</h2><p>{banner.partner?.name ?? '-'} · {banner.title}</p></div><button className="ghost icon-button" aria-label="닫기" onClick={onClose}><X size={20}/></button></header><div className="stats-range"><label>시작일<input type="date" value={range.from} max={range.to} onChange={(event) => setRange({ ...range, from: event.target.value })}/></label><label>종료일<input type="date" value={range.to} min={range.from} max={today} onChange={(event) => setRange({ ...range, to: event.target.value })}/></label><button className="primary" onClick={load} disabled={loading}>조회</button></div>{error && <div className="alert error">{error} <button className="ghost inline-retry" onClick={load}>다시 시도</button></div>}<div className="banner-stat-totals"><div><span>노출</span><strong>{formatCount(totals.impressions)}</strong></div><div><span>클릭</span><strong>{formatCount(totals.clicks)}</strong></div><div><span>CTR</span><strong>{bannerCtr(totals)}</strong></div><div><span>지급 금액</span><strong>{formatCount(totals.granted_amount)}</strong></div><div><span>지급 건수</span><strong>{formatCount(totals.granted_count)}</strong></div></div><div className="table-wrap banner-stats-table"><table><thead><tr><th>날짜</th><th>노출</th><th>클릭</th><th>CTR</th><th>지급 금액</th><th>지급 건수</th></tr></thead><tbody>{rows.map((row) => <tr key={row.day}><td>{row.day}</td><td>{formatCount(row.impressions)}</td><td>{formatCount(row.clicks)}</td><td>{bannerCtr(row)}</td><td>{formatCount(row.granted_amount)}</td><td>{formatCount(row.granted_count)}</td></tr>)}</tbody></table></div>{!loading && rows.length === 0 && <p className="empty-state">조회 기간의 통계가 없어요.</p>}</section></div>;
+}
+
+function PartnerBannerManagementScreen({ token }) {
+  const [placement, setPlacement] = useState('home_bottom'); const [stateFilter, setStateFilter] = useState(''); const [partnerFilter, setPartnerFilter] = useState(''); const [items, setItems] = useState([]); const [partners, setPartners] = useState([]); const [coupons, setCoupons] = useState([]);
+  const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [editor, setEditor] = useState(null); const [stats, setStats] = useState(null); const [busy, setBusy] = useState(false);
+  const load = async () => { setLoading(true); setError(''); try { const [bannerData, partnerData, couponData] = await Promise.all([apiFetch(bannerListQuery({ placement, state: stateFilter, partnerId: partnerFilter }), token), apiFetch('/admin/partners', token), apiFetch('/admin/coupons?issuable=true', token)]); setItems(bannerData.items); setPartners(apiItems(partnerData)); setCoupons(apiItems(couponData)); } catch (loadError) { setError(loadError.message); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, [token, placement, stateFilter, partnerFilter]);
+  async function remove(item) { if (!window.confirm(`'${item.title}' 배너를 영구 삭제하시겠어요? 이 작업은 되돌릴 수 없습니다.`)) return; setBusy(true); setError(''); try { await apiFetch(`/admin/banners/${item.id}?force=true`, token, { method: 'DELETE' }); setNotice('배너를 삭제했어요.'); await load(); } catch (deleteError) { setError(deleteError.message); } finally { setBusy(false); } }
+  async function move(index, direction) { const target = index + direction; if (target < 0 || target >= items.length) return; const next = [...items]; [next[index], next[target]] = [next[target], next[index]]; setItems(next); setBusy(true); setError(''); try { await apiFetch('/admin/banners/reorder', token, { method: 'PATCH', body: JSON.stringify({ items: next.map((item, sortOrder) => ({ id: item.id, sort_order: sortOrder })) }) }); } catch (moveError) { setItems(items); setError(moveError.message); } finally { setBusy(false); } }
+  const rewardLabel = (item) => item.reward?.reward_type === 'point' ? `${formatCount(item.reward.point_amount)}P` : item.reward?.reward_type === 'coupon' ? (item.reward.coupon_name ?? item.reward.coupon?.name ?? '쿠폰') : '없음';
+  return <AdminPage title="제휴 배너" description="앱 배너의 노출 순서, 일정, 광고 성과와 리워드를 관리합니다." preview={false} className="partner-admin-page banner-management-page" actions={<button className="primary banner-create-button" onClick={() => setEditor({ placement })}>+ 배너 등록</button>}>
+    <nav className="banner-placement-tabs" aria-label="배너 노출 위치">{Object.entries(BANNER_PLACEMENTS).map(([key, value]) => <button type="button" key={key} className={placement === key ? 'active' : ''} aria-current={placement === key ? 'page' : undefined} onClick={() => setPlacement(key)}>{value.label}<small>{value.width}×{value.height}</small></button>)}</nav>
+    <div className="banner-list-filters"><label>상태<select value={stateFilter} onChange={(event) => setStateFilter(event.target.value)}><option value="">전체</option><option value="live">노출중</option><option value="scheduled">예약</option><option value="inactive">중지</option><option value="ended">종료</option></select></label><label>제휴사<select value={partnerFilter} onChange={(event) => setPartnerFilter(event.target.value)}><option value="">전체</option>{partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name}</option>)}</select></label></div>
+    <section className="panel banner-list-panel">{error && <div className="alert error">{error} <button className="ghost inline-retry" onClick={load}>다시 시도</button></div>}{notice && <div className="alert success">{notice}</div>}{loading ? <p className="empty-state">배너 목록을 불러오고 있어요.</p> : items.length === 0 ? <p className="empty-state">이 위치에 등록된 배너가 없어요.</p> : <div className="table-wrap banner-table-wrap"><table><thead><tr><th>썸네일</th><th>제휴사</th><th>제목</th><th>기간</th><th>상태</th><th>노출</th><th>클릭</th><th>CTR</th><th>리워드</th><th>순서</th><th>관리</th></tr></thead><tbody>{items.map((item, index) => { const status = bannerStatus(item); return <tr key={item.id}><td><img className="banner-thumbnail" src={item.image_url} alt={item.image_alt || ''}/></td><td>{item.partner.name}</td><td><strong>{item.title}</strong></td><td>{item.starts_at ? utcIsoToLocalDateTime(item.starts_at).replace('T', ' ') : '즉시'}<br/>~ {item.ends_at ? utcIsoToLocalDateTime(item.ends_at).replace('T', ' ') : '종료 없음'}</td><td><span className={`banner-status ${status.key}`}>{status.label}</span></td><td>{formatCount(item.stats.impressions)}</td><td>{formatCount(item.stats.clicks)}</td><td>{bannerCtr(item.stats)}</td><td>{rewardLabel(item)}</td><td><div className="sort-buttons"><button type="button" className="ghost" aria-label={`${item.title} 위로`} disabled={busy || index === 0} onClick={() => move(index, -1)}>↑</button><button type="button" className="ghost" aria-label={`${item.title} 아래로`} disabled={busy || index === items.length - 1} onClick={() => move(index, 1)}>↓</button></div></td><td><div className="row-actions banner-row-actions"><button className="ghost" onClick={() => setStats(item)}>통계</button><button className="ghost" onClick={async () => { setBusy(true); try { setEditor(await apiFetch(`/admin/banners/${item.id}`, token)); } catch (detailError) { setError(detailError.message); } finally { setBusy(false); } }}>수정</button><button className="ghost delete-button" disabled={busy} onClick={() => remove(item)}>삭제</button></div></td></tr>; })}</tbody></table></div>}</section>
+    {editor && <BannerEditorModal token={token} item={editor.id ? editor : null} placement={editor.placement ?? placement} partners={partners} coupons={coupons} onClose={() => setEditor(null)} onSaved={async () => { setEditor(null); setNotice('배너를 저장했어요.'); await load(); }}/>} {stats && <BannerStatsModal token={token} banner={stats} onClose={() => setStats(null)}/>}
+  </AdminPage>;
 }
 
 function PaymentQrPanel({ recentPaymentAlerts, merchantQr, merchantQrImageUrl, merchantPayUrl, onDownload, onCopy }) {
@@ -2932,6 +3079,8 @@ function Dashboard({ session, onLogout }) {
     ['notifications', '알림'],
     ['announcements', '공지사항'],
     ['reviews', '리뷰'],
+    ['partners', '제휴사'],
+    ['partner-banners', '배너 광고 설정'],
   ];
   const companyNavGroups = [
     [['company-dashboard', '대시보드', Home]],
@@ -2990,6 +3139,8 @@ function Dashboard({ session, onLogout }) {
     {isMerchantAdmin && merchantSection === 'restaurant-management' && <nav className="merchant-section-tabs" aria-label="식당 관리 페이지">
       {restaurantManagementTabs.map(([id, label]) => <button key={id} type="button" className={restaurantManagementTab === id ? 'active' : ''} onClick={() => setRestaurantManagementTab(id)} aria-current={restaurantManagementTab === id ? 'page' : undefined}>{label}</button>)}
     </nav>}
+    {isMerchantAdmin && merchantContentSection === 'partners' && <PartnerManagementScreen token={token}/>}
+    {isMerchantAdmin && merchantContentSection === 'partner-banners' && <PartnerBannerManagementScreen token={token}/>}
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantContentSection) && <AnnouncementReviewPanel token={token} section={merchantContentSection}/>}
     {isMerchantAdmin && <MerchantScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} token={token} scopeId={me?.merchant_id} />}
     {isCompanyAdmin && !showCompanyLegacy && <CompanyScreen section={companyContentSection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} onSettings={openAccountSettings} onCompanyInfo={() => setCompanySection('company-info')} token={token} scopeId={me?.company_id} />}

@@ -2007,3 +2007,98 @@ code { font-size: 12px; }
   .dash-donut { width: 120px; }
   .dash-error { align-items: stretch; flex-direction: column; }
 }
+
+/* Partner advertising management */
+.partner-admin-page, .partner-admin-page *, .banner-modal-backdrop * { min-width: 0; }
+.partner-admin-page { width: 100%; max-width: 100%; overflow: hidden; }
+.partner-admin-page input, .partner-admin-page select, .banner-modal-backdrop input, .banner-modal-backdrop select { width: 100%; max-width: 100%; min-height: 48px; padding: 12px 14px; border: 1.5px solid #cdebd5; border-radius: 14px; color: #14351f; background: #fff; font-size: 16px; }
+.partner-admin-page select, .banner-modal-backdrop select { font: inherit; font-size: 16px; }
+.partner-admin-page .admin-page-title { align-items: flex-end; }
+.partner-management-panel, .banner-list-panel { overflow: hidden; }
+.partner-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 26px; }
+.partner-form .checkbox { display: flex; align-items: center; }
+.partner-form .checkbox input, .banner-editor-form .checkbox input, .banner-radio input { width: 20px; min-height: 20px; accent-color: #2fb865; }
+.partner-form .row-actions { align-items: end; }
+.partner-form .primary { width: auto; }
+.partner-table-wrap, .banner-table-wrap, .banner-stats-table { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+.partner-table-wrap table { min-width: 760px; }
+.banner-table-wrap table { min-width: 1320px; }
+.partner-cell { display: flex; align-items: center; gap: 10px; }
+.partner-cell img, .partner-cell > span { width: 38px; height: 38px; flex: 0 0 38px; object-fit: contain; display: grid; place-items: center; border-radius: 10px; background: #eaf7ec; color: #2f8b57; }
+.inline-retry { margin-left: 8px; padding: 7px 10px; }
+.banner-create-button { width: auto; min-width: 130px; }
+.banner-placement-tabs { display: flex; gap: 8px; margin-bottom: 14px; overflow-x: auto; }
+.banner-placement-tabs button { min-width: 130px; color: #5c7a66; background: #fff; border: 1px solid #cdebd5; }
+.banner-placement-tabs button.active { color: #fff; background: #2f8b57; border-color: #2f8b57; }
+.banner-placement-tabs small { opacity: .82; }
+.banner-list-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; margin-bottom: 14px; }
+.banner-thumbnail { display: block; width: 108px; height: 48px; object-fit: cover; border-radius: 9px; background: #eaf7ec; }
+.banner-status { display: inline-flex; padding: 6px 10px; border-radius: 999px; font-size: 13px; font-weight: 900; }
+.banner-status.live, .banner-status.active { color: #047857; background: #e7f8ee; }
+.banner-status.scheduled { color: #1d4ed8; background: #e6efff; }
+.banner-status.ended, .banner-status.inactive { color: #6b7280; background: #edf0ee; }
+.sort-buttons { display: flex; gap: 4px; }
+.sort-buttons button { width: 36px; height: 36px; padding: 0; }
+.banner-row-actions { flex-wrap: nowrap; }
+.banner-row-actions button { padding: 8px 10px; }
+.banner-modal-backdrop { z-index: 90; overflow: auto; align-items: start; }
+.banner-editor-modal, .banner-stats-modal { width: min(1120px, 100%); max-width: 100%; margin: auto; border: 1px solid #cdebd5; border-radius: 26px; background: #fcfefc; box-shadow: 0 30px 90px rgba(20,53,31,.3); overflow: hidden; }
+.banner-stats-modal { width: min(900px, 100%); padding-bottom: 24px; }
+.banner-modal-header { position: sticky; top: 0; z-index: 3; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px; border-bottom: 1px solid #cdebd5; background: rgba(252,254,252,.98); }
+.banner-modal-header h2 { margin: 0 0 6px; }
+.banner-modal-header p { margin: 0; color: #5c7a66; }
+.banner-modal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 26px; align-items: start; padding: 24px; }
+.banner-editor-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; }
+.banner-form-wide { grid-column: 1 / -1; }
+.banner-editor-form small { color: #6a806f; line-height: 1.4; }
+.banner-editor-form small.ratio-ok { color: #047857; }
+.banner-editor-form small.ratio-warning { color: #b45309; }
+.inline-partner { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; padding: 13px; border-radius: 16px; background: #eef8f1; }
+.inline-partner button { min-height: 48px; }
+.banner-radio { display: flex; gap: 20px; margin: 0; padding: 14px; border: 1px solid #cdebd5; border-radius: 16px; }
+.banner-radio legend { padding: 0 6px; color: #1e5631; font-weight: 900; }
+.banner-radio label { display: flex; align-items: center; gap: 8px; }
+.banner-modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 18px; border-top: 1px solid #dbece0; }
+.banner-modal-actions .primary { width: auto; min-width: 130px; }
+.banner-phone-preview { position: sticky; top: 105px; width: 280px; max-width: 100%; margin-inline: auto; padding: 18px 10px 24px; border: 8px solid #183c27; border-radius: 36px; background: #fff; box-shadow: 0 18px 40px rgba(20,53,31,.18); }
+.phone-speaker { width: 54px; height: 5px; margin: 0 auto 18px; border-radius: 99px; background: #183c27; }
+.phone-screen { min-height: 360px; padding: 12px 8px; background: #f2f6f3; border-radius: 18px; }
+.preview-banner { position: relative; display: grid; place-items: center; width: 100%; overflow: hidden; border-radius: 12px; background: #dce9df; color: #607566; }
+.preview-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.preview-banner > strong { position: absolute; left: 10px; right: 10px; bottom: 8px; overflow: hidden; color: #fff; font-size: 13px; text-shadow: 0 1px 5px #000; text-overflow: ellipsis; white-space: nowrap; }
+.ad-badge, .reward-badge { position: absolute; z-index: 1; top: 7px; padding: 4px 7px; border-radius: 6px; font-size: 10px; }
+.ad-badge { left: 7px; color: #fff; background: rgba(0,0,0,.7); }
+.reward-badge { right: 7px; color: #173e26; background: #dfff82; }
+.stats-range { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 22px 24px 0; }
+.stats-range .primary { width: auto; min-width: 90px; }
+.banner-stat-totals { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 20px 24px; }
+.banner-stat-totals div { display: grid; gap: 5px; padding: 16px; border-radius: 16px; background: #eaf7ec; }
+.banner-stat-totals span { color: #5c7a66; font-size: 13px; }
+.banner-stat-totals strong { font-size: 21px; }
+.banner-stats-table { padding-inline: 24px; }
+.banner-stats-table table { min-width: 620px; }
+.banner-stats-modal > .alert, .banner-stats-modal > .empty-state { margin-inline: 24px; }
+@media (max-width: 900px) {
+  .partner-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .banner-modal-layout { grid-template-columns: 1fr; }
+  .banner-phone-preview { position: static; order: -1; }
+}
+@media (max-width: 560px) {
+  .partner-admin-page .admin-page-title { align-items: stretch; flex-direction: column; }
+  .partner-admin-page .admin-page-actions, .banner-create-button { width: 100%; }
+  .partner-management-panel, .banner-list-panel { padding: 16px; }
+  .partner-form, .banner-editor-form { grid-template-columns: 1fr; }
+  .banner-list-filters { grid-template-columns: 1fr; }
+  .partner-form > *, .banner-editor-form > *, .banner-form-wide { grid-column: 1; }
+  .banner-modal-backdrop { padding: 8px; }
+  .banner-editor-modal, .banner-stats-modal { width: 100%; border-radius: 18px; }
+  .banner-modal-header, .banner-modal-layout { padding: 16px; }
+  .banner-phone-preview { width: min(260px, 100%); }
+  .inline-partner { grid-template-columns: 1fr; }
+  .banner-radio { align-items: flex-start; flex-direction: column; }
+  .stats-range { grid-template-columns: 1fr; padding: 16px 16px 0; }
+  .stats-range .primary { width: 100%; }
+  .banner-stat-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px; }
+  .banner-stats-table { padding-inline: 16px; }
+  .banner-stats-modal > .alert, .banner-stats-modal > .empty-state { margin-inline: 16px; }
+}

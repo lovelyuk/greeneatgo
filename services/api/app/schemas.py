@@ -298,6 +298,7 @@ class LegacyVoucherClassifyRequest(BaseModel):
 class VoucherPurchaseRequest(BaseModel):
     product_id: str = Field(min_length=8, max_length=80)
     coupon_id: str | None = Field(default=None, min_length=8, max_length=80)
+    user_coupon_id: str | None = Field(default=None, min_length=8, max_length=80)
     requested_point_amount: int | None = Field(default=None, ge=0, le=100000000)
 
     model_config = {"extra": "forbid"}
@@ -306,6 +307,7 @@ class VoucherPurchaseRequest(BaseModel):
 class VoucherQuoteRequest(BaseModel):
     product_id: str = Field(min_length=8, max_length=80)
     coupon_id: str | None = Field(default=None, min_length=8, max_length=80)
+    user_coupon_id: str | None = Field(default=None, min_length=8, max_length=80)
     requested_point_amount: int | None = Field(default=None, ge=0, le=100000000)
 
     model_config = {"extra": "forbid"}
@@ -314,6 +316,7 @@ class VoucherQuoteRequest(BaseModel):
 class LegacyCompatibleVoucherPurchaseRequest(BaseModel):
     product_id: str | None = Field(default=None, min_length=8, max_length=80)
     coupon_id: str | None = Field(default=None, min_length=8, max_length=80)
+    user_coupon_id: str | None = Field(default=None, min_length=8, max_length=80)
     requested_point_amount: int | None = Field(default=None, ge=0, le=100000000)
 
     model_config = {"extra": "forbid"}

@@ -21,6 +21,7 @@ class UserDashboardShell extends StatefulWidget {
     required this.onPrivacy,
     required this.onSignOut,
     required this.pendingBanner,
+    this.partnerBanner,
   });
 
   final Map<String, dynamic> data;
@@ -35,6 +36,7 @@ class UserDashboardShell extends StatefulWidget {
   final AsyncAction onPrivacy;
   final AsyncAction onSignOut;
   final Widget? pendingBanner;
+  final Widget? partnerBanner;
 
   @override
   State<UserDashboardShell> createState() => _UserDashboardShellState();
@@ -73,6 +75,7 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
         onHistory: () => setState(() => _index = 1),
         onProfile: () => setState(() => _index = 3),
         onRefresh: widget.onRefresh,
+        partnerBanner: widget.partnerBanner,
       ),
       _HistoryTab(transactions: _transactions),
       _LedgerTab(data: widget.data),
@@ -132,11 +135,13 @@ class _HomeTab extends StatelessWidget {
     required this.onHistory,
     required this.onProfile,
     required this.onRefresh,
+    required this.partnerBanner,
   });
 
   final Map<String, dynamic> data;
   final List<Map<String, dynamic>> transactions;
   final Widget? pendingBanner;
+  final Widget? partnerBanner;
   final AsyncAction onScanQr;
   final AsyncAction onBuyVoucher;
   final VoidCallback onHistory;
@@ -168,7 +173,7 @@ class _HomeTab extends StatelessWidget {
       backgroundColor: AppColors.card,
       onRefresh: onRefresh,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 112),
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 96),
         children: [
           _AppHeader(
             displayName: displayName,
@@ -241,6 +246,7 @@ class _HomeTab extends StatelessWidget {
                 style: AmountStyle.neg,
               );
             }),
+          if (partnerBanner != null) partnerBanner!,
         ],
       ),
     );

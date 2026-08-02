@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.auth import bearer_token
@@ -17,7 +17,7 @@ from app.services.join_flow import JoinFlowError
 from app.services.vouchers import resolve_voucher_merchant
 
 router = APIRouter(tags=["merchant-coupons"])
-_COUPON_SELECT = "id,merchant_id,name,discount_type,discount_value,valid_from,valid_until,is_active,created_at,updated_at"
+_COUPON_SELECT = "id,merchant_id,name,discount_type,discount_value,valid_from,valid_until,is_active,is_public,created_at,updated_at"
 
 
 def _error(status: int, code: str, message: str) -> HTTPException:
@@ -31,6 +31,7 @@ class CouponCreateRequest(BaseModel):
     valid_from: date | None = None
     valid_until: date | None = None
     is_active: bool = True
+    is_public: bool = True
 
     @field_validator("name", mode="before")
     @classmethod
@@ -55,13 +56,14 @@ class CouponUpdateRequest(BaseModel):
     valid_from: date | None = None
     valid_until: date | None = None
     is_active: bool | None = None
+    is_public: bool | None = None
 
     @field_validator("name", mode="before")
     @classmethod
     def trim_name(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
-    @field_validator("name", "discount_type", "discount_value", "is_active", mode="before")
+    @field_validator("name", "discount_type", "discount_value", "is_active", "is_public", mode="before")
     @classmethod
     def reject_required_null(cls, value: object) -> object:
         if value is None:
@@ -105,16 +107,25 @@ def customer_coupons(token: str = Depends(bearer_token)):
             raise _error(403, "VOUCHER_ACCOUNT_ONLY", "식권 계정만 쿠폰을 조회할 수 있어요")
         merchant = resolve_voucher_merchant(repo, get_settings().pilot_merchant_id)
         if not merchant:
-            return {"ok": True, "data": {"merchant": None, "items": []}, "error": None}
+            return {"ok": True, "data": {"merchant": None, "items": [], "issued": []}, "error": None}
         rows = repo.client.rest_get("merchant_coupons", {
             "select": _COUPON_SELECT,
             "merchant_id": f"eq.{merchant['id']}",
             "is_active": "eq.true",
+            "is_public": "eq.true",
             "order": "created_at.desc",
         })
+        issued = repo.client.rest_get("user_coupons", {
+            "select": "id,user_id,merchant_id,coupon_id,coupon_snapshot,valid_from,valid_until,status,created_at",
+            "user_id": f"eq.{profile.id}", "merchant_id": f"eq.{merchant['id']}",
+            "status": "eq.available", "order": "created_at.desc",
+        })
+        now = datetime.now(timezone.utc)
+        issued = [row for row in issued if not row.get("valid_until") or datetime.fromisoformat(str(row["valid_until"]).replace("Z", "+00:00")) > now]
         return {"ok": True, "data": {
             "merchant": {"id": merchant["id"], "name": merchant["name"]},
             "items": [row for row in rows if coupon_is_valid(row)],
+            "issued": issued,
         }, "error": None}
     except HTTPException:
         raise
@@ -123,15 +134,18 @@ def customer_coupons(token: str = Depends(bearer_token)):
 
 
 @router.get("/admin/coupons")
-def admin_coupons(token: str = Depends(bearer_token)):
+def admin_coupons(issuable: bool = Query(False), token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         _, merchant_id = _merchant_admin(repo, token)
-        rows = repo.client.rest_get("merchant_coupons", {
+        params = {
             "select": _COUPON_SELECT,
             "merchant_id": f"eq.{merchant_id}",
             "order": "created_at.desc",
-        })
+        }
+        if issuable:
+            params["is_active"] = "eq.true"
+        rows = repo.client.rest_get("merchant_coupons", params)
         return {"ok": True, "data": {"items": rows, "migration_required": False}, "error": None}
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
@@ -173,10 +187,12 @@ def update_coupon(coupon_id: str, payload: CouponUpdateRequest, token: str = Dep
             raise _error(404, "COUPON_NOT_FOUND", "쿠폰을 찾을 수 없어요")
         values = payload.model_dump(exclude_unset=True, mode="json")
         merged = {**current[0], **values}
-        validated = CouponCreateRequest.model_validate({
+        validation_values = {
             key: merged.get(key)
-            for key in ("name", "discount_type", "discount_value", "valid_from", "valid_until", "is_active")
-        })
+            for key in ("name", "discount_type", "discount_value", "valid_from", "valid_until", "is_active", "is_public")
+        }
+        validation_values["is_public"] = merged.get("is_public", True)
+        validated = CouponCreateRequest.model_validate(validation_values)
         values = {key: value for key, value in _coupon_payload(validated).items() if key in payload.model_fields_set}
         values["updated_at"] = datetime.now(timezone.utc).isoformat()
         rows = repo.client.rest_patch("merchant_coupons", {

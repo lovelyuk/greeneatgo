@@ -1035,7 +1035,7 @@ function CouponManagementPanel({ token, items, migrationRequired, loadError, bus
     </div>
     <form className="coupon-form" onSubmit={save}>
       <label>쿠폰명<input value={form.name} maxLength="120" onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder={form.discount_type === 'percent' ? '예: 점심 10% 할인' : '예: 1,000원 할인'} required /></label>
-      <label>{form.discount_type === 'percent' ? '할인율(%)' : '할인금액(원)'}<input type="number" min="0.01" max={form.discount_type === 'percent' ? '99.99' : undefined} step={form.discount_type === 'percent' ? '0.01' : '1'} value={form.discount_value} onChange={(event) => setForm((current) => ({ ...current, discount_value: event.target.value }))} required /></label>
+      <label>{form.discount_type === 'percent' ? '할인율(%)' : '할인금액(원)'}<input type="number" min={form.discount_type === 'percent' ? '0.01' : '1'} max={form.discount_type === 'percent' ? '99.99' : undefined} step={form.discount_type === 'percent' ? '0.01' : '1'} value={form.discount_value} onChange={(event) => setForm((current) => ({ ...current, discount_value: event.target.value }))} required /></label>
       <label>시작일<input type="date" value={form.valid_from} onChange={(event) => setForm((current) => ({ ...current, valid_from: event.target.value }))} /></label>
       <label>종료일<input type="date" min={form.valid_from || undefined} value={form.valid_until} onChange={(event) => setForm((current) => ({ ...current, valid_until: event.target.value }))} /></label>
       <label className="checkbox"><input type="checkbox" checked={form.is_active} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} /> 등록 즉시 적용</label>

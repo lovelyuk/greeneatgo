@@ -21,6 +21,12 @@ test('product management has fixed discount, sold-out switch, and delete', () =>
   assert.match(source, /apiFetch\(`\/admin\/voucher-products\/\$\{item\.id\}`.*method: 'DELETE'/s);
 });
 
+test('fixed coupons accept whole-won amounts without a decimal offset', () => {
+  assert.match(source, /min=\{form\.discount_type === 'percent' \? '0\.01' : '1'\}/);
+  assert.match(source, /step=\{form\.discount_type === 'percent' \? '0\.01' : '1'\}/);
+  assert.doesNotMatch(source, /type="number" min="0\.01" max=\{form\.discount_type/);
+});
+
 test('announcement edit/delete and review visibility controls are wired', () => {
   assert.match(source, /apiFetch\(`\/admin\/announcements\/\$\{item\.id\}`.*method: 'DELETE'/s);
   assert.match(source, /const \[editingAnnouncementId, setEditingAnnouncementId\] = useState\(''\)/);

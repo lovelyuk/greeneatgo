@@ -25,6 +25,7 @@ import 'screens/user_dashboard_shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'widgets/dashboard_components.dart';
+import 'widgets/dashboard_components.dart' as dashboard;
 import 'widgets/partner_banner_slot.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
@@ -1696,15 +1697,52 @@ class CommunityScreen extends StatefulWidget {
       {super.key, required this.session, required this.initialReviews});
   final User session;
   final bool initialReviews;
+
   @override
   State<CommunityScreen> createState() => _CommunityScreenState();
 }
+
+ThemeData _communityTheme(BuildContext context) => Theme.of(context).copyWith(
+      scaffoldBackgroundColor: AppColors.bg,
+      textTheme: Theme.of(context).textTheme.apply(
+            fontFamily: 'Pretendard',
+            bodyColor: AppColors.fg,
+            displayColor: AppColors.fg,
+          ),
+      colorScheme: const ColorScheme.dark(
+        primary: AppColors.blue,
+        secondary: AppColors.blueSoft,
+        surface: AppColors.card,
+        error: AppColors.danger,
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: AppColors.bg,
+        foregroundColor: AppColors.fg,
+        surfaceTintColor: AppColors.bg,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AppColors.cardHi,
+        labelStyle: AppTextStyles.caption,
+        hintStyle: AppTextStyles.caption,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadii.button),
+          borderSide: const BorderSide(color: AppColors.line),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadii.button),
+          borderSide: const BorderSide(color: AppColors.blueSoft),
+        ),
+      ),
+    );
 
 class _CommunityScreenState extends State<CommunityScreen> {
   late bool reviews;
   bool loading = true;
   Map<String, dynamic> data = {};
   List<dynamic> reviewable = [];
+  int _loadGeneration = 0;
+
   @override
   void initState() {
     super.initState();
@@ -1713,21 +1751,41 @@ class _CommunityScreenState extends State<CommunityScreen> {
   }
 
   Future<void> load() async {
+    final generation = ++_loadGeneration;
+    final requestedReviews = reviews;
     setState(() => loading = true);
     try {
       final api = ApiClient(widget.session);
-      data = reviews ? await api.getReviews() : await api.getAnnouncements();
-      reviewable = reviews
+      final nextData = requestedReviews
+          ? await api.getReviews()
+          : await api.getAnnouncements();
+      final nextReviewable = requestedReviews
           ? mapList((await api.getReviewableTransactions())['items'])
-          : [];
+          : <Map<String, dynamic>>[];
+      if (!mounted || generation != _loadGeneration) return;
+      data = nextData;
+      reviewable = nextReviewable;
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => loading = false);
+      }
     }
+  }
+
+  void _selectTab(int index) {
+    final nextReviews = index == 1;
+    if (reviews == nextReviews) return;
+    setState(() {
+      reviews = nextReviews;
+      data = {};
+      reviewable = [];
+    });
+    load();
   }
 
   Future<void> write(Map<String, dynamic> tx) async {
@@ -1735,210 +1793,394 @@ class _CommunityScreenState extends State<CommunityScreen> {
     final text = TextEditingController();
     final picked = <XFile>[];
     await showDialog(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-            builder: (context, setLocal) => AlertDialog(
-                    title: const Text('리뷰 작성'),
-                    content: SingleChildScrollView(
-                        child:
-                            Column(mainAxisSize: MainAxisSize.min, children: [
-                      Wrap(
-                          children: List.generate(
-                              5,
-                              (i) => IconButton(
-                                  onPressed: () =>
-                                      setLocal(() => rating = i + 1),
-                                  icon: Icon(
-                                      i < rating
-                                          ? Icons.star
-                                          : Icons.star_border,
-                                      color: Colors.amber)))),
-                      TextField(
-                          controller: text,
-                          maxLength: 2000,
-                          maxLines: 4,
-                          decoration:
-                              const InputDecoration(labelText: '후기 내용 (선택)')),
-                      OutlinedButton.icon(
-                          onPressed: picked.length >= 3
-                              ? null
-                              : () async {
-                                  final images = await ImagePicker()
-                                      .pickMultiImage(
-                                          imageQuality: 90,
-                                          limit: 3 - picked.length);
-                                  setLocal(() => picked
-                                      .addAll(images.take(3 - picked.length)));
-                                },
-                          icon: const Icon(Icons.add_photo_alternate_outlined),
-                          label: Text('사진 추가 (${picked.length}/3)'))
-                    ])),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('취소')),
-                      FilledButton(
-                          onPressed: () async {
-                            try {
-                              final api = ApiClient(widget.session);
-                              final urls = <String>[];
-                              for (final image in picked) {
-                                urls.add(await api.uploadReviewImage(image));
-                              }
-                              await api.createReview((tx['id'] as num).toInt(),
-                                  rating, text.text, urls);
-                              if (dialogContext.mounted) {
-                                Navigator.pop(dialogContext);
-                              }
-                              await load();
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(e.toString())));
-                              }
-                            }
-                          },
-                          child: const Text('등록하기'))
-                    ])));
+      context: context,
+      builder: (dialogContext) => Theme(
+        data: _communityTheme(dialogContext),
+        child: StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            backgroundColor: AppColors.card,
+            surfaceTintColor: AppColors.card,
+            title: const Text('리뷰 작성', style: AppTextStyles.cardTitle),
+            content: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Wrap(
+                  children: List.generate(
+                    5,
+                    (i) => IconButton(
+                      tooltip: '${i + 1}점',
+                      onPressed: () => setLocal(() => rating = i + 1),
+                      icon: Icon(
+                        i < rating
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        color: AppColors.gold,
+                      ),
+                    ),
+                  ),
+                ),
+                TextField(
+                  controller: text,
+                  maxLength: 2000,
+                  maxLines: 4,
+                  style: AppTextStyles.body,
+                  decoration: const InputDecoration(
+                    labelText: '후기 내용 (선택)',
+                    labelStyle: AppTextStyles.caption,
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: picked.length >= 3
+                      ? null
+                      : () async {
+                          final images = await ImagePicker().pickMultiImage(
+                              imageQuality: 90, limit: 3 - picked.length);
+                          setLocal(() =>
+                              picked.addAll(images.take(3 - picked.length)));
+                        },
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: Text('사진 추가 (${picked.length}/3)'),
+                ),
+              ]),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('취소'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  try {
+                    final api = ApiClient(widget.session);
+                    final urls = <String>[];
+                    for (final image in picked) {
+                      urls.add(await api.uploadReviewImage(image));
+                    }
+                    await api.createReview(
+                        (tx['id'] as num).toInt(), rating, text.text, urls);
+                    if (dialogContext.mounted) Navigator.pop(dialogContext);
+                    await load();
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context)
+                          .showSnackBar(SnackBar(content: Text(e.toString())));
+                    }
+                  }
+                },
+                child: const Text('등록하기'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     text.dispose();
   }
 
   @override
+  Widget build(BuildContext context) => CommunityContent(
+        reviews: reviews,
+        loading: loading,
+        data: data,
+        reviewable: reviewable,
+        onTabChanged: _selectTab,
+        onRefresh: load,
+        onWrite: write,
+      );
+}
+
+class CommunityContent extends StatelessWidget {
+  const CommunityContent({
+    super.key,
+    required this.reviews,
+    required this.loading,
+    required this.data,
+    required this.reviewable,
+    required this.onTabChanged,
+    required this.onRefresh,
+    required this.onWrite,
+  });
+
+  final bool reviews;
+  final bool loading;
+  final Map<String, dynamic> data;
+  final List<dynamic> reviewable;
+  final ValueChanged<int> onTabChanged;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<Map<String, dynamic>> onWrite;
+
+  @override
   Widget build(BuildContext context) {
     final items = mapList(data['items']);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(reviews ? '구매 인증 리뷰' : '공지사항'),
-        actions: [
-          IconButton(
-            onPressed: () {
-              setState(() => reviews = !reviews);
-              load();
-            },
-            icon: Icon(reviews ? Icons.campaign_outlined : Icons.star_outline),
-          ),
-        ],
-      ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: load,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (reviews) ...[
-                    Text(
-                      '⭐ ${data['average_rating'] ?? 0} (${data['review_count'] ?? 0}개 후기)',
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.w900),
+    return Theme(
+      data: _communityTheme(context),
+      child: Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(title: const Text('커뮤니티')),
+        body: loading
+            ? const Center(
+                child: CircularProgressIndicator(color: AppColors.blue))
+            : RefreshIndicator(
+                color: AppColors.blue,
+                backgroundColor: AppColors.card,
+                onRefresh: onRefresh,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
+                  children: [
+                    AppTabBar(
+                      key: const ValueKey('community-tabs'),
+                      index: reviews ? 1 : 0,
+                      items: const [
+                        (Icons.campaign_rounded, '공지사항'),
+                        (Icons.rate_review_rounded, '리뷰'),
+                      ],
+                      onChanged: onTabChanged,
                     ),
-                    ...reviewable.map((tx) => Container(
-                          margin: const EdgeInsets.only(top: 12),
-                          padding: const EdgeInsets.all(18),
-                          decoration: brandCardDecoration(radius: 22),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Row(children: [
-                                Icon(Icons.verified_rounded,
-                                    color: kOrange, size: 20),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text('리뷰 작성 가능',
-                                      style: TextStyle(
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w900)),
-                                ),
-                              ]),
-                              const SizedBox(height: 8),
-                              Text(
-                                '${shortKoreanDate(tx['created_at']?.toString())} · ${won((tx['amount'] as num?)?.abs())}',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: Color(0xFF5C7A66),
-                                    height: 1.4,
-                                    fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 14),
-                              FilledButton.icon(
-                                onPressed: () =>
-                                    write((tx as Map).cast<String, dynamic>()),
-                                icon: const Icon(Icons.edit_rounded, size: 18),
-                                label: const Text('리뷰 쓰기'),
-                              ),
-                            ],
-                          ),
-                        )),
-                  ],
-                  ...items.map((item) => Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${item['pinned'] == true ? '📌 ' : ''}${reviews ? item['author_name'] : item['title']}',
-                                style: const TextStyle(
-                                    fontSize: 17, fontWeight: FontWeight.w900),
-                              ),
-                              if (reviews &&
-                                  item['status'] == 'hidden' &&
-                                  item['is_own'] == true)
-                                Container(
-                                  margin: const EdgeInsets.only(top: 6),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 9, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFF4D8),
-                                    borderRadius: BorderRadius.circular(999),
+                    if (reviews) ...[
+                      dashboard.SectionHeader(
+                        leading: const Icon(Icons.star_rounded,
+                            color: AppColors.gold, size: 20),
+                        title:
+                            '${data['average_rating'] ?? 0} (${data['review_count'] ?? 0}개 후기)',
+                      ),
+                      if (reviewable.isNotEmpty)
+                        const dashboard.SectionHeader(title: '작성 가능한 리뷰'),
+                      for (final tx in reviewable)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: DarkCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const Row(children: [
+                                  Icon(Icons.verified_rounded,
+                                      color: AppColors.blueSoft, size: 20),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text('리뷰 작성 가능',
+                                        style: AppTextStyles.cardTitle),
                                   ),
-                                  child: const Text('관리자 숨김 · 나에게만 표시',
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w800)),
+                                ]),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${shortKoreanDate(tx['created_at']?.toString())} · ${won((tx['amount'] as num?)?.abs())}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.caption
+                                      .copyWith(height: 1.4),
                                 ),
-                              if (reviews)
-                                Text(List.filled(
-                                        (item['rating'] as num).toInt(), '⭐')
-                                    .join()),
-                              const SizedBox(height: 8),
-                              Text((item['content'] ?? '').toString()),
-                              if (reviews && item['image_urls'] is List)
-                                Wrap(
-                                  spacing: 8,
-                                  children: (item['image_urls'] as List)
-                                      .map<Widget>((url) => Image.network(
-                                            url.toString(),
-                                            width: 88,
-                                            height: 88,
-                                            fit: BoxFit.cover,
-                                          ))
-                                      .toList(),
+                                const SizedBox(height: 14),
+                                FilledButton.icon(
+                                  onPressed: () => onWrite(
+                                      (tx as Map).cast<String, dynamic>()),
+                                  icon:
+                                      const Icon(Icons.edit_rounded, size: 18),
+                                  label: const Text('리뷰 쓰기'),
                                 ),
-                              if (reviews && item['owner_reply'] != null)
-                                Container(
-                                  margin: const EdgeInsets.only(top: 10),
-                                  padding: const EdgeInsets.all(10),
-                                  color: kCream,
-                                  child:
-                                      Text('🏪 사장님 답글: ${item['owner_reply']}'),
-                                ),
-                              const SizedBox(height: 6),
-                              Text(
-                                (item['created_at'] ?? '').toString(),
-                                style: const TextStyle(
-                                    color: Color(0xFF5C7A66), fontSize: 12),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      )),
-                ],
+                      if (items.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 12),
+                          child: _CommunityEmptyState(
+                            icon: Icons.rate_review_outlined,
+                            message: '아직 등록된 리뷰가 없어요.',
+                          ),
+                        )
+                      else
+                        for (final item in items)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child:
+                                _CommunityItemCard(item: item, reviews: true),
+                          ),
+                    ] else ...[
+                      const dashboard.SectionHeader(title: '공지사항'),
+                      if (items.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 12),
+                          child: _CommunityEmptyState(
+                            icon: Icons.campaign_outlined,
+                            message: '등록된 공지사항이 아직 없어요.',
+                          ),
+                        )
+                      else
+                        for (final item in items)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child:
+                                _CommunityItemCard(item: item, reviews: false),
+                          ),
+                    ],
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
+}
+
+class _CommunityItemCard extends StatelessWidget {
+  const _CommunityItemCard({required this.item, required this.reviews});
+
+  final Map<String, dynamic> item;
+  final bool reviews;
+
+  @override
+  Widget build(BuildContext context) {
+    final rating = (item['rating'] as num?)?.toInt() ?? 0;
+    return DarkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (item['pinned'] == true) ...[
+              const Icon(Icons.push_pin_rounded,
+                  color: AppColors.gold, size: 18),
+              const SizedBox(width: 6),
+            ],
+            Expanded(
+              child: Text(
+                (reviews ? item['author_name'] : item['title'] ?? '')
+                    .toString(),
+                style: AppTextStyles.cardTitle,
+              ),
+            ),
+          ]),
+          if (reviews && item['status'] == 'hidden' && item['is_own'] == true)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.gold.withValues(alpha: .15),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Text('관리자 숨김 · 나에게만 표시',
+                  style: TextStyle(
+                      color: AppColors.gold,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800)),
+            ),
+          if (reviews) ...[
+            const SizedBox(height: 8),
+            _RatingStars(rating: rating),
+          ],
+          const SizedBox(height: 8),
+          Text((item['content'] ?? '').toString(),
+              style: AppTextStyles.body.copyWith(height: 1.55)),
+          if (reviews && item['image_urls'] is List) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: (item['image_urls'] as List)
+                  .map<Widget>((url) => ClipRRect(
+                        borderRadius: BorderRadius.circular(AppRadii.icon),
+                        child: Image.network(
+                          url.toString(),
+                          width: 88,
+                          height: 88,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, progress) =>
+                              progress == null
+                                  ? child
+                                  : Container(
+                                      width: 88,
+                                      height: 88,
+                                      color: AppColors.cardHi,
+                                      alignment: Alignment.center,
+                                      child: const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppColors.blueSoft),
+                                      ),
+                                    ),
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 88,
+                            height: 88,
+                            color: AppColors.cardHi,
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.broken_image_outlined,
+                                color: AppColors.fg2),
+                          ),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ],
+          if (reviews && item['owner_reply'] != null)
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.cardHi,
+                borderRadius: BorderRadius.circular(AppRadii.button),
+                border: Border.all(color: AppColors.lineSoft),
+              ),
+              child:
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.storefront_rounded,
+                    color: AppColors.blueSoft, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('사장님 답글: ${item['owner_reply']}',
+                      style: AppTextStyles.caption.copyWith(height: 1.45)),
+                ),
+              ]),
+            ),
+          const SizedBox(height: 10),
+          Text(shortKoreanDate(item['created_at']?.toString()),
+              style: AppTextStyles.caption),
+        ],
+      ),
+    );
+  }
+}
+
+class _RatingStars extends StatelessWidget {
+  const _RatingStars({required this.rating});
+
+  final int rating;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        label: '평점 $rating점',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < 5; i++)
+              Icon(
+                i < rating ? Icons.star_rounded : Icons.star_border_rounded,
+                color: AppColors.gold,
+                size: 18,
+              ),
+          ],
+        ),
+      );
+}
+
+class _CommunityEmptyState extends StatelessWidget {
+  const _CommunityEmptyState({required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => DarkCard(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          child: Column(children: [
+            Icon(icon, color: AppColors.fg2, size: 34),
+            const SizedBox(height: 10),
+            Text(message,
+                textAlign: TextAlign.center, style: AppTextStyles.caption),
+          ]),
+        ),
+      );
 }
 
 typedef PaymentConfirmer = Future<Map<String, dynamic>> Function({
@@ -2352,13 +2594,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             builder: (_) => CouponWalletScreen(
                 loadCoupons: ApiClient(session).getCoupons)));
       },
-      // The catalog is also the event destination; active event products are
-      // supplied by the same authoritative products API.
+      // Events reuse the authoritative voucher catalog but open with an
+      // event-only view so the shortcut cannot be confused with general purchase.
       onEvents: () async {
         await Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => VoucherPurchaseScreen(
                 session: session,
-                pointBalance: (me['point_balance'] as num?)?.round() ?? 0)));
+                pointBalance: (me['point_balance'] as num?)?.round() ?? 0,
+                initialFilter: VoucherFilter.event)));
         await _loadPendingPayment();
         await onRefresh();
       },
@@ -3243,23 +3486,40 @@ class _UnifiedPaymentResultScreenState
   }
 }
 
+enum VoucherFilter { all, event }
+
+String voucherFilterTitle(VoucherFilter filter) =>
+    filter == VoucherFilter.event ? '이벤트' : '식권 구매';
+
+VoucherCatalog filterVoucherCatalog(
+    VoucherCatalog catalog, VoucherFilter filter) {
+  if (filter == VoucherFilter.all) return catalog;
+  return VoucherCatalog(
+    purchaseMode: catalog.purchaseMode,
+    items: catalog.items.where((product) => product.isEvent).toList(),
+  );
+}
+
 class VoucherPurchaseScreen extends StatefulWidget {
   const VoucherPurchaseScreen({
     super.key,
     required this.session,
     this.initialCatalog,
     this.pointBalance = 0,
+    this.initialFilter = VoucherFilter.all,
   });
 
   final User session;
   final VoucherCatalog? initialCatalog;
   final int pointBalance;
+  final VoucherFilter initialFilter;
 
   @override
   State<VoucherPurchaseScreen> createState() => _VoucherPurchaseScreenState();
 }
 
 class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
+  late VoucherFilter _filter = widget.initialFilter;
   late Future<VoucherCatalog> _catalog = widget.initialCatalog == null
       ? ApiClient(widget.session).getVoucherProducts()
       : Future.value(widget.initialCatalog!);
@@ -3315,7 +3575,7 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
         ),
         child: Scaffold(
           backgroundColor: AppColors.bg,
-          appBar: AppBar(title: const Text('식권 구매')),
+          appBar: AppBar(title: Text(voucherFilterTitle(_filter))),
           body: FutureBuilder<VoucherCatalog>(
             future: _catalog,
             builder: (context, snapshot) {
@@ -3343,14 +3603,59 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
               final catalog = snapshot.data ??
                   const VoucherCatalog(
                       purchaseMode: VoucherPurchaseMode.none, items: []);
-              return VoucherCatalogList(
+              return VoucherPurchaseContent(
                 catalog: catalog,
+                filter: _filter,
                 onProduct: (product) => _openCheckout(catalog, product),
+                onShowAll: () => setState(() => _filter = VoucherFilter.all),
               );
             },
           ),
         ),
       );
+}
+
+class VoucherPurchaseContent extends StatelessWidget {
+  const VoucherPurchaseContent({
+    super.key,
+    required this.catalog,
+    required this.filter,
+    required this.onProduct,
+    required this.onShowAll,
+  });
+
+  final VoucherCatalog catalog;
+  final VoucherFilter filter;
+  final ValueChanged<VoucherProduct> onProduct;
+  final VoidCallback onShowAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleCatalog = filterVoucherCatalog(catalog, filter);
+    if (filter == VoucherFilter.event && visibleCatalog.items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: DarkCard(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.celebration_outlined,
+                  color: AppColors.blueSoft, size: 38),
+              const SizedBox(height: 12),
+              const Text('현재 진행 중인 이벤트가 없어요.',
+                  textAlign: TextAlign.center, style: AppTextStyles.body),
+              const SizedBox(height: 6),
+              const Text('다른 식권 상품을 둘러보세요.',
+                  textAlign: TextAlign.center, style: AppTextStyles.caption),
+              const SizedBox(height: 16),
+              OutlinedButton(
+                  onPressed: onShowAll, child: const Text('전체 상품 보기')),
+            ]),
+          ),
+        ),
+      );
+    }
+    return VoucherCatalogList(catalog: visibleCatalog, onProduct: onProduct);
+  }
 }
 
 class VoucherCatalogList extends StatelessWidget {

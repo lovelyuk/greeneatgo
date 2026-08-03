@@ -503,8 +503,10 @@ class _SlotBadge extends StatelessWidget {
 }
 
 class SectionHeader extends StatelessWidget {
-  const SectionHeader({super.key, required this.title, this.onViewAll});
+  const SectionHeader(
+      {super.key, required this.title, this.leading, this.onViewAll});
   final String title;
+  final Widget? leading;
   final VoidCallback? onViewAll;
 
   @override
@@ -512,6 +514,10 @@ class SectionHeader extends StatelessWidget {
         padding: const EdgeInsets.only(top: 22),
         child: Row(
           children: [
+            if (leading != null) ...[
+              leading!,
+              const SizedBox(width: 8),
+            ],
             Expanded(
               child: Text(title,
                   style: const TextStyle(
@@ -541,9 +547,11 @@ class AppTabBar extends StatelessWidget {
     super.key,
     required this.index,
     required this.onChanged,
+    this.items = tabs,
   });
   final int index;
   final ValueChanged<int> onChanged;
+  final List<(IconData, String)> items;
 
   static const tabs = [
     (Icons.home_rounded, '홈'),
@@ -567,24 +575,24 @@ class AppTabBar extends StatelessWidget {
             ),
             child: Row(
               children: [
-                for (var i = 0; i < tabs.length; i++)
+                for (var i = 0; i < items.length; i++)
                   Expanded(
                     child: Semantics(
                       selected: index == i,
-                      label: '${tabs[i].$2} 탭',
+                      label: '${items[i].$2} 탭',
                       button: true,
                       child: InkWell(
                         onTap: () => onChanged(i),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(tabs[i].$1,
+                            Icon(items[i].$1,
                                 size: 21,
                                 color: index == i
                                     ? AppColors.blueSoft
                                     : AppColors.fg2.withValues(alpha: .5)),
                             const SizedBox(height: 4),
-                            Text(tabs[i].$2,
+                            Text(items[i].$2,
                                 style: TextStyle(
                                     color: index == i
                                         ? AppColors.blueSoft

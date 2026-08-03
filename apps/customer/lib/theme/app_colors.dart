@@ -16,6 +16,7 @@ abstract final class AppColors {
   static const danger = Color(0xFFFF7A7A);
   static const paperMuted = Color(0xFFD8D5CC);
   static const ticketLine = Color(0xFFCFC7B4);
+  static const ticketPurchase = Color(0xFFC64F00);
   static const timeline = Color(0xFF232D42);
   static const progressTrack = Color(0xFF202A3D);
   static const dinnerText = Color(0xFFA9B4CA);

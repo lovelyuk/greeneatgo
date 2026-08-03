@@ -2193,6 +2193,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   PendingPaymentStore? _pendingStore;
   PendingPaymentLoadResult? _pendingLoad;
   String? _lastOpenedPending;
+  late Future<TodayMenu?> _todayMenuFuture;
 
   User get session => widget.session;
   Map<String, dynamic> get me => widget.me;
@@ -2202,8 +2203,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _todayMenuFuture = DailyMenuClient().getTodayMenu(defaultMerchantQrToken);
     WidgetsBinding.instance.addObserver(this);
     unawaited(_loadPendingPayment());
+  }
+
+  Future<void> _refreshHome() async {
+    final menuFuture = DailyMenuClient().getTodayMenu(defaultMerchantQrToken);
+    setState(() => _todayMenuFuture = menuFuture);
+    await Future.wait([
+      widget.onRefresh(),
+      _ignoreTodayMenuError(menuFuture),
+    ]);
+  }
+
+  Future<void> _ignoreTodayMenuError(Future<TodayMenu?> future) async {
+    try {
+      await future;
+    } catch (_) {
+      // FutureBuilder renders the non-blocking menu error state.
+    }
   }
 
   @override
@@ -2284,7 +2303,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     return UserDashboardShell(
       data: me,
-      onRefresh: onRefresh,
+      onRefresh: _refreshHome,
+      todayMenuCard: FutureBuilder<TodayMenu?>(
+        future: _todayMenuFuture,
+        builder: (context, snapshot) => _TodayMenuCard(
+          todayMenu: snapshot.data,
+          monthUsed: null,
+          loading: snapshot.connectionState != ConnectionState.done,
+          error: snapshot.hasError
+              ? snapshot.error.toString().replaceFirst('Exception: ', '')
+              : null,
+        ),
+      ),
       partnerBanner: PartnerBannerSlot(
         api: BannerApi(api.bannerTransport),
         placement: BannerPlacement.homeBottom,

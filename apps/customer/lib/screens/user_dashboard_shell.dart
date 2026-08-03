@@ -21,6 +21,7 @@ class UserDashboardShell extends StatefulWidget {
     required this.onPrivacy,
     required this.onSignOut,
     required this.pendingBanner,
+    this.todayMenuCard,
     this.partnerBanner,
   });
 
@@ -36,6 +37,7 @@ class UserDashboardShell extends StatefulWidget {
   final AsyncAction onPrivacy;
   final AsyncAction onSignOut;
   final Widget? pendingBanner;
+  final Widget? todayMenuCard;
   final Widget? partnerBanner;
 
   @override
@@ -75,6 +77,7 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
         onHistory: () => setState(() => _index = 1),
         onProfile: () => setState(() => _index = 3),
         onRefresh: widget.onRefresh,
+        todayMenuCard: widget.todayMenuCard,
         partnerBanner: widget.partnerBanner,
       ),
       _HistoryTab(transactions: _transactions),
@@ -135,12 +138,14 @@ class _HomeTab extends StatelessWidget {
     required this.onHistory,
     required this.onProfile,
     required this.onRefresh,
+    required this.todayMenuCard,
     required this.partnerBanner,
   });
 
   final Map<String, dynamic> data;
   final List<Map<String, dynamic>> transactions;
   final Widget? pendingBanner;
+  final Widget? todayMenuCard;
   final Widget? partnerBanner;
   final AsyncAction onScanQr;
   final AsyncAction onBuyVoucher;
@@ -156,17 +161,29 @@ class _HomeTab extends StatelessWidget {
     final isVoucher = data['account_type'] == 'voucher';
     final voucherBalance = _integer(data['voucher_balance']);
     final monthUsed = _integer(data['month_used']);
-    final monthlyLimit = _integer(data['monthly_limit']);
-    final remainingLimit = _integer(data['remaining_limit']);
-    final progress = monthlyLimit > 0 ? monthUsed / monthlyLimit : 0.0;
-    final today =
-        transactions.where((tx) => _isToday(tx['created_at'])).toList();
-    final ticketLabel = isVoucher ? '$voucherBalance장' : '-';
+    final monthVoucherUses = transactions
+        .where((tx) =>
+            _isCurrentMonth(tx['created_at']) &&
+            (tx['kind'] == 'voucher_use' || tx.containsKey('voucher_id')))
+        .toList();
+    final fallbackMonthVoucherAmount = monthVoucherUses.fold<int>(
+        0, (sum, tx) => sum + _integer(tx['amount']).abs());
+    final monthVoucherCount = data.containsKey('voucher_month_used_count')
+        ? _integer(data['voucher_month_used_count'])
+        : monthVoucherUses.length;
+    final monthVoucherAmount = data.containsKey('voucher_month_used_amount')
+        ? _integer(data['voucher_month_used_amount'])
+        : fallbackMonthVoucherAmount;
+    final ticketLabel = isVoucher ? '$voucherBalance' : '-';
     final ticketCaption =
         isVoucher ? '보유 식권 · QR 한 번에 1장 사용' : '회사 장부 결제 · 매장 계약 단가 적용';
-    final todayUsage = today.isEmpty
-        ? '오늘 사용 없음'
-        : '${_mealLabel(today.first)} · ${_amountLabel(today.first)}';
+    final monthUsage = isVoucher
+        ? monthVoucherCount == 0
+            ? '사용 내역 없음'
+            : '$monthVoucherCount장 · ${_won(monthVoucherAmount)}'
+        : monthUsed > 0
+            ? _won(monthUsed)
+            : '사용 내역 없음';
 
     return RefreshIndicator(
       color: AppColors.blue,
@@ -187,48 +204,19 @@ class _HomeTab extends StatelessWidget {
           ],
           const SizedBox(height: 16),
           MealTicketCard(
-            remainingLabel: ticketLabel,
+            remainingCountLabel: ticketLabel,
             caption: ticketCaption,
-            todayUsage: todayUsage,
-            onTapQr: isVoucher && voucherBalance == 0 ? onBuyVoucher : onScanQr,
+            monthUsage: monthUsage,
+            onTapQr: onScanQr,
+            onBuyTicket: isVoucher ? onBuyVoucher : null,
             state: isVoucher && voucherBalance == 0
                 ? TicketState.empty
                 : TicketState.active,
-            actionLabel: isVoucher && voucherBalance == 0 ? '충전하기' : 'QR 사용하기',
           ),
-          StackedCardGroup(
-            children: [
-              StackedCard(
-                leadingIcon: const _IconBox(icon: Icons.receipt_long_rounded),
-                title: '이번 달 장부',
-                subtitle: monthUsed > 0 ? '이번 달 실제 이용 누적' : '아직 이번 달 이용이 없어요',
-                trailing: Text(
-                  monthUsed > 0 ? _won(monthUsed) : '-',
-                  style: AppTextStyles.cardTitle,
-                ),
-              ),
-              StackedCard(
-                leadingIcon: const _IconBox(
-                    icon: Icons.business_center_rounded,
-                    color: AppColors.blueSoft),
-                title: '회사 지원금',
-                subtitle: company.isEmpty ? '소속 회사 정보 없음' : company,
-                trailing: Text(
-                  monthlyLimit > 0 ? _won(monthlyLimit) : '-',
-                  style: AppTextStyles.cardTitle
-                      .copyWith(color: AppColors.blueSoft),
-                ),
-                footer: monthlyLimit > 0
-                    ? AppProgressBar(
-                        value: progress,
-                        leftCaption: '${_won(monthUsed)} 사용',
-                        rightCaption: '${_won(remainingLimit)} 남음',
-                      )
-                    : const _UnavailableCaption(
-                        text: '지원 한도 정보가 제공되지 않는 계정이에요.'),
-              ),
-            ],
-          ),
+          if (todayMenuCard != null) ...[
+            const SizedBox(height: 16),
+            todayMenuCard!,
+          ],
           SectionHeader(title: '최근 이용', onViewAll: onHistory),
           if (transactions.isEmpty)
             const _EmptyState(
@@ -680,31 +668,6 @@ class _VerticalLine extends StatelessWidget {
       const SizedBox(height: 38, child: VerticalDivider(color: AppColors.line));
 }
 
-class _IconBox extends StatelessWidget {
-  const _IconBox({required this.icon, this.color = AppColors.fg2});
-  final IconData icon;
-  final Color color;
-  @override
-  Widget build(BuildContext context) => Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: AppColors.cardHi,
-          borderRadius: BorderRadius.circular(13),
-        ),
-        child: Icon(icon, color: color, size: 20),
-      );
-}
-
-class _UnavailableCaption extends StatelessWidget {
-  const _UnavailableCaption({required this.text});
-  final String text;
-  @override
-  Widget build(BuildContext context) => Align(
-      alignment: Alignment.centerLeft,
-      child: Text(text, style: AppTextStyles.caption));
-}
-
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.message});
   final String message;
@@ -761,13 +724,11 @@ String _transactionSubtitle(Map<String, dynamic> tx) {
   return '${_mealLabel(tx)} · ${parsed.month}월 ${parsed.day}일 $hour:$minute';
 }
 
-bool _isToday(Object? raw) {
+bool _isCurrentMonth(Object? raw) {
   final date = DateTime.tryParse(_text(raw))?.toLocal();
   if (date == null) return false;
   final now = DateTime.now();
-  return date.year == now.year &&
-      date.month == now.month &&
-      date.day == now.day;
+  return date.year == now.year && date.month == now.month;
 }
 
 String _dayLabel(Object? raw) {

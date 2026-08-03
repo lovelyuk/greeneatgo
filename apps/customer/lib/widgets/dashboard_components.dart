@@ -14,32 +14,33 @@ enum MealSlot { lunch, dinner, grant, refund }
 class MealTicketCard extends StatelessWidget {
   const MealTicketCard({
     super.key,
-    required this.remainingLabel,
+    required this.remainingCountLabel,
     required this.caption,
-    required this.todayUsage,
+    required this.monthUsage,
     required this.onTapQr,
+    this.onBuyTicket,
     this.state = TicketState.active,
-    this.actionLabel = 'QR 사용하기',
   });
 
-  final String remainingLabel;
+  final String remainingCountLabel;
   final String caption;
-  final String todayUsage;
+  final String monthUsage;
   final VoidCallback onTapQr;
+  final VoidCallback? onBuyTicket;
   final TicketState state;
-  final String actionLabel;
 
   @override
   Widget build(BuildContext context) {
     final empty = state == TicketState.empty;
     final paper = empty ? AppColors.paperMuted : AppColors.paper;
+    final balanceSemantics =
+        remainingCountLabel == '-' ? '해당 없음' : '$remainingCountLabel장';
     return Semantics(
-      button: true,
-      label: '남은 식권 $remainingLabel, $caption',
+      container: true,
+      label: '남은 식권 $balanceSemantics, $caption, 이번 달 사용 $monthUsage',
       child: ClipPath(
         clipper: const _TicketClipper(),
         child: Container(
-          height: 218,
           decoration: BoxDecoration(
             color: paper,
             border: state == TicketState.expiring
@@ -48,41 +49,87 @@ class MealTicketCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadii.card),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
+              SizedBox(
+                height: 144,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 20, 22, 13),
+                  padding: const EdgeInsets.fromLTRB(22, 20, 14, 14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('남은 식권', style: AppTextStyles.overline),
                       const Spacer(),
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Expanded(
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.centerLeft,
-                              child: Text(
-                                remainingLabel,
-                                style: AppTextStyles.ticketNumber.copyWith(
-                                  color: empty ? AppColors.fg2 : AppColors.ink,
-                                ),
+                              child: Row(
+                                key: const ValueKey('ticket-balance-baseline'),
+                                crossAxisAlignment: CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  Text(
+                                    remainingCountLabel,
+                                    key:
+                                        const ValueKey('ticket-balance-number'),
+                                    style: AppTextStyles.ticketNumber.copyWith(
+                                      color:
+                                          empty ? AppColors.fg2 : AppColors.ink,
+                                    ),
+                                  ),
+                                  if (remainingCountLabel != '-') ...[
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '장',
+                                      key:
+                                          const ValueKey('ticket-balance-unit'),
+                                      style: TextStyle(
+                                        color: empty
+                                            ? AppColors.fg2
+                                            : AppColors.ink,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                        height: 1,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           ),
+                          if (onBuyTicket != null) ...[
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              height: 48,
+                              child: FilledButton.icon(
+                                key: const ValueKey('buy-ticket-button'),
+                                onPressed: onBuyTicket,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppColors.ticketPurchase,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.shopping_cart_rounded,
+                                    size: 18),
+                                label: const Text(
+                                  '식권 구매',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        caption,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.caption.copyWith(
-                          color: empty ? AppColors.fg2 : AppColors.ink,
-                        ),
                       ),
                     ],
                   ),
@@ -92,26 +139,35 @@ class MealTicketCard extends StatelessWidget {
                 height: 2,
                 child: CustomPaint(painter: _DashedLinePainter()),
               ),
-              SizedBox(
-                height: 72,
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 80),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 6, 14, 6),
+                  padding: const EdgeInsets.fromLTRB(22, 14, 14, 18),
                   child: Row(
                     children: [
                       Expanded(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('오늘 사용',
-                                style: AppTextStyles.caption
-                                    .copyWith(color: AppColors.ink)),
+                            Text(
+                              '이번 달 사용',
+                              style: AppTextStyles.caption.copyWith(
+                                color: const Color(0xFF6C6555),
+                                fontSize: 11,
+                              ),
+                            ),
                             const SizedBox(height: 2),
-                            Text(todayUsage,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTextStyles.body
-                                    .copyWith(color: AppColors.ink)),
+                            Text(
+                              monthUsage,
+                              key: const ValueKey('ticket-month-usage'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.body.copyWith(
+                                color: AppColors.ink,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -119,22 +175,24 @@ class MealTicketCard extends StatelessWidget {
                       SizedBox(
                         height: 48,
                         child: FilledButton.icon(
+                          key: const ValueKey('use-ticket-qr-button'),
                           onPressed: onTapQr,
                           style: FilledButton.styleFrom(
                             backgroundColor:
                                 empty ? AppColors.fg2 : AppColors.ink,
                             foregroundColor: AppColors.paper,
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            padding: const EdgeInsets.symmetric(horizontal: 13),
                             shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(AppRadii.button),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           icon: const Icon(Icons.qr_code_rounded,
                               size: 18, color: AppColors.gold),
-                          label: Text(actionLabel,
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w800)),
+                          label: const Text(
+                            'QR 사용하기',
+                            style: TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w800),
+                          ),
                         ),
                       ),
                     ],

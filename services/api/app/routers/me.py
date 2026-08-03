@@ -65,6 +65,32 @@ def _month_start_utc() -> datetime:
     return datetime(local.year, local.month, 1, tzinfo=kst).astimezone(timezone.utc)
 
 
+def _voucher_month_usage(repo: JoinRepository, user_id: str) -> tuple[int, int]:
+    month_start = _month_start_utc().isoformat().replace("+00:00", "Z")
+    count = 0
+    amount = 0
+    offset = 0
+    page_size = 1000
+    while True:
+        rows = repo.client.rest_get(
+            "normal_meal_transactions",
+            {
+                "select": "amount",
+                "user_id": f"eq.{user_id}",
+                "pay_type": "eq.voucher",
+                "kind": "eq.spend",
+                "created_at": f"gte.{month_start}",
+                "limit": str(page_size),
+                "offset": str(offset),
+            },
+        )
+        count += len(rows)
+        amount += sum(abs(int(row.get("amount") or 0)) for row in rows)
+        if len(rows) < page_size:
+            return count, amount
+        offset += page_size
+
+
 def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
     rows = repo.client.rest_get(
         "normal_meal_transactions",
@@ -112,6 +138,8 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
         "recent_transactions": recent_transactions,
         "voucher_balance": None,
         "voucher_use_history": [],
+        "voucher_month_used_count": 0,
+        "voucher_month_used_amount": 0,
         "point_balance": int(point_users[0].get("point_balance") or 0) if point_users else 0,
         "point_transactions": point_rows,
     }
@@ -141,6 +169,7 @@ def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
     if merchant_ids:
         merchant_rows = repo.client.rest_get("merchants", {"select": "id,name", "id": f"in.({','.join(merchant_ids)})"})
         merchants = {row["id"]: row["name"] for row in merchant_rows}
+    voucher_month_used_count, voucher_month_used_amount = _voucher_month_usage(repo, user_id)
     voucher_history = [
         {
             "id": row.get("id"), "voucher_id": row.get("voucher_id"),
@@ -166,6 +195,8 @@ def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
         "balance": None, "monthly_limit": None, "remaining_limit": None, "month_used": None,
         "recent_transactions": combined[:3], "voucher_balance": voucher_balance,
         "voucher_use_history": voucher_history,
+        "voucher_month_used_count": voucher_month_used_count,
+        "voucher_month_used_amount": voucher_month_used_amount,
     }
 
 
@@ -246,7 +277,8 @@ def me(token: str = Depends(bearer_token)):
     invite_code = None
     company = None
     usage = {"balance": None, "monthly_limit": None, "remaining_limit": None, "month_used": None,
-             "recent_transactions": [], "voucher_balance": None, "voucher_use_history": []}
+             "recent_transactions": [], "voucher_balance": None, "voucher_use_history": [],
+             "voucher_month_used_count": 0, "voucher_month_used_amount": 0}
     try:
         if profile.role == "company_admin" and profile.company_id:
             invite_code = _ensure_invite_code(repo, profile.company_id)
@@ -280,6 +312,8 @@ def me(token: str = Depends(bearer_token)):
             "recent_transactions": usage["recent_transactions"],
             "voucher_balance": usage["voucher_balance"],
             "voucher_use_history": usage["voucher_use_history"],
+            "voucher_month_used_count": usage["voucher_month_used_count"],
+            "voucher_month_used_amount": usage["voucher_month_used_amount"],
             "point_balance": usage.get("point_balance"),
             "point_transactions": usage.get("point_transactions", []),
         },

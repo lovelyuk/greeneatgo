@@ -411,6 +411,7 @@ class VoucherCoreTests(unittest.TestCase):
             ],
             [{"id": "voucher-order", "paid_voucher_count": 10}],
             [{"id": "m1", "name": "돈토"}],
+            [{"amount": -7000} for _ in range(25)],
         ]
 
         usage = _customer_usage(repo, "user-1")
@@ -421,6 +422,8 @@ class VoucherCoreTests(unittest.TestCase):
         self.assertTrue(usage["voucher_use_history"][0]["is_bonus"])
         self.assertEqual(usage["voucher_use_history"][1]["amount"], 8000)
         self.assertFalse(usage["voucher_use_history"][1]["is_bonus"])
+        self.assertEqual(usage["voucher_month_used_count"], 25)
+        self.assertEqual(usage["voucher_month_used_amount"], 175000)
         repo.client.rpc.assert_called_once_with("voucher_balance", {"p_user_id": "user-1"})
 
 

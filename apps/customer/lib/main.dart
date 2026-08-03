@@ -1734,6 +1734,29 @@ ThemeData _communityTheme(BuildContext context) => Theme.of(context).copyWith(
           borderSide: const BorderSide(color: AppColors.blueSoft),
         ),
       ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.blue,
+          foregroundColor: AppColors.fg,
+          disabledBackgroundColor: AppColors.cardHi,
+          disabledForegroundColor: AppColors.fg2,
+          minimumSize: const Size.fromHeight(54),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.button),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.blueSoft,
+          disabledForegroundColor: AppColors.fg2,
+          side: const BorderSide(color: AppColors.line),
+          minimumSize: const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.button),
+          ),
+        ),
+      ),
     );
 
 class _CommunityScreenState extends State<CommunityScreen> {

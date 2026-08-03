@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:greeneatgo_customer/main.dart';
+import 'package:greeneatgo_customer/screens/user_dashboard_shell.dart';
 import 'package:greeneatgo_customer/theme/app_colors.dart';
 
 void main() {
@@ -115,6 +116,94 @@ void main() {
     await expectLater(
       find.byKey(const Key('voucher-event-capture')),
       matchesGoldenFile('goldens/voucher_event_360.png'),
+    );
+  });
+
+  testWidgets('voucher purchase page keeps dashboard navigation at 360px',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const catalog = VoucherCatalog(
+      purchaseMode: VoucherPurchaseMode.voucher,
+      items: [
+        VoucherProduct(
+          id: 'single',
+          name: '돈토식권',
+          voucherCount: 1,
+          bonusCount: 0,
+          unitPrice: 8000,
+          discountRate: 0,
+          salePrice: 8000,
+          totalCount: 1,
+          kiwoomPayMethod: 'TOTAL',
+          isEvent: false,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: RepaintBoundary(
+        key: const Key('voucher-nav-capture'),
+        child: UserDashboardShell(
+          data: const {
+            'display_name': '이용자',
+            'role': 'customer',
+            'account_type': 'voucher',
+            'voucher_balance': 3,
+            'recent_transactions': [],
+          },
+          onRefresh: () async {},
+          onScanQr: () async {},
+          onBuyVoucher: () async {},
+          onCoupons: () async {},
+          onEvents: () async {},
+          onOpenSettings: () async {},
+          onAnnouncements: () async {},
+          onReviews: () async {},
+          onTerms: () async {},
+          onPrivacy: () async {},
+          onSignOut: () async {},
+          pendingBanner: null,
+          purchasePageBuilder: (close) => Scaffold(
+            backgroundColor: AppColors.bg,
+            appBar: AppBar(
+              backgroundColor: AppColors.bg,
+              foregroundColor: AppColors.fg,
+              surfaceTintColor: AppColors.bg,
+              leading: IconButton(
+                tooltip: '홈으로',
+                onPressed: close,
+                icon: const Icon(Icons.arrow_back_rounded),
+              ),
+              title: const Text('식권 구매'),
+            ),
+            body: VoucherPurchaseContent(
+              catalog: catalog,
+              filter: VoucherFilter.all,
+              onProduct: (_) {},
+              onShowAll: () {},
+            ),
+          ),
+          qrPageBuilder: (close) => const SizedBox.shrink(),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('구매'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('식권 구매'), findsOneWidget);
+    expect(find.text('돈토식권'), findsOneWidget);
+    expect(find.text('홈'), findsOneWidget);
+    expect(find.text('QR'), findsOneWidget);
+    expect(find.text('내역'), findsOneWidget);
+    expect(find.text('내정보'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await expectLater(
+      find.byKey(const Key('voucher-nav-capture')),
+      matchesGoldenFile('goldens/voucher_purchase_nav_360.png'),
     );
   });
 

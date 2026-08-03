@@ -40,7 +40,9 @@ void main() {
       Future<void> Function()? onBuyVoucher,
       Future<void> Function()? onScanQr,
       Future<void> Function()? onCoupons,
-      Future<void> Function()? onEvents}) async {
+      Future<void> Function()? onEvents,
+      DashboardPageBuilder? purchasePageBuilder,
+      DashboardPageBuilder? qrPageBuilder}) async {
     await tester.binding.setSurfaceSize(const Size(360, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -63,6 +65,8 @@ void main() {
             onSignOut: () async {},
             pendingBanner: null,
             todayMenuCard: const Card(child: Text('오늘의 뷔페 메뉴')),
+            purchasePageBuilder: purchasePageBuilder,
+            qrPageBuilder: qrPageBuilder,
           ),
         ),
       ),
@@ -206,6 +210,47 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('휴대폰 번호'), findsOneWidget);
     expect(find.text('회사 장부'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('purchase and QR pages stay inside the five-item navigation',
+      (tester) async {
+    await pumpDashboard(
+      tester,
+      purchasePageBuilder: (close) => Scaffold(
+        appBar: AppBar(
+          leading:
+              IconButton(onPressed: close, icon: const Icon(Icons.arrow_back)),
+        ),
+        body: const Text('구매 탭 화면'),
+      ),
+      qrPageBuilder: (close) => Scaffold(
+        appBar: AppBar(
+          leading:
+              IconButton(onPressed: close, icon: const Icon(Icons.arrow_back)),
+        ),
+        body: const Text('QR 탭 화면'),
+      ),
+    );
+
+    await tester.tap(find.text('구매'));
+    await tester.pumpAndSettle();
+    expect(find.text('구매 탭 화면'), findsOneWidget);
+    expect(find.text('홈'), findsOneWidget);
+    expect(find.text('구매'), findsOneWidget);
+    expect(find.text('QR'), findsOneWidget);
+
+    await tester.tap(find.text('QR'));
+    await tester.pumpAndSettle();
+    expect(find.text('QR 탭 화면'), findsOneWidget);
+    expect(find.text('홈'), findsOneWidget);
+    expect(find.text('내역'), findsOneWidget);
+    expect(find.text('내정보'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('QR 탭 화면'), findsNothing);
+    expect(find.byType(MealTicketCard), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

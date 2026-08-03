@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
@@ -5,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/dashboard_components.dart';
 
 typedef AsyncAction = Future<void> Function();
+typedef DashboardPageBuilder = Widget Function(VoidCallback close);
 
 class UserDashboardShell extends StatefulWidget {
   const UserDashboardShell({
@@ -24,6 +27,8 @@ class UserDashboardShell extends StatefulWidget {
     required this.pendingBanner,
     this.todayMenuCard,
     this.partnerBanner,
+    this.purchasePageBuilder,
+    this.qrPageBuilder,
   });
 
   final Map<String, dynamic> data;
@@ -41,6 +46,8 @@ class UserDashboardShell extends StatefulWidget {
   final Widget? pendingBanner;
   final Widget? todayMenuCard;
   final Widget? partnerBanner;
+  final DashboardPageBuilder? purchasePageBuilder;
+  final DashboardPageBuilder? qrPageBuilder;
 
   @override
   State<UserDashboardShell> createState() => _UserDashboardShellState();
@@ -64,6 +71,24 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
     } finally {
       if (mounted) setState(() => _actionInFlight = false);
     }
+  }
+
+  Future<void> _openActionPage(
+    int index,
+    DashboardPageBuilder? pageBuilder,
+    AsyncAction fallback,
+  ) async {
+    if (pageBuilder == null) {
+      await _runAction(fallback);
+      return;
+    }
+    if (mounted) setState(() => _index = index);
+  }
+
+  void _closeActionPage() {
+    if (!mounted) return;
+    setState(() => _index = 0);
+    unawaited(_runAction(widget.onRefresh));
   }
 
   List<Map<String, dynamic>> get _transactions {
@@ -91,8 +116,16 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
         data: widget.data,
         transactions: _transactions,
         pendingBanner: widget.pendingBanner,
-        onScanQr: widget.onScanQr,
-        onBuyVoucher: widget.onBuyVoucher,
+        onScanQr: () => _openActionPage(
+          2,
+          widget.qrPageBuilder,
+          widget.onScanQr,
+        ),
+        onBuyVoucher: () => _openActionPage(
+          1,
+          widget.purchasePageBuilder,
+          widget.onBuyVoucher,
+        ),
         onHistory: () => setState(() => _index = 3),
         onProfile: () => setState(() => _index = 4),
         onCoupons: widget.onCoupons,
@@ -103,13 +136,29 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
         todayMenuCard: widget.todayMenuCard,
         partnerBanner: widget.partnerBanner,
       ),
-      const SizedBox.shrink(),
-      const SizedBox.shrink(),
+      if (_index == 1 && widget.purchasePageBuilder != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 78),
+          child: widget.purchasePageBuilder!(_closeActionPage),
+        )
+      else
+        const SizedBox.shrink(),
+      if (_index == 2 && widget.qrPageBuilder != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 78),
+          child: widget.qrPageBuilder!(_closeActionPage),
+        )
+      else
+        const SizedBox.shrink(),
       _HistoryTab(transactions: _transactions),
       _ProfileTab(
         data: widget.data,
         onOpenSettings: widget.onOpenSettings,
-        onBuyVoucher: widget.onBuyVoucher,
+        onBuyVoucher: () => _openActionPage(
+          1,
+          widget.purchasePageBuilder,
+          widget.onBuyVoucher,
+        ),
         onCoupons: widget.onCoupons,
         onAnnouncements: widget.onAnnouncements,
         onReviews: widget.onReviews,
@@ -133,26 +182,40 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
           error: AppColors.danger,
         ),
       ),
-      child: Scaffold(
-        backgroundColor: AppColors.bg,
-        extendBody: true,
-        body: SafeArea(
-          bottom: false,
-          child: IndexedStack(index: _index, children: screens),
-        ),
-        bottomNavigationBar: SafeArea(
-          minimum: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-          child: AppTabBar(
-            index: _index,
-            onChanged: (value) async {
-              if (value == 1) {
-                await _runAction(widget.onBuyVoucher);
-              } else if (value == 2) {
-                await _runAction(widget.onScanQr);
-              } else {
-                setState(() => _index = value);
-              }
-            },
+      child: PopScope(
+        canPop: _index == 0,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _index != 0) _closeActionPage();
+        },
+        child: Scaffold(
+          backgroundColor: AppColors.bg,
+          extendBody: true,
+          body: SafeArea(
+            bottom: false,
+            child: IndexedStack(index: _index, children: screens),
+          ),
+          bottomNavigationBar: SafeArea(
+            minimum: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            child: AppTabBar(
+              index: _index,
+              onChanged: (value) async {
+                if (value == 1) {
+                  await _openActionPage(
+                    1,
+                    widget.purchasePageBuilder,
+                    widget.onBuyVoucher,
+                  );
+                } else if (value == 2) {
+                  await _openActionPage(
+                    2,
+                    widget.qrPageBuilder,
+                    widget.onScanQr,
+                  );
+                } else {
+                  setState(() => _index = value);
+                }
+              },
+            ),
           ),
         ),
       ),

@@ -2596,6 +2596,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               load: _pendingLoad!,
               onTap: _openPendingRecovery,
             ),
+      purchasePageBuilder: (close) => VoucherPurchaseScreen(
+        session: session,
+        pointBalance: (me['point_balance'] as num?)?.round() ?? 0,
+        onClose: close,
+      ),
+      qrPageBuilder: (close) => UnifiedQrScanScreen(
+        session: session,
+        isConsumer: isConsumer,
+        onClose: close,
+      ),
       onScanQr: () async {
         await Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => UnifiedQrScanScreen(
@@ -3173,10 +3183,15 @@ class _TodayMenuCard extends StatelessWidget {
 }
 
 class UnifiedQrScanScreen extends StatefulWidget {
-  const UnifiedQrScanScreen(
-      {super.key, required this.session, required this.isConsumer});
+  const UnifiedQrScanScreen({
+    super.key,
+    required this.session,
+    required this.isConsumer,
+    this.onClose,
+  });
   final User session;
   final bool isConsumer;
+  final VoidCallback? onClose;
 
   @override
   State<UnifiedQrScanScreen> createState() => _UnifiedQrScanScreenState();
@@ -3217,7 +3232,11 @@ class _UnifiedQrScanScreenState extends State<UnifiedQrScanScreen> {
             )));
     if (!mounted) return;
     if (paid == true) {
-      Navigator.of(context).pop(true);
+      if (widget.onClose != null) {
+        widget.onClose!();
+      } else {
+        Navigator.of(context).pop(true);
+      }
     } else {
       _handled = false;
       await _controller?.resumeCamera();
@@ -3225,50 +3244,155 @@ class _UnifiedQrScanScreenState extends State<UnifiedQrScanScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => AppScaffold(
-        showBrand: false,
-        title: '매장 QR을 스캔해요',
-        subtitle:
-            widget.isConsumer ? '보유 식권 1장이 사용됩니다.' : '회사 장부의 계약 단가로 결제됩니다.',
-        child: BrandPanel(children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: SizedBox(
-              height: 320,
-              child: QRView(
-                key: _qrKey,
-                onQRViewCreated: _created,
-                onPermissionSet: (_, granted) {
-                  if (!granted && mounted) {
-                    setState(() => _error = '앱 설정에서 카메라 권한을 허용해 주세요.');
-                  }
-                },
-                formatsAllowed: const [BarcodeFormat.qrcode],
-                overlay: QrScannerOverlayShape(
-                    borderColor: kOrange,
-                    borderRadius: 18,
-                    borderLength: 28,
-                    borderWidth: 8,
-                    cutOutSize: 230),
+  Widget build(BuildContext context) => Theme(
+        data: Theme.of(context).copyWith(
+          scaffoldBackgroundColor: AppColors.bg,
+          textTheme: Theme.of(context).textTheme.apply(
+                fontFamily: 'Pretendard',
+                bodyColor: AppColors.fg,
+                displayColor: AppColors.fg,
+              ),
+          colorScheme: const ColorScheme.dark(
+            primary: AppColors.blue,
+            secondary: AppColors.blueSoft,
+            surface: AppColors.card,
+            error: AppColors.danger,
+          ),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: AppColors.bg,
+            foregroundColor: AppColors.fg,
+            surfaceTintColor: AppColors.bg,
+          ),
+          outlinedButtonTheme: OutlinedButtonThemeData(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.blueSoft,
+              side: const BorderSide(color: AppColors.line),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadii.button),
               ),
             ),
           ),
+        ),
+        child: Scaffold(
+          backgroundColor: AppColors.bg,
+          appBar: AppBar(
+            leading: widget.onClose == null
+                ? null
+                : IconButton(
+                    tooltip: '홈으로',
+                    onPressed: widget.onClose,
+                    icon: const Icon(Icons.arrow_back_rounded),
+                  ),
+            title: const Text('QR 사용하기'),
+          ),
+          body: UnifiedQrScanContent(
+            isConsumer: widget.isConsumer,
+            error: _error,
+            onRetry: () {
+              setState(() => _error = null);
+              _controller?.resumeCamera();
+            },
+            scanner: QRView(
+              key: _qrKey,
+              onQRViewCreated: _created,
+              onPermissionSet: (_, granted) {
+                if (!granted && mounted) {
+                  setState(() => _error = '앱 설정에서 카메라 권한을 허용해 주세요.');
+                }
+              },
+              formatsAllowed: const [BarcodeFormat.qrcode],
+              overlay: QrScannerOverlayShape(
+                borderColor: AppColors.blue,
+                borderRadius: AppRadii.button,
+                borderLength: 28,
+                borderWidth: 7,
+                cutOutSize: 220,
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
+class UnifiedQrScanContent extends StatelessWidget {
+  const UnifiedQrScanContent({
+    super.key,
+    required this.isConsumer,
+    required this.scanner,
+    required this.onRetry,
+    this.error,
+  });
+
+  final bool isConsumer;
+  final Widget scanner;
+  final String? error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 112),
+        children: [
+          const Text('SCAN & PAY', style: AppTextStyles.overline),
+          const SizedBox(height: 8),
+          const Text('매장 QR을 스캔해요', style: AppTextStyles.screenTitle),
+          const SizedBox(height: 6),
+          Text(
+            isConsumer ? '보유 식권 1장이 사용됩니다.' : '회사 장부의 계약 단가로 결제됩니다.',
+            style: AppTextStyles.caption,
+          ),
+          const SizedBox(height: 18),
+          DarkCard(
+            padding: const EdgeInsets.all(10),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadii.button),
+              child: SizedBox(height: 260, child: scanner),
+            ),
+          ),
           const SizedBox(height: 14),
-          const Text('돈토 매장에 표시된 QR을 카메라 안에 맞춰 주세요.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
-          if (_error != null) ...[
-            BrandNotice(text: _error!, kind: NoticeKind.error),
-            const SizedBox(height: 10),
-            OutlinedButton(
-                onPressed: () {
-                  setState(() => _error = null);
-                  _controller?.resumeCamera();
-                },
-                child: const Text('카메라 다시 켜기')),
+          const DarkCard(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Icon(Icons.center_focus_strong_rounded,
+                    color: AppColors.blueSoft, size: 22),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '매장에 표시된 QR을 카메라 사각형 안에 맞춰 주세요.',
+                    style: AppTextStyles.body,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 14),
+            DarkCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.error_outline_rounded,
+                          color: AppColors.danger, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(error!, style: AppTextStyles.body),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('카메라 다시 켜기'),
+                  ),
+                ],
+              ),
+            ),
           ],
-        ]),
+        ],
       );
 }
 
@@ -3530,12 +3654,14 @@ class VoucherPurchaseScreen extends StatefulWidget {
     this.initialCatalog,
     this.pointBalance = 0,
     this.initialFilter = VoucherFilter.all,
+    this.onClose,
   });
 
   final User session;
   final VoucherCatalog? initialCatalog;
   final int pointBalance;
   final VoucherFilter initialFilter;
+  final VoidCallback? onClose;
 
   @override
   State<VoucherPurchaseScreen> createState() => _VoucherPurchaseScreenState();
@@ -3598,7 +3724,16 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
         ),
         child: Scaffold(
           backgroundColor: AppColors.bg,
-          appBar: AppBar(title: Text(voucherFilterTitle(_filter))),
+          appBar: AppBar(
+            leading: widget.onClose == null
+                ? null
+                : IconButton(
+                    tooltip: '홈으로',
+                    onPressed: widget.onClose,
+                    icon: const Icon(Icons.arrow_back_rounded),
+                  ),
+            title: Text(voucherFilterTitle(_filter)),
+          ),
           body: FutureBuilder<VoucherCatalog>(
             future: _catalog,
             builder: (context, snapshot) {

@@ -16,6 +16,7 @@ dependencies = [
   "firebase-admin>=6.6",
   "psycopg[binary]>=3.2",
   "popbill==1.64.2",
+  "bcrypt>=4.2",
 ]
 
 [tool.pytest.ini_options]

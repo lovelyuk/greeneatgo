@@ -7,6 +7,56 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.services.vouchers import calculate_sale_price
 
 
+class PhoneSendRequest(BaseModel):
+    # Checked by the phone-auth router so invalid normalized numbers use this
+    # API's documented HTTP 400/detail contract rather than Pydantic HTTP 422.
+    phone: str
+    purpose: str = Field(pattern=r"^(signup_login|change_phone)$")
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: object) -> object:
+        return re.sub(r"[^0-9]", "", value) if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
+class PhoneVerifyRequest(BaseModel):
+    phone: str
+    code: str = Field(pattern=r"^[0-9]{6}$")
+    purpose: str = Field(default="signup_login", pattern=r"^(signup_login|change_phone)$")
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: object) -> object:
+        return re.sub(r"[^0-9]", "", value) if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
+class PhoneSignupRequest(BaseModel):
+    verification_token: str = Field(min_length=20, max_length=200)
+    display_name: str = Field(min_length=1, max_length=20)
+
+    @field_validator("verification_token", "display_name", mode="before")
+    @classmethod
+    def trim_phone_signup(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
+class PhoneChangeRequest(BaseModel):
+    verification_token: str = Field(min_length=20, max_length=200)
+
+    @field_validator("verification_token", mode="before")
+    @classmethod
+    def trim_verification_token(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    model_config = {"extra": "forbid"}
+
+
 class GPSPoint(BaseModel):
     lat: float
     lng: float

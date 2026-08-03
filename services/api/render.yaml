@@ -7,6 +7,8 @@ services:
     startCommand: bash start.sh
     healthCheckPath: /v1/health
     envVars:
+      - key: ENV
+        value: production
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_ANON_KEY
@@ -15,6 +17,19 @@ services:
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
+      # SOLAPI SMS credentials are server-only; configure them as Render secrets.
+      - key: SOLAPI_API_KEY
+        sync: false
+      - key: SOLAPI_API_SECRET
+        sync: false
+      - key: SOLAPI_SENDER
+        sync: false
+      - key: SMS_DRY_RUN
+        value: "false"
+      - key: OTP_PEPPER
+        sync: false
+      - key: OTP_BCRYPT_ROUNDS
+        value: "12"
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: ADMIN_APP_URL

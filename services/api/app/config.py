@@ -12,6 +12,7 @@ DEFAULT_KIWOOMPAY_NOTIFICATION_IPS = (
     "27.102.213.202",
     "27.102.213.203",
 )
+ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "production"})
 
 
 def _kiwoompay_notification_ips(raw: str | None) -> tuple[str, ...]:
@@ -55,6 +56,13 @@ class Settings:
     supabase_url: str
     supabase_anon_key: str
     supabase_service_role_key: str
+    env: str = "development"
+    solapi_api_key: str = ""
+    solapi_api_secret: str = ""
+    solapi_sender: str = ""
+    sms_dry_run: bool = True
+    otp_pepper: str = "development-only-phone-otp-pepper"
+    otp_bcrypt_rounds: int = 12
     supabase_jwt_secret: str | None = None
     kiwoompay_cpid: str = ""
     kiwoompay_authorization_key: str = ""
@@ -76,6 +84,25 @@ class Settings:
     popbill_use_static_ip: bool = False
     popbill_use_local_time: bool = True
 
+    def __post_init__(self) -> None:
+        if self.env not in ALLOWED_ENVIRONMENTS:
+            raise RuntimeError(
+                "ENV must be exactly one of: development, test, production"
+            )
+        if self.env == "production" and self.sms_dry_run:
+            raise RuntimeError("SMS_DRY_RUN cannot be enabled in production")
+        if self.env == "production" and not all(
+            (self.solapi_api_key, self.solapi_api_secret, self.solapi_sender)
+        ):
+            raise RuntimeError("SOLAPI credentials and sender are required in production")
+        if self.env == "production" and (
+            not self.otp_pepper
+            or self.otp_pepper == "development-only-phone-otp-pepper"
+        ):
+            raise RuntimeError("OTP_PEPPER must be explicitly set to a non-default value in production")
+        if not 4 <= self.otp_bcrypt_rounds <= 15:
+            raise RuntimeError("OTP_BCRYPT_ROUNDS must be between 4 and 15")
+
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv(Path(__file__).resolve().parents[1] / ".env")
@@ -91,6 +118,13 @@ class Settings:
             supabase_url=os.environ["SUPABASE_URL"].rstrip("/"),
             supabase_anon_key=os.environ["SUPABASE_ANON_KEY"],
             supabase_service_role_key=os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+            env=os.environ.get("ENV", "development"),
+            solapi_api_key=os.environ.get("SOLAPI_API_KEY", "").strip(),
+            solapi_api_secret=os.environ.get("SOLAPI_API_SECRET", "").strip(),
+            solapi_sender=os.environ.get("SOLAPI_SENDER", "").strip(),
+            sms_dry_run=parse_env_bool("SMS_DRY_RUN", True),
+            otp_pepper=os.environ.get("OTP_PEPPER", "development-only-phone-otp-pepper").strip(),
+            otp_bcrypt_rounds=int(os.environ.get("OTP_BCRYPT_ROUNDS", "12")),
             supabase_jwt_secret=os.environ.get("SUPABASE_JWT_SECRET") or None,
             kiwoompay_cpid=os.environ.get("KIWOOMPAY_CPID", "").strip(),
             kiwoompay_authorization_key=os.environ.get("KIWOOMPAY_AUTHORIZATION_KEY", "").strip(),

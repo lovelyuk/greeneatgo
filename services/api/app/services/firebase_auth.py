@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID, uuid5
@@ -20,11 +21,32 @@ from app.services.push_notifications import _firebase_app
 # greeneatGo Firebase Authentication -> app_users identity namespace.
 FIREBASE_UID_NAMESPACE = UUID("ad2bd92b-c52f-4b30-bb59-4f789edbcdb0")
 INTERNAL_ID_CLAIM = "greeneatgo_internal_id"
+PHONE_UID_RE = re.compile(r"^phone_010[0-9]{8}$")
 
 
 def firebase_uid_to_internal_uuid(uid: str) -> str:
     """Deterministically map the exact, case-sensitive Firebase UID to UUIDv5."""
     return str(uuid5(FIREBASE_UID_NAMESPACE, uid))
+
+
+def phone_firebase_uid(phone: str) -> str:
+    uid = f"phone_{phone}"
+    if not PHONE_UID_RE.fullmatch(uid):
+        raise ValueError("invalid phone UID")
+    return uid
+
+
+def create_phone_custom_token(phone: str, *, internal_id: str | None = None) -> str:
+    """Create a Firebase custom token; callers must treat it as a secret."""
+    claims = {INTERNAL_ID_CLAIM: internal_id} if internal_id is not None else None
+    uid = phone_firebase_uid(phone)
+    try:
+        token = firebase_auth.create_custom_token(
+            uid, developer_claims=claims, app=_firebase_app()
+        )
+    except Exception as exc:
+        raise SupabaseHttpError(503, "Firebase custom token creation is unavailable") from exc
+    return token.decode("utf-8") if isinstance(token, bytes) else str(token)
 
 
 def _internal_id(claims: dict[str, Any], uid: str) -> str:
@@ -100,17 +122,26 @@ def verify_firebase_auth_user(access_token: str) -> AuthUser:
         # failures are operational. Never leak certificate or credential detail.
         raise SupabaseHttpError(503, "Firebase authentication is unavailable") from exc
 
-    email = claims.get("email")
-    if (
-        not isinstance(email, str)
-        or not email.strip()
-        or claims.get("email_verified") is not True
-    ):
-        raise SupabaseHttpError(401, "Firebase email is not verified")
-    email = email.strip()
     uid = claims.get("uid") or claims.get("sub")
     if not isinstance(uid, str) or not uid:
         raise SupabaseHttpError(401, "Firebase ID token has no UID")
+    firebase_claim = claims.get("firebase")
+    phone_custom = (
+        PHONE_UID_RE.fullmatch(uid) is not None
+        and isinstance(firebase_claim, dict)
+        and firebase_claim.get("sign_in_provider") == "custom"
+    )
+    email = claims.get("email")
+    if not phone_custom:
+        if (
+            not isinstance(email, str)
+            or not email.strip()
+            or claims.get("email_verified") is not True
+        ):
+            raise SupabaseHttpError(401, "Firebase email is not verified")
+        email = email.strip()
+    else:
+        email = email.strip() if isinstance(email, str) and email.strip() else None
     return AuthUser(
         id=_internal_id(claims, uid),
         email=email,

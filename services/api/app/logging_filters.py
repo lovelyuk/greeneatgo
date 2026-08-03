@@ -11,7 +11,9 @@ class PaymentNotificationAccessLogFilter(logging.Filter):
         if not isinstance(args, tuple) or len(args) < 3:
             return True
         path = str(args[2])
-        if "/payments/notification?" not in path:
+        if "/payments/notification?" not in path and "/auth/phone/" not in path:
+            return True
+        if "?" not in path:
             return True
         redacted = list(args)
         redacted[2] = f"{path.split('?', 1)[0]}?[REDACTED]"

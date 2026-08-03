@@ -14,6 +14,7 @@ class UserDashboardShell extends StatefulWidget {
     required this.onScanQr,
     required this.onBuyVoucher,
     required this.onCoupons,
+    required this.onEvents,
     required this.onOpenSettings,
     required this.onAnnouncements,
     required this.onReviews,
@@ -30,6 +31,7 @@ class UserDashboardShell extends StatefulWidget {
   final AsyncAction onScanQr;
   final AsyncAction onBuyVoucher;
   final AsyncAction onCoupons;
+  final AsyncAction onEvents;
   final AsyncAction onOpenSettings;
   final AsyncAction onAnnouncements;
   final AsyncAction onReviews;
@@ -46,6 +48,23 @@ class UserDashboardShell extends StatefulWidget {
 
 class _UserDashboardShellState extends State<UserDashboardShell> {
   int _index = 0;
+  bool _actionInFlight = false;
+
+  Future<void> _runAction(AsyncAction action) async {
+    if (_actionInFlight) return;
+    setState(() => _actionInFlight = true);
+    try {
+      await action();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('화면을 열지 못했어요. 잠시 후 다시 시도해 주세요.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _actionInFlight = false);
+    }
+  }
 
   List<Map<String, dynamic>> get _transactions {
     final history = widget.data['voucher_use_history'];
@@ -74,14 +93,19 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
         pendingBanner: widget.pendingBanner,
         onScanQr: widget.onScanQr,
         onBuyVoucher: widget.onBuyVoucher,
-        onHistory: () => setState(() => _index = 1),
-        onProfile: () => setState(() => _index = 3),
+        onHistory: () => setState(() => _index = 3),
+        onProfile: () => setState(() => _index = 4),
+        onCoupons: widget.onCoupons,
+        onEvents: widget.onEvents,
+        onAnnouncements: widget.onAnnouncements,
+        onReviews: widget.onReviews,
         onRefresh: widget.onRefresh,
         todayMenuCard: widget.todayMenuCard,
         partnerBanner: widget.partnerBanner,
       ),
+      const SizedBox.shrink(),
+      const SizedBox.shrink(),
       _HistoryTab(transactions: _transactions),
-      _LedgerTab(data: widget.data),
       _ProfileTab(
         data: widget.data,
         onOpenSettings: widget.onOpenSettings,
@@ -120,7 +144,15 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
           minimum: const EdgeInsets.fromLTRB(14, 0, 14, 14),
           child: AppTabBar(
             index: _index,
-            onChanged: (value) => setState(() => _index = value),
+            onChanged: (value) async {
+              if (value == 1) {
+                await _runAction(widget.onBuyVoucher);
+              } else if (value == 2) {
+                await _runAction(widget.onScanQr);
+              } else {
+                setState(() => _index = value);
+              }
+            },
           ),
         ),
       ),
@@ -140,6 +172,10 @@ class _HomeTab extends StatelessWidget {
     required this.onRefresh,
     required this.todayMenuCard,
     required this.partnerBanner,
+    required this.onCoupons,
+    required this.onEvents,
+    required this.onAnnouncements,
+    required this.onReviews,
   });
 
   final Map<String, dynamic> data;
@@ -152,6 +188,10 @@ class _HomeTab extends StatelessWidget {
   final VoidCallback onHistory;
   final VoidCallback onProfile;
   final AsyncAction onRefresh;
+  final AsyncAction onCoupons;
+  final AsyncAction onEvents;
+  final AsyncAction onAnnouncements;
+  final AsyncAction onReviews;
 
   @override
   Widget build(BuildContext context) {
@@ -196,7 +236,6 @@ class _HomeTab extends StatelessWidget {
             displayName: displayName,
             subtitle: [company, '돈토식당'].where((e) => e.isNotEmpty).join(' · '),
             onProfile: onProfile,
-            onRefresh: onRefresh,
           ),
           if (pendingBanner != null) ...[
             const SizedBox(height: 12),
@@ -212,6 +251,13 @@ class _HomeTab extends StatelessWidget {
             state: isVoucher && voucherBalance == 0
                 ? TicketState.empty
                 : TicketState.active,
+          ),
+          const SizedBox(height: 16),
+          _HomeShortcuts(
+            onCoupons: onCoupons,
+            onEvents: onEvents,
+            onAnnouncements: onAnnouncements,
+            onReviews: onReviews,
           ),
           if (todayMenuCard != null) ...[
             const SizedBox(height: 16),
@@ -241,17 +287,78 @@ class _HomeTab extends StatelessWidget {
   }
 }
 
+class _HomeShortcuts extends StatelessWidget {
+  const _HomeShortcuts({
+    required this.onCoupons,
+    required this.onEvents,
+    required this.onAnnouncements,
+    required this.onReviews,
+  });
+
+  final AsyncAction onCoupons;
+  final AsyncAction onEvents;
+  final AsyncAction onAnnouncements;
+  final AsyncAction onReviews;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <(IconData, String, AsyncAction)>[
+      (Icons.confirmation_number_rounded, '쿠폰함', onCoupons),
+      (Icons.celebration_rounded, '이벤트', onEvents),
+      (Icons.campaign_rounded, '공지사항', onAnnouncements),
+      (Icons.rate_review_rounded, '리뷰', onReviews),
+    ];
+    return DarkCard(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+      child: Row(
+        children: [
+          for (final item in items)
+            Expanded(
+              child: InkWell(
+                onTap: item.$3,
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppColors.cardHi,
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                        child:
+                            Icon(item.$1, color: AppColors.blueSoft, size: 21),
+                      ),
+                      const SizedBox(height: 7),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(item.$2,
+                            maxLines: 1, style: AppTextStyles.caption),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AppHeader extends StatelessWidget {
   const _AppHeader({
     required this.displayName,
     required this.subtitle,
     required this.onProfile,
-    required this.onRefresh,
   });
   final String displayName;
   final String subtitle;
   final VoidCallback onProfile;
-  final AsyncAction onRefresh;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -292,12 +399,6 @@ class _AppHeader extends StatelessWidget {
                       style: AppTextStyles.caption),
                 ],
               ),
-            ),
-            IconButton(
-              tooltip: '새로고침',
-              onPressed: onRefresh,
-              icon: const Icon(Icons.notifications_none_rounded,
-                  color: AppColors.fg2),
             ),
             IconButton(
               tooltip: '내정보',
@@ -367,6 +468,9 @@ class _HistoryTab extends StatelessWidget {
   }
 }
 
+// Kept only as a legacy data presentation reference; the dashboard no longer
+// exposes a ledger tab or route.
+// ignore: unused_element
 class _LedgerTab extends StatelessWidget {
   const _LedgerTab({required this.data});
   final Map<String, dynamic> data;

@@ -38,8 +38,10 @@ class MealTicketCard extends StatelessWidget {
     return Semantics(
       container: true,
       label: '남은 식권 $balanceSemantics, $caption, 이번 달 사용 $monthUsage',
-      child: ClipPath(
-        clipper: const _TicketClipper(),
+      child: PhysicalShape(
+        clipper: const TicketClipper(notchY: 145),
+        color: paper,
+        elevation: 0,
         child: Container(
           decoration: BoxDecoration(
             color: paper,
@@ -112,7 +114,7 @@ class MealTicketCard extends StatelessWidget {
                                 onPressed: onBuyTicket,
                                 style: FilledButton.styleFrom(
                                   backgroundColor: AppColors.ticketPurchase,
-                                  foregroundColor: Colors.white,
+                                  foregroundColor: AppColors.fg,
                                   minimumSize: const Size(0, 48),
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 14),
@@ -137,9 +139,9 @@ class MealTicketCard extends StatelessWidget {
                   ),
                 ),
               ),
-              SizedBox(
+              const SizedBox(
                 height: 2,
-                child: CustomPaint(painter: _DashedLinePainter()),
+                child: CustomPaint(painter: DashedLinePainter()),
               ),
               ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 80),
@@ -155,7 +157,7 @@ class MealTicketCard extends StatelessWidget {
                             Text(
                               '이번 달 사용',
                               style: AppTextStyles.caption.copyWith(
-                                color: const Color(0xFF6C6555),
+                                color: AppColors.fg2,
                                 fontSize: 11,
                               ),
                             ),
@@ -210,29 +212,38 @@ class MealTicketCard extends StatelessWidget {
   }
 }
 
-class _TicketClipper extends CustomClipper<Path> {
-  const _TicketClipper();
+/// Reusable ticket silhouette with opposing semicircular perforation notches.
+class TicketClipper extends CustomClipper<Path> {
+  const TicketClipper({
+    required this.notchY,
+    this.cornerRadius = AppRadii.card,
+    this.notchRadius = 11,
+  });
+
+  final double notchY;
+  final double cornerRadius;
+  final double notchRadius;
 
   @override
   Path getClip(Size size) {
-    const radius = AppRadii.card;
-    const notch = 11.0;
-    const y = 145.0;
+    final radius = cornerRadius;
+    final notch = notchRadius;
+    final y = notchY.clamp(notch, size.height - notch).toDouble();
     final path = Path()
       ..moveTo(radius, 0)
       ..lineTo(size.width - radius, 0)
       ..quadraticBezierTo(size.width, 0, size.width, radius)
       ..lineTo(size.width, y - notch)
       ..arcToPoint(Offset(size.width, y + notch),
-          radius: const Radius.circular(notch), clockwise: false)
+          radius: Radius.circular(notch), clockwise: false)
       ..lineTo(size.width, size.height - radius)
       ..quadraticBezierTo(
           size.width, size.height, size.width - radius, size.height)
       ..lineTo(radius, size.height)
       ..quadraticBezierTo(0, size.height, 0, size.height - radius)
       ..lineTo(0, y + notch)
-      ..arcToPoint(const Offset(0, y - notch),
-          radius: const Radius.circular(notch), clockwise: false)
+      ..arcToPoint(Offset(0, y - notch),
+          radius: Radius.circular(notch), clockwise: false)
       ..lineTo(0, radius)
       ..quadraticBezierTo(0, 0, radius, 0)
       ..close();
@@ -240,25 +251,40 @@ class _TicketClipper extends CustomClipper<Path> {
   }
 
   @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+  bool shouldReclip(covariant TicketClipper oldClipper) =>
+      notchY != oldClipper.notchY ||
+      cornerRadius != oldClipper.cornerRadius ||
+      notchRadius != oldClipper.notchRadius;
 }
 
-class _DashedLinePainter extends CustomPainter {
+class DashedLinePainter extends CustomPainter {
+  const DashedLinePainter({
+    this.color = AppColors.ticketLine,
+    this.strokeWidth = 2,
+  });
+
+  final Color color;
+  final double strokeWidth;
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.ticketLine
-      ..strokeWidth = 2;
+      ..color = color
+      ..strokeWidth = strokeWidth;
     const dash = 6.0;
     const gap = 5.0;
     for (double x = 0; x < size.width; x += dash + gap) {
       canvas.drawLine(
-          Offset(x, 1), Offset((x + dash).clamp(0, size.width), 1), paint);
+        Offset(x, strokeWidth / 2),
+        Offset((x + dash).clamp(0, size.width).toDouble(), strokeWidth / 2),
+        paint,
+      );
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant DashedLinePainter oldDelegate) =>
+      color != oldDelegate.color || strokeWidth != oldDelegate.strokeWidth;
 }
 
 class StackedCardGroup extends StatelessWidget {
@@ -521,8 +547,9 @@ class AppTabBar extends StatelessWidget {
 
   static const tabs = [
     (Icons.home_rounded, '홈'),
-    (Icons.receipt_long_rounded, '이용내역'),
-    (Icons.account_balance_wallet_rounded, '장부'),
+    (Icons.shopping_bag_rounded, '구매'),
+    (Icons.qr_code_scanner_rounded, 'QR'),
+    (Icons.receipt_long_rounded, '내역'),
     (Icons.person_rounded, '내정보'),
   ];
 

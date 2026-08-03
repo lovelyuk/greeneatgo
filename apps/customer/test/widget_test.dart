@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:greeneatgo_customer/auth_helpers.dart';
 import 'package:greeneatgo_customer/main.dart';
 import 'package:greeneatgo_customer/payment_completion.dart';
+import 'package:greeneatgo_customer/theme/app_colors.dart';
 
 void main() {
   testWidgets('app shows missing environment guidance when not configured',
@@ -126,8 +127,10 @@ void main() {
         reason: 'provider fail/cancel/close is authoritative');
   });
 
-  testWidgets('subsidized product card shows server totals and BANK mode',
+  testWidgets('purchase list ticket fits at 360 and uses server values',
       (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final product = VoucherCatalog.fromJson({
       'purchase_mode': 'subsidized',
       'items': [
@@ -150,24 +153,78 @@ void main() {
       ],
     }).items.single;
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SingleChildScrollView(
-          child: VoucherProductCard(
+    var purchased = false;
+    await tester.pumpWidget(MediaQuery(
+      data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
+      child: MaterialApp(
+        home: Scaffold(
+          backgroundColor: AppColors.bg,
+          body: VoucherProductCard(
             product: product,
             purchaseMode: VoucherPurchaseMode.subsidized,
-            onBuy: () {},
+            onBuy: () => purchased = true,
           ),
         ),
       ),
     ));
 
-    expect(find.text('10장 + 보너스 1장 · 총 11장 지급'), findsOneWidget);
-    expect(find.text('정상 판매가 80,000원'), findsOneWidget);
-    expect(find.text('회사 총 지원 20,000원'), findsOneWidget);
-    expect(find.text('식당 총 지원 10,000원'), findsOneWidget);
-    expect(find.text('직원 부담 50,000원'), findsOneWidget);
-    expect(find.text('BANK · 계좌이체 전용'), findsOneWidget);
+    expect(find.text('11장 식권'), findsOneWidget);
+    expect(find.text('50,000원'), findsOneWidget);
+    expect(find.text('결제방법  계좌이체 전용  ·  보너스 1장'), findsOneWidget);
+    expect(find.textContaining('유효'), findsNothing);
+    expect(find.textContaining('90일'), findsNothing);
+    expect(find.byKey(const Key('product-thumbnail')), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byType(VoucherProductCard));
+    expect(purchased, isTrue);
+  });
+
+  testWidgets('product detail is multiline-safe with fixed blue purchase bar',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const product = VoucherProduct(
+      id: 'event-product',
+      name: '회사를 위한 아주 긴 이름의 특별 식권 패키지',
+      voucherCount: 20,
+      bonusCount: 3,
+      unitPrice: 8000,
+      discountRate: 12,
+      salePrice: 140000,
+      totalCount: 23,
+      kiwoomPayMethod: 'BANK',
+      isEvent: true,
+      totalCompanySubsidyAmount: 30000,
+      totalRestaurantSubsidyAmount: 10000,
+    );
+    await tester.pumpWidget(MediaQuery(
+      data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
+      child: MaterialApp(
+        home: VoucherProductDetailScreen(
+          product: product,
+          purchaseMode: VoucherPurchaseMode.voucher,
+          onBuy: () async {},
+        ),
+      ),
+    ));
+
+    expect(find.byKey(const Key('product-detail-ticket')), findsOneWidget);
+    expect(find.text('식권 구성'), findsOneWidget);
+    expect(find.text('정보'), findsOneWidget);
+    expect(find.text('상품 할인'), findsOneWidget);
+    expect(find.text('-20,000원'), findsOneWidget);
+    expect(find.text('회사 지원'), findsOneWidget);
+    expect(find.text('30,000원'), findsOneWidget);
+    expect(find.text('식당 지원'), findsOneWidget);
+    expect(find.text('10,000원'), findsOneWidget);
+    expect(find.text('사용처'), findsNothing,
+        reason: 'catalog API does not supply an authoritative merchant name');
+    expect(find.textContaining('유효'), findsNothing);
+    expect(find.textContaining('90일'), findsNothing);
+    final button =
+        tester.widget<FilledButton>(find.byKey(const Key('detail-buy-button')));
+    expect(button.style?.backgroundColor?.resolve({}), AppColors.blue);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('CARD completion shows only the card sales slip', (tester) async {

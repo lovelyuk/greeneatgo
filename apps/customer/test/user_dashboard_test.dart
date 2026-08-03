@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:greeneatgo_customer/screens/user_dashboard_shell.dart';
@@ -34,7 +36,11 @@ void main() {
   };
 
   Future<void> pumpDashboard(WidgetTester tester,
-      {Map<String, dynamic>? data}) async {
+      {Map<String, dynamic>? data,
+      Future<void> Function()? onBuyVoucher,
+      Future<void> Function()? onScanQr,
+      Future<void> Function()? onCoupons,
+      Future<void> Function()? onEvents}) async {
     await tester.binding.setSurfaceSize(const Size(360, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -45,9 +51,10 @@ void main() {
           home: UserDashboardShell(
             data: data ?? fixture,
             onRefresh: () async {},
-            onScanQr: () async {},
-            onBuyVoucher: () async {},
-            onCoupons: () async {},
+            onScanQr: onScanQr ?? () async {},
+            onBuyVoucher: onBuyVoucher ?? () async {},
+            onCoupons: onCoupons ?? () async {},
+            onEvents: onEvents ?? () async {},
             onOpenSettings: () async {},
             onAnnouncements: () async {},
             onReviews: () async {},
@@ -77,6 +84,11 @@ void main() {
     expect(find.text('56,000원'), findsOneWidget);
     expect(find.text('QR 사용하기'), findsOneWidget);
     expect(find.text('홈'), findsOneWidget);
+    expect(find.byIcon(Icons.notifications_none_rounded), findsNothing);
+    expect(find.text('쿠폰함'), findsOneWidget);
+    expect(find.text('이벤트'), findsOneWidget);
+    expect(find.text('공지사항'), findsOneWidget);
+    expect(find.text('리뷰'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     final ticket = tester.getRect(find.byType(MealTicketCard));
@@ -162,22 +174,71 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('floating navigation opens all four real-data tabs',
+  testWidgets('five-item navigation invokes actions and preserves content tab',
       (tester) async {
-    await pumpDashboard(tester);
+    var buys = 0;
+    var scans = 0;
+    await pumpDashboard(tester,
+        onBuyVoucher: () async => buys++, onScanQr: () async => scans++);
 
-    await tester.tap(find.text('이용내역'));
+    expect(find.text('장부'), findsNothing);
+    expect(find.text('홈'), findsOneWidget);
+    expect(find.text('구매'), findsOneWidget);
+    expect(find.text('QR'), findsOneWidget);
+    expect(find.text('내역'), findsOneWidget);
+    expect(find.text('내정보'), findsOneWidget);
+
+    await tester.tap(find.text('내역'));
     await tester.pumpAndSettle();
     expect(find.text('2026년 8월'), findsOneWidget);
 
-    await tester.tap(find.text('장부'));
+    await tester.tap(find.text('구매'));
     await tester.pumpAndSettle();
-    expect(find.text('8월 미정산 금액'), findsOneWidget);
+    expect(buys, 1);
+    expect(find.text('2026년 8월'), findsOneWidget);
+
+    await tester.tap(find.text('QR'));
+    await tester.pumpAndSettle();
+    expect(scans, 1);
+    expect(find.text('2026년 8월'), findsOneWidget);
 
     await tester.tap(find.text('내정보'));
     await tester.pumpAndSettle();
     expect(find.text('휴대폰 번호'), findsOneWidget);
     expect(find.text('회사 장부'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home shortcuts invoke coupon and event actions', (tester) async {
+    var coupons = 0;
+    var events = 0;
+    await pumpDashboard(tester,
+        onCoupons: () async => coupons++, onEvents: () async => events++);
+
+    await tester.tap(find.text('쿠폰함'));
+    await tester.tap(find.text('이벤트'));
+    await tester.pump();
+    expect(coupons, 1);
+    expect(events, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('purchase action ignores rapid duplicate taps', (tester) async {
+    final gate = Completer<void>();
+    var buys = 0;
+    await pumpDashboard(tester, onBuyVoucher: () {
+      buys++;
+      return gate.future;
+    });
+
+    await tester.tap(find.text('구매'));
+    await tester.pump();
+    await tester.tap(find.text('구매'));
+    await tester.pump();
+    expect(buys, 1);
+
+    gate.complete();
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 }

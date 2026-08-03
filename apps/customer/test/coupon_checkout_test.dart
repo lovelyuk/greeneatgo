@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:greeneatgo_customer/screens/coupon_wallet.dart';
+import 'package:greeneatgo_customer/theme/app_colors.dart';
 
 void main() {
   const coupon = CouponItem(
@@ -139,6 +140,7 @@ void main() {
     final button = tester
         .widget<FilledButton>(find.byKey(const Key('continue-to-payment')));
     expect(button.onPressed, isNotNull);
+    expect(button.style?.backgroundColor?.resolve({}), AppColors.blue);
     expect(find.text('10,000원 결제하기'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

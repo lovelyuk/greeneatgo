@@ -655,6 +655,13 @@ class _CheckoutOptionsScreenState extends State<CheckoutOptionsScreen> {
                     height: 54,
                     child: FilledButton(
                       key: const Key('continue-to-payment'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.blue,
+                        foregroundColor: AppColors.fg,
+                        disabledBackgroundColor:
+                            AppColors.blue.withValues(alpha: .42),
+                        disabledForegroundColor: AppColors.fg2,
+                      ),
                       onPressed: _quote == null || _quoting
                           ? null
                           : () => Navigator.of(context).pop(CheckoutSelection(

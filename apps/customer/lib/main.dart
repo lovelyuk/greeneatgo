@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -21,6 +22,9 @@ import 'pending_payment.dart';
 import 'push_notifications.dart';
 import 'screens/coupon_wallet.dart';
 import 'screens/user_dashboard_shell.dart';
+import 'theme/app_colors.dart';
+import 'theme/app_theme.dart';
+import 'widgets/dashboard_components.dart';
 import 'widgets/partner_banner_slot.dart';
 
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
@@ -2348,6 +2352,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             builder: (_) => CouponWalletScreen(
                 loadCoupons: ApiClient(session).getCoupons)));
       },
+      // The catalog is also the event destination; active event products are
+      // supplied by the same authoritative products API.
+      onEvents: () async {
+        await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => VoucherPurchaseScreen(
+                session: session,
+                pointBalance: (me['point_balance'] as num?)?.round() ?? 0)));
+        await _loadPendingPayment();
+        await onRefresh();
+      },
       onOpenSettings: () async {
         final changed = await Navigator.of(context).push<bool>(
             MaterialPageRoute(
@@ -3253,108 +3267,134 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
   void _reload() =>
       setState(() => _catalog = ApiClient(widget.session).getVoucherProducts());
 
+  Future<void> _openCheckout(
+      VoucherCatalog catalog, VoucherProduct product) async {
+    final api = ApiClient(widget.session);
+    final selection = await Navigator.of(context).push<CheckoutSelection>(
+      MaterialPageRoute(
+        builder: (_) => CheckoutOptionsScreen(
+          productId: product.id,
+          productName: product.name,
+          pointBalance: widget.pointBalance,
+          loadCoupons: api.getCoupons,
+          loadQuote: api.quoteVoucherOrder,
+          loadIssuedQuote: api.quoteVoucherOrder,
+        ),
+      ),
+    );
+    if (selection == null || !mounted) return;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => VoucherKiwoomPaymentScreen(
+          session: widget.session,
+          product: product,
+          purchaseMode: catalog.purchaseMode,
+          couponId: selection.couponId,
+          userCouponId: selection.userCouponId,
+          pointAmount: selection.pointAmount,
+        ),
+      ),
+    );
+    if (mounted) _reload();
+  }
+
   @override
-  Widget build(BuildContext context) => AppScaffold(
-        showBrand: false,
-        title: '돈토 식권 구매',
-        subtitle: '원하는 식권 패키지를 고르고 키움페이에서 결제해요.',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            PartnerBannerSlot(
-              api: BannerApi(ApiClient(widget.session).bannerTransport),
-              placement: BannerPlacement.eventPage,
-              padding: const EdgeInsets.only(bottom: 18),
-              onCouponIssued: () {
-                final api = ApiClient(widget.session);
-                unawaited(Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) =>
-                        CouponWalletScreen(loadCoupons: api.getCoupons))));
-              },
-            ),
-            FutureBuilder<VoucherCatalog>(
-              future: _catalog,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const BrandPanel(
-                      children: [Center(child: CircularProgressIndicator())]);
-                }
-                if (snapshot.hasError) {
-                  return BrandPanel(children: [
-                    BrandNotice(
-                        text: snapshot.error.toString(),
-                        kind: NoticeKind.error),
-                    const SizedBox(height: 12),
-                    OutlinedButton(
-                        onPressed: _reload, child: const Text('다시 불러오기'))
-                  ]);
-                }
-                final catalog = snapshot.data ??
-                    const VoucherCatalog(
-                        purchaseMode: VoucherPurchaseMode.none, items: []);
-                if (catalog.purchaseMode == VoucherPurchaseMode.none) {
-                  return const BrandPanel(children: [
-                    Text('구매할 수 있는 식권 상품이 없어요.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.w900))
-                  ]);
-                }
-                if (catalog.items.isEmpty) {
-                  return const BrandPanel(children: [
-                    Text('현재 판매 중인 식권 상품이 없어요.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.w900))
-                  ]);
-                }
-                return Column(
-                    children: catalog.items
-                        .map((product) => VoucherProductCard(
-                            product: product,
-                            purchaseMode: catalog.purchaseMode,
-                            onBuy: () async {
-                              final api = ApiClient(widget.session);
-                              final selection = await Navigator.of(context)
-                                  .push<CheckoutSelection>(MaterialPageRoute(
-                                      builder: (_) => CheckoutOptionsScreen(
-                                            productId: product.id,
-                                            productName: product.name,
-                                            pointBalance: widget.pointBalance,
-                                            loadCoupons: api.getCoupons,
-                                            loadQuote: api.quoteVoucherOrder,
-                                            loadIssuedQuote:
-                                                api.quoteVoucherOrder,
-                                          )));
-                              if (selection == null || !context.mounted) return;
-                              final paid = await Navigator.of(context)
-                                  .push<bool>(MaterialPageRoute(
-                                      builder: (_) =>
-                                          VoucherKiwoomPaymentScreen(
-                                              session: widget.session,
-                                              product: product,
-                                              purchaseMode:
-                                                  catalog.purchaseMode,
-                                              couponId: selection.couponId,
-                                              userCouponId:
-                                                  selection.userCouponId,
-                                              pointAmount:
-                                                  selection.pointAmount)));
-                              if (paid == true && context.mounted) {
-                                Navigator.of(context).pop(true);
-                              }
-                            }))
-                        .toList());
-              },
-            ),
-          ],
+  Widget build(BuildContext context) => Theme(
+        data: Theme.of(context).copyWith(
+          scaffoldBackgroundColor: AppColors.bg,
+          textTheme: Theme.of(context).textTheme.apply(
+                fontFamily: 'Pretendard',
+                bodyColor: AppColors.fg,
+                displayColor: AppColors.fg,
+              ),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: AppColors.bg,
+            foregroundColor: AppColors.fg,
+            surfaceTintColor: AppColors.bg,
+          ),
+        ),
+        child: Scaffold(
+          backgroundColor: AppColors.bg,
+          appBar: AppBar(title: const Text('식권 구매')),
+          body: FutureBuilder<VoucherCatalog>(
+            future: _catalog,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(
+                    child: CircularProgressIndicator(color: AppColors.blue));
+              }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: DarkCard(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Text(snapshot.error.toString(),
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.caption),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                            onPressed: _reload, child: const Text('다시 불러오기')),
+                      ]),
+                    ),
+                  ),
+                );
+              }
+              final catalog = snapshot.data ??
+                  const VoucherCatalog(
+                      purchaseMode: VoucherPurchaseMode.none, items: []);
+              return VoucherCatalogList(
+                catalog: catalog,
+                onProduct: (product) => _openCheckout(catalog, product),
+              );
+            },
+          ),
         ),
       );
 }
 
+class VoucherCatalogList extends StatelessWidget {
+  const VoucherCatalogList({
+    super.key,
+    required this.catalog,
+    required this.onProduct,
+  });
+
+  final VoucherCatalog catalog;
+  final ValueChanged<VoucherProduct> onProduct;
+
+  @override
+  Widget build(BuildContext context) {
+    if (catalog.purchaseMode == VoucherPurchaseMode.none ||
+        catalog.items.isEmpty) {
+      return const Center(
+        child: Text('현재 구매할 수 있는 식권 상품이 없어요.', style: AppTextStyles.body),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: Text('${catalog.items.length}종', style: AppTextStyles.caption),
+        ),
+        const SizedBox(height: 18),
+        for (final product in catalog.items)
+          VoucherProductCard(
+            product: product,
+            purchaseMode: catalog.purchaseMode,
+            onBuy: () => onProduct(product),
+          ),
+      ],
+    );
+  }
+}
+
 Widget _productImage(String? imageUrl, IconData fallbackIcon) {
   Widget placeholder() => Container(
-        color: const Color(0xFFEAF7EC),
+        color: AppColors.cardHi,
         alignment: Alignment.center,
-        child: Icon(fallbackIcon, color: kOrange, size: 38),
+        child: Icon(fallbackIcon, color: AppColors.blueSoft, size: 38),
       );
   if (imageUrl?.trim().isEmpty ?? true) return placeholder();
   return Image.network(
@@ -3364,8 +3404,178 @@ Widget _productImage(String? imageUrl, IconData fallbackIcon) {
   );
 }
 
+String _voucherComposition(VoucherProduct product) =>
+    '${product.voucherCount}장${product.bonusCount > 0 ? ' + 보너스 ${product.bonusCount}장' : ''} · 총 ${product.totalCount}장';
+
+String _voucherInformation(VoucherProduct product) {
+  final info = <String>[
+    if (product.isEvent)
+      '이벤트${product.eventDday.isEmpty ? '' : ' ${product.eventDday}'}',
+    if (product.bonusCount > 0) '보너스 ${product.bonusCount}장',
+    if (product.discountRate > 0) '${product.discountRate.round()}% 할인',
+    if (product.kiwoomPayMethod == 'BANK') '계좌이체 전용',
+  ];
+  return info.isEmpty ? '기본 식권 상품' : info.join(' · ');
+}
+
+String _productPrice(
+        VoucherProduct product, VoucherPurchaseMode purchaseMode) =>
+    won(purchaseMode == VoucherPurchaseMode.subsidized
+        ? product.employeePayAmount ?? product.salePrice
+        : product.salePrice);
+
+String _voucherPurchaseMeta(VoucherProduct product) =>
+    '결제방법  ${product.kiwoomPayMethod == 'BANK' ? '계좌이체 전용' : '통합결제창'}'
+    '${product.bonusCount > 0 ? '  ·  보너스 ${product.bonusCount}장' : ''}';
+
 class VoucherProductCard extends StatelessWidget {
-  const VoucherProductCard({
+  const VoucherProductCard(
+      {super.key,
+      required this.product,
+      required this.purchaseMode,
+      required this.onBuy});
+
+  final VoucherProduct product;
+  final VoucherPurchaseMode purchaseMode;
+  final VoidCallback onBuy;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Material(
+          color: AppColors.bg,
+          child: InkWell(
+            onTap: onBuy,
+            borderRadius: BorderRadius.circular(22),
+            child: ClipPath(
+              clipper: const _VoucherProductTicketClipper(),
+              child: Container(
+                key: ValueKey('voucher-product-${product.id}'),
+                height: 154,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: product.isEvent
+                        ? const [Color(0xFF6948EF), Color(0xFF315DDB)]
+                        : const [Color(0xFF315DDB), Color(0xFF243B9D)],
+                  ),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Row(children: [
+                  SizedBox(
+                    width: 60,
+                    child: RotatedBox(
+                      quarterTurns: 3,
+                      child: Center(
+                        child: Text('TICKET',
+                            style: AppTextStyles.overline.copyWith(
+                                color: Colors.white70, letterSpacing: 2.8)),
+                      ),
+                    ),
+                  ),
+                  Container(width: 1, color: Colors.white24),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 14, 13),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            Expanded(
+                              child: Text('${product.totalCount}장 식권',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700)),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                  color: Colors.white24,
+                                  borderRadius: BorderRadius.circular(99)),
+                              child: const Text('구매하기  ›',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800)),
+                            ),
+                          ]),
+                          const SizedBox(height: 5),
+                          Text(_productPrice(product, purchaseMode),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 30,
+                                  height: 1,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -1)),
+                          const SizedBox(height: 5),
+                          Text(product.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800)),
+                          const Spacer(),
+                          Text(_voucherPurchaseMeta(product),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
+class _VoucherProductTicketClipper extends CustomClipper<Path> {
+  const _VoucherProductTicketClipper();
+
+  @override
+  Path getClip(Size size) {
+    const radius = 22.0;
+    const notch = 9.0;
+    const split = 60.0;
+    return Path()
+      ..moveTo(radius, 0)
+      ..lineTo(split - notch, 0)
+      ..arcToPoint(const Offset(split + notch, 0),
+          radius: const Radius.circular(notch), clockwise: false)
+      ..lineTo(size.width - radius, 0)
+      ..quadraticBezierTo(size.width, 0, size.width, radius)
+      ..lineTo(size.width, size.height - radius)
+      ..quadraticBezierTo(
+          size.width, size.height, size.width - radius, size.height)
+      ..lineTo(split + notch, size.height)
+      ..arcToPoint(Offset(split - notch, size.height),
+          radius: const Radius.circular(notch), clockwise: false)
+      ..lineTo(radius, size.height)
+      ..quadraticBezierTo(0, size.height, 0, size.height - radius)
+      ..lineTo(0, radius)
+      ..quadraticBezierTo(0, 0, radius, 0)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class VoucherProductDetailScreen extends StatelessWidget {
+  const VoucherProductDetailScreen({
     super.key,
     required this.product,
     required this.purchaseMode,
@@ -3374,117 +3584,232 @@ class VoucherProductCard extends StatelessWidget {
 
   final VoucherProduct product;
   final VoucherPurchaseMode purchaseMode;
-  final VoidCallback onBuy;
+  final Future<void> Function() onBuy;
 
   @override
   Widget build(BuildContext context) {
-    final hasDiscount = product.discountRate > 0 || product.saving > 0;
-    final subsidized = purchaseMode == VoucherPurchaseMode.subsidized;
-    final companyTotal = product.totalCompanySubsidyAmount;
-    final restaurantTotal = product.totalRestaurantSubsidyAmount;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
-      decoration: brandCardDecoration(radius: 24),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: AspectRatio(
-            aspectRatio: 1,
-            child: _productImage(
-                product.imageUrl, Icons.confirmation_number_outlined),
+    final amount = _productPrice(product, purchaseMode);
+    return Theme(
+      data: Theme.of(context).copyWith(
+        scaffoldBackgroundColor: AppColors.bg,
+        textTheme: Theme.of(context).textTheme.apply(
+              fontFamily: 'Pretendard',
+              bodyColor: AppColors.fg,
+              displayColor: AppColors.fg,
+            ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: AppColors.bg,
+          foregroundColor: AppColors.fg,
+          surfaceTintColor: AppColors.bg,
+        ),
+      ),
+      child: Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(title: const Text('상품 상세')),
+        extendBody: true,
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 150),
+          children: [
+            PhysicalShape(
+              key: const Key('product-detail-ticket'),
+              clipper: const TicketClipper(
+                  notchY: 460, cornerRadius: 22, notchRadius: 11),
+              color: AppColors.paper,
+              elevation: 0,
+              child: Column(children: [
+                SizedBox(
+                  width: double.infinity,
+                  height: 250,
+                  child: _productImage(
+                      product.imageUrl, Icons.confirmation_number_outlined),
+                ),
+                SizedBox(
+                  height: 210,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(product.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: AppColors.ink,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 8),
+                        Text(_voucherComposition(product),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: AppColors.ink,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600)),
+                        const Spacer(),
+                        Text(amount,
+                            style: const TextStyle(
+                                color: AppColors.ink,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(
+                    height: 2,
+                    child: CustomPaint(painter: DashedLinePainter())),
+                SizedBox(
+                  height: 76,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 18, 12),
+                    child: Row(children: [
+                      Expanded(
+                        child: Text(_voucherComposition(product),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: AppColors.ink,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700)),
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        constraints: const BoxConstraints(maxWidth: 124),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: AppColors.gold,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(_voucherInformation(product),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: AppColors.ink,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800)),
+                      ),
+                    ]),
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                border: Border.all(color: AppColors.line),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Column(children: [
+                _ProductInfoRow(
+                    label: '식권 구성', value: _voucherComposition(product)),
+                const Divider(height: 1, color: AppColors.line),
+                _ProductInfoRow(
+                    label: '정보', value: _voucherInformation(product)),
+                if (product.saving > 0) ...[
+                  const Divider(height: 1, color: AppColors.line),
+                  _ProductInfoRow(
+                      label: '상품 할인', value: '-${won(product.saving)}'),
+                ],
+                if ((product.totalCompanySubsidyAmount ?? 0) > 0) ...[
+                  const Divider(height: 1, color: AppColors.line),
+                  _ProductInfoRow(
+                      label: '회사 지원',
+                      value: won(product.totalCompanySubsidyAmount!)),
+                ] else if ((product.companySubsidyAmount ?? 0) > 0) ...[
+                  const Divider(height: 1, color: AppColors.line),
+                  _ProductInfoRow(
+                      label: '회사 지원(1장)',
+                      value: won(product.companySubsidyAmount!)),
+                ],
+                if ((product.totalRestaurantSubsidyAmount ?? 0) > 0) ...[
+                  const Divider(height: 1, color: AppColors.line),
+                  _ProductInfoRow(
+                      label: '식당 지원',
+                      value: won(product.totalRestaurantSubsidyAmount!)),
+                ] else if ((product.restaurantSubsidyAmount ?? 0) > 0) ...[
+                  const Divider(height: 1, color: AppColors.line),
+                  _ProductInfoRow(
+                      label: '식당 지원(1장)',
+                      value: won(product.restaurantSubsidyAmount!)),
+                ],
+              ]),
+            ),
+          ],
+        ),
+        bottomNavigationBar: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.bg.withValues(alpha: .96),
+                border: const Border(top: BorderSide(color: AppColors.line)),
+              ),
+              child: SafeArea(
+                minimum: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+                child: Row(children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('결제 금액', style: AppTextStyles.caption),
+                        const SizedBox(height: 2),
+                        Text(amount, style: AppTextStyles.cardTitle),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  SizedBox(
+                    width: 150,
+                    height: 56,
+                    child: FilledButton(
+                      key: const Key('detail-buy-button'),
+                      onPressed: onBuy,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.blue,
+                        foregroundColor: AppColors.fg,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: const Text('구매하기'),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 14),
-        Text(product.name,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 8),
-        Wrap(spacing: 6, runSpacing: 6, children: [
-          if (product.isEvent)
-            _PromoBadge(
-                text: '이벤트 · ${product.eventDday}',
-                icon: Icons.celebration_rounded),
-          if (hasDiscount)
-            _PromoBadge(
-                text: '${product.discountRate.round()}% 할인',
-                icon: Icons.local_offer_rounded),
-          if (product.bonusCount > 0)
-            _PromoBadge(
-                text: '${product.bonusCount}장 보너스',
-                icon: Icons.card_giftcard_rounded),
-          if (product.kiwoomPayMethod == 'BANK')
-            const _PromoBadge(
-                text: 'BANK · 계좌이체 전용', icon: Icons.account_balance_rounded),
-        ]),
-        const SizedBox(height: 10),
-        Text(
-            '${product.voucherCount}장${product.bonusCount > 0 ? ' + 보너스 ${product.bonusCount}장' : ''} · 총 ${product.totalCount}장 지급',
-            style: const TextStyle(
-                color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
-        const SizedBox(height: 8),
-        if (subsidized) ...[
-          Text('정상 판매가 ${won(product.salePrice)}',
-              style: const TextStyle(
-                  color: Color(0xFF5C7A66), fontWeight: FontWeight.w800)),
-          if (companyTotal != null)
-            Text('회사 총 지원 ${won(companyTotal)}',
-                style: const TextStyle(
-                    color: kCocoa, fontWeight: FontWeight.w800)),
-          if (restaurantTotal != null)
-            Text('식당 총 지원 ${won(restaurantTotal)}',
-                style: const TextStyle(
-                    color: kCocoa, fontWeight: FontWeight.w800)),
-          if (product.companySubsidyAmount != null ||
-              product.restaurantSubsidyAmount != null)
-            Text(
-                '1장당 회사 ${won(product.companySubsidyAmount)} · 식당 ${won(product.restaurantSubsidyAmount)}',
-                style: const TextStyle(
-                    color: Color(0xFF5C7A66),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Text('직원 부담 ${won(product.employeePayAmount)}',
-              style: const TextStyle(
-                  color: kOrange, fontSize: 28, fontWeight: FontWeight.w900)),
-        ] else ...[
-          if (hasDiscount)
-            Text(won(product.regularPrice),
-                style: const TextStyle(
-                    color: Color(0xFF879D8D),
-                    decoration: TextDecoration.lineThrough,
-                    fontWeight: FontWeight.w700)),
-          Text(won(product.salePrice),
-              style: const TextStyle(
-                  color: kOrange, fontSize: 28, fontWeight: FontWeight.w900)),
-          if (product.saving > 0)
-            Text('${won(product.saving)} 절약',
-                style: const TextStyle(
-                    color: kCocoa, fontWeight: FontWeight.w800)),
-        ],
-        const SizedBox(height: 14),
-        FilledButton(onPressed: onBuy, child: const Text('구매하기')),
-      ]),
+      ),
     );
   }
 }
 
-class _PromoBadge extends StatelessWidget {
-  const _PromoBadge({required this.text, required this.icon});
-  final String text;
-  final IconData icon;
+class _ProductInfoRow extends StatelessWidget {
+  const _ProductInfoRow({required this.label, required this.value});
+  final String label;
+  final String value;
+
   @override
-  Widget build(BuildContext context) => Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-          color: const Color(0xFFE7F8EE),
-          borderRadius: BorderRadius.circular(999)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, color: kMint, size: 14),
-        const SizedBox(width: 3),
-        Text(text,
-            style: const TextStyle(
-                color: kCocoa, fontSize: 11, fontWeight: FontWeight.w900))
-      ]));
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SizedBox(
+            width: 72,
+            child: Text(label, style: AppTextStyles.caption),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: AppTextStyles.body.copyWith(height: 1.35)),
+          ),
+        ]),
+      );
 }
 
 class VoucherKiwoomPaymentScreen extends StatefulWidget {

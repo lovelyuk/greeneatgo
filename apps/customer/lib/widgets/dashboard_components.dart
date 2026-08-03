@@ -19,6 +19,8 @@ class MealTicketCard extends StatelessWidget {
     required this.monthUsage,
     required this.onTapQr,
     this.onBuyTicket,
+    this.couponCountLabel = '-',
+    this.pointBalanceLabel = '-',
     this.state = TicketState.active,
   });
 
@@ -27,6 +29,8 @@ class MealTicketCard extends StatelessWidget {
   final String monthUsage;
   final VoidCallback onTapQr;
   final VoidCallback? onBuyTicket;
+  final String couponCountLabel;
+  final String pointBalanceLabel;
   final TicketState state;
 
   @override
@@ -37,7 +41,8 @@ class MealTicketCard extends StatelessWidget {
         remainingCountLabel == '-' ? '해당 없음' : '$remainingCountLabel장';
     return Semantics(
       container: true,
-      label: '남은 식권 $balanceSemantics, $caption, 이번 달 사용 $monthUsage',
+      label:
+          '남은 식권 $balanceSemantics, 보유 쿠폰 $couponCountLabel, 보유 포인트 $pointBalanceLabel, $caption, 이번 달 사용 $monthUsage',
       child: PhysicalShape(
         clipper: const TicketClipper(notchY: 145),
         color: paper,
@@ -62,75 +67,77 @@ class MealTicketCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('남은 식권', style: AppTextStyles.overline),
+                      const SizedBox(height: 2),
+                      Row(
+                        key: const ValueKey('ticket-balance-baseline'),
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            remainingCountLabel,
+                            key: const ValueKey('ticket-balance-number'),
+                            style: AppTextStyles.ticketNumber.copyWith(
+                              color: empty ? AppColors.fg2 : AppColors.ink,
+                              fontSize: 25,
+                              letterSpacing: -1.25,
+                            ),
+                          ),
+                          if (remainingCountLabel != '-') ...[
+                            const SizedBox(width: 3),
+                            Text(
+                              '장',
+                              key: const ValueKey('ticket-balance-unit'),
+                              style: TextStyle(
+                                color: empty ? AppColors.fg2 : AppColors.ink,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                height: 1,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                       const Spacer(),
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Expanded(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Row(
-                                key: const ValueKey('ticket-balance-baseline'),
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.baseline,
-                                textBaseline: TextBaseline.alphabetic,
-                                children: [
-                                  Text(
-                                    remainingCountLabel,
-                                    key:
-                                        const ValueKey('ticket-balance-number'),
-                                    style: AppTextStyles.ticketNumber.copyWith(
-                                      color:
-                                          empty ? AppColors.fg2 : AppColors.ink,
-                                    ),
+                            child: Row(
+                              children: [
+                                _TicketWalletMetric(
+                                  label: '보유 쿠폰',
+                                  value: couponCountLabel == '-'
+                                      ? '-'
+                                      : '$couponCountLabel장',
+                                  valueKey:
+                                      const ValueKey('ticket-coupon-count'),
+                                ),
+                                const SizedBox(
+                                  height: 34,
+                                  child: VerticalDivider(
+                                    width: 12,
+                                    color: AppColors.ticketLine,
                                   ),
-                                  if (remainingCountLabel != '-') ...[
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '장',
-                                      key:
-                                          const ValueKey('ticket-balance-unit'),
-                                      style: TextStyle(
-                                        color: empty
-                                            ? AppColors.fg2
-                                            : AppColors.ink,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w800,
-                                        height: 1,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
+                                ),
+                                _TicketWalletMetric(
+                                  label: '보유 포인트',
+                                  value: pointBalanceLabel,
+                                  valueKey:
+                                      const ValueKey('ticket-point-balance'),
+                                ),
+                              ],
                             ),
                           ),
                           if (onBuyTicket != null) ...[
-                            const SizedBox(width: 12),
-                            SizedBox(
-                              height: 48,
-                              child: FilledButton.icon(
-                                key: const ValueKey('buy-ticket-button'),
-                                onPressed: onBuyTicket,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: AppColors.ticketPurchase,
-                                  foregroundColor: AppColors.fg,
-                                  minimumSize: const Size(0, 48),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                icon: const Icon(Icons.shopping_cart_rounded,
-                                    size: 18),
-                                label: const Text(
-                                  '식권 구매',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800),
-                                ),
-                              ),
+                            const SizedBox(width: 10),
+                            _TicketActionButton(
+                              key: const ValueKey('buy-ticket-button'),
+                              onPressed: onBuyTicket!,
+                              backgroundColor: AppColors.ticketPurchase,
+                              foregroundColor: AppColors.fg,
+                              icon: Icons.shopping_cart_rounded,
+                              iconColor: AppColors.fg,
+                              label: '식권 구매',
                             ),
                           ],
                         ],
@@ -176,29 +183,14 @@ class MealTicketCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      SizedBox(
-                        height: 48,
-                        child: FilledButton.icon(
-                          key: const ValueKey('use-ticket-qr-button'),
-                          onPressed: onTapQr,
-                          style: FilledButton.styleFrom(
-                            backgroundColor:
-                                empty ? AppColors.fg2 : AppColors.ink,
-                            foregroundColor: AppColors.paper,
-                            minimumSize: const Size(0, 48),
-                            padding: const EdgeInsets.symmetric(horizontal: 13),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.qr_code_rounded,
-                              size: 18, color: AppColors.gold),
-                          label: const Text(
-                            'QR 사용하기',
-                            style: TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w800),
-                          ),
-                        ),
+                      _TicketActionButton(
+                        key: const ValueKey('use-ticket-qr-button'),
+                        onPressed: onTapQr,
+                        backgroundColor: empty ? AppColors.fg2 : AppColors.ink,
+                        foregroundColor: AppColors.paper,
+                        icon: Icons.qr_code_rounded,
+                        iconColor: AppColors.gold,
+                        label: 'QR 사용하기',
                       ),
                     ],
                   ),
@@ -210,6 +202,95 @@ class MealTicketCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TicketWalletMetric extends StatelessWidget {
+  const _TicketWalletMetric({
+    required this.label,
+    required this.value,
+    required this.valueKey,
+  });
+
+  final String label;
+  final String value;
+  final Key valueKey;
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.fg2,
+                fontSize: 10,
+              ),
+            ),
+            const SizedBox(height: 2),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                key: valueKey,
+                maxLines: 1,
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.ink,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _TicketActionButton extends StatelessWidget {
+  const _TicketActionButton({
+    super.key,
+    required this.onPressed,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+  });
+
+  final VoidCallback onPressed;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 140,
+        height: 48,
+        child: FilledButton.icon(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            backgroundColor: backgroundColor,
+            foregroundColor: foregroundColor,
+            minimumSize: const Size(140, 48),
+            maximumSize: const Size(140, 48),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          icon: Icon(icon, size: 18, color: iconColor),
+          label: Text(
+            label,
+            maxLines: 1,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+          ),
+        ),
+      );
 }
 
 /// Reusable ticket silhouette with opposing semicircular perforation notches.

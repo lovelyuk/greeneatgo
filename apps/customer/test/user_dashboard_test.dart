@@ -42,7 +42,9 @@ void main() {
       Future<void> Function()? onCoupons,
       Future<void> Function()? onEvents,
       DashboardPageBuilder? purchasePageBuilder,
-      DashboardPageBuilder? qrPageBuilder}) async {
+      DashboardPageBuilder? qrPageBuilder,
+      int? couponCount,
+      int? pointBalance}) async {
     await tester.binding.setSurfaceSize(const Size(360, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -67,6 +69,9 @@ void main() {
             todayMenuCard: const Card(child: Text('오늘의 뷔페 메뉴')),
             purchasePageBuilder: purchasePageBuilder,
             qrPageBuilder: qrPageBuilder,
+            couponCountFuture:
+                couponCount == null ? null : Future<int>.value(couponCount),
+            pointBalance: pointBalance,
           ),
         ),
       ),
@@ -121,6 +126,8 @@ void main() {
               padding: const EdgeInsets.symmetric(horizontal: 18),
               child: MealTicketCard(
                 remainingCountLabel: '100',
+                couponCountLabel: '3',
+                pointBalanceLabel: '1,200P',
                 caption: '보유 식권',
                 monthUsage: '12장 · 84,000원',
                 onTapQr: () {},
@@ -136,6 +143,10 @@ void main() {
     expect(find.text('100'), findsOneWidget);
     expect(find.text('장'), findsOneWidget);
     expect(find.text('12장 · 84,000원'), findsOneWidget);
+    expect(find.text('보유 쿠폰'), findsOneWidget);
+    expect(find.text('3장'), findsOneWidget);
+    expect(find.text('보유 포인트'), findsOneWidget);
+    expect(find.text('1,200P'), findsOneWidget);
     expect(find.text('식권 구매'), findsOneWidget);
     expect(find.text('QR 사용하기'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -150,13 +161,56 @@ void main() {
     final qr =
         tester.getRect(find.byKey(const ValueKey('use-ticket-qr-button')));
     final ticket = tester.getRect(find.byType(MealTicketCard));
+    final coupon =
+        tester.getRect(find.byKey(const ValueKey('ticket-coupon-count')));
+    final points =
+        tester.getRect(find.byKey(const ValueKey('ticket-point-balance')));
+    final numberWidget = tester
+        .widget<Text>(find.byKey(const ValueKey('ticket-balance-number')));
     expect((number.bottom - unit.bottom).abs(), lessThan(8));
-    expect(number.width, greaterThan(40));
-    expect(number.right, lessThan(buy.left));
+    expect(numberWidget.style?.fontSize, 25);
+    expect(number.top, lessThan(coupon.top));
+    expect(coupon.right, lessThan(points.left));
+    expect(buy.width, qr.width);
+    expect(buy.height, qr.height);
+    expect(buy.width, 140);
+    expect(buy.height, 48);
+    expect(buy.right, qr.right);
     expect(buy.right, lessThanOrEqualTo(ticket.right));
     expect(usage.width, greaterThan(100));
     expect(usage.right, lessThan(qr.left));
     expect(qr.right, lessThanOrEqualTo(ticket.right));
+  });
+
+  testWidgets('wallet values format points and keep nullable values as dashes',
+      (tester) async {
+    final voucherData = <String, dynamic>{
+      'display_name': '식권 사용자',
+      'role': 'customer',
+      'account_type': 'voucher',
+      'voucher_balance': 10,
+      'voucher_use_history': const [],
+    };
+    await pumpDashboard(tester,
+        data: voucherData, couponCount: 3, pointBalance: 1200);
+
+    expect(find.text('3장'), findsOneWidget);
+    expect(find.text('1,200P'), findsOneWidget);
+
+    await pumpDashboard(tester, data: voucherData);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('ticket-coupon-count')))
+          .data,
+      '-',
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('ticket-point-balance')))
+          .data,
+      '-',
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

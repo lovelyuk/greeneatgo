@@ -29,6 +29,8 @@ class UserDashboardShell extends StatefulWidget {
     this.partnerBanner,
     this.purchasePageBuilder,
     this.qrPageBuilder,
+    this.couponCountFuture,
+    this.pointBalance,
   });
 
   final Map<String, dynamic> data;
@@ -48,6 +50,8 @@ class UserDashboardShell extends StatefulWidget {
   final Widget? partnerBanner;
   final DashboardPageBuilder? purchasePageBuilder;
   final DashboardPageBuilder? qrPageBuilder;
+  final Future<int>? couponCountFuture;
+  final int? pointBalance;
 
   @override
   State<UserDashboardShell> createState() => _UserDashboardShellState();
@@ -116,6 +120,8 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
         data: widget.data,
         transactions: _transactions,
         pendingBanner: widget.pendingBanner,
+        couponCountFuture: widget.couponCountFuture,
+        pointBalance: widget.pointBalance,
         onScanQr: () => _openActionPage(
           2,
           widget.qrPageBuilder,
@@ -228,6 +234,8 @@ class _HomeTab extends StatelessWidget {
     required this.data,
     required this.transactions,
     required this.pendingBanner,
+    required this.couponCountFuture,
+    required this.pointBalance,
     required this.onScanQr,
     required this.onBuyVoucher,
     required this.onHistory,
@@ -244,6 +252,8 @@ class _HomeTab extends StatelessWidget {
   final Map<String, dynamic> data;
   final List<Map<String, dynamic>> transactions;
   final Widget? pendingBanner;
+  final Future<int>? couponCountFuture;
+  final int? pointBalance;
   final Widget? todayMenuCard;
   final Widget? partnerBanner;
   final AsyncAction onScanQr;
@@ -305,15 +315,25 @@ class _HomeTab extends StatelessWidget {
             pendingBanner!,
           ],
           const SizedBox(height: 16),
-          MealTicketCard(
-            remainingCountLabel: ticketLabel,
-            caption: ticketCaption,
-            monthUsage: monthUsage,
-            onTapQr: onScanQr,
-            onBuyTicket: isVoucher ? onBuyVoucher : null,
-            state: isVoucher && voucherBalance == 0
-                ? TicketState.empty
-                : TicketState.active,
+          FutureBuilder<int>(
+            future: couponCountFuture,
+            builder: (context, couponSnapshot) => MealTicketCard(
+              remainingCountLabel: ticketLabel,
+              couponCountLabel:
+                  couponSnapshot.connectionState == ConnectionState.done &&
+                          couponSnapshot.hasData
+                      ? '${couponSnapshot.data}'
+                      : '-',
+              pointBalanceLabel:
+                  pointBalance == null ? '-' : _points(pointBalance!),
+              caption: ticketCaption,
+              monthUsage: monthUsage,
+              onTapQr: onScanQr,
+              onBuyTicket: isVoucher ? onBuyVoucher : null,
+              state: isVoucher && voucherBalance == 0
+                  ? TicketState.empty
+                  : TicketState.active,
+            ),
           ),
           const SizedBox(height: 16),
           _HomeShortcuts(
@@ -860,6 +880,13 @@ String _won(int value) {
   final formatted =
       digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (match) => ',');
   return '${value < 0 ? '-' : ''}$formatted원';
+}
+
+String _points(int value) {
+  final digits = value.abs().toString();
+  final formatted =
+      digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (match) => ',');
+  return '${value < 0 ? '-' : ''}${formatted}P';
 }
 
 String _amountLabel(Map<String, dynamic> tx) {

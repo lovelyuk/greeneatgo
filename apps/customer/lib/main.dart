@@ -2463,6 +2463,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   PendingPaymentLoadResult? _pendingLoad;
   String? _lastOpenedPending;
   late Future<TodayMenu?> _todayMenuFuture;
+  late Future<int> _couponCountFuture;
 
   User get session => widget.session;
   Map<String, dynamic> get me => widget.me;
@@ -2473,16 +2474,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _todayMenuFuture = DailyMenuClient().getTodayMenu(defaultMerchantQrToken);
+    _couponCountFuture = _loadCouponCount();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_loadPendingPayment());
   }
 
   Future<void> _refreshHome() async {
     final menuFuture = DailyMenuClient().getTodayMenu(defaultMerchantQrToken);
-    setState(() => _todayMenuFuture = menuFuture);
+    final couponFuture = _loadCouponCount();
+    setState(() {
+      _todayMenuFuture = menuFuture;
+      _couponCountFuture = couponFuture;
+    });
     await Future.wait([
       widget.onRefresh(),
       _ignoreTodayMenuError(menuFuture),
+      _ignoreCouponError(couponFuture),
     ]);
   }
 
@@ -2494,12 +2501,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<int> _loadCouponCount() async =>
+      (await ApiClient(widget.session).getCoupons()).issued.length;
+
+  Future<void> _ignoreCouponError(Future<int> future) async {
+    try {
+      await future;
+    } catch (_) {
+      // The ticket card keeps rendering and shows a dash for coupon count.
+    }
+  }
+
+  Future<void> _reloadCoupons() async {
+    final future = _loadCouponCount();
+    if (!mounted) return;
+    setState(() => _couponCountFuture = future);
+    await _ignoreCouponError(future);
+  }
+
   @override
   void didUpdateWidget(HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session.uid != widget.session.uid) {
       _pendingLoad = null;
       _lastOpenedPending = null;
+      _couponCountFuture = _loadCouponCount();
       unawaited(_loadPendingPayment());
     }
   }
@@ -2565,13 +2591,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final isConsumer =
         me['account_type'] == 'voucher' || me['role'] == 'customer';
     final api = ApiClient(session);
-    void openCouponWallet() {
-      unawaited(Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => CouponWalletScreen(loadCoupons: api.getCoupons))));
+    Future<void> openCouponWallet() async {
+      await Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => CouponWalletScreen(loadCoupons: api.getCoupons)));
+      if (mounted) await _reloadCoupons();
     }
+
+    final rawPointBalance = me['point_balance'];
+    final pointBalance = rawPointBalance is num
+        ? rawPointBalance.round()
+        : int.tryParse('$rawPointBalance');
 
     return UserDashboardShell(
       data: me,
+      couponCountFuture: _couponCountFuture,
+      pointBalance: pointBalance,
       onRefresh: _refreshHome,
       todayMenuCard: FutureBuilder<TodayMenu?>(
         future: _todayMenuFuture,
@@ -2588,7 +2622,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         api: BannerApi(api.bannerTransport),
         placement: BannerPlacement.homeBottom,
         padding: const EdgeInsets.only(top: 24),
-        onCouponIssued: openCouponWallet,
+        onCouponIssued: () => unawaited(openCouponWallet()),
       ),
       pendingBanner: _pendingLoad == null
           ? null
@@ -2622,11 +2656,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         await _loadPendingPayment();
         await onRefresh();
       },
-      onCoupons: () async {
-        await Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => CouponWalletScreen(
-                loadCoupons: ApiClient(session).getCoupons)));
-      },
+      onCoupons: openCouponWallet,
       // Events reuse the authoritative voucher catalog but open with an
       // event-only view so the shortcut cannot be confused with general purchase.
       onEvents: () async {

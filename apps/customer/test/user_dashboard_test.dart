@@ -263,6 +263,10 @@ void main() {
     await tester.tap(find.text('내정보'));
     await tester.pumpAndSettle();
     expect(find.text('휴대폰 번호'), findsOneWidget);
+    expect(find.text('휴대폰'), findsOneWidget);
+    expect(find.text('계정 정보'), findsOneWidget);
+    expect(find.text('이메일'), findsNothing);
+    expect(find.textContaining('비밀번호'), findsNothing);
     expect(find.text('회사 장부'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

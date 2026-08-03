@@ -733,14 +733,14 @@ class _ProfileTab extends StatelessWidget {
         const SizedBox(height: 24),
         _SettingGroup(rows: [
           _SettingRow('휴대폰 번호', _text(data['phone'], fallback: '-')),
-          const _SettingRow('인증수단', '이메일'),
+          const _SettingRow('인증수단', '휴대폰'),
           _SettingRow(
               '결제수단', data['account_type'] == 'ledger' ? '회사 장부' : '식권'),
         ]),
         const SizedBox(height: 12),
         _SettingGroup(rows: [
           _SettingRow('결제 알림', '켜짐', onTap: onOpenSettings),
-          _SettingRow('계정 설정', '이름·비밀번호', onTap: onOpenSettings),
+          _SettingRow('계정 설정', '계정 정보', onTap: onOpenSettings),
         ]),
         const SizedBox(height: 12),
         _SettingGroup(rows: [

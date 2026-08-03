@@ -19,6 +19,8 @@ import 'data/banner_api.dart';
 import 'firebase_config.dart';
 import 'payment_completion.dart';
 import 'pending_payment.dart';
+import 'phone_auth.dart';
+import 'phone_login_screen.dart' as phone_login;
 import 'push_notifications.dart';
 import 'screens/coupon_wallet.dart';
 import 'screens/user_dashboard_shell.dart';
@@ -195,23 +197,23 @@ class ApiClient {
 
   Future<String> _freshIdToken() async {
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null || !currentUser.emailVerified) {
+    if (!_isUsableCustomerSession(currentUser)) {
       throw const ApiException(statusCode: 401, message: '로그인이 필요해요.');
     }
-    if (user != null && user!.uid != currentUser.uid) {
+    final authenticatedUser = currentUser!;
+    if (user != null && user!.uid != authenticatedUser.uid) {
       throw const ApiException(
           statusCode: 401, message: '계정이 변경됐어요. 다시 시도해 주세요.');
     }
-    final token = await currentUser.getIdToken();
+    final token = await authenticatedUser.getIdToken();
     if (token == null || token.isEmpty) {
       throw const ApiException(
           statusCode: 401, message: '로그인 정보를 확인할 수 없어요. 다시 로그인해 주세요.');
     }
     final latestUser = FirebaseAuth.instance.currentUser;
-    if (latestUser == null ||
-        !latestUser.emailVerified ||
-        (user != null && latestUser.uid != user!.uid) ||
-        latestUser.uid != currentUser.uid) {
+    if (!_isUsableCustomerSession(latestUser) ||
+        (user != null && latestUser!.uid != user!.uid) ||
+        latestUser!.uid != authenticatedUser.uid) {
       throw const ApiException(
           statusCode: 401, message: '계정이 변경됐어요. 다시 시도해 주세요.');
     }
@@ -678,6 +680,13 @@ String displayMerchantName(String? name) {
   return value;
 }
 
+// Phone custom-token users have no email. Keep requiring verification for any
+// legacy persisted email session while allowing backend-verified phone users.
+bool _isUsableCustomerSession(User? user) =>
+    user != null &&
+    (user.emailVerified ||
+        (user.email == null && RegExp(r'^phone_010[0-9]{8}$').hasMatch(user.uid)));
+
 List<Map<String, dynamic>> mapList(dynamic value) {
   if (value is! List) return <Map<String, dynamic>>[];
   return value
@@ -694,6 +703,7 @@ class AppGate extends StatefulWidget {
 }
 
 class _AppGateState extends State<AppGate> {
+  late final HttpPhoneAuthGateway _phoneAuthGateway;
   User? _session;
   Map<String, dynamic>? _me;
   bool _loading = true;
@@ -706,22 +716,19 @@ class _AppGateState extends State<AppGate> {
   @override
   void initState() {
     super.initState();
+    _phoneAuthGateway = HttpPhoneAuthGateway(baseUrl: apiBaseUrl);
     if (!hasCompleteFirebaseOptions || apiBaseUrl.isEmpty) {
       _error = '앱 환경값이 누락됐어요. Firebase 클라이언트 설정과 API_BASE_URL을 확인해 주세요.';
       _loading = false;
       return;
     }
     final initialUser = FirebaseAuth.instance.currentUser;
-    _session = initialUser?.emailVerified == true ? initialUser : null;
+    _session = _isUsableCustomerSession(initialUser) ? initialUser : null;
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
       if (!mounted) return;
-      // An unverified identity may briefly exist while sign-up sends its
-      // verification email. Withhold it instead of racing sign-up by signing
-      // it out from this global listener.
-      final verifiedUser = user?.emailVerified == true ? user : null;
       _loadGeneration++;
       setState(() {
-        _session = verifiedUser;
+        _session = _isUsableCustomerSession(user) ? user : null;
         _me = null;
         _error = null;
       });
@@ -750,6 +757,7 @@ class _AppGateState extends State<AppGate> {
   @override
   void dispose() {
     _loadGeneration++;
+    _phoneAuthGateway.close();
     _authSubscription?.cancel();
     _foregroundMessageSubscription?.cancel();
     _openedMessageSubscription?.cancel();
@@ -803,7 +811,7 @@ class _AppGateState extends State<AppGate> {
         generation == _loadGeneration &&
         _session?.uid == uid &&
         firebaseUser?.uid == uid &&
-        firebaseUser?.emailVerified == true;
+        _isUsableCustomerSession(firebaseUser);
   }
 
   Future<void> _signOut() async {
@@ -829,7 +837,17 @@ class _AppGateState extends State<AppGate> {
     if (_error != null && _session == null) {
       return ErrorScreen(message: _error!);
     }
-    if (_session == null) return LoginScreen(onLoggedIn: _loadMe);
+    if (_session == null) {
+      return phone_login.PhoneLoginScreen(
+        gateway: _phoneAuthGateway,
+        signInWithCustomToken: (token) async {
+          await FirebaseAuth.instance.signInWithCustomToken(token);
+        },
+        onLoggedIn: _loadMe,
+        openLegalDocument: (filename) => openLegalDocument(context, filename),
+        brandHeader: const BrandTitle(height: 72, alignment: Alignment.center),
+      );
+    }
     if (_error != null) {
       return ErrorScreen(
           message: _error!, onRetry: _loadMe, onSignOut: _signOut);
@@ -1527,58 +1545,6 @@ class AccountSettingsScreen extends StatefulWidget {
 }
 
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
-  final _currentPassword = TextEditingController();
-  final _password = TextEditingController();
-  final _passwordConfirm = TextEditingController();
-  bool _savingPassword = false;
-  bool _hidePassword = true;
-
-  @override
-  void dispose() {
-    _currentPassword.dispose();
-    _password.dispose();
-    _passwordConfirm.dispose();
-    super.dispose();
-  }
-
-  void _message(String text, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(text),
-        backgroundColor: error ? Colors.red.shade700 : kCocoa));
-  }
-
-  Future<void> _savePassword() async {
-    if (_currentPassword.text.isEmpty) {
-      return _message('현재 비밀번호를 입력해 주세요.', error: true);
-    }
-    if (_password.text.length < 6) {
-      return _message('새 비밀번호는 6자 이상 입력해 주세요.', error: true);
-    }
-    if (_password.text != _passwordConfirm.text) {
-      return _message('새 비밀번호가 서로 일치하지 않아요.', error: true);
-    }
-    setState(() => _savingPassword = true);
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      final email = user?.email;
-      if (user == null || email == null) {
-        throw FirebaseAuthException(code: 'requires-recent-login');
-      }
-      final credential = EmailAuthProvider.credential(
-          email: email, password: _currentPassword.text);
-      await user.reauthenticateWithCredential(credential);
-      await user.updatePassword(_password.text);
-      _currentPassword.clear();
-      _password.clear();
-      _passwordConfirm.clear();
-      if (mounted) _message('비밀번호를 안전하게 변경했어요.');
-    } catch (error) {
-      if (mounted) _message(friendlyFirebaseAuthError(error), error: true);
-    } finally {
-      if (mounted) setState(() => _savingPassword = false);
-    }
-  }
-
   String get _roleLabel => switch (widget.me['role']) {
         'employee' => '임직원',
         'customer' => '일반 고객',
@@ -1598,15 +1564,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
           const SizedBox(height: 12),
           ListTile(
-              leading: const Icon(Icons.email_outlined),
-              title: const Text('이메일'),
-              subtitle: Text(widget.me['email'] as String? ??
-                  widget.session.email ??
-                  '-')),
-          ListTile(
               leading: const Icon(Icons.phone_outlined),
               title: const Text('연락처'),
               subtitle: Text(widget.me['phone'] as String? ?? '-')),
+          const ListTile(
+              leading: Icon(Icons.sms_outlined),
+              title: Text('인증수단'),
+              subtitle: Text('휴대폰 문자 인증')),
           ListTile(
               leading: const Icon(Icons.badge_outlined),
               title: const Text('계정 유형'),
@@ -1646,38 +1610,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               title: const Text('개인정보 처리방침'),
               trailing: const Icon(Icons.open_in_new),
               onTap: () => openLegalDocument(context, 'privacy.html')),
-          const Divider(height: 40),
-          const Text('비밀번호 변경',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-          const Padding(
-              padding: EdgeInsets.only(top: 6, bottom: 12),
-              child: Text('보안을 위해 현재 비밀번호로 다시 인증한 뒤 변경합니다.',
-                  style: TextStyle(color: Color(0xFF5C7A66)))),
-          TextField(
-              controller: _currentPassword,
-              obscureText: _hidePassword,
-              decoration: const InputDecoration(labelText: '현재 비밀번호')),
-          const SizedBox(height: 12),
-          TextField(
-              controller: _password,
-              obscureText: _hidePassword,
-              decoration: InputDecoration(
-                  labelText: '새 비밀번호 (6자 이상)',
-                  suffixIcon: IconButton(
-                      onPressed: () =>
-                          setState(() => _hidePassword = !_hidePassword),
-                      icon: Icon(_hidePassword
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined)))),
-          const SizedBox(height: 12),
-          TextField(
-              controller: _passwordConfirm,
-              obscureText: _hidePassword,
-              decoration: const InputDecoration(labelText: '새 비밀번호 확인')),
-          const SizedBox(height: 16),
-          FilledButton(
-              onPressed: _savingPassword ? null : _savePassword,
-              child: Text(_savingPassword ? '변경 중...' : '비밀번호 변경')),
           const SizedBox(height: 28),
           OutlinedButton.icon(
               onPressed: () async {

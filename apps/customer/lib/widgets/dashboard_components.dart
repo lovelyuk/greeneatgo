@@ -70,6 +70,7 @@ class MealTicketCard extends StatelessWidget {
                               alignment: Alignment.centerLeft,
                               child: Row(
                                 key: const ValueKey('ticket-balance-baseline'),
+                                mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.baseline,
                                 textBaseline: TextBaseline.alphabetic,
                                 children: [
@@ -112,6 +113,7 @@ class MealTicketCard extends StatelessWidget {
                                 style: FilledButton.styleFrom(
                                   backgroundColor: AppColors.ticketPurchase,
                                   foregroundColor: Colors.white,
+                                  minimumSize: const Size(0, 48),
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 14),
                                   shape: RoundedRectangleBorder(
@@ -181,6 +183,7 @@ class MealTicketCard extends StatelessWidget {
                             backgroundColor:
                                 empty ? AppColors.fg2 : AppColors.ink,
                             foregroundColor: AppColors.paper,
+                            minimumSize: const Size(0, 48),
                             padding: const EdgeInsets.symmetric(horizontal: 13),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),

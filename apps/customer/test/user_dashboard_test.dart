@@ -3,6 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:greeneatgo_customer/screens/user_dashboard_shell.dart';
 import 'package:greeneatgo_customer/widgets/dashboard_components.dart';
 
+ThemeData _appButtonTheme() => ThemeData(
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(54),
+        ),
+      ),
+    );
+
 void main() {
   final fixture = <String, dynamic>{
     'display_name': '이용욱',
@@ -33,6 +41,7 @@ void main() {
       MediaQuery(
         data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
         child: MaterialApp(
+          theme: _appButtonTheme(),
           home: UserDashboardShell(
             data: data ?? fixture,
             onRefresh: () async {},
@@ -74,6 +83,11 @@ void main() {
     expect(ticket.left, 18);
     expect(ticket.right, 342);
     expect(ticket.height, 226);
+    final usageLabel = tester.getRect(find.text('이번 달 사용'));
+    final qrButton =
+        tester.getRect(find.byKey(const ValueKey('use-ticket-qr-button')));
+    expect(usageLabel.width, greaterThan(50));
+    expect(qrButton.right, lessThanOrEqualTo(ticket.right));
   });
 
   testWidgets(
@@ -85,6 +99,7 @@ void main() {
       MediaQuery(
         data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
         child: MaterialApp(
+          theme: _appButtonTheme(),
           home: Scaffold(
             body: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -118,9 +133,14 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('ticket-month-usage')));
     final qr =
         tester.getRect(find.byKey(const ValueKey('use-ticket-qr-button')));
+    final ticket = tester.getRect(find.byType(MealTicketCard));
     expect((number.bottom - unit.bottom).abs(), lessThan(8));
+    expect(number.width, greaterThan(40));
     expect(number.right, lessThan(buy.left));
+    expect(buy.right, lessThanOrEqualTo(ticket.right));
+    expect(usage.width, greaterThan(100));
     expect(usage.right, lessThan(qr.left));
+    expect(qr.right, lessThanOrEqualTo(ticket.right));
   });
 
   testWidgets(

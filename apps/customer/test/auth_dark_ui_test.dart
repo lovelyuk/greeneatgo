@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,6 +46,22 @@ void _setSurface(WidgetTester tester, Size size) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+double _expectedLoginScale(double safeHeight, {double textScale = 1}) {
+  final baseScale = (safeHeight / 720 * 1.5).clamp(1.0, 1.5);
+  return (baseScale / math.sqrt(math.max(1, textScale))).clamp(1.0, 1.5);
+}
+
+Future<void> _settleLoginLogo(WidgetTester tester) async {
+  final context = tester.element(find.byKey(const Key('phone-login-screen')));
+  await tester.runAsync(
+    () => precacheImage(
+      const AssetImage('assets/brand/greeneat_logo_light.png'),
+      context,
+    ),
+  );
+  await tester.pump();
+}
+
 void main() {
   setUpAll(() async {
     final pretendard = FontLoader('Pretendard')
@@ -56,7 +74,12 @@ void main() {
     await Future.wait([pretendard.load(), materialIcons.load()]);
   });
 
-  for (final size in const [Size(360, 640), Size(430, 932)]) {
+  for (final size in const [
+    Size(320, 568),
+    Size(360, 640),
+    Size(375, 667),
+    Size(430, 932),
+  ]) {
     testWidgets(
         'splash has exact dark geometry at ${size.width.toInt()}x${size.height.toInt()}',
         (tester) async {
@@ -100,14 +123,72 @@ void main() {
         (tester) async {
       _setSurface(tester, size);
       await tester.pumpWidget(_phoneHarness(textScale: 1.3));
+      await _settleLoginLogo(tester);
 
       final scaffold =
           tester.widget<Scaffold>(find.byKey(const Key('phone-login-screen')));
       expect(scaffold.backgroundColor, AppColors.navyBase);
-      expect(tester.getSize(find.byKey(const Key('login-logo'))).width, 78);
+      final scale = _expectedLoginScale(size.height, textScale: 1.3);
+      final contentRect =
+          tester.getRect(find.byKey(const Key('login-content-block')));
+      final legalRect =
+          tester.getRect(find.byKey(const Key('login-legal-area')));
+
+      expect(contentRect.left, 26);
+      expect(contentRect.right, size.width - 26);
+      expect(contentRect.bottom, lessThanOrEqualTo(legalRect.top));
+      expect(legalRect.bottom, closeTo(size.height, 0.001));
+      expect(contentRect.center.dy / size.height, inInclusiveRange(0.40, 0.45));
+
+      expect(tester.getSize(find.byKey(const Key('login-logo'))).width,
+          closeTo(78 * scale, 0.001));
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('login-headline')))
+            .style!
+            .fontSize,
+        closeTo(21 * scale, 0.001),
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('login-auxiliary-text')))
+            .style!
+            .fontSize,
+        closeTo(13 * scale, 0.001),
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('login-field-label')))
+            .style!
+            .fontSize,
+        closeTo(12 * scale, 0.001),
+      );
+      final phoneField =
+          tester.widget<TextField>(find.byKey(const Key('phone-input')));
+      expect(phoneField.style!.fontSize, closeTo(19 * scale, 0.001));
+      expect(phoneField.decoration!.hintStyle!.fontSize,
+          closeTo(19 * scale, 0.001));
+      expect((phoneField.decoration!.prefixIcon! as Icon).size,
+          closeTo(17 * scale, 0.001));
+      expect(phoneField.decoration!.prefixIconConstraints!.minWidth,
+          closeTo(29 * scale, 0.001));
+      expect(phoneField.decoration!.prefixIconConstraints!.minHeight,
+          closeTo(44 * scale, 0.001));
+      expect(
+        (phoneField.decoration!.contentPadding! as EdgeInsets).vertical,
+        closeTo(24 * scale, 0.001),
+      );
       expect(find.text('휴대폰 번호로\n간편하게 시작하세요'), findsOneWidget);
       final button = tester
           .widget<FilledButton>(find.byKey(const Key('phone-auth-primary')));
+      expect(tester.getSize(find.byKey(const Key('phone-auth-primary'))).height,
+          closeTo(52 * scale, 0.001));
+      expect(button.style!.textStyle!.resolve({})!.fontSize,
+          closeTo(16 * scale, 0.001));
+      final buttonShape =
+          button.style!.shape!.resolve({})! as RoundedRectangleBorder;
+      expect(buttonShape.borderRadius,
+          BorderRadius.all(Radius.circular(12 * scale)));
       expect(button.onPressed, isNull);
       expect(button.style!.backgroundColor!.resolve({WidgetState.disabled}),
           AppColors.navyBorder);
@@ -156,6 +237,13 @@ void main() {
   testWidgets('production phone widget golden at 430x932', (tester) async {
     _setSurface(tester, const Size(430, 932));
     await tester.pumpWidget(_phoneHarness());
+    await _settleLoginLogo(tester);
+    final contentRect =
+        tester.getRect(find.byKey(const Key('login-content-block')));
+    final legalRect = tester.getRect(find.byKey(const Key('login-legal-area')));
+    expect(contentRect.bottom, lessThanOrEqualTo(legalRect.top));
+    expect(legalRect.bottom, 932);
+    expect(contentRect.center.dy / 932, inInclusiveRange(0.40, 0.45));
     await expectLater(
       find.byKey(const Key('phone-login-screen')),
       matchesGoldenFile('goldens/dark_phone_login_430x932.png'),

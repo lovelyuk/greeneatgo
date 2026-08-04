@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -470,258 +471,301 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
         backgroundColor: AppColors.navyBase,
         body: SafeArea(
           child: LayoutBuilder(
-            builder: (context, constraints) => SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(22, 44, 22, 26),
-              child: ConstrainedBox(
-                constraints:
-                    BoxConstraints(minHeight: constraints.maxHeight - 70),
-                child: IntrinsicHeight(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Image.asset(
-                          'assets/brand/greeneat_logo_light.png',
-                          key: const Key('login-logo'),
-                          width: 78,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                      Text(
-                        isPhoneStep ? '휴대폰 번호로\n간편하게 시작하세요' : '인증번호를\n입력해 주세요',
-                        key: const Key('login-headline'),
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 21,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: -0.4,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        isPhoneStep
-                            ? '번호만 있으면 바로 식권을 쓸 수 있어요'
-                            : '${_phone.text}로 인증번호를 보냈어요',
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                          height: 1.6,
-                        ),
-                      ),
-                      const SizedBox(height: 30),
-                      if (!isPhoneStep) ...[
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '휴대폰 ${_phone.text}',
-                                style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
+            builder: (context, constraints) {
+              final baseScale =
+                  (constraints.maxHeight / 720 * 1.5).clamp(1.0, 1.5);
+              final systemTextScale = math.max(
+                1.0,
+                MediaQuery.textScalerOf(context).scale(16) / 16,
+              );
+              final scale =
+                  (baseScale / math.sqrt(systemTextScale)).clamp(1.0, 1.5);
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 26),
+                child: SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
+                    child: IntrinsicHeight(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Spacer(flex: 4),
+                          Column(
+                            key: const Key('login-content-block'),
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Image.asset(
+                                  'assets/brand/greeneat_logo_light.png',
+                                  key: const Key('login-logo'),
+                                  width: 78 * scale,
+                                  height: 78 * scale * 383 / 430,
+                                  fit: BoxFit.contain,
                                 ),
                               ),
-                            ),
-                            TextButton(
-                              key: const Key('change-phone-button'),
-                              onPressed: _busy ? null : _changePhone,
-                              style: TextButton.styleFrom(
-                                foregroundColor: AppColors.textLink,
-                                disabledForegroundColor:
-                                    AppColors.textPlaceholder,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
-                                minimumSize: const Size(0, 32),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              SizedBox(height: 28 * scale),
+                              Text(
+                                isPhoneStep
+                                    ? '휴대폰 번호로\n간편하게 시작하세요'
+                                    : '인증번호를\n입력해 주세요',
+                                key: const Key('login-headline'),
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 21 * scale,
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: -0.4,
+                                  height: 1.4,
+                                ),
                               ),
-                              child: const Text('번호 변경'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                      Text(
-                        isPhoneStep ? '휴대폰 번호' : '인증번호 6자리',
-                        style: const TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        key: Key(isPhoneStep ? 'phone-input' : 'otp-input'),
-                        controller: isPhoneStep ? _phone : _code,
-                        keyboardType: isPhoneStep
-                            ? TextInputType.phone
-                            : TextInputType.number,
-                        textInputAction: TextInputAction.done,
-                        autofillHints: isPhoneStep
-                            ? const [AutofillHints.telephoneNumber]
-                            : const [AutofillHints.oneTimeCode],
-                        inputFormatters: isPhoneStep
-                            ? [LengthLimitingTextInputFormatter(13)]
-                            : [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(6),
+                              SizedBox(height: 6 * scale),
+                              Text(
+                                isPhoneStep
+                                    ? '번호만 있으면 바로 식권을 쓸 수 있어요'
+                                    : '${_phone.text}로 인증번호를 보냈어요',
+                                key: const Key('login-auxiliary-text'),
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 13 * scale,
+                                  height: 1.6,
+                                ),
+                              ),
+                              SizedBox(height: 30 * scale),
+                              if (!isPhoneStep) ...[
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '휴대폰 ${_phone.text}',
+                                        style: TextStyle(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 12 * scale,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    TextButton(
+                                      key: const Key('change-phone-button'),
+                                      onPressed: _busy ? null : _changePhone,
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: AppColors.textLink,
+                                        disabledForegroundColor:
+                                            AppColors.textPlaceholder,
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 4 * scale),
+                                        minimumSize: Size(0, 32 * scale),
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                      child: const Text('번호 변경'),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: 8 * scale),
                               ],
-                        onChanged: (_) => setState(() {}),
-                        onSubmitted: (_) {
-                          if (canSubmit) _submitCurrentStep();
-                        },
-                        cursorColor: AppColors.limeGreen,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 19,
-                        ),
-                        decoration: InputDecoration(
-                          filled: false,
-                          isDense: true,
-                          hintText: isPhoneStep ? '010 0000 0000' : '000000',
-                          hintStyle: const TextStyle(
-                            color: AppColors.textPlaceholder,
-                            fontSize: 19,
+                              Text(
+                                isPhoneStep ? '휴대폰 번호' : '인증번호 6자리',
+                                key: const Key('login-field-label'),
+                                style: TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 12 * scale,
+                                ),
+                              ),
+                              SizedBox(height: 8 * scale),
+                              TextField(
+                                key: Key(
+                                    isPhoneStep ? 'phone-input' : 'otp-input'),
+                                controller: isPhoneStep ? _phone : _code,
+                                keyboardType: isPhoneStep
+                                    ? TextInputType.phone
+                                    : TextInputType.number,
+                                textInputAction: TextInputAction.done,
+                                autofillHints: isPhoneStep
+                                    ? const [AutofillHints.telephoneNumber]
+                                    : const [AutofillHints.oneTimeCode],
+                                inputFormatters: isPhoneStep
+                                    ? [LengthLimitingTextInputFormatter(13)]
+                                    : [
+                                        FilteringTextInputFormatter.digitsOnly,
+                                        LengthLimitingTextInputFormatter(6),
+                                      ],
+                                onChanged: (_) => setState(() {}),
+                                onSubmitted: (_) {
+                                  if (canSubmit) _submitCurrentStep();
+                                },
+                                cursorColor: AppColors.limeGreen,
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 19 * scale,
+                                ),
+                                decoration: InputDecoration(
+                                  filled: false,
+                                  isDense: true,
+                                  hintText:
+                                      isPhoneStep ? '010 0000 0000' : '000000',
+                                  hintStyle: TextStyle(
+                                    color: AppColors.textPlaceholder,
+                                    fontSize: 19 * scale,
+                                  ),
+                                  prefixIcon: Icon(
+                                    isPhoneStep
+                                        ? Icons.phone_outlined
+                                        : Icons.sms_outlined,
+                                    color: AppColors.textPlaceholder,
+                                    size: 17 * scale,
+                                  ),
+                                  prefixIconConstraints: BoxConstraints(
+                                    minWidth: 29 * scale,
+                                    minHeight: 44 * scale,
+                                  ),
+                                  contentPadding: EdgeInsets.symmetric(
+                                      vertical: 12 * scale),
+                                  enabledBorder: const UnderlineInputBorder(
+                                    borderSide:
+                                        BorderSide(color: AppColors.navyBorder),
+                                  ),
+                                  focusedBorder: const UnderlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: AppColors.limeGreen,
+                                      width: 2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (_error != null)
+                                Padding(
+                                  padding: EdgeInsets.only(top: 10 * scale),
+                                  child: Text(
+                                    _error!,
+                                    key: const Key('phone-auth-error'),
+                                    style: TextStyle(
+                                      color: const Color(0xFFFF8D8D),
+                                      fontSize: 13 * scale,
+                                      height: 1.4,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              if (_info != null)
+                                Padding(
+                                  padding: EdgeInsets.only(top: 10 * scale),
+                                  child: Text(
+                                    _info!,
+                                    key: const Key('phone-auth-info'),
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 13 * scale,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              SizedBox(height: 26 * scale),
+                              SizedBox(
+                                height: 52 * scale,
+                                child: FilledButton(
+                                  key: const Key('phone-auth-primary'),
+                                  onPressed:
+                                      canSubmit ? _submitCurrentStep : null,
+                                  style: FilledButton.styleFrom(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 22 * scale),
+                                    backgroundColor: AppColors.limeGreen,
+                                    foregroundColor: AppColors.textOnLime,
+                                    disabledBackgroundColor:
+                                        AppColors.navyBorder,
+                                    disabledForegroundColor:
+                                        AppColors.textPlaceholder,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(12 * scale),
+                                    ),
+                                    textStyle: TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 16 * scale,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _busy
+                                        ? '처리 중...'
+                                        : isPhoneStep
+                                            ? (_resendSeconds > 0
+                                                ? '$_resendSeconds초 후 다시 시도'
+                                                : '인증번호 받기')
+                                            : '인증하고 시작하기',
+                                  ),
+                                ),
+                              ),
+                              if (!isPhoneStep) ...[
+                                SizedBox(height: 8 * scale),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    key: const Key('resend-button'),
+                                    onPressed: _busy || _resendSeconds > 0
+                                        ? null
+                                        : () =>
+                                            unawaited(_sendCode(resend: true)),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: AppColors.textLink,
+                                      disabledForegroundColor:
+                                          AppColors.textPlaceholder,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 4),
+                                    ),
+                                    child: Text(
+                                      _resendSeconds > 0
+                                          ? '인증번호 다시 받기 ($_resendSeconds초)'
+                                          : '인증번호 다시 받기',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                          prefixIcon: Icon(
-                            isPhoneStep
-                                ? Icons.phone_outlined
-                                : Icons.sms_outlined,
-                            color: AppColors.textPlaceholder,
-                            size: 17,
-                          ),
-                          prefixIconConstraints: const BoxConstraints(
-                            minWidth: 29,
-                            minHeight: 44,
-                          ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(vertical: 12),
-                          enabledBorder: const UnderlineInputBorder(
-                            borderSide: BorderSide(color: AppColors.navyBorder),
-                          ),
-                          focusedBorder: const UnderlineInputBorder(
-                            borderSide: BorderSide(
-                              color: AppColors.limeGreen,
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (_error != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 10),
-                          child: Text(
-                            _error!,
-                            key: const Key('phone-auth-error'),
-                            style: const TextStyle(
-                              color: Color(0xFFFF8D8D),
-                              fontSize: 13,
-                              height: 1.4,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      if (_info != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 10),
-                          child: Text(
-                            _info!,
-                            key: const Key('phone-auth-info'),
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
-                      const SizedBox(height: 26),
-                      SizedBox(
-                        height: 52,
-                        child: FilledButton(
-                          key: const Key('phone-auth-primary'),
-                          onPressed: canSubmit ? _submitCurrentStep : null,
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 22),
-                            backgroundColor: AppColors.limeGreen,
-                            foregroundColor: AppColors.textOnLime,
-                            disabledBackgroundColor: AppColors.navyBorder,
-                            disabledForegroundColor: AppColors.textPlaceholder,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            textStyle: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          child: Text(
-                            _busy
-                                ? '처리 중...'
-                                : isPhoneStep
-                                    ? (_resendSeconds > 0
-                                        ? '$_resendSeconds초 후 다시 시도'
-                                        : '인증번호 받기')
-                                    : '인증하고 시작하기',
-                          ),
-                        ),
-                      ),
-                      if (!isPhoneStep) ...[
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            key: const Key('resend-button'),
-                            onPressed: _busy || _resendSeconds > 0
-                                ? null
-                                : () => unawaited(_sendCode(resend: true)),
-                            style: TextButton.styleFrom(
-                              foregroundColor: AppColors.textLink,
-                              disabledForegroundColor:
-                                  AppColors.textPlaceholder,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 4),
-                            ),
-                            child: Text(
-                              _resendSeconds > 0
-                                  ? '인증번호 다시 받기 ($_resendSeconds초)'
-                                  : '인증번호 다시 받기',
-                            ),
-                          ),
-                        ),
-                      ],
-                      const Spacer(),
-                      const Text(
-                        '가입하면 이용약관과 개인정보 처리방침에\n동의한 것으로 봅니다.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.6,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _LegalLink(
-                            label: '이용약관',
-                            onTap: () => widget.openLegalDocument('terms.html'),
-                          ),
-                          const SizedBox(width: 16),
-                          _LegalLink(
-                            label: '개인정보 처리방침',
-                            onTap: () =>
-                                widget.openLegalDocument('privacy.html'),
+                          const Spacer(flex: 5),
+                          Column(
+                            key: const Key('login-legal-area'),
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                '가입하면 이용약관과 개인정보 처리방침에\n동의한 것으로 봅니다.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  height: 1.6,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _LegalLink(
+                                    label: '이용약관',
+                                    onTap: () =>
+                                        widget.openLegalDocument('terms.html'),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  _LegalLink(
+                                    label: '개인정보 처리방침',
+                                    onTap: () => widget
+                                        .openLegalDocument('privacy.html'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 26),
+                            ],
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ),
       ),

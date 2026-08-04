@@ -57,7 +57,7 @@ class HttpPhoneAuthGateway implements PhoneAuthGateway {
   HttpPhoneAuthGateway({
     required this.baseUrl,
     http.Client? client,
-    this.requestTimeout = const Duration(seconds: 15),
+    this.requestTimeout = const Duration(seconds: 60),
   }) : _client = client ?? http.Client();
 
   final String baseUrl;
@@ -123,7 +123,10 @@ class HttpPhoneAuthGateway implements PhoneAuthGateway {
         body: jsonEncode(body),
       ).timeout(requestTimeout);
     } on TimeoutException {
-      throw const PhoneAuthException('네트워크 연결을 확인한 뒤 다시 시도해 주세요.');
+      throw const PhoneAuthException(
+        '서버 응답이 늦어지고 있어요.',
+        code: 'REQUEST_TIMEOUT',
+      );
     } on PhoneAuthException {
       rethrow;
     } catch (_) {

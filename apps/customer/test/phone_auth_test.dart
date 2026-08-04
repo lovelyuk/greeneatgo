@@ -181,7 +181,7 @@ void main() {
     );
   });
 
-  test('HTTP gateway maps a request timeout to the safe network error', () async {
+  test('HTTP gateway marks a request timeout as an unknown send outcome', () async {
     final gateway = HttpPhoneAuthGateway(
       baseUrl: 'https://api.example/v1',
       requestTimeout: const Duration(milliseconds: 5),
@@ -190,11 +190,13 @@ void main() {
 
     await expectLater(
       gateway.sendCode('01012345678'),
-      throwsA(isA<PhoneAuthException>().having(
-        (error) => error.message,
-        'message',
-        '네트워크 연결을 확인한 뒤 다시 시도해 주세요.',
-      )),
+      throwsA(isA<PhoneAuthException>()
+          .having((error) => error.code, 'code', 'REQUEST_TIMEOUT')
+          .having(
+            (error) => error.message,
+            'message',
+            '서버 응답이 늦어지고 있어요.',
+          )),
     );
   });
 
@@ -241,6 +243,28 @@ void main() {
     expect(gateway.verifications, [('01012345678', '123456')]);
     expect(signedTokens, ['existing-token']);
     expect(loggedIn, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'unknown send outcome still opens OTP entry when the SMS may have arrived',
+      (tester) async {
+    final gateway = FakePhoneAuthGateway()
+      ..sendError = const PhoneAuthException(
+        '서버 응답이 늦어지고 있어요.',
+        code: 'REQUEST_TIMEOUT',
+      );
+    await tester.pumpWidget(harness(gateway));
+
+    await tester.enterText(find.byKey(const Key('phone-input')), '01012345678');
+    await tester.tap(find.byKey(const Key('phone-auth-primary')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('otp-input')), findsOneWidget);
+    expect(find.textContaining('문자가 도착했다면 인증번호 6자리를 입력'),
+        findsOneWidget);
+    expect(find.textContaining('네트워크 연결'), findsNothing);
+    expect(find.textContaining('다시 받기 (60초)'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

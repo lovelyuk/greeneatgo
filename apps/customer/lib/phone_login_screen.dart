@@ -89,6 +89,17 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       _startCooldown(result.resendAfter);
     } on PhoneAuthException catch (error) {
       if (!mounted) return;
+      if (error.code == 'REQUEST_TIMEOUT') {
+        _phone.text = phone;
+        _code.clear();
+        setState(() {
+          _step = PhoneLoginStep.code;
+          _error = null;
+          _info = '문자가 도착했다면 인증번호 6자리를 입력해 주세요. 오지 않았다면 잠시 후 다시 받아주세요.';
+        });
+        _startCooldown(60);
+        return;
+      }
       setState(() => _error = error.message);
       if (error.retryAfter != null) _startCooldown(error.retryAfter!);
     } catch (_) {

@@ -71,6 +71,8 @@ class JoinRepository:
         invite_code: str,
         display_name: str,
         phone: str | None = None,
+        department: str | None = None,
+        employee_no: str | None = None,
     ) -> dict[str, Any]:
         auth_user = self.auth_user_from_token(access_token)
         existing = self.get_profile(auth_user.id, email=auth_user.email)
@@ -106,7 +108,15 @@ class JoinRepository:
             )
         ):
             activation_phone = join_phone
-        if PHONE_RE.fullmatch(activation_phone):
+        # An existing customer must always go through company-admin approval.
+        # In particular, a coincidental bulk name/phone match must never turn an
+        # already-active customer directly into an active employee.
+        active_customer = (
+            existing is not None
+            and existing.role == "customer"
+            and existing.status == "active"
+        )
+        if not active_customer and PHONE_RE.fullmatch(activation_phone):
             try:
                 activated = self.client.rpc("activate_employee_bulk_invite", {
                     "p_user_id": auth_user.id,
@@ -123,12 +133,23 @@ class JoinRepository:
 
         result = build_pending_join_request(user=user, invite=invite, now=datetime.now(timezone.utc))
 
+        # Existing profiles own their identity fields. A modified client must
+        # not be able to replace them while requesting employee membership.
+        canonical_display_name = existing.display_name if existing is not None else display_name
+        canonical_phone = (
+            normalize_phone(existing.phone) or metadata_phone
+            if existing is not None
+            else join_phone
+        )
+
         payload = {
             "id": result.user_id,
             "company_id": result.company_id,
             "group_id": result.group_id,
-            "display_name": display_name,
-            "phone": join_phone if PHONE_RE.fullmatch(join_phone) else None,
+            "display_name": canonical_display_name,
+            "phone": canonical_phone if PHONE_RE.fullmatch(canonical_phone) else None,
+            "department": department,
+            "employee_no": employee_no,
             "role": "employee",
             "status": "pending",
             "rejected_at": None,

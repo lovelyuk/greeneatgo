@@ -52,6 +52,40 @@ class JoinFlowTests(unittest.TestCase):
             build_pending_join_request(user=user, invite=invite, now=NOW)
         self.assertEqual(ctx.exception.code, JoinErrorCode.COMPANY_MISMATCH)
 
+    def test_active_standalone_customer_builds_pending_request(self):
+        invite = InviteCode(code="PILOT", company_id="c1", default_group_id="g1")
+        user = UserProfile(
+            id="customer", email="c@example.com", display_name="고객",
+            role="customer", status="active",
+        )
+        result = build_pending_join_request(user=user, invite=invite, now=NOW)
+        self.assertEqual(result.status, "pending")
+        self.assertEqual(result.company_id, "c1")
+
+    def test_active_customer_already_connected_to_company_is_rejected(self):
+        invite = InviteCode(code="PILOT", company_id="c1")
+        user = UserProfile(
+            id="customer", email="c@example.com", display_name="고객",
+            role="customer", status="active", company_id="c2",
+        )
+        with self.assertRaises(JoinFlowError) as ctx:
+            build_pending_join_request(user=user, invite=invite, now=NOW)
+        self.assertEqual(ctx.exception.code, JoinErrorCode.COMPANY_MISMATCH)
+
+    def test_active_privileged_profile_without_company_is_rejected(self):
+        invite = InviteCode(code="PILOT", company_id="c1")
+        for role in ("company_admin", "merchant_admin"):
+            with self.subTest(role=role), self.assertRaises(JoinFlowError) as ctx:
+                build_pending_join_request(
+                    user=UserProfile(
+                        id=role, email=f"{role}@example.com", display_name="관리자",
+                        role=role, status="active",
+                    ),
+                    invite=invite,
+                    now=NOW,
+                )
+            self.assertEqual(ctx.exception.code, JoinErrorCode.COMPANY_MISMATCH)
+
     def test_company_admin_can_approve_pending_same_company(self):
         actor = UserProfile(id="admin", email="admin@example.com", display_name="관리자", company_id="c1", role="company_admin", status="active")
         target = UserProfile(id="u1", email="a@example.com", display_name="김민수", company_id="c1", status="pending")

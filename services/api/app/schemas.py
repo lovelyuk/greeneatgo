@@ -405,8 +405,10 @@ class JoinRequest(BaseModel):
     invite_code: str = Field(min_length=4, max_length=64)
     display_name: str = Field(min_length=1, max_length=80)
     phone: str | None = Field(default=None, pattern=r"^010\d{8}$")
+    department: str | None = Field(default=None, min_length=1, max_length=120)
+    employee_no: str | None = Field(default=None, min_length=1, max_length=40)
 
-    @field_validator("invite_code", "display_name", mode="before")
+    @field_validator("invite_code", "display_name", "department", "employee_no", mode="before")
     @classmethod
     def trim_join_text(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value

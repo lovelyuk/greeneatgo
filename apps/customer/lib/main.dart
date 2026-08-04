@@ -21,8 +21,10 @@ import 'payment_completion.dart';
 import 'pending_payment.dart';
 import 'phone_auth.dart';
 import 'phone_login_screen.dart' as phone_login;
+import 'join_request.dart';
 import 'push_notifications.dart';
 import 'screens/coupon_wallet.dart';
+import 'screens/invite_code_entry_screen.dart';
 import 'screens/user_dashboard_shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -347,12 +349,18 @@ class ApiClient {
   Future<Map<String, dynamic>> requestJoin(
       {required String inviteCode,
       required String displayName,
-      required String phone}) {
-    return _request('/join/request', method: 'POST', body: {
-      'invite_code': inviteCode,
-      'display_name': displayName,
-      'phone': normalizeEmployeePhone(phone),
-    });
+      required String phone,
+      String? department,
+      String? employeeNo}) {
+    return _request('/join/request',
+        method: 'POST',
+        body: buildJoinRequestBody(
+          inviteCode: inviteCode,
+          displayName: displayName,
+          phone: normalizeEmployeePhone(phone),
+          department: department,
+          employeeNo: employeeNo,
+        ));
   }
 
   Future<Map<String, dynamic>> registerConsumer(
@@ -685,7 +693,8 @@ String displayMerchantName(String? name) {
 bool _isUsableCustomerSession(User? user) =>
     user != null &&
     (user.emailVerified ||
-        (user.email == null && RegExp(r'^phone_010[0-9]{8}$').hasMatch(user.uid)));
+        (user.email == null &&
+            RegExp(r'^phone_010[0-9]{8}$').hasMatch(user.uid)));
 
 List<Map<String, dynamic>> mapList(dynamic value) {
   if (value is! List) return <Map<String, dynamic>>[];
@@ -2606,6 +2615,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 builder: (_) => AccountSettingsScreen(
                     session: session, me: me, onSignOut: onSignOut)));
         if (changed == true) await onRefresh();
+      },
+      onOpenInviteCode: () async {
+        await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => InviteCodeEntryScreen(
+              displayName: me['display_name'] as String? ?? '',
+              phone: me['phone'] as String? ?? '',
+              onSubmit: ({
+                required inviteCode,
+                required department,
+                required employeeNo,
+              }) =>
+                  api.requestJoin(
+                inviteCode: inviteCode,
+                displayName: me['display_name'] as String? ?? '',
+                phone: me['phone'] as String? ?? '',
+                department: department,
+                employeeNo: employeeNo,
+              ),
+            ),
+          ),
+        );
+        // The profile may have changed to employee/pending. Refresh even when
+        // the route was closed with Android back or an iOS swipe gesture.
+        await onRefresh();
       },
       onAnnouncements: () async {
         await Navigator.of(context).push(MaterialPageRoute(
@@ -5109,16 +5143,64 @@ class _HistoryTile extends StatelessWidget {
 class BrandLoadingScreen extends StatelessWidget {
   const BrandLoadingScreen({super.key});
   @override
-  Widget build(BuildContext context) => BrandBackground(
+  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
         child: Scaffold(
-          backgroundColor: Colors.transparent,
-          body: Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Image.asset('assets/brand/greeneat_logo.png',
-                  height: 120, fit: BoxFit.contain),
-              const SizedBox(height: 18),
-              const CircularProgressIndicator(color: kOrange),
-            ]),
+          key: const Key('brand-loading-screen'),
+          backgroundColor: AppColors.navyBase,
+          body: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                key: const Key('splash-circle-top'),
+                top: -52,
+                right: -52,
+                child: Container(
+                  width: 150,
+                  height: 150,
+                  decoration: const BoxDecoration(
+                    color: AppColors.navySurface,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Positioned(
+                key: const Key('splash-circle-bottom'),
+                bottom: -60,
+                left: -60,
+                child: Container(
+                  width: 180,
+                  height: 180,
+                  decoration: const BoxDecoration(
+                    color: AppColors.navySurfaceAlt,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/brand/greeneat_logo_light.png',
+                      key: const Key('splash-logo'),
+                      width: 112,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 30),
+                    const SizedBox.square(
+                      dimension: 26,
+                      child: CircularProgressIndicator(
+                        key: Key('splash-spinner'),
+                        color: AppColors.limeGreen,
+                        backgroundColor: AppColors.spinnerTrack,
+                        strokeWidth: 3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       );

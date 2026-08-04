@@ -28,6 +28,8 @@ def request_join(payload: JoinRequest, token: str = Depends(bearer_token)):
             invite_code=payload.invite_code,
             display_name=payload.display_name,
             phone=payload.phone,
+            department=payload.department,
+            employee_no=payload.employee_no,
         )
         return {"ok": True, "data": data, "error": None}
     except JoinFlowError as exc:

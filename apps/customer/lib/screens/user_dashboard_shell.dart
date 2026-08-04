@@ -19,6 +19,7 @@ class UserDashboardShell extends StatefulWidget {
     required this.onCoupons,
     required this.onEvents,
     required this.onOpenSettings,
+    required this.onOpenInviteCode,
     required this.onAnnouncements,
     required this.onReviews,
     required this.onTerms,
@@ -40,6 +41,7 @@ class UserDashboardShell extends StatefulWidget {
   final AsyncAction onCoupons;
   final AsyncAction onEvents;
   final AsyncAction onOpenSettings;
+  final AsyncAction onOpenInviteCode;
   final AsyncAction onAnnouncements;
   final AsyncAction onReviews;
   final AsyncAction onTerms;
@@ -160,6 +162,7 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
       _ProfileTab(
         data: widget.data,
         onOpenSettings: widget.onOpenSettings,
+        onOpenInviteCode: widget.onOpenInviteCode,
         onBuyVoucher: () => _openActionPage(
           1,
           widget.purchasePageBuilder,
@@ -668,6 +671,7 @@ class _ProfileTab extends StatelessWidget {
   const _ProfileTab({
     required this.data,
     required this.onOpenSettings,
+    required this.onOpenInviteCode,
     required this.onBuyVoucher,
     required this.onCoupons,
     required this.onAnnouncements,
@@ -678,6 +682,7 @@ class _ProfileTab extends StatelessWidget {
   });
   final Map<String, dynamic> data;
   final AsyncAction onOpenSettings;
+  final AsyncAction onOpenInviteCode;
   final AsyncAction onBuyVoucher;
   final AsyncAction onCoupons;
   final AsyncAction onAnnouncements;
@@ -740,7 +745,7 @@ class _ProfileTab extends StatelessWidget {
         const SizedBox(height: 12),
         _SettingGroup(rows: [
           _SettingRow('결제 알림', '켜짐', onTap: onOpenSettings),
-          _SettingRow('계정 설정', '계정 정보', onTap: onOpenSettings),
+          _SettingRow('초대코드 입력', '', onTap: onOpenInviteCode),
         ]),
         const SizedBox(height: 12),
         _SettingGroup(rows: [

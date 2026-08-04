@@ -66,9 +66,19 @@ def validate_invite(invite: InviteCode | None, *, now: datetime) -> InviteCode:
 def build_pending_join_request(*, user: UserProfile, invite: InviteCode, now: datetime) -> JoinRequestResult:
     validate_invite(invite, now=now)
     if user.status == "active":
-        if user.company_id == invite.company_id:
+        # A standalone customer may request employee membership, but the
+        # conversion is deliberately pending until a company admin approves it.
+        # No active employee or privileged account receives this exception.
+        standalone_customer = (
+            user.role == "customer"
+            and user.company_id is None
+            and user.merchant_id is None
+        )
+        if standalone_customer:
+            return JoinRequestResult(user.id, invite.company_id, invite.default_group_id, "pending")
+        if user.company_id == invite.company_id and user.role == "employee":
             raise JoinFlowError(JoinErrorCode.ALREADY_ACTIVE, "이미 승인된 직원이에요")
-        raise JoinFlowError(JoinErrorCode.COMPANY_MISMATCH, "이미 다른 회사에 연결된 계정이에요")
+        raise JoinFlowError(JoinErrorCode.COMPANY_MISMATCH, "기존 직원/관리자 또는 회사에 연결된 계정은 변경할 수 없어요")
     if user.status == "pending" and user.company_id == invite.company_id:
         raise JoinFlowError(JoinErrorCode.ALREADY_PENDING, "이미 가입 승인 대기 중이에요")
     if user.company_id is not None and user.company_id != invite.company_id and user.status not in (None, "rejected"):

@@ -1,6 +1,22 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppColors {
+  // Dark navy authentication palette. Keep these names stable so later dark
+  // theme stages can reuse the exact same values.
+  static const navyBase = Color(0xFF0E1C2B);
+  static const navySurface = Color(0xFF16293C);
+  static const navySurfaceAlt = Color(0xFF14283A);
+  static const navyBorder = Color(0xFF2A3B4F);
+  static const navyBorderStrong = Color(0xFF3A4C61);
+  static const limeGreen = Color(0xFF9DBF63);
+  static const textOnLime = Color(0xFF0E1C2B);
+  static const textPrimary = Color(0xFFFFFFFF);
+  static const textSecondary = Color(0xFF7B8FA5);
+  static const textMuted = Color(0xFF6B819A);
+  static const textPlaceholder = Color(0xFF4F6580);
+  static const textLink = Color(0xFF8FA3B8);
+  static const spinnerTrack = Color(0xFF25394E);
+
   static const bg = Color(0xFF0A0D14);
   static const card = Color(0xFF131A2A);
   static const cardHi = Color(0xFF1B2436);

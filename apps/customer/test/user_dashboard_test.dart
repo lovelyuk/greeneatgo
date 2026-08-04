@@ -41,6 +41,8 @@ void main() {
       Future<void> Function()? onScanQr,
       Future<void> Function()? onCoupons,
       Future<void> Function()? onEvents,
+      Future<void> Function()? onOpenSettings,
+      Future<void> Function()? onOpenInviteCode,
       DashboardPageBuilder? purchasePageBuilder,
       DashboardPageBuilder? qrPageBuilder,
       int? couponCount,
@@ -59,7 +61,8 @@ void main() {
             onBuyVoucher: onBuyVoucher ?? () async {},
             onCoupons: onCoupons ?? () async {},
             onEvents: onEvents ?? () async {},
-            onOpenSettings: () async {},
+            onOpenSettings: onOpenSettings ?? () async {},
+            onOpenInviteCode: onOpenInviteCode ?? () async {},
             onAnnouncements: () async {},
             onReviews: () async {},
             onTerms: () async {},
@@ -264,7 +267,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('휴대폰 번호'), findsOneWidget);
     expect(find.text('휴대폰'), findsOneWidget);
-    expect(find.text('계정 정보'), findsOneWidget);
+    expect(find.text('초대코드 입력'), findsOneWidget);
     expect(find.text('이메일'), findsNothing);
     expect(find.textContaining('비밀번호'), findsNothing);
     expect(find.text('회사 장부'), findsOneWidget);
@@ -310,6 +313,32 @@ void main() {
     expect(find.text('QR 탭 화면'), findsNothing);
     expect(find.byType(MealTicketCard), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('My Info invite row and payment alert use separate callbacks',
+      (tester) async {
+    var settingsOpens = 0;
+    var inviteOpens = 0;
+    await pumpDashboard(
+      tester,
+      onOpenSettings: () async => settingsOpens++,
+      onOpenInviteCode: () async => inviteOpens++,
+    );
+
+    await tester.tap(find.text('내정보'));
+    await tester.pumpAndSettle();
+    expect(find.text('계정 설정'), findsNothing);
+    expect(find.text('초대코드 입력'), findsOneWidget);
+
+    await tester.tap(find.text('결제 알림'));
+    await tester.pump();
+    expect(settingsOpens, 1);
+    expect(inviteOpens, 0);
+
+    await tester.tap(find.text('초대코드 입력'));
+    await tester.pump();
+    expect(settingsOpens, 1);
+    expect(inviteOpens, 1);
   });
 
   testWidgets('home shortcuts invoke coupon and event actions', (tester) async {

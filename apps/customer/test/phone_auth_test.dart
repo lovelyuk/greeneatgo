@@ -56,8 +56,8 @@ Widget harness(
     ),
     home: PhoneLoginScreen(
       gateway: gateway,
-      signInWithCustomToken: signInWithCustomToken ??
-          (token) async => signedTokens?.add(token),
+      signInWithCustomToken:
+          signInWithCustomToken ?? (token) async => signedTokens?.add(token),
       onLoggedIn: () async => onLoggedIn?.call(),
       openLegalDocument: (_) async {},
     ),
@@ -65,7 +65,8 @@ Widget harness(
 }
 
 void main() {
-  test('phone and OTP helpers normalize and strictly validate Korean numbers', () {
+  test('phone and OTP helpers normalize and strictly validate Korean numbers',
+      () {
     expect(normalizePhoneNumber(' 010-1234 5678 '), '01012345678');
     expect(isValidPhoneNumber('010-1234-5678'), isTrue);
     expect(isValidPhoneNumber('011-1234-5678'), isFalse);
@@ -96,16 +97,15 @@ void main() {
     );
 
     final result = await gateway.verifyCode('010-1234-5678', '123456');
-    expect(request.url.toString(),
-        'https://api.example/v1/auth/phone/verify');
+    expect(request.url.toString(), 'https://api.example/v1/auth/phone/verify');
     expect(jsonDecode(request.body), {
       'phone': '01012345678',
       'code': '123456',
       'purpose': 'signup_login',
     });
     expect(result, isA<ExistingPhoneAccount>());
-    expect((result as ExistingPhoneAccount).customToken,
-        'firebase-custom-token');
+    expect(
+        (result as ExistingPhoneAccount).customToken, 'firebase-custom-token');
   });
 
   test('HTTP gateway uses the exact send route and request body', () async {
@@ -163,20 +163,21 @@ void main() {
     expect(token, 'signup-custom-token');
   });
 
-  test('HTTP gateway retains backend Korean error and retry cooldown', () async {
+  test('HTTP gateway retains backend Korean error and retry cooldown',
+      () async {
     final gateway = HttpPhoneAuthGateway(
       baseUrl: 'https://api.example/v1',
       client: MockClient((_) async => http.Response(
-          jsonEncode({
-            'detail': {
-              'code': 'RATE_LIMITED',
-              'message': '잠시 후 다시 시도해 주세요',
-              'retry_after': 37,
-            }
-          }),
-          429,
-          headers: const {'content-type': 'application/json; charset=utf-8'},
-        )),
+            jsonEncode({
+              'detail': {
+                'code': 'RATE_LIMITED',
+                'message': '잠시 후 다시 시도해 주세요',
+                'retry_after': 37,
+              }
+            }),
+            429,
+            headers: const {'content-type': 'application/json; charset=utf-8'},
+          )),
     );
 
     await expectLater(
@@ -188,7 +189,8 @@ void main() {
     );
   });
 
-  test('HTTP gateway marks a request timeout as an unknown send outcome', () async {
+  test('HTTP gateway marks a request timeout as an unknown send outcome',
+      () async {
     final gateway = HttpPhoneAuthGateway(
       baseUrl: 'https://api.example/v1',
       requestTimeout: const Duration(milliseconds: 5),
@@ -236,6 +238,7 @@ void main() {
 
     await tester.enterText(
         find.byKey(const Key('phone-input')), '010-1234-5678');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
 
@@ -244,6 +247,7 @@ void main() {
     expect(find.textContaining('다시 받기 (2초)'), findsOneWidget);
 
     await tester.enterText(find.byKey(const Key('otp-input')), '123456');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
 
@@ -264,12 +268,12 @@ void main() {
     await tester.pumpWidget(harness(gateway));
 
     await tester.enterText(find.byKey(const Key('phone-input')), '01012345678');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
 
     expect(find.byKey(const Key('otp-input')), findsOneWidget);
-    expect(find.textContaining('문자가 도착했다면 인증번호 6자리를 입력'),
-        findsOneWidget);
+    expect(find.textContaining('문자가 도착했다면 인증번호 6자리를 입력'), findsOneWidget);
     expect(find.textContaining('네트워크 연결'), findsNothing);
     expect(find.textContaining('다시 받기 (60초)'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -289,9 +293,11 @@ void main() {
     ));
 
     await tester.enterText(find.byKey(const Key('phone-input')), '01012345678');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('otp-input')), '123456');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
 
@@ -323,9 +329,11 @@ void main() {
         signedTokens: signedTokens, onLoggedIn: () => loggedIn = true));
 
     await tester.enterText(find.byKey(const Key('phone-input')), '01099998888');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('otp-input')), '654321');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
 
@@ -344,8 +352,7 @@ void main() {
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
 
-    expect(gateway.signups,
-        [('raw-verification-token-which-is-long', '홍길동')]);
+    expect(gateway.signups, [('raw-verification-token-which-is-long', '홍길동')]);
     expect(gateway.sentPhones, ['01099998888']);
     expect(gateway.verifications, [('01099998888', '654321')]);
     expect(signedTokens, ['signup-token']);
@@ -367,9 +374,11 @@ void main() {
     await tester.pumpWidget(harness(gateway, textScaleFactor: 1.3));
 
     await tester.enterText(find.byKey(const Key('phone-input')), '01099998888');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('otp-input')), '654321');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
 
@@ -411,29 +420,34 @@ void main() {
           const NewPhoneAccount('verification-token', expiresIn: 300);
     await tester.pumpWidget(harness(gateway));
 
-    await tester.enterText(find.byKey(const Key('phone-input')), '010-123-4567');
+    await tester.enterText(
+        find.byKey(const Key('phone-input')), '010-123-4567');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
     expect(find.text('올바른 010 휴대폰 번호를 입력해 주세요.'), findsOneWidget);
     expect(gateway.sentPhones, isEmpty);
 
-    await tester.enterText(find.byKey(const Key('phone-input')), '010-1234-5678');
+    await tester.enterText(
+        find.byKey(const Key('phone-input')), '010-1234-5678');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('otp-input')), '12345');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
     expect(find.text('인증번호 6자리를 입력해 주세요.'), findsOneWidget);
     expect(gateway.verifications, isEmpty);
 
     await tester.enterText(find.byKey(const Key('otp-input')), '123456');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
     expect(find.byKey(const Key('name-input')), findsOneWidget);
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
-    expect(find.text('이름은 1자 이상 20자 이하로 입력해 주세요.'),
-        findsOneWidget);
+    expect(find.text('이름은 1자 이상 20자 이하로 입력해 주세요.'), findsOneWidget);
     expect(gateway.signups, isEmpty);
     await tester.pumpWidget(const SizedBox());
   });
@@ -445,6 +459,7 @@ void main() {
           code: 'RATE_LIMITED', retryAfter: 3);
     await tester.pumpWidget(harness(gateway));
     await tester.enterText(find.byKey(const Key('phone-input')), '01012345678');
+    await tester.pump();
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
     await tester.pump();
 

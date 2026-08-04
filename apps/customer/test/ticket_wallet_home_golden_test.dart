@@ -53,6 +53,7 @@ void main() {
               onCoupons: () async {},
               onEvents: () async {},
               onOpenSettings: () async {},
+              onOpenInviteCode: () async {},
               onAnnouncements: () async {},
               onReviews: () async {},
               onTerms: () async {},

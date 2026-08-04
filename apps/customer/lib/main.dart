@@ -879,7 +879,10 @@ class _AppGateState extends State<AppGate> {
           status: status, onRefresh: _loadMe, onSignOut: _signOut);
     }
     return HomeScreen(
-        session: _session!, me: _me!, onRefresh: _loadMe, onSignOut: _signOut);
+        session: _session!,
+        me: _me!,
+        onRefresh: () => _loadMe(showLoading: false),
+        onSignOut: _signOut);
   }
 }
 
@@ -2575,6 +2578,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         session: session,
         pointBalance: (me['point_balance'] as num?)?.round() ?? 0,
         onClose: close,
+        onPurchaseCompleted: _refreshHome,
       ),
       qrPageBuilder: (close) => UnifiedQrScanScreen(
         session: session,
@@ -2593,9 +2597,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         await Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => VoucherPurchaseScreen(
                 session: session,
-                pointBalance: (me['point_balance'] as num?)?.round() ?? 0)));
+                pointBalance: (me['point_balance'] as num?)?.round() ?? 0,
+                onPurchaseCompleted: _refreshHome)));
         await _loadPendingPayment();
-        await onRefresh();
       },
       onCoupons: openCouponWallet,
       // Events reuse the authoritative voucher catalog but open with an
@@ -2605,9 +2609,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             builder: (_) => VoucherPurchaseScreen(
                 session: session,
                 pointBalance: (me['point_balance'] as num?)?.round() ?? 0,
-                initialFilter: VoucherFilter.event)));
+                initialFilter: VoucherFilter.event,
+                onPurchaseCompleted: _refreshHome)));
         await _loadPendingPayment();
-        await onRefresh();
       },
       onOpenSettings: () async {
         final changed = await Navigator.of(context).push<bool>(
@@ -2754,9 +2758,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           OutlinedButton.icon(
             onPressed: () async {
               await Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => VoucherPurchaseScreen(session: session)));
+                  builder: (_) => VoucherPurchaseScreen(
+                        session: session,
+                        onPurchaseCompleted: onRefresh,
+                      )));
               await _loadPendingPayment();
-              await onRefresh();
             },
             icon: const Icon(Icons.add_card_rounded),
             label: const Text('식권 구매하기'),
@@ -2883,8 +2889,8 @@ class _EmployeeVoucherActionsState extends State<_EmployeeVoucherActions> {
                         builder: (_) => VoucherPurchaseScreen(
                               session: widget.session,
                               initialCatalog: snapshot.data,
+                              onPurchaseCompleted: widget.onRefresh,
                             )));
-                    await widget.onRefresh();
                   },
                   icon: const Icon(Icons.add_card_rounded),
                   label: const Text('지원 식권 상품 보기'),
@@ -3651,6 +3657,7 @@ class VoucherPurchaseScreen extends StatefulWidget {
     this.pointBalance = 0,
     this.initialFilter = VoucherFilter.all,
     this.onClose,
+    this.onPurchaseCompleted,
   });
 
   final User session;
@@ -3658,6 +3665,7 @@ class VoucherPurchaseScreen extends StatefulWidget {
   final int pointBalance;
   final VoucherFilter initialFilter;
   final VoidCallback? onClose;
+  final Future<void> Function()? onPurchaseCompleted;
 
   @override
   State<VoucherPurchaseScreen> createState() => _VoucherPurchaseScreenState();
@@ -3688,7 +3696,7 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
       ),
     );
     if (selection == null || !mounted) return;
-    await Navigator.of(context).push<bool>(
+    final paid = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => VoucherKiwoomPaymentScreen(
           session: widget.session,
@@ -3700,6 +3708,7 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
         ),
       ),
     );
+    await notifyVoucherPurchaseCompleted(paid, widget.onPurchaseCompleted);
     if (mounted) _reload();
   }
 
@@ -3767,6 +3776,13 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
           ),
         ),
       );
+}
+
+Future<void> notifyVoucherPurchaseCompleted(
+  bool? paid,
+  Future<void> Function()? onPurchaseCompleted,
+) async {
+  if (paid == true) await onPurchaseCompleted?.call();
 }
 
 class VoucherPurchaseContent extends StatelessWidget {

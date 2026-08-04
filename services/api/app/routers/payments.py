@@ -197,9 +197,18 @@ def checkout(checkout_token: str):
 
 
 def _decode_form(raw: bytes) -> dict[str, str]:
-    for encoding in ("utf-8", "euc-kr", "cp949"):
+    # Kiwoom's notification contract is EUC-KR. Prefer its Windows superset
+    # before UTF-8 so byte sequences valid in both encodings keep their Korean
+    # meaning instead of silently becoming an unrelated Unicode character.
+    for encoding in ("cp949", "euc-kr", "utf-8"):
         try:
-            parsed = parse_qs(raw.decode(encoding), keep_blank_values=True)
+            payload = raw.decode("ascii") if raw.isascii() else raw.decode(encoding)
+            parsed = parse_qs(
+                payload,
+                keep_blank_values=True,
+                encoding=encoding,
+                errors="strict",
+            )
             return {key: values[-1] for key, values in parsed.items()}
         except UnicodeDecodeError:
             pass

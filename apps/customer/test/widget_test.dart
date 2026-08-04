@@ -265,6 +265,35 @@ void main() {
     expect(find.byType(BackButton), findsNothing);
   });
 
+  test('CARD completion hides a previously corrupted issuer prefix', () {
+    final payment = PaymentCompletionData.fromConfirmDto({
+      'data': {
+        'amount': 72000,
+        'payment': {
+          'method': 'CARD',
+          'issuer_name': '\ufffd\ufffd\ufffd\ufffd카드',
+          'masked_card_number': '****-****-****-5678',
+        },
+      },
+    });
+
+    expect(payment.accountValue, '****-****-****-5678');
+    expect(payment.accountValue, isNot(contains('\ufffd')));
+  });
+
+  test('voucher purchase completion refreshes only after successful payment',
+      () async {
+    var refreshCount = 0;
+    Future<void> refresh() async => refreshCount++;
+
+    await notifyVoucherPurchaseCompleted(false, refresh);
+    await notifyVoucherPurchaseCompleted(null, refresh);
+    expect(refreshCount, 0);
+
+    await notifyVoucherPurchaseCompleted(true, refresh);
+    expect(refreshCount, 1);
+  });
+
   testWidgets('NAVERPAY completion uses the card sales slip', (tester) async {
     final payment = PaymentCompletionData.fromConfirmDto({
       'data': {

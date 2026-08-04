@@ -40,7 +40,7 @@ class PaymentCompletionData {
       methodLabel: text(payment, 'method_label'),
       approvedAt: text(payment, 'approved_at'),
       transactionId: text(payment, 'transaction_id'),
-      issuerName: text(payment, 'issuer_name'),
+      issuerName: _cleanProviderLabel(text(payment, 'issuer_name')),
       maskedCardNumber: text(payment, 'masked_card_number'),
       authorizationNumber: text(payment, 'authorization_number'),
       bankName: text(payment, 'bank_name'),
@@ -126,6 +126,9 @@ Map<String, dynamic>? _map(Object? value) {
   if (value is Map) return value.cast<String, dynamic>();
   return null;
 }
+
+String _cleanProviderLabel(String value) =>
+    value.contains('\ufffd') ? '' : value;
 
 String formatPaymentAmount(num amount) =>
     '${amount.round().toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (match) => '${match[1]},')}원';

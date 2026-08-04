@@ -5,11 +5,13 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.routers.payments import (
+    _decode_form,
     _ensure_voucher_order_available,
     _is_successful_notification_outcome,
     _normalized_notification_payload,
@@ -334,6 +336,17 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertNotIn("5107370000008900", json.dumps(normalized))
         for key in ("USERID", "USERNAME", "EMAIL", "RESERVEDSTRING", "UNEXPECTED"):
             self.assertNotIn(key, normalized)
+
+    def test_notification_form_decodes_euc_kr_percent_encoded_card_name(self):
+        raw = urlencode(
+            {"CARDNAME": "징카드", "CARDNO": "1234-5678-9012-3456"},
+            encoding="euc-kr",
+        ).encode("ascii")
+
+        decoded = _decode_form(raw)
+
+        self.assertEqual(decoded["CARDNAME"], "징카드")
+        self.assertNotIn("\ufffd", decoded["CARDNAME"])
 
     def test_failed_and_cancel_notifications_ack_without_database_access_or_mutation(self):
         app = FastAPI()

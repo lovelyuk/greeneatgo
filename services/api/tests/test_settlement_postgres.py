@@ -36,6 +36,7 @@ def test_0052_replays_after_sql_editor_commits_only_the_preamble(settlement_db):
         conn.execute(preamble + "\ncommit;")
         conn.execute(source)
         conn.execute((MIGRATIONS / "0053_auto_draft_settlements.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0063_settlement_period_update.sql").read_text(encoding="utf-8"))
         assert conn.execute(
             "select to_regclass('public.generated_reset_delete_guards') is not null"
         ).fetchone()[0] is True
@@ -109,6 +110,9 @@ def settlement_db():
         conn.execute((MIGRATIONS / "0053_auto_draft_settlements.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0054_backfill_existing_settlement_drafts.sql").read_text(encoding="utf-8"))
         conn.execute((MIGRATIONS / "0054_backfill_existing_settlement_drafts.sql").read_text(encoding="utf-8"))
+        # Saved custom periods remain authoritative after 0053 recovery replays.
+        conn.execute((MIGRATIONS / "0063_settlement_period_update.sql").read_text(encoding="utf-8"))
+        conn.execute((MIGRATIONS / "0063_settlement_period_update.sql").read_text(encoding="utf-8"))
     return url
 
 
@@ -263,6 +267,139 @@ def test_eligible_transactions_auto_create_and_refresh_hidden_monthly_draft(pg):
                       (sid,)).fetchone() == (2, 1650, "sent")
     assert pg.execute("select company_settlement_month_summary(%s,%s,'2026-07')",
                       (company_actor, company)).fetchone()[0]["settlement_count"] == 1
+
+
+def test_merchant_update_period_recalculates_preserves_revision_and_is_idempotent(pg):
+    import psycopg
+
+    company, _, merchant, _, _, _, actor, other_actor = parties(pg)
+    pg.execute(
+        "insert into merchant_companies(merchant_id,company_id,status,created_by) values(%s,%s,'active',%s)",
+        (merchant, company, actor),
+    )
+    user_id = pg.execute(
+        "insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,'employee','employee','active') returning id",
+        (company,),
+    ).fetchone()[0]
+    pg.execute("""insert into meal_transactions(
+      user_id,company_id,merchant_id,amount,kind,pay_type,settlement_tax_type,
+      settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at
+    ) values
+      (%s,%s,%s,-1100,'spend','ledger','taxable',1000,100,1100,'2026-07-01 03:00:00+00'),
+      (%s,%s,%s,-550,'spend','ledger','taxable',500,50,550,'2026-07-15 03:00:00+00'),
+      (%s,%s,%s,-220,'spend','ledger','taxable',200,20,220,'2026-07-31 03:00:00+00')""",
+        (user_id, company, merchant, user_id, company, merchant, user_id, company, merchant),
+    )
+    row = pg.execute("""select id from settlements where merchant_id=%s and company_id=%s
+      and period_ym='2026-07' and not is_demo""", (merchant, company)).fetchone()
+    sid = row[0]
+    pg.execute("update settlements set settlement_status='revising' where id=%s", (sid,))
+
+    result = pg.execute(
+        "select merchant_update_settlement_period(%s,%s,%s,'2026-07-02','2026-07-30','period-1')",
+        (actor, merchant, sid),
+    ).fetchone()[0]
+    updated = result["settlement"]
+    assert result["idempotent"] is False
+    assert (
+        updated["period_from"], updated["period_to"], updated["tx_count"],
+        updated["supply_amount"], updated["vat_amount"], updated["total_amount"],
+        updated["due_date"], updated["period_ym"], updated["settlement_status"],
+    ) == ("2026-07-02", "2026-07-30", 1, 500, 50, 550, "2026-08-29", "2026-07", "revising")
+
+    replay = pg.execute(
+        "select merchant_update_settlement_period(%s,%s,%s,'2026-07-02','2026-07-30','period-1')",
+        (actor, merchant, sid),
+    ).fetchone()[0]
+    assert replay["idempotent"] is True
+    assert replay["settlement"]["total_amount"] == 550
+    assert pg.execute("""select count(*) from settlement_events where settlement_id=%s
+      and event_type='merchant_settlement_period_updated'""", (sid,)).fetchone()[0] == 1
+
+    with pytest.raises(psycopg.errors.RaiseException, match="IDEMPOTENCY_CONFLICT"):
+        with pg.transaction():
+            pg.execute(
+                "select merchant_update_settlement_period(%s,%s,%s,'2026-07-03','2026-07-30','period-1')",
+                (actor, merchant, sid),
+            )
+    with pytest.raises(psycopg.errors.RaiseException, match="INVALID_DATE_RANGE"):
+        with pg.transaction():
+            pg.execute(
+                "select merchant_update_settlement_period(%s,%s,%s,'2026-06-30','2026-07-01','period-2')",
+                (actor, merchant, sid),
+            )
+    with pytest.raises(psycopg.errors.RaiseException, match="SETTLEMENT_FORBIDDEN"):
+        with pg.transaction():
+            pg.execute(
+                "select merchant_update_settlement_period(%s,%s,%s,'2026-07-02','2026-07-30','period-2')",
+                (other_actor, merchant, sid),
+            )
+    assert pg.execute(
+        "select has_function_privilege('authenticated','merchant_update_settlement_period(uuid,uuid,uuid,date,date,text)','execute')"
+    ).fetchone()[0] is False
+    assert pg.execute(
+        "select has_function_privilege('service_role','merchant_update_settlement_period(uuid,uuid,uuid,date,date,text)','execute')"
+    ).fetchone()[0] is True
+
+
+def test_auto_refresh_preserves_custom_revising_period_and_ignores_outside_transaction(pg):
+    company, _, merchant, _, _, _, actor, _ = parties(pg)
+    pg.execute(
+        "insert into merchant_companies(merchant_id,company_id,status,created_by) values(%s,%s,'active',%s)",
+        (merchant, company, actor),
+    )
+    user_id = pg.execute(
+        "insert into app_users(id,company_id,display_name,role,status) values(gen_random_uuid(),%s,'employee','employee','active') returning id",
+        (company,),
+    ).fetchone()[0]
+    pg.execute("""insert into meal_transactions(
+      user_id,company_id,merchant_id,amount,kind,pay_type,settlement_tax_type,
+      settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at
+    ) values
+      (%s,%s,%s,-1100,'spend','ledger','taxable',1000,100,1100,'2026-09-02 03:00:00+00'),
+      (%s,%s,%s,-550,'spend','ledger','taxable',500,50,550,'2026-09-15 03:00:00+00'),
+      (%s,%s,%s,-220,'spend','ledger','taxable',200,20,220,'2026-09-29 03:00:00+00')""",
+        (user_id, company, merchant, user_id, company, merchant, user_id, company, merchant),
+    )
+    sid = pg.execute("""select id from settlements where merchant_id=%s and company_id=%s
+      and period_ym='2026-09' and not is_demo""", (merchant, company)).fetchone()[0]
+    pg.execute("update settlements set settlement_status='revising' where id=%s", (sid,))
+    pg.execute(
+        "select merchant_update_settlement_period(%s,%s,%s,'2026-09-10','2026-09-20','custom-period')",
+        (actor, merchant, sid),
+    )
+
+    pg.execute("""insert into meal_transactions(
+      user_id,company_id,merchant_id,amount,kind,pay_type,settlement_tax_type,
+      settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at
+    ) values (%s,%s,%s,-330,'spend','ledger','taxable',300,30,330,'2026-09-18 03:00:00+00')""",
+        (user_id, company, merchant),
+    )
+    assert pg.execute("""select period_from,period_to,tx_count,supply_amount,vat_amount,total_amount,
+      due_date,settlement_status,status,payment_status from settlements where id=%s""", (sid,)).fetchone() == (
+        date(2026, 9, 10), date(2026, 9, 20), 2, 800, 80, 880,
+        date(2026, 10, 20), "revising", "draft", "unpaid",
+    )
+
+    before = pg.execute("""select period_from,period_to,tx_count,supply_amount,vat_amount,total_amount,
+      due_date,settlement_status,status,payment_status,updated_at from settlements where id=%s""", (sid,)).fetchone()
+    pg.execute("""insert into meal_transactions(
+      user_id,company_id,merchant_id,amount,kind,pay_type,settlement_tax_type,
+      settlement_supply_amount,settlement_vat_amount,settlement_total_amount,created_at
+    ) values (%s,%s,%s,-440,'spend','ledger','taxable',400,40,440,'2026-09-25 03:00:00+00')""",
+        (user_id, company, merchant),
+    )
+    after = pg.execute("""select period_from,period_to,tx_count,supply_amount,vat_amount,total_amount,
+      due_date,settlement_status,status,payment_status,updated_at from settlements where id=%s""", (sid,)).fetchone()
+    assert after == before
+    for role in ("anon", "authenticated", "service_role"):
+        assert pg.execute(
+            f"select has_function_privilege('{role}','refresh_ordinary_settlement_saved_period(uuid,date,date)','execute')"
+        ).fetchone()[0] is False
+    assert pg.execute("""select not exists(
+      select 1 from pg_proc p cross join lateral aclexplode(p.proacl) a
+      where p.oid='refresh_ordinary_settlement_saved_period(uuid,date,date)'::regprocedure
+        and a.grantee=0 and a.privilege_type='EXECUTE')""").fetchone()[0] is True
 
 
 def test_legacy_create_rejects_unclassified_and_sent_month_conflict(pg):

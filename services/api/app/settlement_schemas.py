@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator
@@ -21,6 +21,20 @@ class SettlementDisputeRequest(BaseModel):
     @field_validator("reason", "idempotency_key")
     @classmethod
     def non_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+
+class SettlementPeriodUpdateRequest(BaseModel):
+    period_from: date
+    period_to: date
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def normalize_idempotency_key(cls, value: str) -> str:
         value = value.strip()
         if not value:
             raise ValueError("must not be blank")

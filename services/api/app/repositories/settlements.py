@@ -293,13 +293,15 @@ class SettlementRepository:
             "select": PAYMENT_FIELDS,
             "settlement_id": f"eq.{settlement_id}", "order": "created_at.asc,id.asc",
         })
-        transactions = self._settlement_transactions(row) if include_transactions else []
+        transactions = self._settlement_transactions(row, include_demo=include_demo) if include_transactions else []
         return {**row, "business_information": company[0] if company else None,
                 "supplier_information": supplier[0] if supplier else None,
                 "tax_invoices": invoices, "events": events, "payments": payments,
                 "transactions": transactions}
 
-    def _settlement_transactions(self, settlement: dict[str, Any]) -> list[dict[str, Any]]:
+    def _settlement_transactions(
+        self, settlement: dict[str, Any], *, include_demo: bool = False,
+    ) -> list[dict[str, Any]]:
         period_from = date.fromisoformat(str(settlement["period_from"]))
         period_to = date.fromisoformat(str(settlement["period_to"])) + timedelta(days=1)
         params = {
@@ -317,7 +319,7 @@ class SettlementRepository:
         rows: list[dict[str, Any]] = []
         page_size = 1000
         while True:
-            page = self.client.rest_get("meal_transactions", {
+            page = self.client.rest_get("meal_transactions" if include_demo else "normal_meal_transactions", {
                 **params, "limit": str(page_size), "offset": str(len(rows)),
             })
             rows.extend(page)
@@ -346,7 +348,8 @@ class SettlementRepository:
                 "department": user.get("department"),
                 "kind": row.get("kind"),
                 "pay_type": row.get("pay_type"),
-                "item": row.get("product_name") or row.get("meal_window") or "식대 사용",
+                "meal_window": row.get("meal_window"),
+                "item": row.get("product_name") or row.get("meal_window") or "-",
                 "tx_code": row.get("tx_code"),
                 "tax_type": row.get("settlement_tax_type"),
                 "supply_amount": sign * int(row.get("settlement_supply_amount") or 0),
@@ -410,6 +413,15 @@ class SettlementRepository:
         return self.client.rpc("merchant_begin_settlement_revision", {
             "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
             "p_settlement_id": str(settlement_id),
+        })
+
+    def update_period(self, actor: UserProfile, settlement_id: str | UUID, payload: Any) -> dict[str, Any]:
+        return self.client.rpc("merchant_update_settlement_period", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_settlement_id": str(settlement_id),
+            "p_period_from": payload.period_from.isoformat(),
+            "p_period_to": payload.period_to.isoformat(),
+            "p_idempotency_key": payload.idempotency_key,
         })
 
     def mark_paid(self, actor: UserProfile, settlement_id: str | UUID, payload: Any) -> dict[str, Any]:

@@ -53,6 +53,10 @@ function mapPayment(item) {
 }
 
 export function mapSettlementTransaction(item = {}) {
+  const mealWindow = text(item?.meal_window).trim();
+  const normalizedMealWindow = ({ lunch: '중식', dinner: '석식' })[mealWindow.toLowerCase()] ?? mealWindow;
+  const productName = text(item?.product_name || item?.item).trim();
+  const meaningfulProductName = /^식대\s*사용$/u.test(productName) ? '' : productName;
   return {
     id: item?.id,
     created_at: item?.created_at ?? null,
@@ -61,7 +65,8 @@ export function mapSettlementTransaction(item = {}) {
     department: text(item?.department),
     kind: text(item?.kind),
     pay_type: text(item?.pay_type),
-    item: text(item?.item) || '식대 사용',
+    meal_window: normalizedMealWindow,
+    item: normalizedMealWindow || meaningfulProductName || '-',
     tx_code: text(item?.tx_code),
     supply_amount: Number(item?.supply_amount) || 0,
     vat_amount: Number(item?.vat_amount) || 0,

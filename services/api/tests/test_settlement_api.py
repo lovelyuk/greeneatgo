@@ -20,6 +20,7 @@ class FakeSettlements:
         self._actor = actor
         self.calls = []
         self.confirm_error = None
+        self.period_error = None
         self.demo = False
         self.generated = False
         self.generated_lookup_error = None
@@ -88,6 +89,15 @@ class FakeSettlements:
     def begin_revision(self, actor, settlement_id):
         self.calls.append(("begin_revision", actor.merchant_id, settlement_id))
         return {"idempotent": False}
+
+    def update_period(self, actor, settlement_id, payload):
+        self.calls.append((
+            "update_period", actor.merchant_id, settlement_id,
+            payload.period_from.isoformat(), payload.period_to.isoformat(), payload.idempotency_key,
+        ))
+        if self.period_error is not None:
+            raise self.period_error
+        return {"settlement": {"id": str(settlement_id)}, "idempotent": False}
 
     def mark_paid(self, actor, settlement_id, payload):
         self.calls.append(("paid", actor.merchant_id, settlement_id, payload.idempotency_key))
@@ -321,6 +331,49 @@ def test_company_dispute_and_merchant_actions_pass_tenant_and_idempotency(client
     assert repo.calls[-1][0:2] == ("paid", "merchant-own")
     assert str(repo.calls[-1][2]) == SETTLEMENT_ID
     assert repo.calls[-1][3] == "payment-key"
+
+
+def test_merchant_period_update_validates_and_uses_only_normal_tenant_lookup(client_factory):
+    client, repo = client_factory("merchant_admin")
+    path = f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/period"
+
+    assert client.patch(path, json={
+        "period_from": "2026-07-02", "period_to": "2026-07-30", "idempotency_key": "  ",
+    }).status_code == 422
+    response = client.patch(path, json={
+        "period_from": "2026-07-02", "period_to": "2026-07-30",
+        "idempotency_key": " period-change-1 ",
+    })
+    assert response.status_code == 200
+    assert repo.calls[-2][0] == "merchant_detail"
+    assert repo.calls[-1] == (
+        "update_period", "merchant-own", UUID(SETTLEMENT_ID),
+        "2026-07-02", "2026-07-30", "period-change-1",
+    )
+
+    repo.calls.clear()
+    repo.demo = True
+    blocked = client.patch(path, json={
+        "period_from": "2026-07-02", "period_to": "2026-07-30", "idempotency_key": "demo-key",
+    })
+    assert blocked.status_code == 404
+    assert [call[0] for call in repo.calls] == ["merchant_detail"]
+
+
+def test_merchant_period_update_maps_database_date_error_stably(client_factory):
+    client, repo = client_factory("merchant_admin")
+    repo.period_error = SupabaseHttpError(
+        400, '{"code":"P0001","message":"INVALID_DATE_RANGE"}',
+    )
+    response = client.patch(
+        f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/period",
+        json={
+            "period_from": "2026-07-31", "period_to": "2026-07-01",
+            "idempotency_key": "invalid-range",
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "INVALID_DATE_RANGE"
 
 
 def test_popbill_routes_fail_closed_after_tenant_and_issued_validation(client_factory):

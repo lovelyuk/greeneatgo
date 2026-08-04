@@ -9,7 +9,10 @@ from app.auth import bearer_token
 from app.config import get_settings
 from app.repositories.settlements import SettlementRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.settlement_schemas import ConfirmTaxInvoiceRequest, SettlementDisputeRequest, SettlementPaymentRequest
+from app.settlement_schemas import (
+    ConfirmTaxInvoiceRequest, SettlementDisputeRequest, SettlementPaymentRequest,
+    SettlementPeriodUpdateRequest,
+)
 from app.services.join_flow import JoinFlowError
 from app.services.popbill_service import PopbillConfig, PopbillError, PopbillService
 
@@ -66,6 +69,7 @@ def _error(status: int, code: str, message: str) -> HTTPException:
 def _rpc_error(exc: SupabaseHttpError) -> HTTPException:
     body = exc.body
     mapping = (
+        ("INVALID_DATE_RANGE", 422, "INVALID_DATE_RANGE", "정산 기간을 확인해 주세요"),
         ("SETTLEMENT_NOT_FOUND", 404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요"),
         ("SETTLEMENT_FORBIDDEN", 403, "FORBIDDEN", "이 정산을 처리할 권한이 없어요"),
         ("IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT", "같은 멱등 키가 다른 요청에 사용됐어요"),
@@ -364,6 +368,19 @@ def merchant_begin_revision(settlement_id: UUID, token: str = Depends(bearer_tok
         if repo.merchant_detail(settlement_id, actor.merchant_id) is None:
             raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
         return {"ok": True, "data": _public(repo.begin_revision(actor, settlement_id)), "error": None}
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+
+
+@merchant_router.patch("/{settlement_id}/period")
+def merchant_update_period(settlement_id: UUID, payload: SettlementPeriodUpdateRequest, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
+    actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
+    try:
+        # This ordinary filtered lookup prevents generic mutation of demo evidence.
+        if repo.merchant_detail(settlement_id, actor.merchant_id) is None:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
+        return {"ok": True, "data": _public(repo.update_period(actor, settlement_id, payload)), "error": None}
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -49,11 +49,11 @@ class DetailClient:
                 "confirmed_at": "2026-07-01T00:01:00Z",
                 "created_at": "2026-07-01T00:01:00Z",
             }]
-        if table == "meal_transactions":
+        if table in {"normal_meal_transactions", "meal_transactions"}:
             return [{
                 "id": "transaction-1", "user_id": "user-1", "kind": "spend",
                 "tx_code": "TX-1", "meal_window": "중식", "product_name": None,
-                "pay_type": "ledger", "is_demo": True, "settlement_tax_type": "taxable",
+                "pay_type": "ledger", "is_demo": table == "meal_transactions", "settlement_tax_type": "taxable",
                 "settlement_supply_amount": 6455, "settlement_vat_amount": 645,
                 "settlement_total_amount": 7100, "created_at": "2026-07-01T03:00:00Z",
             }]
@@ -102,17 +102,27 @@ def test_workflow_rpc_boundaries_serialize_fastapi_uuid_parameters_as_strings():
     repository.dispute(actor, settlement_id, "금액 확인", "dispute-key")
     repository.send(actor, settlement_id)
     repository.begin_revision(actor, settlement_id)
+    repository.update_period(actor, settlement_id, SimpleNamespace(
+        period_from=date(2026, 7, 2), period_to=date(2026, 7, 30),
+        idempotency_key="period-key",
+    ))
     repository.mark_paid(actor, settlement_id, payment)
     repository.claim_invoice_issue(actor, settlement_id)
     repository.finalize_invoice_issue(actor, settlement_id, attempt_token, "issued")
     repository.apply_invoice_status(actor, settlement_id, provider_status)
     repository.reset_stale_invoice_issue(actor, settlement_id, attempt_token, False)
 
-    assert len(client.calls) == 9
+    assert len(client.calls) == 10
     for _, payload in client.calls:
         assert payload["p_settlement_id"] == str(settlement_id)
     token_payloads = [payload for _, payload in client.calls if "p_attempt_token" in payload]
     assert token_payloads and all(payload["p_attempt_token"] == str(attempt_token) for payload in token_payloads)
+    period_call = next(call for call in client.calls if call[0] == "merchant_update_settlement_period")
+    assert period_call[1] == {
+        "p_actor_id": "actor-1", "p_merchant_id": "merchant-1",
+        "p_settlement_id": str(settlement_id), "p_period_from": "2026-07-02",
+        "p_period_to": "2026-07-30", "p_idempotency_key": "period-key",
+    }
 
 
 def test_company_detail_includes_same_ordered_public_payment_history_as_merchant_detail():
@@ -154,11 +164,12 @@ def test_settlement_detail_includes_period_transactions_with_snapshot_amounts_an
     assert detail["transactions"] == [{
         "id": "transaction-1", "created_at": "2026-07-01T03:00:00Z",
         "employee_name": "김직원", "employee_no": "A-1", "department": "개발팀",
-        "kind": "spend", "pay_type": "ledger", "item": "중식", "tx_code": "TX-1",
+        "kind": "spend", "pay_type": "ledger", "meal_window": "중식",
+        "item": "중식", "tx_code": "TX-1",
         "tax_type": "taxable", "supply_amount": 6455, "vat_amount": 645,
-        "total_amount": 7100, "is_demo": True,
+        "total_amount": 7100, "is_demo": False,
     }]
-    transaction_calls = [params for table, params in client.calls if table == "meal_transactions"]
+    transaction_calls = [params for table, params in client.calls if table == "normal_meal_transactions"]
     assert transaction_calls == [{
         "select": TRANSACTION_FIELDS,
         "merchant_id": "eq.merchant-own", "company_id": "eq.company-own",
@@ -199,15 +210,25 @@ def test_company_reads_apply_server_side_workflow_visibility_boundary():
     assert {"sent", "disputed", "completed"} <= set(COMPANY_VISIBLE_SETTLEMENT_STATUSES)
 
 
-def test_demo_detail_explicitly_uses_base_table_while_normal_detail_uses_filtered_view():
+def test_demo_detail_explicitly_uses_base_tables_while_normal_detail_uses_filtered_views():
     normal_client = DetailClient()
-    repository_with(normal_client).merchant_detail("settlement-1", "merchant-own")
+    normal = repository_with(normal_client).merchant_detail(
+        "settlement-1", "merchant-own", include_transactions=True,
+    )
     demo_client = DetailClient()
-    repository_with(demo_client).merchant_demo_detail("settlement-1", "merchant-own")
+    demo = repository_with(demo_client).merchant_demo_detail(
+        "settlement-1", "merchant-own", include_transactions=True,
+    )
 
     assert normal_client.calls[0][0] == "normal_settlements"
+    assert any(table == "normal_meal_transactions" for table, _ in normal_client.calls)
+    assert all(table != "meal_transactions" for table, _ in normal_client.calls)
+    assert normal is not None and normal["transactions"][0]["is_demo"] is False
     assert demo_client.calls[0][0] == "settlement_demo_runs"
     assert demo_client.calls[1][0] == "settlements"
+    assert any(table == "meal_transactions" for table, _ in demo_client.calls)
+    assert all(table != "normal_meal_transactions" for table, _ in demo_client.calls)
+    assert demo is not None and demo["transactions"][0]["is_demo"] is True
 
 
 class ListNameClient:

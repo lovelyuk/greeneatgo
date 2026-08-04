@@ -1578,6 +1578,11 @@ code { font-size: 12px; }
 .settlement-v2-overview-row:last-child { border-bottom: 0; }
 .settlement-v2-overview-row > span { padding: 20px; color: var(--text-secondary); background: var(--bg-subtle); font-weight: 700; }
 .settlement-v2-overview-row > :last-child { min-width: 0; padding: 20px; }
+.settlement-v2-period-editor { display: flex; min-width: 0; align-items: end; gap: 8px; }
+.settlement-v2-period-editor label { display: grid; min-width: 0; gap: 5px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.settlement-v2-period-editor input { width: 100%; min-width: 0; }
+.settlement-v2-period-editor > span { align-self: end; padding-bottom: 11px; color: var(--text-muted); }
+.settlement-v2-period-editor button { flex: 0 0 auto; }
 .settlement-v2-options { display: grid; gap: 12px; }
 .settlement-v2-options > div { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .settlement-v2-options small { min-width: 132px; color: var(--text-muted); }
@@ -1646,6 +1651,12 @@ code { font-size: 12px; }
   .settlement-v2-evidence-filters { display: grid; grid-template-columns: 1fr; width: 100%; }
   .settlement-v2-evidence-filters label { min-width: 0; }
   .settlement-v2-attachments { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 480px) {
+  .settlement-v2-period-editor { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .settlement-v2-period-editor > span { display: none; }
+  .settlement-v2-period-editor button { width: 100%; }
 }
 
 /* Supplier information: one real-data card with an explicit read/edit lifecycle. */

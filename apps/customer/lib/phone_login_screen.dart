@@ -10,6 +10,14 @@ typedef LegalDocumentOpener = Future<void> Function(String filename);
 
 enum PhoneLoginStep { phone, code, name }
 
+const _navyBase = Color(0xFF0E1C2B);
+const _navySurface = Color(0xFF16293C);
+const _navySurfaceAlt = Color(0xFF14283A);
+const _navyBorder = Color(0xFF2A3B4F);
+const _navyBorderStrong = Color(0xFF3A4C61);
+const _limeGreen = Color(0xFF9DBF63);
+const _textOnLime = Color(0xFF0E1C2B);
+
 class PhoneLoginScreen extends StatefulWidget {
   const PhoneLoginScreen({
     super.key,
@@ -199,8 +207,257 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
     });
   }
 
+  Widget _buildSignupScreen() {
+    const primaryText = Color(0xFFF4F7F9);
+    const secondaryText = Color(0xFFAAB6C2);
+
+    return Scaffold(
+      key: const Key('signup-screen'),
+      backgroundColor: _navyBase,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned(
+              right: -72,
+              top: -88,
+              child: Container(
+                key: const Key('signup-decor-surface'),
+                width: 190,
+                height: 190,
+                decoration: const BoxDecoration(
+                  color: _navySurface,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            Positioned(
+              left: -94,
+              bottom: 42,
+              child: Container(
+                key: const Key('signup-decor-surface-alt'),
+                width: 170,
+                height: 170,
+                decoration: const BoxDecoration(
+                  color: _navySurfaceAlt,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'greeneatGo',
+                    style: TextStyle(
+                      color: _limeGreen,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  const Text(
+                    '반가워요!\n이름을 알려주세요',
+                    style: TextStyle(
+                      color: primaryText,
+                      fontSize: 29,
+                      height: 1.25,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    '처음 이용하시는군요. 가입에 사용할 이름만 입력하면 돼요.',
+                    style: TextStyle(
+                      color: secondaryText,
+                      fontSize: 14,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 34),
+                  const Text(
+                    '휴대폰 번호',
+                    style: TextStyle(
+                      color: secondaryText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _phone.text,
+                          key: const Key('signup-phone-value'),
+                          style: const TextStyle(
+                            color: primaryText,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _limeGreen.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_circle,
+                                color: _limeGreen, size: 15),
+                            SizedBox(width: 4),
+                            Text(
+                              '인증완료',
+                              style: TextStyle(
+                                color: _limeGreen,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(
+                    key: Key('signup-phone-divider'),
+                    height: 20,
+                    thickness: 1,
+                    color: _navyBorder,
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    key: const Key('name-input'),
+                    controller: _displayName,
+                    autofocus: true,
+                    textInputAction: TextInputAction.done,
+                    style: const TextStyle(
+                      color: primaryText,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    cursorColor: _limeGreen,
+                    inputFormatters: [LengthLimitingTextInputFormatter(20)],
+                    onSubmitted: (_) {
+                      if (!_busy) _submitCurrentStep();
+                    },
+                    decoration: const InputDecoration(
+                      labelText: '이름',
+                      labelStyle: TextStyle(color: secondaryText),
+                      floatingLabelStyle: TextStyle(color: _limeGreen),
+                      hintText: '이름을 입력해 주세요',
+                      hintStyle: TextStyle(color: Color(0xFF697888)),
+                      contentPadding: EdgeInsets.symmetric(vertical: 12),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: _navyBorder),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: _limeGreen, width: 2),
+                      ),
+                    ),
+                  ),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(
+                          color: Color(0xFFFF8D8D),
+                          fontSize: 13,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 30),
+                  SizedBox(
+                    height: 56,
+                    child: FilledButton(
+                      key: const Key('phone-auth-primary'),
+                      onPressed: _busy ? null : _submitCurrentStep,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _limeGreen,
+                        foregroundColor: _textOnLime,
+                        disabledBackgroundColor:
+                            _limeGreen.withValues(alpha: 0.5),
+                        disabledForegroundColor:
+                            _textOnLime.withValues(alpha: 0.6),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      child: Text(_busy ? '처리 중...' : '가입하고 시작하기'),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '가입하면 이용약관과 개인정보 처리방침에 동의한 것으로 봅니다.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.4,
+                      color: secondaryText,
+                    ),
+                  ),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    children: [
+                      TextButton(
+                        onPressed: () => widget.openLegalDocument('terms.html'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: primaryText,
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            decoration: TextDecoration.underline,
+                            decorationColor: _navyBorderStrong,
+                          ),
+                        ),
+                        child: const Text('이용약관'),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            widget.openLegalDocument('privacy.html'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: primaryText,
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            decoration: TextDecoration.underline,
+                            decorationColor: _navyBorderStrong,
+                          ),
+                        ),
+                        child: const Text('개인정보 처리방침'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
+    if (_step == PhoneLoginStep.name) return _buildSignupScreen();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F3E3),
       body: SafeArea(

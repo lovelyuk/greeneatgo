@@ -45,8 +45,15 @@ Widget harness(
   List<String>? signedTokens,
   CustomTokenSignIn? signInWithCustomToken,
   VoidCallback? onLoggedIn,
+  double textScaleFactor = 1,
 }) {
   return MaterialApp(
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: TextScaler.linear(textScaleFactor),
+      ),
+      child: child!,
+    ),
     home: PhoneLoginScreen(
       gateway: gateway,
       signInWithCustomToken: signInWithCustomToken ??
@@ -323,6 +330,15 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('name-input')), findsOneWidget);
+    expect(find.byKey(const Key('phone-input')), findsNothing);
+    expect(find.byKey(const Key('otp-input')), findsNothing);
+    expect(find.byType(EditableText), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('signup-phone-value'))).data,
+      '01099998888',
+    );
+    expect(find.text('인증완료'), findsOneWidget);
+    expect(find.text('가입하고 시작하기'), findsOneWidget);
     expect(find.textContaining('처음 이용'), findsOneWidget);
     await tester.enterText(find.byKey(const Key('name-input')), ' 홍길동 ');
     await tester.tap(find.byKey(const Key('phone-auth-primary')));
@@ -330,8 +346,61 @@ void main() {
 
     expect(gateway.signups,
         [('raw-verification-token-which-is-long', '홍길동')]);
+    expect(gateway.sentPhones, ['01099998888']);
+    expect(gateway.verifications, [('01099998888', '654321')]);
     expect(signedTokens, ['signup-token']);
     expect(loggedIn, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'new-account screen uses exact navy/lime tokens at 360x640 and 1.3 text scale',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final gateway = FakePhoneAuthGateway()
+      ..verifyResult =
+          const NewPhoneAccount('verification-token', expiresIn: 300);
+    await tester.pumpWidget(harness(gateway, textScaleFactor: 1.3));
+
+    await tester.enterText(find.byKey(const Key('phone-input')), '01099998888');
+    await tester.tap(find.byKey(const Key('phone-auth-primary')));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('otp-input')), '654321');
+    await tester.tap(find.byKey(const Key('phone-auth-primary')));
+    await tester.pump();
+
+    final scaffold =
+        tester.widget<Scaffold>(find.byKey(const Key('signup-screen')));
+    final primary = tester
+        .widget<FilledButton>(find.byKey(const Key('phone-auth-primary')));
+    final surface = tester
+        .widget<Container>(find.byKey(const Key('signup-decor-surface')))
+        .decoration! as BoxDecoration;
+    final surfaceAlt = tester
+        .widget<Container>(find.byKey(const Key('signup-decor-surface-alt')))
+        .decoration! as BoxDecoration;
+    final divider =
+        tester.widget<Divider>(find.byKey(const Key('signup-phone-divider')));
+    final name = tester.widget<TextField>(find.byKey(const Key('name-input')));
+    final enabledBorder =
+        name.decoration!.enabledBorder! as UnderlineInputBorder;
+
+    expect(scaffold.backgroundColor, const Color(0xFF0E1C2B));
+    expect(surface.color, const Color(0xFF16293C));
+    expect(surfaceAlt.color, const Color(0xFF14283A));
+    expect(divider.color, const Color(0xFF2A3B4F));
+    expect(enabledBorder.borderSide.color, const Color(0xFF2A3B4F));
+    expect(
+        primary.style!.backgroundColor!.resolve({}), const Color(0xFF9DBF63));
+    expect(
+        primary.style!.foregroundColor!.resolve({}), const Color(0xFF0E1C2B));
+    expect(find.byType(EditableText), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
     await tester.pumpWidget(const SizedBox());
   });
 

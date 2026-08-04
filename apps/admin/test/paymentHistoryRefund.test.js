@@ -16,6 +16,16 @@ test('maps provider methods to 카드, 현금 and 포인트', () => {
   assert.equal(paymentMethodLabel({ kind: 'refund', payment_method: 'CARD', amount: -10000, point_amount: 3000 }), '카드');
 });
 
+test('payment method badges avoid the global card class and keep flexible single-line pills', async () => {
+  const feature = await readFile(new URL('../src/PaymentFeatures.jsx', import.meta.url), 'utf8');
+  const style = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(feature, /<span className="payment-type-badge">\{paymentType\}<\/span>/);
+  assert.doesNotMatch(feature, /const paymentTone =/);
+  assert.match(style, /\.payment-type-badge\s*\{[^}]*white-space:\s*nowrap/s);
+  assert.match(style, /\.payment-detail-card \.history-row-payment \.payment-type-badge\s*\{[^}]*width:\s*max-content/s);
+  assert.doesNotMatch(style, /\.payment-detail-card \.history-row-payment \.payment-type-badge\s*\{[^}]*width:\s*58px/s);
+});
+
 test('enables refunds only for complete payment rows with required ownership keys', () => {
   assert.deepEqual(refundButtonState(payment), { completed: false, disabled: false, label: '환불' });
   assert.deepEqual(refundButtonState({ ...payment, status: 'refunded' }), { completed: true, disabled: true, label: '환불완료' });

@@ -39,14 +39,13 @@ function Rows({ items, kind, onOpenReceipt, onRefund }) {
       </div>;
     }
     const paymentType = paymentMethodLabel(item);
-    const paymentTone = paymentType === '현금' ? 'cash' : paymentType === '포인트' ? 'point' : 'card';
     const receiptAvailable = Array.isArray(item.receipt?.types) && item.receipt.types.length > 0;
     const refundState = refundButtonState(item);
     return <div className={`history-row history-row-columns history-row-payment${refundEntry ? ' is-refund' : ''}`} key={item.id ?? `${kind}-${index}`}>
       <time dateTime={item.created_at}>{dateTime(item.created_at)}</time>
       <span className="history-product">{refundEntry ? '환불' : item.product_name ?? '상품'}</span>
       <strong className="history-person">{person}</strong>
-      <span className={`payment-type-badge ${paymentTone}`}>{paymentType}</span>
+      <span className="payment-type-badge">{paymentType}</span>
       <b>{amount}</b>
       <button
         type="button"

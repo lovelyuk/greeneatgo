@@ -430,7 +430,7 @@ input,textarea,select { min-height:46px;border:1px solid var(--line);border-radi
 
 .merchant-kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.merchant-kpi-card{min-height:120px;grid-template-columns:auto minmax(0,1fr);align-content:center;align-items:center;gap:8px 10px;padding:15px 18px}.merchant-kpi-card svg{width:22px;height:22px}.merchant-kpi-card span{color:var(--soft);font-size:20px;font-weight:400;line-height:1.15;white-space:nowrap}.merchant-kpi-card strong{grid-column:2;justify-self:end;font-size:20px;white-space:nowrap}
 .merchant-tabs button{position:relative}.merchant-nav-badge{position:absolute;top:2px;right:2px;display:inline-grid;min-width:21px;height:21px;place-items:center;padding:0 6px;border-radius:999px;color:#fff!important;background:#d84b3e!important;font-size:11px;font-weight:900;line-height:1}
-.payment-alert-panel{min-height:100%}.payment-alert-heading h2{display:flex;align-items:center;gap:8px}.payment-alert-heading h2 svg{color:var(--forest)}.payment-alert-list{display:grid}.payment-alert-row{display:grid;grid-template-columns:58px minmax(90px,1.15fr) minmax(64px,.8fr) auto auto;align-items:center;gap:12px;min-height:49px;padding:8px 4px;border-bottom:1px solid var(--line)}.payment-alert-row:last-child{border-bottom:0}.payment-alert-row time{color:var(--soft);font-size:13px;font-variant-numeric:tabular-nums}.payment-alert-row strong{overflow:visible;text-overflow:clip;white-space:normal;line-height:1.25}.payment-alert-row b{justify-self:end;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}.payment-type-badge{display:inline-flex;justify-content:center;min-width:50px;padding:5px 9px;border-radius:999px;color:#2f6546;background:#dfebd9;font-size:12px;font-weight:850}.payment-type-badge.voucher{color:#8a5200;background:#fff0cf}.payment-type-badge.subsidized{color:#315c9b;background:#e7efff}
+.payment-alert-panel{min-height:100%}.payment-alert-heading h2{display:flex;align-items:center;gap:8px}.payment-alert-heading h2 svg{color:var(--forest)}.payment-alert-list{display:grid}.payment-alert-row{display:grid;grid-template-columns:58px minmax(90px,1.15fr) minmax(64px,.8fr) auto auto;align-items:center;gap:12px;min-height:49px;padding:8px 4px;border-bottom:1px solid var(--line)}.payment-alert-row:last-child{border-bottom:0}.payment-alert-row time{color:var(--soft);font-size:13px;font-variant-numeric:tabular-nums}.payment-alert-row strong{overflow:visible;text-overflow:clip;white-space:normal;line-height:1.25}.payment-alert-row b{justify-self:end;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}.payment-type-badge{display:inline-flex;justify-content:center;min-width:50px;padding:5px 9px;border-radius:999px;color:#2f6546;background:#dfebd9;font-size:12px;font-weight:850;white-space:nowrap}.payment-type-badge.voucher{color:#8a5200;background:#fff0cf}.payment-type-badge.subsidized{color:#315c9b;background:#e7efff}
 @media(max-width:560px){.account-settings-backdrop{padding:12px}.account-settings-modal{padding:20px 16px}.account-settings-form .row-actions{display:grid;grid-template-columns:1fr 1fr}.account-settings-form .primary,.account-settings-form .ghost{width:100%}}
 @media(max-width:980px){.merchant-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.merchant-topbar .top-actions{align-items:center}}
 @media(max-width:700px){.payment-alert-row{grid-template-columns:44px minmax(58px,1.05fr) minmax(45px,.75fr) auto auto;gap:5px}.payment-alert-row b{font-size:13px}.payment-alert-person{overflow-wrap:anywhere;font-size:13px}.payment-alert-company{overflow-wrap:anywhere;font-size:13px}.payment-type-badge{min-width:44px;padding-inline:7px}}
@@ -637,15 +637,13 @@ input,textarea,select { min-height:46px;border:1px solid var(--line);border-radi
   white-space: nowrap;
 }
 .payment-detail-card .history-row-payment .payment-type-badge {
-  width: 58px;
-  min-width: 58px;
-  max-width: 58px;
-  justify-self: stretch;
+  width: max-content;
+  min-width: 0;
+  max-width: none;
+  justify-self: center;
+  padding-inline: 9px;
   text-align: center;
 }
-.history-row .payment-type-badge.card { color:#2f6546 }
-.history-row .payment-type-badge.cash { color:#8a5200 }
-.history-row .payment-type-badge.point { color:#315c9b }
 .payment-detail-card .history-row-payment > b {
   justify-self: stretch;
   text-align: right;

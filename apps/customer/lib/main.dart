@@ -35,8 +35,6 @@ import 'widgets/partner_banner_slot.dart';
 const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 const legalBaseUrl = String.fromEnvironment('LEGAL_BASE_URL',
     defaultValue: 'https://greeneatgo.vercel.app');
-const defaultMerchantQrToken = String.fromEnvironment('MERCHANT_QR_TOKEN',
-    defaultValue: 'QR-PILOT-KIMCHI');
 const _paymentAppChannel = MethodChannel('com.greeneat.greeneatgo/payment_app');
 
 Future<void> openLegalDocument(BuildContext context, String filename) async {
@@ -650,9 +648,13 @@ class VoucherCatalog {
 }
 
 class DailyMenuClient {
-  Future<TodayMenu?> getTodayMenu(String qrToken) async {
-    final uri = Uri.parse('$apiBaseUrl/merchants/$qrToken/daily-menu');
-    final response = await http.get(uri);
+  DailyMenuClient({http.Client? client}) : _client = client;
+
+  final http.Client? _client;
+
+  Future<TodayMenu?> getTodayMenu() async {
+    final uri = Uri.parse('$apiBaseUrl/daily-menu');
+    final response = await (_client?.get(uri) ?? http.get(uri));
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = decoded['detail'] as Map<String, dynamic>?;
@@ -2417,14 +2419,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    _todayMenuFuture = DailyMenuClient().getTodayMenu(defaultMerchantQrToken);
+    _todayMenuFuture = DailyMenuClient().getTodayMenu();
     _couponCountFuture = _loadCouponCount();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_loadPendingPayment());
   }
 
   Future<void> _refreshHome() async {
-    final menuFuture = DailyMenuClient().getTodayMenu(defaultMerchantQrToken);
+    final menuFuture = DailyMenuClient().getTodayMenu();
     final couponFuture = _loadCouponCount();
     setState(() {
       _todayMenuFuture = menuFuture;
@@ -2699,7 +2701,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const SizedBox(height: 16),
         ],
         FutureBuilder<TodayMenu?>(
-          future: DailyMenuClient().getTodayMenu(defaultMerchantQrToken),
+          future: DailyMenuClient().getTodayMenu(),
           builder: (context, snapshot) => _TodayMenuCard(
             todayMenu: snapshot.data,
             monthUsed: isConsumer ? null : monthUsed,

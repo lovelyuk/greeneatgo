@@ -1,5 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'package:greeneatgo_customer/auth_helpers.dart';
 import 'package:greeneatgo_customer/main.dart';
@@ -7,6 +11,33 @@ import 'package:greeneatgo_customer/payment_completion.dart';
 import 'package:greeneatgo_customer/theme/app_colors.dart';
 
 void main() {
+  test('daily menu client uses the server primary merchant endpoint', () async {
+    Uri? requestedUri;
+    final client = MockClient((request) async {
+      requestedUri = request.url;
+      return http.Response(
+        jsonEncode({
+          'ok': true,
+          'data': {
+            'today_menu': {
+              'title': '오늘 뷔페 메뉴',
+              'menu_text': '돼지김치찌개',
+              'image_url': null,
+            },
+          },
+          'error': null,
+        }),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    });
+
+    final menu = await DailyMenuClient(client: client).getTodayMenu();
+
+    expect(requestedUri?.path, '/daily-menu');
+    expect(menu?.menuText, '돼지김치찌개');
+  });
+
   testWidgets('app shows missing environment guidance when not configured',
       (WidgetTester tester) async {
     await tester.pumpWidget(const GreeneatGoApp());

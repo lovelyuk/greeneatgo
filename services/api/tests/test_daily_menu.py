@@ -6,11 +6,65 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from app.routers.admin import get_daily_menu, today_kst, upsert_daily_menu
-from app.routers.products import get_public_daily_menu
+from app.routers.products import get_primary_daily_menu, get_public_daily_menu
 from app.schemas import DailyMenuUpsertRequest
 
 
 class DailyMenuScheduleTests(unittest.TestCase):
+    @patch("app.routers.products.get_settings")
+    @patch("app.routers.products.SupabaseHttpClient")
+    def test_legacy_customer_app_token_falls_back_to_primary_merchant(
+        self, client_class, settings
+    ):
+        settings.return_value.pilot_merchant_id = "merchant-live"
+        menu = {
+            "id": "today",
+            "merchant_id": "merchant-live",
+            "service_date": today_kst(),
+            "title": "오늘 뷔페 메뉴",
+            "menu_text": "돼지김치찌개",
+            "image_url": None,
+            "is_active": True,
+        }
+        client = client_class.return_value
+        client.rest_get.side_effect = [
+            [],
+            [{"id": "merchant-live", "name": "그린잇", "status": "active"}],
+            [menu],
+        ]
+
+        result = get_public_daily_menu("QR-PILOT-KIMCHI")["data"]
+
+        self.assertEqual(result["today_menu"]["id"], "today")
+
+    @patch("app.routers.products.get_settings")
+    @patch("app.routers.products.SupabaseHttpClient")
+    def test_primary_daily_menu_uses_the_voucher_surface_merchant(
+        self, client_class, settings
+    ):
+        settings.return_value.pilot_merchant_id = "merchant-live"
+        menu = {
+            "id": "today",
+            "merchant_id": "merchant-live",
+            "service_date": today_kst(),
+            "title": "오늘 뷔페 메뉴",
+            "menu_text": "돼지김치찌개",
+            "image_url": None,
+            "is_active": True,
+        }
+        client = client_class.return_value
+        client.rest_get.side_effect = [
+            [{"id": "merchant-live", "name": "그린잇", "status": "active"}],
+            [menu],
+        ]
+
+        result = get_primary_daily_menu()["data"]
+
+        self.assertEqual(result["today_menu"]["id"], "today")
+        merchant_query = client.rest_get.call_args_list[0]
+        self.assertEqual(merchant_query.args[0], "merchants")
+        self.assertEqual(merchant_query.args[1]["id"], "eq.merchant-live")
+
     @patch("app.routers.products.SupabaseHttpClient")
     def test_public_daily_menu_does_not_query_ledger_products(self, client_class):
         menu = {

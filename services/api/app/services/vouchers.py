@@ -37,15 +37,19 @@ def per_voucher_price(charged_amount: Decimal | str | int, total_count: int) -> 
     return (Decimal(str(charged_amount)) / total_count).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
-def resolve_voucher_merchant(repo, pilot_merchant_id: str | None) -> dict | None:
+def resolve_voucher_merchant_client(client, pilot_merchant_id: str | None) -> dict | None:
     """Resolve the only merchant exposed by the pilot voucher surface."""
     params = {"select": "id,name,status", "status": "eq.active", "limit": "1"}
     if pilot_merchant_id:
         params["id"] = f"eq.{pilot_merchant_id}"
     else:
         params["order"] = "created_at.asc,id.asc"
-    rows = repo.client.rest_get("merchants", params)
+    rows = client.rest_get("merchants", params)
     return rows[0] if rows else None
+
+
+def resolve_voucher_merchant(repo, pilot_merchant_id: str | None) -> dict | None:
+    return resolve_voucher_merchant_client(repo.client, pilot_merchant_id)
 
 
 def _batched_lookup(repo, table: str, *, id_field: str, ids: list[str], select: str, chunk_size: int = 100) -> list[dict]:

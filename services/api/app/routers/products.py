@@ -2,9 +2,12 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 
+from app.config import get_settings
 from app.repositories.supabase_http import SupabaseHttpClient, SupabaseHttpError
+from app.services.vouchers import resolve_voucher_merchant_client
 
 router = APIRouter(tags=["daily-menu"])
+LEGACY_PRIMARY_MENU_QR_TOKEN = "QR-PILOT-KIMCHI"
 
 FALLBACK_DAILY_MENU = {
     "title": "오늘 뷔페 메뉴",
@@ -47,6 +50,38 @@ def get_today_menu(client: SupabaseHttpClient, merchant_id: str) -> tuple[dict |
         raise
 
 
+@router.get("/daily-menu")
+def get_primary_daily_menu():
+    client = SupabaseHttpClient()
+    try:
+        merchant = resolve_voucher_merchant_client(
+            client, get_settings().pilot_merchant_id
+        )
+        if not merchant:
+            raise _error(404, "MERCHANT_NOT_FOUND", "식당을 찾을 수 없어요")
+        today_menu, migration_required = get_today_menu(client, merchant["id"])
+        return {
+            "ok": True,
+            "data": {
+                "today_menu": today_menu,
+                "migration_required": migration_required,
+            },
+            "error": None,
+        }
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if "PGRST205" in exc.body:
+            return {
+                "ok": True,
+                "data": {"today_menu": None, "migration_required": True},
+                "error": None,
+            }
+        raise _error(
+            502, "SUPABASE_ERROR", "오늘 메뉴를 불러오는 중 오류가 발생했어요"
+        ) from exc
+
+
 @router.get("/merchants/{qr_token}/daily-menu")
 def get_public_daily_menu(qr_token: str):
     client = SupabaseHttpClient()
@@ -55,6 +90,11 @@ def get_public_daily_menu(qr_token: str):
             "merchants",
             {"select": "id", "qr_token": f"eq.{qr_token}", "status": "eq.active", "limit": "1"},
         )
+        if not merchants and qr_token == LEGACY_PRIMARY_MENU_QR_TOKEN:
+            primary = resolve_voucher_merchant_client(
+                client, get_settings().pilot_merchant_id
+            )
+            merchants = [primary] if primary else []
         if not merchants:
             raise _error(404, "MERCHANT_NOT_FOUND", "식당 QR을 찾을 수 없어요")
         today_menu, migration_required = get_today_menu(client, merchants[0]["id"])

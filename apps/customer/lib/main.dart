@@ -2434,7 +2434,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<int> _loadCouponCount() async =>
-      (await ApiClient(widget.session).getCoupons()).issued.length;
+      (await ApiClient(widget.session).getCoupons()).availableCount;
 
   Future<void> _ignoreCouponError(Future<int> future) async {
     try {

@@ -96,6 +96,8 @@ class CouponWallet {
   final List<CouponItem> items;
   final List<CouponItem> issued;
 
+  int get availableCount => items.length + issued.length;
+
   factory CouponWallet.fromJson(Map<String, dynamic> json) {
     final merchant = json['merchant'];
     final merchantName = merchant is Map
@@ -381,7 +383,7 @@ class _CouponWalletScreenState extends State<CouponWalletScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
                     children: [
-                      Text('${wallet.items.length + wallet.issued.length}장의 쿠폰',
+                      Text('${wallet.availableCount}장의 쿠폰',
                           style: AppTextStyles.screenTitle),
                       const SizedBox(height: 6),
                       Text('${wallet.merchantName}에서 사용할 수 있어요.',

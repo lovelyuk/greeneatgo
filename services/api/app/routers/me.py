@@ -191,12 +191,22 @@ def _customer_usage(repo: JoinRepository, user_id: str) -> dict:
         for row in direct_rows
     ]
     combined = sorted(voucher_history + direct_history, key=lambda row: row.get("created_at") or "", reverse=True)
+    point_users = repo.client.rest_get(
+        "app_users", {"select": "point_balance", "id": f"eq.{user_id}", "limit": "1"}
+    )
+    point_rows = repo.client.rest_get(
+        "point_transactions",
+        {"select": "id,type,amount,balance_after,reason,related_voucher_id,related_order_id,created_at",
+         "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "50"},
+    )
     return {
         "balance": None, "monthly_limit": None, "remaining_limit": None, "month_used": None,
         "recent_transactions": combined[:3], "voucher_balance": voucher_balance,
         "voucher_use_history": voucher_history,
         "voucher_month_used_count": voucher_month_used_count,
         "voucher_month_used_amount": voucher_month_used_amount,
+        "point_balance": int(point_users[0].get("point_balance") or 0) if point_users else 0,
+        "point_transactions": point_rows,
     }
 
 

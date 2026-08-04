@@ -176,10 +176,12 @@ void main() {
       CouponWalletScreen(loadCoupons: () async => parsed),
     );
 
+    expect(find.text('2장의 쿠폰'), findsOneWidget);
     expect(find.text('내 쿠폰'), findsOneWidget);
     expect(find.text('공개 쿠폰'), findsNWidgets(2));
     expect(find.text('발급 쿠폰'), findsOneWidget);
     expect(find.byType(CouponTicketCard), findsNWidgets(2));
+    expect(parsed.availableCount, 2);
     expect(parsed.issued.single.id, 'coupon-issued');
     expect(parsed.issued.single.userCouponId, 'user-coupon-1');
     expect(parsed.issued.single.source, '배너');

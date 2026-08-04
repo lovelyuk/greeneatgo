@@ -1,12 +1,13 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, BarChart3, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Home, LogOut, Package, QrCode, RefreshCw, Search, Send, Settings, Users, WalletCards, X, XCircle } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, Coffee, CreditCard, Download, FileSpreadsheet, FileText, Home, LogOut, QrCode, RefreshCw, Search, Send, Settings, Users, WalletCards, X, XCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
 import { PaymentHistoryDashboard } from './PaymentFeatures.jsx';
 import SettlementDemoPanel from './SettlementDemoPanel.jsx';
 import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
+import { PREPURCHASE_MAX_QUANTITY, PREPURCHASE_MAX_UNIT_PRICE, prepurchaseChargeInvalid, prepurchaseChargePayload, prepurchaseChargeTotal, prepurchaseItems } from './prepurchase.js';
 import { captureGeneration, generationIsCurrent } from './generationGuard.js';
 import { currentPeriodYm, formatPeriodYm, mapCompanyUsage, shiftPeriodYm } from './companyUsage.js';
 import { filterMerchantTransactions, merchantMealPaymentIds, merchantRecentKpis, reconcileMerchantPaymentFeed } from './merchantPaymentFeed.js';
@@ -1763,12 +1764,150 @@ function MerchantTaxInvoiceScreen({ token, initialTab = 'issue' }) {
     {activeTab === 'evidence' && <SettlementEvidencePanel settlementRows={items} />}
   </AdminPage>;
 }
-function MerchantPrepurchaseMock() {
-  // TODO: voucher 배치 테이블 존재를 확인한 뒤 실제 잔량 조회로 교체합니다.
-  const batches = [{ company: '모아산업', bought: '2026.07.01', quantity: 500, used: 382, price: 8000, expires: '2026.12.31' }, { company: '가온테크', bought: '2026.06.15', quantity: 300, used: 214, price: 8500, expires: '2026.11.30' }, { company: '한결디자인', bought: '2026.07.20', quantity: 120, used: 28, price: 9000, expires: '2027.01.19' }];
-  return <AdminPage title="선구매 관리" description="선구매 배치 잔량과 미사용 부채를 확인합니다." showHeader={false} className="merchant-regular-weight">
-    <section className="grid mock-kpi-grid three"><article className="card"><span>누적 판매</span><strong className="money">920매</strong></article><article className="card"><span>사용 완료</span><strong className="money">624매</strong></article><article className="card warning-card"><span>미사용 · 부채</span><strong className="money">296매 · 2,503,000원</strong></article></section>
-    <article className="panel"><div className="panel-title"><div><h3>배치별 현황</h3><p className="panel-note">미사용 잔량은 식당의 이행 의무인 부채로 표시합니다.</p></div></div><div className="mock-batch-list">{batches.map((batch) => { const remain = batch.quantity - batch.used; return <article className="card" key={`${batch.company}-${batch.bought}`}><div className="mock-batch-head"><strong>{batch.company}</strong><span className="badge">잔여 {remain}매</span></div><dl><div><dt>구매일</dt><dd>{batch.bought}</dd></div><div><dt>구매수량</dt><dd className="money">{batch.quantity}매</dd></div><div><dt>단가</dt><dd className="money">{krw(batch.price)}</dd></div><div><dt>사용량</dt><dd className="money">{batch.used}매</dd></div><div><dt>유효기간</dt><dd>{batch.expires}</dd></div><div><dt>미사용 부채</dt><dd className="money">{krw(remain * batch.price)}</dd></div></dl></article>; })}</div></article>
+function MerchantPrepurchaseScreen({ token, onChanged, refreshVersion }) {
+  const [items, setItems] = useState([]);
+  const [loadState, setLoadState] = useState('loading');
+  const [loadError, setLoadError] = useState('');
+  const [chargeError, setChargeError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [chargeItem, setChargeItem] = useState(null);
+  const [chargeForm, setChargeForm] = useState({ quantity: '', unit_price: '' });
+  const [chargeTouched, setChargeTouched] = useState({ quantity: false, unit_price: false });
+  const [charging, setCharging] = useState(false);
+  const chargeRequestKeyRef = useRef(null);
+  const chargeTriggerRef = useRef(null);
+  const quantityInputRef = useRef(null);
+  const readGenerationRef = useRef(0);
+
+  async function loadPrepurchaseItems(signal) {
+    const generation = ++readGenerationRef.current;
+    setLoadState('loading');
+    setLoadError('');
+    try {
+      const data = await apiFetch('/admin/merchant/prepurchases', token, signal ? { signal } : {});
+      if (signal?.aborted || generation !== readGenerationRef.current) return;
+      setItems(prepurchaseItems(data));
+      setLoadState('loaded');
+    } catch (error) {
+      if (error.name === 'AbortError' || signal?.aborted || generation !== readGenerationRef.current) return;
+      setLoadError(error.message);
+      setLoadState('failed');
+    }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadPrepurchaseItems(controller.signal);
+    return () => {
+      controller.abort();
+      readGenerationRef.current += 1;
+    };
+  }, [token, refreshVersion]);
+
+  useEffect(() => {
+    if (chargeItem) quantityInputRef.current?.focus();
+  }, [chargeItem]);
+
+  useEffect(() => {
+    if (!chargeItem) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && !charging) {
+        event.preventDefault();
+        closeCharge();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [chargeItem, charging]);
+
+  function closeCharge(eventOrForce) {
+    const force = eventOrForce === true;
+    if (charging && !force) return;
+    setChargeItem(null);
+    setChargeError('');
+    chargeRequestKeyRef.current = null;
+    window.requestAnimationFrame(() => chargeTriggerRef.current?.focus());
+  }
+
+  function openCharge(item, trigger) {
+    setNotice('');
+    setChargeError('');
+    chargeTriggerRef.current = trigger;
+    chargeRequestKeyRef.current = crypto.randomUUID();
+    setChargeItem(item);
+    setChargeForm({ quantity: '', unit_price: item.unit_price == null ? '' : String(item.unit_price) });
+    setChargeTouched({ quantity: false, unit_price: false });
+  }
+
+  function updateChargeField(field, value) {
+    setChargeForm((form) => {
+      if (form[field] === value) return form;
+      chargeRequestKeyRef.current = crypto.randomUUID();
+      return { ...form, [field]: value };
+    });
+    setChargeTouched((touched) => ({ ...touched, [field]: true }));
+  }
+
+  async function submitCharge(event) {
+    event.preventDefault();
+    if (!chargeItem || !chargeRequestKeyRef.current || charging || prepurchaseChargeInvalid(chargeForm.quantity, chargeForm.unit_price)) {
+      setChargeTouched({ quantity: true, unit_price: true });
+      return;
+    }
+    setCharging(true);
+    setChargeError('');
+    setNotice('');
+    try {
+      await apiFetch(`/admin/merchant/companies/${encodeURIComponent(chargeItem.company_id)}/prepurchases`, token, {
+        method: 'POST',
+        body: JSON.stringify(prepurchaseChargePayload(chargeForm.quantity, chargeForm.unit_price, chargeRequestKeyRef.current)),
+      });
+      setCharging(false);
+      closeCharge(true);
+      setNotice('선구매 수량을 충전했어요.');
+      await Promise.all([loadPrepurchaseItems(), onChanged?.()]);
+    } catch (error) {
+      const ambiguous = !error.status || error.status >= 500;
+      setChargeError(ambiguous
+        ? `${error.message} 충전 처리 상태가 불명확할 수 있습니다. 같은 요청을 안전하게 다시 시도할 수 있습니다.`
+        : error.message);
+    } finally {
+      setCharging(false);
+    }
+  }
+
+  const displayNumber = (value, suffix = '') => value == null ? '-' : `${Number(value).toLocaleString('ko-KR')}${suffix}`;
+  const displayDate = (value) => {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString('ko-KR');
+  };
+  const amount = prepurchaseChargeTotal(chargeForm.quantity, chargeForm.unit_price);
+  const invalidCharge = prepurchaseChargeInvalid(chargeForm.quantity, chargeForm.unit_price);
+  const quantityValue = Number(chargeForm.quantity);
+  const unitPriceValue = Number(chargeForm.unit_price);
+  const quantityInvalid = !Number.isInteger(quantityValue) || quantityValue <= 0 || quantityValue > PREPURCHASE_MAX_QUANTITY;
+  const unitPriceInvalid = !Number.isInteger(unitPriceValue) || unitPriceValue <= 0 || unitPriceValue > PREPURCHASE_MAX_UNIT_PRICE;
+
+  return <AdminPage title={null} description="선구매 계약 업체의 구매 및 잔여 수량을 관리합니다." preview={false} className="prepurchase-page merchant-regular-weight merchant-open-table">
+    <article className="panel prepurchase-panel">
+      {loadState === 'failed' && <div className="alert error" role="alert">{loadError} <button type="button" className="ghost" onClick={() => loadPrepurchaseItems()} disabled={charging}>다시 시도</button></div>}
+      {notice && <div className="alert success" role="status">{notice}</div>}
+      {loadState === 'loading' ? <p className="empty-state" role="status">선구매 내역을 불러오는 중입니다.</p> : loadState === 'loaded' && (items.length === 0 ? <p className="empty-state">선구매 계약이 설정된 업체가 없습니다.</p> : <div className="table-wrap prepurchase-table-wrap"><table><thead><tr><th>업체명</th><th>최근 구매일</th><th>구매 수량</th><th>단가</th><th>잔여량</th><th>충전 버튼</th></tr></thead><tbody>{items.map((item) => <tr key={item.merchant_company_id}><td><strong>{item.company_name}</strong></td><td>{displayDate(item.latest_purchase_at)}</td><td className="money">{displayNumber(item.purchase_quantity)}</td><td className="money">{item.unit_price == null ? '-' : krw(item.unit_price)}</td><td className="money">{displayNumber(item.remaining_quantity)}</td><td><button type="button" className="primary prepurchase-charge-button" onClick={(event) => openCharge(item, event.currentTarget)}>충전</button></td></tr>)}</tbody></table></div>)}
+    </article>
+    {chargeItem && <div className="modal-backdrop prepurchase-modal-backdrop" onClick={closeCharge}>
+      <section className="invite-modal prepurchase-charge-modal merchant-regular-weight" role="dialog" aria-modal="true" aria-labelledby="prepurchase-charge-title" aria-describedby="prepurchase-charge-description" onClick={(event) => event.stopPropagation()}>
+        <div className="panel-title"><div><h2 id="prepurchase-charge-title">충전</h2><p id="prepurchase-charge-description" className="panel-note">{chargeItem.company_name}의 충전 수량과 단가를 입력해 주세요.</p></div><button type="button" className="ghost icon-button" aria-label="닫기" onClick={closeCharge} disabled={charging}><X size={20}/></button></div>
+        {chargeError && <div className="alert error" role="alert">{chargeError}</div>}
+        <form className="prepurchase-charge-form" onSubmit={submitCharge}>
+          <label>잔여량<input value={displayNumber(chargeItem.remaining_quantity)} readOnly /></label>
+          <label>구매 수량<input ref={quantityInputRef} type="number" inputMode="numeric" min="1" max={PREPURCHASE_MAX_QUANTITY} step="1" value={chargeForm.quantity} onChange={(event) => updateChargeField('quantity', event.target.value)} onBlur={() => setChargeTouched((value) => ({ ...value, quantity: true }))} aria-invalid={chargeTouched.quantity && quantityInvalid} aria-describedby="prepurchase-quantity-help" required /><span id="prepurchase-quantity-help" className={chargeTouched.quantity && quantityInvalid ? 'prepurchase-field-error' : 'panel-note'}>{chargeTouched.quantity && quantityInvalid ? '구매 수량은 1 이상 1,000,000 이하의 정수여야 합니다.' : '1 이상 1,000,000 이하의 정수를 입력하세요.'}</span></label>
+          <label>단가<input type="number" inputMode="numeric" min="1" max={PREPURCHASE_MAX_UNIT_PRICE} step="1" value={chargeForm.unit_price} onChange={(event) => updateChargeField('unit_price', event.target.value)} onBlur={() => setChargeTouched((value) => ({ ...value, unit_price: true }))} aria-invalid={chargeTouched.unit_price && unitPriceInvalid} aria-describedby="prepurchase-unit-price-help" required /><span id="prepurchase-unit-price-help" className={chargeTouched.unit_price && unitPriceInvalid ? 'prepurchase-field-error' : 'panel-note'}>{chargeTouched.unit_price && unitPriceInvalid ? '단가는 1원 이상 10,000,000원 이하의 정수여야 합니다.' : '1원 이상 10,000,000원 이하의 정수를 입력하세요.'}</span></label>
+          <label>금액<input value={krw(amount)} readOnly /></label>
+          <button className="primary" disabled={charging || invalidCharge}>{charging ? '충전 중...' : '충전'}</button>
+        </form>
+      </section>
+    </div>}
   </AdminPage>;
 }
 function MerchantCompanyListScreen({ items, onDetail }) {
@@ -1898,15 +2037,15 @@ function MerchantSupplierInfoScreen({ merchant, busy, onSave, onSettings, token 
   </AdminPage>;
 }
 
-function MerchantScreen({ section, companyItems, onCompanyDetail, merchant, busy, onSaveSupplier, onSettings, token, scopeId }) {
+function MerchantScreen({ section, companyItems, onCompanyDetail, onCompaniesChanged, merchant, busy, onSaveSupplier, onSettings, token, scopeId, prepurchaseRefreshVersion }) {
   if (section === 'main') return <DashboardView kind="merchant" token={token} scopeId={scopeId}/>;
   if (section === 'company-list') return <MerchantCompanyListScreen items={companyItems} onDetail={onCompanyDetail} />;
   if (section === 'supplier-info') return <MerchantSupplierInfoScreen merchant={merchant} busy={busy} onSave={onSaveSupplier} onSettings={onSettings} token={token} />;
+  if (section === 'prepurchase') return <MerchantPrepurchaseScreen token={token} onChanged={onCompaniesChanged} refreshVersion={prepurchaseRefreshVersion} />;
   if (section === 'settlement-evidence') return <MerchantTaxInvoiceScreen token={token} initialTab="evidence" />;
   const screens = {
     'settlements-by-company': MerchantSettlementScreen,
     'tax-invoices': MerchantTaxInvoiceScreen,
-    'prepurchase': MerchantPrepurchaseMock,
   };
   const Screen = screens[section];
   return Screen ? <Screen token={token} /> : null;
@@ -2401,6 +2540,7 @@ function Dashboard({ session, onLogout }) {
   const [dailyMenu, setDailyMenu] = useState(null);
   const [dailyMenuForm, setDailyMenuForm] = useState({ service_date: todayInput(), title: '오늘 뷔페 메뉴', menu_text: '', image_url: '' });
   const [merchantCompanies, setMerchantCompanies] = useState(null);
+  const [prepurchaseRefreshVersion, setPrepurchaseRefreshVersion] = useState(0);
   const [merchantSection, setMerchantSection] = useState('main');
   const [companyManagementTab, setCompanyManagementTab] = useState('company-list');
   const [restaurantManagementTab, setRestaurantManagementTab] = useState('daily-menu');
@@ -2425,7 +2565,7 @@ function Dashboard({ session, onLogout }) {
   const [platformInvitePhone, setPlatformInvitePhone] = useState({});
   const [inviteModal, setInviteModal] = useState(null);
   const [contractModal, setContractModal] = useState(null);
-  const [contractForm, setContractForm] = useState({ settlement_cycle: 'month_end', settlement_day: '25', unit_price: '', subsidy_enabled: false, company_subsidy_amount: '0', restaurant_subsidy_amount: '0', tax_type: 'unclassified' });
+  const [contractForm, setContractForm] = useState({ settlement_cycle: 'month_end', settlement_day: '25', unit_price: '', subsidy_enabled: false, prepurchase_enabled: false, company_subsidy_amount: '0', restaurant_subsidy_amount: '0', tax_type: 'unclassified' });
   const [busy, setBusy] = useState(false);
   const [dashboardBooting, setDashboardBooting] = useState(true);
   const [message, setMessage] = useState('');
@@ -2664,6 +2804,7 @@ function Dashboard({ session, onLogout }) {
         menu_text: dailyMenuData?.today_menu?.menu_text ?? '',
         image_url: dailyMenuData?.today_menu?.image_url ?? '',
       });
+      if (meData.role === 'merchant_admin') setPrepurchaseRefreshVersion((version) => version + 1);
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -2908,6 +3049,7 @@ function Dashboard({ session, onLogout }) {
           settlement_day: contractForm.settlement_cycle === 'day' ? Number(contractForm.settlement_day) : null,
           unit_price: contractForm.unit_price === '' ? null : Number(contractForm.unit_price),
           subsidy_enabled: contractForm.subsidy_enabled,
+          prepurchase_enabled: contractForm.prepurchase_enabled,
           company_subsidy_amount: contractForm.subsidy_enabled ? companySubsidy : 0,
           restaurant_subsidy_amount: contractForm.subsidy_enabled ? restaurantSubsidy : 0,
           tax_type: contractForm.tax_type,
@@ -3064,12 +3206,13 @@ function Dashboard({ session, onLogout }) {
 
   const merchantNavGroups = [
     [['main', '대시보드', Home], ['payment-history', '실시간 매출', CreditCard]],
-    [['companies', '업체 정보', Building2], ['settlements-by-company', '매출 정산', WalletCards], ['tax-invoices', '세금계산서', FileText], ['prepurchase', '선구매 관리', Package]],
+    [['companies', '업체 정보', Building2], ['settlements-by-company', '매출 정산', WalletCards], ['tax-invoices', '세금계산서', FileText]],
     [['restaurant-management', '식당 관리', Coffee], ['supplier-info', '공급자 정보', Settings]],
   ];
   const companyManagementTabs = [
     ['company-list', '업체 목록'],
     ['companies', '업체 추가'],
+    ['prepurchase', '선구매'],
   ];
   const restaurantManagementTabs = [
     ['daily-menu', '오늘 뷔페 메뉴'],
@@ -3142,7 +3285,7 @@ function Dashboard({ session, onLogout }) {
     {isMerchantAdmin && merchantContentSection === 'partners' && <PartnerManagementScreen token={token}/>}
     {isMerchantAdmin && merchantContentSection === 'partner-banners' && <PartnerBannerManagementScreen token={token}/>}
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantContentSection) && <AnnouncementReviewPanel token={token} section={merchantContentSection}/>}
-    {isMerchantAdmin && <MerchantScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} token={token} scopeId={me?.merchant_id} />}
+    {isMerchantAdmin && <MerchantScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} onCompaniesChanged={load} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} token={token} scopeId={me?.merchant_id} prepurchaseRefreshVersion={prepurchaseRefreshVersion} />}
     {isCompanyAdmin && !showCompanyLegacy && <CompanyScreen section={companyContentSection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} onSettings={openAccountSettings} onCompanyInfo={() => setCompanySection('company-info')} token={token} scopeId={me?.company_id} />}
 
     {error && <div className="alert error">{error}</div>}
@@ -3208,6 +3351,7 @@ function Dashboard({ session, onLogout }) {
             <select value={contractForm.tax_type} onChange={(event) => setContractForm((form) => ({ ...form, tax_type: event.target.value }))}><option value="unclassified">미분류(이용 차단)</option><option value="taxable">과세</option><option value="tax_free">면세</option></select>
           </label>
           <label className="subsidy-toggle"><input type="checkbox" checked={contractForm.subsidy_enabled} onChange={(event) => setContractForm((form) => ({ ...form, subsidy_enabled: event.target.checked }))} /> 보조금 계약</label>
+          <label className="subsidy-toggle"><input type="checkbox" checked={contractForm.prepurchase_enabled} onChange={(event) => setContractForm((form) => ({ ...form, prepurchase_enabled: event.target.checked }))} /> 선구매</label>
           {contractForm.subsidy_enabled && <div className="subsidy-fields">
             <label>회사 부담액<input type="number" min="0" step="1" value={contractForm.company_subsidy_amount} onChange={(event) => setContractForm((form) => ({ ...form, company_subsidy_amount: event.target.value }))} required /></label>
             <label>식당 부담액<input type="number" min="0" step="1" value={contractForm.restaurant_subsidy_amount} onChange={(event) => setContractForm((form) => ({ ...form, restaurant_subsidy_amount: event.target.value }))} required /></label>

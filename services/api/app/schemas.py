@@ -551,6 +551,9 @@ class MerchantCompanyContractUpdateRequest(BaseModel):
     company_subsidy_amount: int | None = Field(default=None, ge=0)
     restaurant_subsidy_amount: int | None = Field(default=None, ge=0)
     tax_type: str | None = Field(default=None, pattern='^(taxable|tax_free|unclassified)$')
+    # Optional for compatibility with contract PATCH clients deployed before
+    # prepaid merchant-company inventory existed.
+    prepurchase_enabled: bool | None = None
 
     @model_validator(mode="after")
     def validate_subsidy_contract(self):
@@ -563,3 +566,9 @@ class MerchantCompanyContractUpdateRequest(BaseModel):
             if company_amount + restaurant_amount >= unit_price:
                 raise ValueError("지원금 합계는 단가보다 작아야 해요")
         return self
+
+
+class MerchantCompanyPrepurchaseChargeRequest(BaseModel):
+    quantity: int = Field(gt=0, le=1_000_000)
+    unit_price: int = Field(gt=0, le=10_000_000)
+    idempotency_key: str = Field(min_length=1, max_length=200)

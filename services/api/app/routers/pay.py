@@ -67,14 +67,15 @@ def _map_rpc_error(exc: SupabaseHttpError) -> HTTPException:
         "INVALID_AMOUNT": (400, "INVALID_AMOUNT", "결제 금액이 올바르지 않아요"),
         "PRICE_NOT_CONFIGURED": (400, "PRICE_NOT_CONFIGURED", "식당 계약 단가가 설정되지 않았어요"),
         "CONTRACT_PRICE_MISMATCH": (409, "CONTRACT_PRICE_MISMATCH", "계약 단가가 변경되었어요. 다시 시도해 주세요"),
+        "PREPURCHASE_INVENTORY_EMPTY": (409, "PREPURCHASE_INVENTORY_EMPTY", "선구매 식권 잔여 수량이 없어요"),
         "IDEMPOTENCY_CONFLICT": (409, "IDEMPOTENCY_CONFLICT", "이미 다른 결제에 사용된 요청 키예요"),
         "TAX_TYPE_UNCLASSIFIED": (409, "TAX_TYPE_UNCLASSIFIED", "과세 유형이 설정되지 않아 결제할 수 없어요"),
     }
     for key, value in mapping.items():
         if key in body:
             return _error(*value)
-    if "process_meal_pay" in body or "PGRST202" in body:
-        return _error(400, "MIGRATION_REQUIRED", "0009_process_meal_pay.sql 적용 후 실제 결제를 사용할 수 있어요")
+    if "prepurchase_enabled" in body or "process_meal_pay" in body or "PGRST202" in body:
+        return _error(400, "MIGRATION_REQUIRED", "0062_merchant_company_prepurchase.sql 적용 후 실제 결제를 사용할 수 있어요")
     return _error(502, "SUPABASE_ERROR", "결제 처리 중 오류가 발생했어요")
 
 

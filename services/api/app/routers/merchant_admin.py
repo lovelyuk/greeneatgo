@@ -18,7 +18,7 @@ from app.auth import bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import LegacyVoucherClassifyRequest, MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, MerchantProductCreateRequest, MerchantProductUpdateRequest, MerchantProfileUpdateRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
+from app.schemas import LegacyVoucherClassifyRequest, MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, MerchantCompanyPrepurchaseChargeRequest, MerchantProductCreateRequest, MerchantProductUpdateRequest, MerchantProfileUpdateRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
 from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
@@ -32,6 +32,26 @@ KST = ZoneInfo("Asia/Seoul")
 
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
+
+
+def _prepurchase_migration_required(exc: SupabaseHttpError) -> bool:
+    body = exc.body or ""
+    return "prepurchase_enabled" in body or "0062_merchant_company_prepurchase" in body or (
+        ("PGRST202" in body or "Could not find the function" in body)
+        and any(name in body for name in (
+            "charge_merchant_company_prepurchase",
+            "list_merchant_company_prepurchase_inventory",
+            "list_merchant_company_prepurchase_charges",
+        ))
+    )
+
+
+def _prepurchase_migration_error() -> HTTPException:
+    return _error(
+        400,
+        "MIGRATION_REQUIRED",
+        "0062_merchant_company_prepurchase.sql 적용 후 선구매 식권을 사용할 수 있어요",
+    )
 
 
 def _token() -> str:
@@ -181,7 +201,7 @@ def _paged_get(repo: JoinRepository, table: str, params: dict[str, str], page_si
 def _require_company_link(repo: JoinRepository, merchant_id: str, company_id: str) -> dict:
     links = repo.client.rest_get(
         "merchant_companies",
-        {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,tax_type,created_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "limit": "1"},
+        {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,tax_type,prepurchase_enabled,created_at", "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{company_id}", "limit": "1"},
     )
     if not links:
         raise JoinFlowError(JoinErrorCode.FORBIDDEN, "연결된 장부업체가 아니에요")
@@ -211,6 +231,7 @@ def _contract_from_link(link: dict | None) -> dict | None:
         "company_subsidy_amount": int(link.get("company_subsidy_amount") or 0),
         "restaurant_subsidy_amount": int(link.get("restaurant_subsidy_amount") or 0),
         "tax_type": link.get("tax_type") or "unclassified",
+        "prepurchase_enabled": bool(link.get("prepurchase_enabled")),
         "cycle_label": "월말" if (cycle or "month_end") == "month_end" else f"매월 {day}일",
     }
 
@@ -674,7 +695,7 @@ def list_companies(token: str = Depends(bearer_token)):
         _, merchant_id = _merchant_admin(repo, token)
         links = repo.client.rest_get(
             "merchant_companies",
-            {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,tax_type,created_at", "merchant_id": f"eq.{merchant_id}", "order": "created_at.desc"},
+            {"select": "id,merchant_id,company_id,status,settlement_cycle,settlement_day,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,tax_type,prepurchase_enabled,created_at", "merchant_id": f"eq.{merchant_id}", "order": "created_at.desc"},
         )
         company_ids = [link["company_id"] for link in links]
         companies = {row["id"]: row for row in _company_rows(repo, company_ids)}
@@ -696,6 +717,8 @@ def list_companies(token: str = Depends(bearer_token)):
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
+        if _prepurchase_migration_required(exc):
+            raise _prepurchase_migration_error() from exc
         if "PGRST205" in exc.body or "settlement_cycle" in exc.body or "unit_price" in exc.body or "PGRST204" in exc.body:
             raise _error(400, "MIGRATION_REQUIRED", "0008_mealledger_v23.sql, 0010_merchant_company_contract.sql 적용 후 장부업체를 관리할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "장부업체 목록을 불러오는 중 오류가 발생했어요") from exc
@@ -815,6 +838,8 @@ def update_company_contract(company_id: str, payload: MerchantCompanyContractUpd
                 "company_subsidy_amount": (payload.company_subsidy_amount or 0) if payload.subsidy_enabled else 0,
                 "restaurant_subsidy_amount": (payload.restaurant_subsidy_amount or 0) if payload.subsidy_enabled else 0,
             })
+        if payload.prepurchase_enabled is not None:
+            values["prepurchase_enabled"] = payload.prepurchase_enabled
         effective_subsidy_enabled = values.get("subsidy_enabled", bool(link.get("subsidy_enabled")))
         effective_company_amount = int(values.get("company_subsidy_amount", link.get("company_subsidy_amount") or 0))
         effective_restaurant_amount = int(values.get("restaurant_subsidy_amount", link.get("restaurant_subsidy_amount") or 0))
@@ -829,9 +854,95 @@ def update_company_contract(company_id: str, payload: MerchantCompanyContractUpd
     except JoinFlowError as exc:
         raise _error(403, str(exc.code), exc.message) from exc
     except SupabaseHttpError as exc:
+        if _prepurchase_migration_required(exc):
+            raise _prepurchase_migration_error() from exc
         if "settlement_cycle" in exc.body or "unit_price" in exc.body or "PGRST204" in exc.body or "PGRST205" in exc.body:
             raise _error(400, "MIGRATION_REQUIRED", "0010_merchant_company_contract.sql 적용 후 계약 정보를 저장할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "계약 정보를 저장하는 중 오류가 발생했어요") from exc
+
+
+@router.get("/prepurchase-inventory")
+@router.get("/prepurchases")
+def list_prepurchase_inventory(token: str = Depends(bearer_token)):
+    """List active merchant-company contracts with latest charge and balance."""
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        data = repo.client.rpc(
+            "list_merchant_company_prepurchase_inventory",
+            {"p_merchant_id": merchant_id},
+        )
+        return {"ok": True, "data": data if isinstance(data, dict) else {"items": []}, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        if _prepurchase_migration_required(exc):
+            raise _prepurchase_migration_error() from exc
+        raise _error(502, "PREPURCHASE_INVENTORY_LOAD_FAILED", "선구매 식권 현황을 불러오지 못했어요") from exc
+
+
+@router.get("/companies/{company_id}/prepurchase-charges")
+@router.get("/companies/{company_id}/prepurchases")
+def list_prepurchase_charges(
+    company_id: str,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=1_000_000),
+    token: str = Depends(bearer_token),
+):
+    repo = JoinRepository()
+    try:
+        _, merchant_id = _merchant_admin(repo, token)
+        _require_company_link(repo, merchant_id, company_id)
+        data = repo.client.rpc("list_merchant_company_prepurchase_charges", {
+            "p_merchant_id": merchant_id, "p_company_id": company_id,
+            "p_limit": limit, "p_offset": offset,
+        })
+        fallback = {"items": [], "total": 0, "total_remaining": 0, "limit": limit, "offset": offset}
+        return {"ok": True, "data": data if isinstance(data, dict) else fallback, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        if _prepurchase_migration_required(exc):
+            raise _prepurchase_migration_error() from exc
+        raise _error(502, "PREPURCHASE_CHARGES_LOAD_FAILED", "선구매 충전 이력을 불러오지 못했어요") from exc
+
+
+@router.post("/companies/{company_id}/prepurchase-charges", status_code=201)
+@router.post("/companies/{company_id}/prepurchases", status_code=201)
+def charge_prepurchase(
+    company_id: str,
+    payload: MerchantCompanyPrepurchaseChargeRequest,
+    token: str = Depends(bearer_token),
+):
+    repo = JoinRepository()
+    try:
+        actor, merchant_id = _merchant_admin(repo, token)
+        # The RPC authenticates actor tenancy and checks a committed idempotency
+        # request before mutable contract state, allowing retries after disable.
+        result = repo.client.rpc("charge_merchant_company_prepurchase", {
+            "p_merchant_id": merchant_id, "p_company_id": company_id,
+            "p_actor_id": actor.id, "p_quantity": payload.quantity,
+            "p_unit_price": payload.unit_price,
+            "p_idempotency_key": payload.idempotency_key,
+        })
+        return {"ok": True, "data": result, "error": None}
+    except JoinFlowError as exc:
+        raise _error(403, str(exc.code), exc.message) from exc
+    except SupabaseHttpError as exc:
+        if _prepurchase_migration_required(exc):
+            raise _prepurchase_migration_error() from exc
+        errors = {
+            "PREPURCHASE_ACTOR_FORBIDDEN": (403, "PREPURCHASE_ACTOR_FORBIDDEN", "이 식당의 충전 권한이 없어요"),
+            "PREPURCHASE_NOT_ENABLED": (409, "PREPURCHASE_NOT_ENABLED", "선구매 계약을 먼저 활성화해 주세요"),
+            "PREPURCHASE_CONTRACT_NOT_FOUND": (403, "PREPURCHASE_CONTRACT_NOT_FOUND", "활성 계약을 찾을 수 없어요"),
+            "INVALID_PREPURCHASE_CHARGE": (422, "INVALID_PREPURCHASE_CHARGE", "충전 수량과 단가를 확인해 주세요"),
+            "INVALID_IDEMPOTENCY_KEY": (422, "INVALID_IDEMPOTENCY_KEY", "요청 키를 확인해 주세요"),
+            "IDEMPOTENCY_CONFLICT": (409, "IDEMPOTENCY_CONFLICT", "이미 다른 충전에 사용된 요청 키예요"),
+        }
+        for marker, detail in errors.items():
+            if marker in exc.body:
+                raise _error(*detail) from exc
+        raise _error(502, "PREPURCHASE_CHARGE_FAILED", "선구매 식권을 충전하지 못했어요") from exc
 
 
 @router.get("/companies/{company_id}/summary")

@@ -5,6 +5,7 @@ export function contractFormFromItem(item) {
     settlement_day: String(item.settlement_day ?? item.contract?.settlement_day ?? 25),
     unit_price: unitPrice == null ? '' : String(unitPrice),
     subsidy_enabled: !!(item.subsidy_enabled ?? item.contract?.subsidy_enabled),
+    prepurchase_enabled: !!(item.prepurchase_enabled ?? item.contract?.prepurchase_enabled),
     company_subsidy_amount: String(item.company_subsidy_amount ?? item.contract?.company_subsidy_amount ?? 0),
     restaurant_subsidy_amount: String(item.restaurant_subsidy_amount ?? item.contract?.restaurant_subsidy_amount ?? 0),
     tax_type: item.tax_type ?? item.contract?.tax_type ?? 'unclassified',

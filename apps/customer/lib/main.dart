@@ -18,6 +18,7 @@ import 'auth_helpers.dart';
 import 'data/banner_api.dart';
 import 'firebase_config.dart';
 import 'payment_completion.dart';
+import 'payment_result_view.dart';
 import 'pending_payment.dart';
 import 'phone_auth.dart';
 import 'phone_login_screen.dart' as phone_login;
@@ -3494,145 +3495,50 @@ class _UnifiedPaymentResultScreenState
     final transaction = _result?['transaction'] is Map
         ? (_result!['transaction'] as Map).cast<String, dynamic>()
         : <String, dynamic>{};
+    final merchant = _result?['merchant'] is Map
+        ? (_result!['merchant'] as Map).cast<String, dynamic>()
+        : <String, dynamic>{};
     final payType = _result?['pay_type'] as String?;
     final remaining = (_result?['remaining'] as num?)?.round();
-    final amount = transaction['amount'] as num?;
-    final paidAt = shortKoreanDate(transaction['created_at'] as String?);
-    final success = _result != null && !_loading;
-    return Scaffold(
-      backgroundColor: _noVoucher || _error != null ? kCream : kOrange,
-      appBar: AppBar(
-        backgroundColor: _loading ? kOrange : null,
-        foregroundColor: _loading ? Colors.white : null,
-      ),
-      body: SafeArea(
-        child: _loading
-            ? const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('결제중',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 30,
-                            fontWeight: FontWeight.w900)),
-                    SizedBox(height: 20),
-                    CircularProgressIndicator(
-                        color: Colors.white, strokeWidth: 3),
-                  ],
-                ),
-              )
-            : Center(
-                child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: Container(
-                      padding: const EdgeInsets.all(28),
-                      decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(34),
-                          boxShadow: const [
-                            BoxShadow(
-                                color: Color(0x33000000),
-                                blurRadius: 26,
-                                offset: Offset(0, 16))
-                          ]),
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(
-                            _noVoucher
-                                ? Icons.confirmation_number_outlined
-                                : success
-                                    ? Icons.check_circle_rounded
-                                    : Icons.error_outline_rounded,
-                            color: _noVoucher
-                                ? kCocoa
-                                : success
-                                    ? kOrange
-                                    : Colors.red,
-                            size: 96),
-                        const SizedBox(height: 18),
-                        Text(
-                            _noVoucher
-                                ? '식권이 없어요'
-                                : success
-                                    ? '결제완료'
-                                    : '결제실패',
-                            style: const TextStyle(
-                                fontSize: 34, fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 12),
-                        if (_noVoucher) ...[
-                          Text(
-                              _recoveryPurchaseMode == VoucherPurchaseMode.none
-                                  ? '현재 계정은 식권 상품을 구매할 수 없어요.'
-                                  : '식권을 구매한 뒤 같은 QR 결제를 바로 다시 시도할 수 있어요.',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  color: Color(0xFF5C7A66),
-                                  height: 1.5,
-                                  fontWeight: FontWeight.w800)),
-                          if (_recoveryPurchaseMode != null &&
-                              _recoveryPurchaseMode !=
-                                  VoucherPurchaseMode.none) ...[
-                            const SizedBox(height: 18),
-                            FilledButton(
-                                onPressed: () =>
-                                    _openPurchase(retryAfterPurchase: true),
-                                child: Text(_recoveryPurchaseMode ==
-                                        VoucherPurchaseMode.subsidized
-                                    ? '지원 식권 상품 보기'
-                                    : '지금 식권 구매하기')),
-                          ],
-                        ] else if (_error != null) ...[
-                          BrandNotice(text: _error!, kind: NoticeKind.error),
-                          const SizedBox(height: 14),
-                          OutlinedButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: const Text('QR 다시 스캔하기')),
-                        ] else ...[
-                          Text(
-                              payType == 'voucher' || payType == 'subsidized'
-                                  ? '돈토에서 식권 1장을 사용했어요'
-                                  : '돈토에서 회사 장부로 결제됐어요',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  color: Color(0xFF5C7A66),
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800)),
-                          if (amount != null)
-                            Text(won(amount),
-                                style: const TextStyle(
-                                    color: kOrange,
-                                    fontSize: 44,
-                                    fontWeight: FontWeight.w900)),
-                          if ((payType == 'voucher' ||
-                                  payType == 'subsidized') &&
-                              remaining != null)
-                            Text('남은 식권 $remaining장',
-                                style: const TextStyle(
-                                    color: kCocoa,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w900)),
-                          if (payType == 'ledger')
-                            const Text('회사 장부로 청구됩니다.',
-                                style: TextStyle(
-                                    color: Color(0xFF5C7A66),
-                                    fontWeight: FontWeight.w700)),
-                          if (paidAt != '-') ...[
-                            const SizedBox(height: 8),
-                            Text('결제일시  $paidAt',
-                                style: const TextStyle(
-                                    color: Color(0xFF5C7A66),
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800)),
-                          ],
-                          const SizedBox(height: 18),
-                          OutlinedButton(
-                              onPressed: () => Navigator.of(context).pop(true),
-                              child: const Text('확인')),
-                        ],
-                      ]),
-                    )),
-              ),
-      ),
+    final rawAmount = transaction['amount'] as num?;
+    final rawPaidAt = (transaction['created_at'] ?? '').toString();
+    final parsedPaidAt = DateTime.tryParse(rawPaidAt);
+    final paidAt = parsedPaidAt == null
+        ? null
+        : (parsedPaidAt.isUtc ? parsedPaidAt.toLocal() : parsedPaidAt);
+    final merchantName =
+        (merchant['name'] ?? transaction['merchant_name'] ?? '')
+            .toString()
+            .trim();
+    final purchaseAvailable = _noVoucher &&
+        _recoveryPurchaseMode != null &&
+        _recoveryPurchaseMode != VoucherPurchaseMode.none;
+    final state = _loading
+        ? SolPaymentState.loading
+        : _result != null
+            ? SolPaymentState.done
+            : SolPaymentState.fail;
+
+    return SolPaymentResultView(
+      state: state,
+      merchantName: merchantName,
+      amount: rawAmount?.abs().round(),
+      remaining: remaining,
+      paidAt: paidAt,
+      usesVoucher: payType == 'voucher' || payType == 'subsidized',
+      errorMessage: _noVoucher
+          ? (_recoveryPurchaseMode == VoucherPurchaseMode.none
+              ? '보유 식권이 없고 현재 계정은 식권 상품을 구매할 수 없어요.'
+              : '보유 식권이 없어요. 식권을 구매한 뒤 다시 시도해 주세요.')
+          : (_error ?? ''),
+      canPurchase: purchaseAvailable,
+      purchaseLabel: _recoveryPurchaseMode == VoucherPurchaseMode.subsidized
+          ? '지원 식권 상품 보기'
+          : '식권 충전하기',
+      onClose: () => Navigator.of(context).pop(false),
+      onConfirm: () => Navigator.of(context).pop(true),
+      onPurchase: () => _openPurchase(retryAfterPurchase: true),
+      onRetry: _pay,
     );
   }
 }

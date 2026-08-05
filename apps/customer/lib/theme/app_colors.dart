@@ -36,4 +36,16 @@ abstract final class AppColors {
   static const timeline = Color(0xFF232D42);
   static const progressTrack = Color(0xFF202A3D);
   static const dinnerText = Color(0xFFA9B4CA);
+
+  // SOL-style payment state surfaces.
+  static const paymentBg = Color(0xFF0B111F);
+  static const paymentSurface = Color(0xFF151D2F);
+  static const paymentLine = Color(0x14FFFFFF);
+  static const paymentPrimary = Color(0xFF0046FF);
+  static const paymentPrimaryLight = Color(0xFF5B8CFF);
+  static const paymentCream = Color(0xFFF4EFE1);
+  static const paymentCreamDark = Color(0xFFEAE3D1);
+  static const paymentCreamInk = Color(0xFF161B26);
+  static const paymentMuted = Color(0xFF8A93A7);
+  static const paymentDanger = Color(0xFFFF5F57);
 }

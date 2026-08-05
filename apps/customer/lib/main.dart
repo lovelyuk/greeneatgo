@@ -691,13 +691,14 @@ String displayMerchantName(String? name) {
   return value;
 }
 
-// Phone custom-token users have no email. Keep requiring verification for any
-// legacy persisted email session while allowing backend-verified phone users.
+// A backend-verified phone custom-token user can retain legacy email metadata.
+// The server-controlled UID, not an empty email field, is the admission proof.
 bool _isUsableCustomerSession(User? user) =>
     user != null &&
-    (user.emailVerified ||
-        (user.email == null &&
-            RegExp(r'^phone_010[0-9]{8}$').hasMatch(user.uid)));
+    isUsableCustomerAuthIdentity(
+      uid: user.uid,
+      emailVerified: user.emailVerified,
+    );
 
 List<Map<String, dynamic>> mapList(dynamic value) {
   if (value is! List) return <Map<String, dynamic>>[];
@@ -826,6 +827,35 @@ class _AppGateState extends State<AppGate> {
         _isUsableCustomerSession(firebaseUser);
   }
 
+  Future<void> _signInWithPhoneCustomToken(String token) async {
+    UserCredential credential;
+    try {
+      credential = await FirebaseAuth.instance.signInWithCustomToken(token);
+    } on FirebaseAuthException catch (error) {
+      debugPrint('Phone custom-token sign-in failed: ${error.code}');
+      throw PhoneAuthException(
+        friendlyFirebaseAuthCode(error.code),
+        code: error.code,
+      );
+    }
+
+    final user = credential.user ?? FirebaseAuth.instance.currentUser;
+    if (!_isUsableCustomerSession(user)) {
+      throw const PhoneAuthException(
+        '로그인 세션을 확인할 수 없어요. 고객센터에 문의해 주세요.',
+        code: 'UNUSABLE_FIREBASE_SESSION',
+      );
+    }
+    if (!mounted) return;
+    _loadGeneration++;
+    setState(() {
+      _session = user;
+      _me = null;
+      _error = null;
+      _loading = true;
+    });
+  }
+
   Future<void> _signOut() async {
     _loadGeneration++;
     if (mounted) {
@@ -852,17 +882,7 @@ class _AppGateState extends State<AppGate> {
     if (_session == null) {
       return phone_login.PhoneLoginScreen(
         gateway: _phoneAuthGateway,
-        signInWithCustomToken: (token) async {
-          try {
-            await FirebaseAuth.instance.signInWithCustomToken(token);
-          } on FirebaseAuthException catch (error) {
-            debugPrint('Phone custom-token sign-in failed: ${error.code}');
-            throw PhoneAuthException(
-              friendlyFirebaseAuthCode(error.code),
-              code: error.code,
-            );
-          }
-        },
+        signInWithCustomToken: _signInWithPhoneCustomToken,
         onLoggedIn: _loadMe,
         openLegalDocument: (filename) => openLegalDocument(context, filename),
         brandHeader: const BrandTitle(height: 72, alignment: Alignment.center),

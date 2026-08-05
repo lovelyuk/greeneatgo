@@ -33,6 +33,12 @@ String friendlyFirebaseAuthError(Object error) {
   return _defaultAuthError;
 }
 
+bool isUsableCustomerAuthIdentity({
+  required String uid,
+  required bool emailVerified,
+}) =>
+    emailVerified || RegExp(r'^phone_010[0-9]{8}$').hasMatch(uid);
+
 bool isValidEmail(String value) =>
     RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim());
 

@@ -645,6 +645,31 @@ void main() {
     expect(friendlyFirebaseAuthCode('unknown-code'), contains('잠시 후'));
   });
 
+  test('phone custom-token identity ignores legacy email verification state',
+      () {
+    expect(
+      isUsableCustomerAuthIdentity(
+        uid: 'phone_01012345678',
+        emailVerified: false,
+      ),
+      isTrue,
+    );
+    expect(
+      isUsableCustomerAuthIdentity(
+        uid: 'firebase-generated-email-uid',
+        emailVerified: false,
+      ),
+      isFalse,
+    );
+    expect(
+      isUsableCustomerAuthIdentity(
+        uid: 'firebase-generated-email-uid',
+        emailVerified: true,
+      ),
+      isTrue,
+    );
+  });
+
   test('password reset only exposes operational failures', () {
     expect(isOperationalPasswordResetError('network-request-failed'), isTrue);
     expect(isOperationalPasswordResetError('too-many-requests'), isTrue);

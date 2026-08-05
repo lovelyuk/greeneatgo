@@ -11,7 +11,13 @@ from app.main import app
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.settlements import get_popbill_service, get_settlement_repository
 from app.services.join_flow import UserProfile
-from app.services.popbill_service import PopbillError, PopbillIssueResult, PopbillStatus, PopbillURLResult
+from app.services.popbill_service import (
+    PopbillCertificateReadiness,
+    PopbillError,
+    PopbillIssueResult,
+    PopbillStatus,
+    PopbillURLResult,
+)
 
 SETTLEMENT_ID = "11111111-1111-1111-1111-111111111111"
 
@@ -141,6 +147,10 @@ class FakePopbill:
     def __init__(self, issue_error=None):
         self.issue_error = issue_error
         self.calls = []
+
+    def certificate_readiness(self):
+        self.calls.append(("certificate",))
+        return PopbillCertificateReadiness(True, "2027-07-27")
 
     def issue(self, invoice, *, allow_delayed_issue=False):
         self.calls.append(("issue", invoice["invoicer_mgt_key"], allow_delayed_issue))
@@ -398,7 +408,9 @@ def test_popbill_issue_success_rejection_and_ambiguous_are_finalized_safely(clie
     app.dependency_overrides[get_popbill_service] = lambda: provider
     response = client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue")
     assert response.status_code == 200
-    assert [call[0] for call in repo.calls] == ["merchant_detail", "claim", "finalize"]
+    assert [call[0] for call in repo.calls] == [
+        "merchant_detail", "readiness", "claim", "finalize",
+    ]
     assert repo.calls[-1][1] == "success"
 
     repo.calls.clear()
@@ -416,6 +428,51 @@ def test_popbill_issue_success_rejection_and_ambiguous_are_finalized_safely(clie
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "POPBILL_RECONCILIATION_REQUIRED"
     assert repo.calls[-1][1] == "reconciliation_required"
+
+
+def test_popbill_issue_preflight_blocks_mismatched_corporation_before_claim(client_factory):
+    client, repo = client_factory("merchant_admin")
+    provider = FakePopbill()
+    app.dependency_overrides[get_popbill_service] = lambda: provider
+    repo.supplier_popbill_readiness = lambda merchant_id, corp_num: {
+        "supplier_ready": True,
+        "corp_matches": False,
+    }
+
+    response = client.post(
+        f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue"
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "POPBILL_CORP_NUMBER_MISMATCH"
+    assert not any(call[0] == "claim" for call in repo.calls)
+    assert provider.calls == []
+
+
+def test_popbill_issue_preflight_blocks_certificate_failure_before_claim(client_factory):
+    client, repo = client_factory("merchant_admin")
+    provider = FakePopbill()
+
+    def fail_certificate():
+        raise PopbillError(
+            "POPBILL_CERTIFICATE_NOT_READY",
+            "raw provider detail",
+            provider_code=-999,
+        )
+
+    provider.certificate_readiness = fail_certificate
+    app.dependency_overrides[get_popbill_service] = lambda: provider
+
+    response = client.post(
+        f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue"
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "POPBILL_CERTIFICATE_NOT_READY",
+        "message": "팝빌 전자세금계산서용 인증서를 확인해 주세요",
+    }
+    assert not any(call[0] == "claim" for call in repo.calls)
 
 
 def test_url_aliases_and_status_refresh_use_injected_provider(client_factory):
@@ -503,9 +560,12 @@ def test_generated_issue_uses_ordinary_detail_and_reaches_provider_only_in_devel
     response = client.post("/v1/admin/merchant/transaction-generation/issue", json=payload)
     assert response.status_code == 200
     assert [call[0] for call in repo.calls] == [
-        "generated_assert_issue", "merchant_detail", "claim", "finalize",
+        "generated_assert_issue", "merchant_detail", "readiness", "claim", "finalize",
     ]
-    assert provider.calls == [("issue", "GEAAAAAAAAAAAAAAAAAAAAAA", True)]
+    assert provider.calls == [
+        ("certificate",),
+        ("issue", "GEAAAAAAAAAAAAAAAAAAAAAA", True),
+    ]
     assert not any(call[0] == "merchant_demo_detail" for call in repo.calls)
 
     repo.calls.clear()

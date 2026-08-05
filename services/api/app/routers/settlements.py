@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -21,6 +22,7 @@ company_alias_router = APIRouter(prefix="/admin/settlements", tags=["company-set
 merchant_router = APIRouter(prefix="/admin/merchant/settlements", tags=["merchant-settlements"])
 demo_router = APIRouter(prefix="/admin/merchant/settlement-demo", tags=["merchant-settlement-demo"])
 generation_router = APIRouter(prefix="/admin/merchant/transaction-generation", tags=["merchant-transaction-generation"])
+logger = logging.getLogger(__name__)
 
 
 class SettlementDemoSeedRequest(BaseModel):
@@ -116,6 +118,12 @@ def _popbill_error(exc: PopbillError) -> HTTPException:
         return _error(404, "POPBILL_DOCUMENT_NOT_FOUND", "세금계산서를 찾을 수 없어요")
     if exc.code == "POPBILL_RECONCILIATION_REQUIRED":
         return _error(503, "POPBILL_RECONCILIATION_REQUIRED", "발행 결과 확인이 필요해요")
+    if exc.code == "POPBILL_CERTIFICATE_NOT_READY":
+        return _error(
+            422,
+            "POPBILL_CERTIFICATE_NOT_READY",
+            "팝빌 전자세금계산서용 인증서를 확인해 주세요",
+        )
     if exc.code in ("POPBILL_INVALID_INPUT", "POPBILL_ISSUE_REJECTED"):
         return _error(422, "POPBILL_ISSUE_REJECTED", "세금계산서 발행이 거절됐어요")
     return _error(503, "POPBILL_TEMPORARILY_UNAVAILABLE", "팝빌에 잠시 연결할 수 없어요")
@@ -415,6 +423,7 @@ def _merchant_issue_invoice(
     *,
     allow_delayed_issue: bool,
     include_demo: bool = False,
+    readiness_verified: bool = False,
 ):
     actor = _actor(repo, token, "merchant_admin")
     assert actor.merchant_id is not None
@@ -437,6 +446,33 @@ def _merchant_issue_invoice(
     if (is_demo or generated) and PopbillConfig.from_settings(get_settings()).is_test is not True:
         raise _error(409, "SETTLEMENT_TEST_MODE_REQUIRED", "이 문서는 팝빌 개발 환경에서만 발행할 수 있어요")
     service = _provider(service)
+    if not readiness_verified:
+        config = PopbillConfig.from_settings(get_settings())
+        try:
+            supplier = repo.supplier_popbill_readiness(actor.merchant_id, config.corp_num)
+        except SupabaseHttpError as exc:
+            raise _rpc_error(exc) from exc
+        if not supplier["supplier_ready"]:
+            raise _error(
+                422,
+                "SUPPLIER_PROFILE_INCOMPLETE",
+                "공급자 필수 사업자 정보를 모두 입력해 주세요",
+            )
+        if not supplier["corp_matches"]:
+            raise _error(
+                422,
+                "POPBILL_CORP_NUMBER_MISMATCH",
+                "식당 사업자번호와 팝빌 연동 사업자번호가 일치하지 않아요",
+            )
+        try:
+            service.certificate_readiness()
+        except PopbillError as exc:
+            logger.warning(
+                "Popbill issue preflight failed code=%s provider_code=%s",
+                exc.code,
+                exc.provider_code,
+            )
+            raise _popbill_error(exc) from exc
     try:
         claim = repo.claim_invoice_issue(actor, settlement_id)
     except SupabaseHttpError as exc:
@@ -464,6 +500,11 @@ def _merchant_issue_invoice(
     try:
         issued = service.issue(invoice, allow_delayed_issue=allow_delayed_issue)
     except PopbillError as exc:
+        logger.warning(
+            "Popbill invoice issue failed code=%s provider_code=%s",
+            exc.code,
+            exc.provider_code,
+        )
         outcome = "rejected" if exc.code in ("POPBILL_INVALID_INPUT", "POPBILL_ISSUE_REJECTED") else "reconciliation_required"
         try:
             repo.finalize_invoice_issue(
@@ -626,7 +667,7 @@ def settlement_demo_issue(token: str = Depends(bearer_token), repo: SettlementRe
     # settlements therefore opt in to Popbill's test-only delayed issuance.
     return _merchant_issue_invoice(
         UUID(str(member["settlement_id"])), token, repo, service,
-        allow_delayed_issue=True, include_demo=True,
+        allow_delayed_issue=True, include_demo=True, readiness_verified=True,
     )
 
 

@@ -265,7 +265,7 @@ def test_certificate_readiness_fails_closed_and_sanitizes_provider_errors(
     with pytest.raises(PopbillError) as exc:
         make_service(config, sdk).certificate_readiness()
 
-    assert exc.value.code == "POPBILL_TEMPORARILY_UNAVAILABLE"
+    assert exc.value.code == "POPBILL_CERTIFICATE_NOT_READY"
     assert exc.value.provider_code == -999
     assert "certificate secret" not in str(exc.value)
 

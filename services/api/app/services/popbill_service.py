@@ -474,6 +474,12 @@ class PopbillService:
             return PopbillError(
                 "POPBILL_ISSUE_REJECTED", "Popbill rejected the request", provider_code=provider_code
             )
+        if provider_code is not None and operation == "certificate":
+            return PopbillError(
+                "POPBILL_CERTIFICATE_NOT_READY",
+                "Popbill certificate is not ready",
+                provider_code=provider_code,
+            )
         return PopbillError(
             "POPBILL_TEMPORARILY_UNAVAILABLE", "Unable to communicate with Popbill",
             provider_code=provider_code,

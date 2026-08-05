@@ -449,7 +449,7 @@ def test_popbill_issue_preflight_blocks_mismatched_corporation_before_claim(clie
     assert provider.calls == []
 
 
-def test_ordinary_issue_deadline_uses_the_tenth_of_the_following_month():
+def test_ordinary_issue_deadline_only_blocks_after_following_month_has_elapsed():
     detail = {
         "tax_invoices": [
             {"document_type": "original", "write_date": "2026-06-30"}
@@ -457,10 +457,10 @@ def test_ordinary_issue_deadline_uses_the_tenth_of_the_following_month():
     }
 
     assert not settlements_router._ordinary_issue_deadline_passed(
-        detail, today=date(2026, 7, 10)
+        detail, today=date(2026, 7, 31)
     )
     assert settlements_router._ordinary_issue_deadline_passed(
-        detail, today=date(2026, 7, 11)
+        detail, today=date(2026, 8, 1)
     )
 
 

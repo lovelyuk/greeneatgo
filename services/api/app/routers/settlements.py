@@ -69,7 +69,11 @@ def _error(status: int, code: str, message: str) -> HTTPException:
 
 
 def _ordinary_issue_deadline_passed(detail: dict, *, today: date | None = None) -> bool:
-    """Return true after the 10th of the month following the invoice write month."""
+    """Conservatively reject only after the entire following month has elapsed.
+
+    The statutory day can move for holidays. Popbill remains authoritative within
+    the following month; this guard catches unequivocally stale older periods.
+    """
     invoices = detail.get("tax_invoices") if isinstance(detail, dict) else None
     original = next(
         (
@@ -86,11 +90,14 @@ def _ordinary_issue_deadline_passed(detail: dict, *, today: date | None = None) 
         write_date = date.fromisoformat(raw_write_date)
     except ValueError:
         return False
-    next_month_year = write_date.year + (1 if write_date.month == 12 else 0)
-    next_month = 1 if write_date.month == 12 else write_date.month + 1
-    deadline = date(next_month_year, next_month, 10)
+    second_month_index = write_date.year * 12 + (write_date.month - 1) + 2
+    month_after_following = date(
+        second_month_index // 12,
+        second_month_index % 12 + 1,
+        1,
+    )
     current = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
-    return current > deadline
+    return current >= month_after_following
 
 
 def _rpc_error(exc: SupabaseHttpError) -> HTTPException:

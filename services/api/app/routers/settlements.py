@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -66,6 +66,31 @@ def _require_test_for_demo(is_demo: bool) -> None:
 
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
+
+
+def _ordinary_issue_deadline_passed(detail: dict, *, today: date | None = None) -> bool:
+    """Return true after the 10th of the month following the invoice write month."""
+    invoices = detail.get("tax_invoices") if isinstance(detail, dict) else None
+    original = next(
+        (
+            item
+            for item in invoices or []
+            if isinstance(item, dict) and item.get("document_type") == "original"
+        ),
+        None,
+    )
+    raw_write_date = original.get("write_date") if original else None
+    if not isinstance(raw_write_date, str):
+        return False
+    try:
+        write_date = date.fromisoformat(raw_write_date)
+    except ValueError:
+        return False
+    next_month_year = write_date.year + (1 if write_date.month == 12 else 0)
+    next_month = 1 if write_date.month == 12 else write_date.month + 1
+    deadline = date(next_month_year, next_month, 10)
+    current = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
+    return current > deadline
 
 
 def _rpc_error(exc: SupabaseHttpError) -> HTTPException:
@@ -435,7 +460,15 @@ def _merchant_issue_invoice(
         if detail is None:
             raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
     else:
-        _merchant_detail(settlement_id, token, repo)
+        detail = _merchant_detail(settlement_id, token, repo)
+    if not isinstance(detail, dict):
+        raise _error(502, "SETTLEMENT_RESPONSE_INVALID", "정산 정보를 확인할 수 없어요")
+    if not allow_delayed_issue and _ordinary_issue_deadline_passed(detail):
+        raise _error(
+            422,
+            "TAX_INVOICE_ISSUE_DEADLINE_PASSED",
+            "세금계산서 발행기한이 지났어요. 지연발행 가능 여부를 세무 담당자와 확인해 주세요",
+        )
     try:
         is_demo = repo.is_demo_settlement(actor.merchant_id, settlement_id)
         generated = repo.is_generated_settlement(actor.merchant_id, settlement_id)

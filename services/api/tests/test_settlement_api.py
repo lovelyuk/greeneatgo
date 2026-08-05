@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -446,6 +446,47 @@ def test_popbill_issue_preflight_blocks_mismatched_corporation_before_claim(clie
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "POPBILL_CORP_NUMBER_MISMATCH"
     assert not any(call[0] == "claim" for call in repo.calls)
+    assert provider.calls == []
+
+
+def test_ordinary_issue_deadline_uses_the_tenth_of_the_following_month():
+    detail = {
+        "tax_invoices": [
+            {"document_type": "original", "write_date": "2026-06-30"}
+        ]
+    }
+
+    assert not settlements_router._ordinary_issue_deadline_passed(
+        detail, today=date(2026, 7, 10)
+    )
+    assert settlements_router._ordinary_issue_deadline_passed(
+        detail, today=date(2026, 7, 11)
+    )
+
+
+def test_ordinary_late_issue_stops_before_readiness_claim_and_provider(
+    client_factory, monkeypatch,
+):
+    client, repo = client_factory("merchant_admin")
+    repo.detail["tax_invoices"][0]["write_date"] = "2026-06-30"
+    provider = FakePopbill()
+    app.dependency_overrides[get_popbill_service] = lambda: provider
+    monkeypatch.setattr(
+        settlements_router,
+        "_ordinary_issue_deadline_passed",
+        lambda detail: True,
+    )
+
+    response = client.post(
+        f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue"
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "TAX_INVOICE_ISSUE_DEADLINE_PASSED",
+        "message": "세금계산서 발행기한이 지났어요. 지연발행 가능 여부를 세무 담당자와 확인해 주세요",
+    }
+    assert [call[0] for call in repo.calls] == ["merchant_detail"]
     assert provider.calls == []
 
 

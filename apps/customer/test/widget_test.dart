@@ -640,6 +640,8 @@ void main() {
         friendlyFirebaseAuthCode('too-many-requests'), contains('요청이 너무 많아요'));
     expect(
         friendlyFirebaseAuthCode('network-request-failed'), contains('네트워크'));
+    expect(
+        friendlyFirebaseAuthCode('custom-token-mismatch'), contains('앱 인증 설정'));
     expect(friendlyFirebaseAuthCode('unknown-code'), contains('잠시 후'));
   });
 

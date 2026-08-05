@@ -853,7 +853,15 @@ class _AppGateState extends State<AppGate> {
       return phone_login.PhoneLoginScreen(
         gateway: _phoneAuthGateway,
         signInWithCustomToken: (token) async {
-          await FirebaseAuth.instance.signInWithCustomToken(token);
+          try {
+            await FirebaseAuth.instance.signInWithCustomToken(token);
+          } on FirebaseAuthException catch (error) {
+            debugPrint('Phone custom-token sign-in failed: ${error.code}');
+            throw PhoneAuthException(
+              friendlyFirebaseAuthCode(error.code),
+              code: error.code,
+            );
+          }
         },
         onLoggedIn: _loadMe,
         openLegalDocument: (filename) => openLegalDocument(context, filename),

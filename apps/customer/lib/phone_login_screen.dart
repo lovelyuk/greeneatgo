@@ -38,6 +38,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   final _displayName = TextEditingController();
   PhoneLoginStep _step = PhoneLoginStep.phone;
   String? _verificationToken;
+  String? _pendingCustomToken;
   bool _busy = false;
   int _resendSeconds = 0;
   Timer? _resendTimer;
@@ -86,6 +87,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       _code.clear();
       setState(() {
         _step = PhoneLoginStep.code;
+        _pendingCustomToken = null;
         _info = resend ? '인증번호를 다시 보냈어요.' : '문자로 받은 인증번호 6자리를 입력해 주세요.';
       });
       _startCooldown(result.resendAfter);
@@ -96,6 +98,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
         _code.clear();
         setState(() {
           _step = PhoneLoginStep.code;
+          _pendingCustomToken = null;
           _error = null;
           _info = '문자가 도착했다면 인증번호 6자리를 입력해 주세요. 오지 않았다면 잠시 후 다시 받아주세요.';
         });
@@ -112,6 +115,11 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   }
 
   Future<void> _verifyCode() async {
+    final pendingCustomToken = _pendingCustomToken;
+    if (pendingCustomToken != null) {
+      await _retryLogin(pendingCustomToken);
+      return;
+    }
     final code = _code.text.trim();
     if (!isValidOtpCode(code)) {
       setState(() => _error = '인증번호 6자리를 입력해 주세요.');
@@ -178,8 +186,29 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   }
 
   Future<void> _finishLogin(String customToken) async {
+    _pendingCustomToken = customToken;
     await widget.signInWithCustomToken(customToken);
+    _pendingCustomToken = null;
     await widget.onLoggedIn();
+  }
+
+  Future<void> _retryLogin(String customToken) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+      _info = null;
+    });
+    try {
+      await _finishLogin(customToken);
+    } on PhoneAuthException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = '인증은 완료됐어요. 로그인 연결을 다시 시도해 주세요.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _changePhone() {
@@ -187,6 +216,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
     setState(() {
       _step = PhoneLoginStep.phone;
       _verificationToken = null;
+      _pendingCustomToken = null;
       _code.clear();
       _displayName.clear();
       _resendSeconds = 0;
@@ -694,7 +724,9 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                                             ? (_resendSeconds > 0
                                                 ? '$_resendSeconds초 후 다시 시도'
                                                 : '인증번호 받기')
-                                            : '인증하고 시작하기',
+                                            : _pendingCustomToken != null
+                                                ? '로그인 다시 시도'
+                                                : '인증하고 시작하기',
                                   ),
                                 ),
                               ),

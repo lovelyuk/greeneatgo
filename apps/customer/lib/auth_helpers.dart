@@ -19,6 +19,9 @@ String friendlyFirebaseAuthCode(String code) {
     'network-request-failed' => '네트워크 연결을 확인한 뒤 다시 시도해 주세요.',
     'requires-recent-login' => '보안을 위해 현재 비밀번호로 다시 인증해 주세요.',
     'operation-not-allowed' => '현재 사용할 수 없는 로그인 방식이에요. 고객센터에 문의해 주세요.',
+    'invalid-custom-token' ||
+    'custom-token-mismatch' =>
+      '앱 인증 설정이 맞지 않아요. 고객센터에 문의해 주세요.',
     _ => _defaultAuthError,
   };
 }

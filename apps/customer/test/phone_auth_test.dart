@@ -306,7 +306,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('sensitive Firebase'), findsNothing);
-    expect(find.text('인증하고 시작하기'), findsOneWidget);
+    expect(find.text('로그인 다시 시도'), findsOneWidget);
     expect(
       tester
           .widget<FilledButton>(find.byKey(const Key('phone-auth-primary')))
@@ -314,6 +314,46 @@ void main() {
       isNotNull,
     );
     expect(loggedIn, isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'custom-token sign-in retry does not consume the verified OTP again',
+      (tester) async {
+    final gateway = FakePhoneAuthGateway();
+    var signInAttempts = 0;
+    var loggedIn = false;
+    await tester.pumpWidget(harness(
+      gateway,
+      signInWithCustomToken: (token) async {
+        signInAttempts++;
+        if (signInAttempts == 1) {
+          throw StateError('transient Firebase exchange failure');
+        }
+        expect(token, 'existing-token');
+      },
+      onLoggedIn: () => loggedIn = true,
+    ));
+
+    await tester.enterText(find.byKey(const Key('phone-input')), '01012345678');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('phone-auth-primary')));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('otp-input')), '123456');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('phone-auth-primary')));
+    await tester.pump();
+
+    expect(gateway.verifications, hasLength(1));
+    expect(signInAttempts, 1);
+    expect(find.text('로그인 다시 시도'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('phone-auth-primary')));
+    await tester.pump();
+
+    expect(gateway.verifications, hasLength(1));
+    expect(signInAttempts, 2);
+    expect(loggedIn, isTrue);
     await tester.pumpWidget(const SizedBox());
   });
 

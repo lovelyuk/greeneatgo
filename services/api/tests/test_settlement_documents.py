@@ -105,6 +105,9 @@ def test_settlement_view_and_pdf_embed_korean_content_and_font():
     assert "text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums;" in document
     assert "<th class='transaction-code'>거래번호</th>" in document
     assert ".transaction-code { text-align:left; }" in document
+    assert ".summary { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:0; }" in document
+    assert ".transactions { margin-top:32px; }" in document
+    assert "<section class='transactions'><table>" in document
 
     pdf = build_settlement_pdf(detail())
     assert pdf.startswith(b"%PDF-")

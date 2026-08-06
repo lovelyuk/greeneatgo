@@ -1532,6 +1532,15 @@ code { font-size: 12px; }
 .settlement-v2-list-panel { padding: 0; }
 .settlement-v2-list-panel .table-wrap { width: 100%; max-width: 100%; margin: 0; overflow-x: auto; }
 .settlement-v2-table { width: 100%; min-width: 960px; table-layout: auto; }
+.settlement-v2-evidence-table .money {
+  width: 110px;
+  min-width: 110px;
+  max-width: 110px;
+  box-sizing: border-box;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.settlement-v2-evidence-table .transaction-code { text-align: left; }
 .settlement-mock-notice { border-width: 2px; box-shadow: 0 8px 20px rgba(146, 64, 14, .08); }
 .mock-row-label { display: inline-flex; padding: 2px 5px; border-radius: 5px; color: #92400e; background: #fff4d6; font-size: 10px; font-weight: 800; }
 .settlement-v2-clickable-row { cursor: pointer; }

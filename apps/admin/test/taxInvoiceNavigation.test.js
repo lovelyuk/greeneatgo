@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
 
 test('keeps one evidence menu with tax invoice issue and completed evidence tabs', () => {
   assert.match(source, /\['tax-invoices', '증빙 내역', FileText\]/);
@@ -32,4 +33,13 @@ test('separates settlement evidence date, time, department, and employee number 
   assert.match(source, /transactionDateTime\.date/);
   assert.match(source, /transactionDateTime\.time/);
   assert.doesNotMatch(source, /\[row\.department, row\.employee_no\]\.filter\(Boolean\)\.join\(' \/ '\)/);
+});
+
+test('aligns compact settlement evidence money columns and keeps transaction codes left aligned', () => {
+  assert.match(source, /table className="settlement-v2-evidence-table"/);
+  assert.match(source, /<th className="money">공급가액<\/th><th className="money">부가세<\/th><th className="money">합계<\/th>/);
+  assert.match(source, /<th className="transaction-code">거래번호<\/th>/);
+  assert.match(source, /<td className="transaction-code">\{row\.tx_code \|\| '-'\}<\/td>/);
+  assert.match(styles, /\.settlement-v2-evidence-table \.money\s*\{[^}]*width: 110px;[^}]*min-width: 110px;[^}]*max-width: 110px;[^}]*text-align: right;[^}]*font-variant-numeric: tabular-nums;/s);
+  assert.match(styles, /\.settlement-v2-evidence-table \.transaction-code\s*\{\s*text-align: left;\s*\}/);
 });

@@ -99,6 +99,32 @@ void main() {
     expect(store.load('user-a'), isNull);
   });
 
+  testWidgets('pending payment banner is non-blocking until explicitly tapped',
+      (tester) async {
+    final preferences = MemoryPreferences();
+    final store = PendingPaymentStore(
+      preferences,
+      now: () => DateTime.utc(2026, 7, 28, 11),
+    );
+    await store.save(payment());
+    var tapped = false;
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: PendingPaymentRecoveryBanner(
+          load: store.load('user-a')!,
+          onTap: () => tapped = true,
+        ),
+      ),
+    ));
+
+    expect(find.text('결제 상태 확인'), findsNothing);
+    expect(tapped, isFalse);
+    await tester.tap(find.text('결제 승인을 확인하고 있어요'));
+    await tester.pump();
+    expect(tapped, isTrue);
+  });
+
   testWidgets('recovery retries pending confirmation and clears on success',
       (tester) async {
     final preferences = MemoryPreferences();

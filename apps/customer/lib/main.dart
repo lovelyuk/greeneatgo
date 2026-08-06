@@ -2436,7 +2436,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   PendingPaymentStore? _pendingStore;
   PendingPaymentLoadResult? _pendingLoad;
-  String? _lastOpenedPending;
   late Future<TodayMenu?> _todayMenuFuture;
   late Future<int> _couponCountFuture;
 
@@ -2499,7 +2498,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session.uid != widget.session.uid) {
       _pendingLoad = null;
-      _lastOpenedPending = null;
       _couponCountFuture = _loadCouponCount();
       unawaited(_loadPendingPayment());
     }
@@ -2508,7 +2506,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _lastOpenedPending = null;
       unawaited(_loadPendingPayment());
     }
   }
@@ -2523,19 +2520,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final result = store.load(expectedUid);
     if (!mounted || widget.session.uid != expectedUid) return;
     setState(() => _pendingLoad = result);
-    final fingerprint = result == null ? null : _pendingFingerprint(result);
-    if (result != null && _lastOpenedPending != fingerprint) {
-      _lastOpenedPending = fingerprint;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && ModalRoute.of(context)?.isCurrent == true) {
-          unawaited(_openPendingRecovery());
-        }
-      });
-    }
   }
-
-  String _pendingFingerprint(PendingPaymentLoadResult load) =>
-      load.payment?.fingerprint ?? 'malformed:${load.raw.hashCode}';
 
   Future<void> _openPendingRecovery() async {
     final load = _pendingLoad;

@@ -25,3 +25,11 @@ test('connects VAT and settlement document buttons to file APIs without placehol
   assert.doesNotMatch(source, /정산자료 엑셀 다운로드는 현재 제공되지 않습니다/);
   assert.doesNotMatch(source, /증빙내역 엑셀 다운로드는 현재 제공되지 않습니다/);
 });
+
+test('separates settlement evidence date, time, department, and employee number columns', () => {
+  assert.match(source, /function formatKoreanDateTimeParts\(value\)/);
+  assert.match(source, /<th>거래 날짜<\/th><th>거래 시간<\/th><th>이름<\/th><th>부서<\/th><th>사번<\/th>/);
+  assert.match(source, /transactionDateTime\.date/);
+  assert.match(source, /transactionDateTime\.time/);
+  assert.doesNotMatch(source, /\[row\.department, row\.employee_no\]\.filter\(Boolean\)\.join\(' \/ '\)/);
+});

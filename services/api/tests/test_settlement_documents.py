@@ -1,4 +1,5 @@
 import io
+from datetime import datetime, time
 
 from openpyxl import load_workbook
 
@@ -26,7 +27,7 @@ def detail():
         "business_information": {"name": "그린회사", "biz_reg_no": "111-22-33333"},
         "transactions": [
             {
-                "created_at": "2026-07-03T12:34:00+09:00",
+                "created_at": "2026-07-03T03:34:00Z",
                 "employee_name": "=HYPERLINK(\"https://bad.example\")",
                 "department": "영업팀",
                 "employee_no": "A-1",
@@ -58,9 +59,16 @@ def test_settlement_xlsx_contains_summary_transactions_and_no_formulas():
     assert sheet["A1"].value == "매출 정산서"
     assert sheet["B5"].value == 10000
     assert sheet["F5"].value == 11000
-    assert [cell.value for cell in sheet[8]][:5] == ["거래 일시", "이름", "부서", "사번", "구분"]
-    assert sheet["B9"].value.startswith("'=")
-    assert sheet["G9"].value == 10000
+    assert [cell.value for cell in sheet[8]][:6] == ["거래 날짜", "거래 시간", "이름", "부서", "사번", "구분"]
+    assert sheet["A9"].value == datetime(2026, 7, 3)
+    assert sheet["B9"].value == time(12, 34)
+    assert sheet["C9"].value.startswith("'=")
+    assert sheet["D9"].value == "영업팀"
+    assert sheet["E9"].value == "A-1"
+    assert sheet["H9"].value == 10000
+    assert sheet["A9"].number_format == "yyyy-mm-dd"
+    assert sheet["B9"].number_format == "hh:mm:ss"
+    assert sheet.auto_filter.ref == "A8:K9"
     assert sheet.freeze_panes == "A9"
 
 
@@ -86,6 +94,10 @@ def test_settlement_view_and_pdf_embed_korean_content_and_font():
     assert "돈토식당" in document
     assert "그린회사" in document
     assert "=HYPERLINK" in document
+    assert "<th>거래 날짜</th><th>거래 시간</th>" in document
+    assert "<th>부서</th><th>사번</th>" in document
+    assert "<td>2026-07-03</td><td>12:34:00</td>" in document
+    assert "영업팀 / A-1" not in document
 
     pdf = build_settlement_pdf(detail())
     assert pdf.startswith(b"%PDF-")

@@ -3,8 +3,10 @@ from __future__ import annotations
 import base64
 import html
 import io
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -13,6 +15,7 @@ from openpyxl.utils import get_column_letter
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _HEADER_FILL = PatternFill("solid", fgColor="DDEEDB")
 _TITLE_FILL = PatternFill("solid", fgColor="F6F0DF")
+_KST = ZoneInfo("Asia/Seoul")
 
 
 def _text(value: Any, fallback: str = "-") -> str:
@@ -32,6 +35,18 @@ def _amount(value: Any) -> int:
 def _xlsx_text(value: Any, fallback: str = "-") -> str:
     rendered = _text(value, fallback)
     return f"'{rendered}" if rendered.startswith(("=", "+", "-", "@")) else rendered
+
+
+def _transaction_date_time(value: Any) -> tuple[Any, Any]:
+    rendered = _text(value, "")
+    if not rendered:
+        return "-", "-"
+    try:
+        parsed = datetime.fromisoformat(rendered.replace("Z", "+00:00"))
+        local = parsed.astimezone(_KST) if parsed.tzinfo else parsed.replace(tzinfo=_KST)
+        return local.date(), local.time().replace(tzinfo=None, microsecond=0)
+    except ValueError:
+        return rendered, "-"
 
 
 def _original_invoice(row: dict[str, Any]) -> dict[str, Any]:
@@ -88,7 +103,7 @@ def build_settlement_xlsx(detail: dict[str, Any]) -> bytes:
     for row in summary_rows:
         sheet.append(row)
 
-    headers = ["거래 일시", "이름", "부서", "사번", "구분", "내역", "공급가액", "부가세", "합계", "거래번호"]
+    headers = ["거래 날짜", "거래 시간", "이름", "부서", "사번", "구분", "내역", "공급가액", "부가세", "합계", "거래번호"]
     sheet.append(headers)
     header_row = sheet.max_row
     for transaction in detail.get("transactions") or []:
@@ -96,8 +111,10 @@ def build_settlement_xlsx(detail: dict[str, Any]) -> bytes:
         kind_label = "장부" if kind == "spend" else "환불" if kind == "refund" else "취소"
         if kind == "spend" and transaction.get("pay_type") == "subsidized":
             kind_label = "보조금"
+        transaction_date, transaction_time = _transaction_date_time(transaction.get("created_at"))
         sheet.append([
-            _xlsx_text(transaction.get("created_at")),
+            transaction_date,
+            transaction_time,
             _xlsx_text(transaction.get("employee_name")),
             _xlsx_text(transaction.get("department")),
             _xlsx_text(transaction.get("employee_no")),
@@ -121,9 +138,11 @@ def build_settlement_xlsx(detail: dict[str, Any]) -> bytes:
         for column in (2, 4, 6):
             sheet.cell(row=row, column=column).number_format = "#,##0"
     for row in range(header_row + 1, sheet.max_row + 1):
-        for column in (7, 8, 9):
+        sheet.cell(row=row, column=1).number_format = "yyyy-mm-dd"
+        sheet.cell(row=row, column=2).number_format = "hh:mm:ss"
+        for column in (8, 9, 10):
             sheet.cell(row=row, column=column).number_format = "#,##0;[Red]-#,##0;0"
-    sheet.auto_filter.ref = f"A{header_row}:J{sheet.max_row}"
+    sheet.auto_filter.ref = f"A{header_row}:K{sheet.max_row}"
     _style_sheet(sheet, freeze=f"A{header_row + 1}")
     return _workbook_bytes(workbook)
 
@@ -192,17 +211,22 @@ def build_settlement_html(detail: dict[str, Any]) -> str:
     def e(value: Any) -> str:
         return html.escape(_text(value))
 
-    transaction_rows = "".join(
-        "<tr>"
-        f"<td>{e(row.get('created_at'))}</td><td>{e(row.get('employee_name'))}</td>"
-        f"<td>{e(row.get('department'))} / {e(row.get('employee_no'))}</td>"
-        f"<td>{e(row.get('kind'))}</td><td>{e(row.get('item'))}</td>"
-        f"<td class='money'>{_amount(row.get('supply_amount')):,}</td>"
-        f"<td class='money'>{_amount(row.get('vat_amount')):,}</td>"
-        f"<td class='money'>{_amount(row.get('total_amount')):,}</td>"
-        f"<td>{e(row.get('tx_code'))}</td></tr>"
-        for row in transactions
-    ) or "<tr><td colspan='9' class='empty'>해당 정산 기간의 사용 내역이 없습니다.</td></tr>"
+    def transaction_row(row: dict[str, Any]) -> str:
+        transaction_date, transaction_time = _transaction_date_time(row.get("created_at"))
+        return (
+            "<tr>"
+            f"<td>{e(transaction_date)}</td><td>{e(transaction_time)}</td><td>{e(row.get('employee_name'))}</td>"
+            f"<td>{e(row.get('department'))}</td><td>{e(row.get('employee_no'))}</td>"
+            f"<td>{e(row.get('kind'))}</td><td>{e(row.get('item'))}</td>"
+            f"<td class='money'>{_amount(row.get('supply_amount')):,}</td>"
+            f"<td class='money'>{_amount(row.get('vat_amount')):,}</td>"
+            f"<td class='money'>{_amount(row.get('total_amount')):,}</td>"
+            f"<td>{e(row.get('tx_code'))}</td></tr>"
+        )
+
+    transaction_rows = "".join(transaction_row(row) for row in transactions) or (
+        "<tr><td colspan='11' class='empty'>해당 정산 기간의 사용 내역이 없습니다.</td></tr>"
+    )
     return f"""<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>매출 정산서</title><style>
 @page {{ size:A4 landscape; margin:16mm; }}
 body {{ font-family:'Settlement Korean','Malgun Gothic',sans-serif; color:#17351f; margin:24px; font-size:12px; }}
@@ -216,7 +240,7 @@ table {{ width:100%; border-collapse:collapse; }} th,td {{ border-bottom:1px sol
 <div><span>공급가액</span><strong>{_amount(detail.get('supply_amount')):,}원</strong></div>
 <div><span>부가세</span><strong>{_amount(detail.get('vat_amount')):,}원</strong></div>
 <div><span>합계</span><strong>{_amount(detail.get('total_amount')):,}원</strong></div></section>
-<table><thead><tr><th>거래 일시</th><th>이름</th><th>부서/사번</th><th>구분</th><th>내역</th><th>공급가액</th><th>부가세</th><th>합계</th><th>거래번호</th></tr></thead><tbody>{transaction_rows}</tbody></table></body></html>"""
+<table><thead><tr><th>거래 날짜</th><th>거래 시간</th><th>이름</th><th>부서</th><th>사번</th><th>구분</th><th>내역</th><th>공급가액</th><th>부가세</th><th>합계</th><th>거래번호</th></tr></thead><tbody>{transaction_rows}</tbody></table></body></html>"""
 
 
 def build_settlement_pdf(detail: dict[str, Any]) -> bytes:

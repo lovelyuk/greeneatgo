@@ -49,6 +49,17 @@ def _transaction_date_time(value: Any) -> tuple[Any, Any]:
         return rendered, "-"
 
 
+def _transaction_kind_label(row: dict[str, Any]) -> str:
+    kind = row.get("kind")
+    if kind == "spend":
+        return "보조금" if row.get("pay_type") == "subsidized" else "장부"
+    if kind == "refund":
+        return "환불"
+    if kind == "cancel":
+        return "취소"
+    return _text(kind)
+
+
 def _original_invoice(row: dict[str, Any]) -> dict[str, Any]:
     return next(
         (
@@ -107,10 +118,6 @@ def build_settlement_xlsx(detail: dict[str, Any]) -> bytes:
     sheet.append(headers)
     header_row = sheet.max_row
     for transaction in detail.get("transactions") or []:
-        kind = transaction.get("kind")
-        kind_label = "장부" if kind == "spend" else "환불" if kind == "refund" else "취소"
-        if kind == "spend" and transaction.get("pay_type") == "subsidized":
-            kind_label = "보조금"
         transaction_date, transaction_time = _transaction_date_time(transaction.get("created_at"))
         sheet.append([
             transaction_date,
@@ -118,7 +125,7 @@ def build_settlement_xlsx(detail: dict[str, Any]) -> bytes:
             _xlsx_text(transaction.get("employee_name")),
             _xlsx_text(transaction.get("department")),
             _xlsx_text(transaction.get("employee_no")),
-            kind_label,
+            _transaction_kind_label(transaction),
             _xlsx_text(transaction.get("item")),
             _amount(transaction.get("supply_amount")),
             _amount(transaction.get("vat_amount")),
@@ -217,7 +224,7 @@ def build_settlement_html(detail: dict[str, Any]) -> str:
             "<tr>"
             f"<td>{e(transaction_date)}</td><td>{e(transaction_time)}</td><td>{e(row.get('employee_name'))}</td>"
             f"<td>{e(row.get('department'))}</td><td>{e(row.get('employee_no'))}</td>"
-            f"<td>{e(row.get('kind'))}</td><td>{e(row.get('item'))}</td>"
+            f"<td>{e(_transaction_kind_label(row))}</td><td>{e(row.get('item'))}</td>"
             f"<td class='money'>{_amount(row.get('supply_amount')):,}</td>"
             f"<td class='money'>{_amount(row.get('vat_amount')):,}</td>"
             f"<td class='money'>{_amount(row.get('total_amount')):,}</td>"
@@ -232,7 +239,8 @@ def build_settlement_html(detail: dict[str, Any]) -> str:
 body {{ font-family:'Settlement Korean','Malgun Gothic',sans-serif; color:#17351f; margin:24px; font-size:12px; }}
 h1 {{ margin:0 0 18px; font-size:24px; }} .summary {{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }}
 .summary div {{ background:#f7f2e5; border:1px solid #d9ddce; border-radius:8px; padding:10px; }} .summary span {{ display:block; color:#647066; font-size:10px; }}
-table {{ width:100%; border-collapse:collapse; }} th,td {{ border-bottom:1px solid #d9ddce; padding:7px; text-align:left; }} th {{ background:#dfeedb; }} .money {{ text-align:right; }} .empty {{ text-align:center; padding:24px; }}
+table {{ width:100%; border-collapse:collapse; }} th,td {{ border-bottom:1px solid #d9ddce; padding:7px; text-align:left; }} th {{ background:#dfeedb; }}
+.money {{ width:100px; min-width:100px; max-width:100px; box-sizing:border-box; text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }} .transaction-code {{ text-align:left; }} .empty {{ text-align:center; padding:24px; }}
 </style></head><body><h1>매출 정산서</h1><section class='summary'>
 <div><span>정산 기간</span><strong>{e(detail.get('period_from'))} ~ {e(detail.get('period_to'))}</strong></div>
 <div><span>공급자</span><strong>{e(supplier.get('name'))}</strong><br>{e(supplier.get('biz_reg_no'))}</div>
@@ -240,7 +248,7 @@ table {{ width:100%; border-collapse:collapse; }} th,td {{ border-bottom:1px sol
 <div><span>공급가액</span><strong>{_amount(detail.get('supply_amount')):,}원</strong></div>
 <div><span>부가세</span><strong>{_amount(detail.get('vat_amount')):,}원</strong></div>
 <div><span>합계</span><strong>{_amount(detail.get('total_amount')):,}원</strong></div></section>
-<table><thead><tr><th>거래 날짜</th><th>거래 시간</th><th>이름</th><th>부서</th><th>사번</th><th>구분</th><th>내역</th><th>공급가액</th><th>부가세</th><th>합계</th><th>거래번호</th></tr></thead><tbody>{transaction_rows}</tbody></table></body></html>"""
+<table><thead><tr><th>거래 날짜</th><th>거래 시간</th><th>이름</th><th>부서</th><th>사번</th><th>구분</th><th>내역</th><th class='money'>공급가액</th><th class='money'>부가세</th><th class='money'>합계</th><th class='transaction-code'>거래번호</th></tr></thead><tbody>{transaction_rows}</tbody></table></body></html>"""
 
 
 def build_settlement_pdf(detail: dict[str, Any]) -> bytes:

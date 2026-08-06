@@ -98,6 +98,13 @@ def test_settlement_view_and_pdf_embed_korean_content_and_font():
     assert "<th>부서</th><th>사번</th>" in document
     assert "<td>2026-07-03</td><td>12:34:00</td>" in document
     assert "영업팀 / A-1" not in document
+    assert "<td>장부</td>" in document
+    assert "<td>spend</td>" not in document
+    assert "<th class='money'>공급가액</th><th class='money'>부가세</th><th class='money'>합계</th>" in document
+    assert ".money { width:100px; min-width:100px; max-width:100px;" in document
+    assert "text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums;" in document
+    assert "<th class='transaction-code'>거래번호</th>" in document
+    assert ".transaction-code { text-align:left; }" in document
 
     pdf = build_settlement_pdf(detail())
     assert pdf.startswith(b"%PDF-")

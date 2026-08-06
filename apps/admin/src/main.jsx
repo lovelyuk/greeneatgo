@@ -98,6 +98,51 @@ async function apiFetch(path, token, options = {}) {
   return payload.data;
 }
 
+async function apiFileFetch(path, token) {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload.detail ?? payload.error ?? {};
+    const error = new Error(detail.message || detail.code || `파일 API 오류 (${response.status})`);
+    error.code = detail.code || payload.code;
+    error.status = response.status;
+    throw error;
+  }
+  return {
+    blob: await response.blob(),
+    disposition: response.headers.get('Content-Disposition') ?? '',
+  };
+}
+
+function responseFilename(disposition, fallback) {
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try { return decodeURIComponent(encoded); } catch { return fallback; }
+  }
+  return disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? fallback;
+}
+
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function showBlob(blob, previewWindow) {
+  if (!previewWindow) throw new Error('팝업이 차단됐어요. 이 사이트의 팝업을 허용한 뒤 다시 시도해 주세요.');
+  const url = URL.createObjectURL(blob);
+  previewWindow.opener = null;
+  previewWindow.location.replace(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 function BrandMark() {
   return <div className="brandmark" aria-label="그린잇">
     <img src="/brand/greeneat_logo.png" alt="그린잇" />
@@ -1674,17 +1719,26 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
     finally { setPendingAction(''); }
   }
 
-  async function openInvoiceDocument(kind) {
+  async function handleSettlementDocument(format) {
     if (!selected || pendingAction) return;
-    setPendingAction(kind); setActionError('');
+    const previewWindow = format === 'html' ? window.open('about:blank', '_blank') : null;
+    setPendingAction(`document-${format}`); setActionError(''); setNotice('');
     try {
       const root = settlementApiRoot(isMerchant);
-      await openDocumentInNewWindow(window.open.bind(window), async () => {
-        const data = await apiFetch(`${root}/${encodeURIComponent(selected.id)}/tax-invoice/${kind === 'view' ? 'view-url' : 'pdf-url'}`, token);
-        return data?.url;
-      });
-    } catch (documentError) { setActionError(documentError.message); }
-    finally { setPendingAction(''); }
+      const { blob, disposition } = await apiFileFetch(
+        `${root}/${encodeURIComponent(selected.id)}/document?format=${format}`,
+        token,
+      );
+      if (format === 'html') {
+        showBlob(blob, previewWindow);
+      } else {
+        saveBlob(blob, responseFilename(disposition, `매출정산_${selected.period_start.slice(0, 7)}.${format}`));
+        setNotice(`${format === 'xlsx' ? '엑셀' : 'PDF'} 파일을 다운로드했습니다.`);
+      }
+    } catch (documentError) {
+      previewWindow?.close();
+      setActionError(documentError.message);
+    } finally { setPendingAction(''); }
   }
 
   if (!selected) return <AdminPage title="매출 정산" description={isMerchant ? '업체별 월 정산과 증빙·입금 처리 현황을 확인합니다.' : '우리 회사의 월별 청구와 세금계산서 처리 현황을 확인합니다.'} showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
@@ -1711,7 +1765,7 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
     {actionError && <div className="alert error" role="alert" aria-live="assertive">{actionError} <button type="button" className="ghost" onClick={retrySelectedDetail} disabled={Boolean(pendingAction)}>다시 시도</button></div>}
     {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
     {selected.is_demo && <div className="alert warning" role="status">시연 정산입니다. 단계 진행과 초기화는 공급자 정보의 정산·세금계산서 시연 영역에서만 할 수 있습니다.</div>}
-    <div className="settlement-v2-detailbar"><button ref={backButtonRef} type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { evidenceRequestRef.current += 1; selectedIdRef.current = null; setEvidenceLoading(false); setSelectedId(null); setNotice(''); setActionError(''); }}>‹ 뒤로</button><div className="settlement-v2-detail-actions">{!selected.is_demo && <button type="button" className="ghost" onClick={() => setNotice('정산자료 엑셀 다운로드는 현재 제공되지 않습니다.')}><Download size={16}/> 엑셀 다운로드</button>}{invoiceAvailable && <><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => openInvoiceDocument('view')}><FileText size={16}/> 보기</button><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => openInvoiceDocument('pdf')}><Download size={16}/> PDF</button></>}{isMerchant && canRefreshInvoiceStatus(selected) && <button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={refreshInvoiceStatus}><RefreshCw size={16}/> 상태 새로고침</button>}{merchantCanSend && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => settlementWorkflowAction('send')}>{selected.settlement_status === 'revising' ? '업체에 정산서 재발송' : '업체에 정산서 발송'}</button>}{merchantCanBeginRevision && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => settlementWorkflowAction('begin-revision')}>정산서 수정 시작</button>}{merchantCanIssue && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('issue'); }}>세금계산서 발행</button>}{companyCanRequest && <button ref={actionButtonRef} type="button" className="primary" disabled={!recipientReady || Boolean(pendingAction)} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('request'); }}>정산 내용 확인 및 세금계산서 발급 요청</button>}{companyCanDispute && <button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { disputeIdempotencyKeyRef.current = crypto.randomUUID(); setDisputeReason(''); setActionError(''); setDialog('dispute'); }}>정산 내용 이의 제기</button>}{merchantCanMarkPaid && <button ref={actionButtonRef} type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { paymentIdempotencyKeyRef.current = crypto.randomUUID(); setPaymentForm(paymentFormForSettlement(selected)); setActionError(''); dialogReturnRef.current = actionButtonRef.current; setDialog('payment'); }}>입금 등록</button>}</div></div>
+    <div className="settlement-v2-detailbar"><button ref={backButtonRef} type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { evidenceRequestRef.current += 1; selectedIdRef.current = null; setEvidenceLoading(false); setSelectedId(null); setNotice(''); setActionError(''); }}>‹ 뒤로</button><div className="settlement-v2-detail-actions">{!selected.is_demo && <><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => handleSettlementDocument('xlsx')}><Download size={16}/> {pendingAction === 'document-xlsx' ? '엑셀 생성 중...' : '엑셀 다운로드'}</button><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => handleSettlementDocument('html')}><FileText size={16}/> {pendingAction === 'document-html' ? '여는 중...' : '보기'}</button><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => handleSettlementDocument('pdf')}><Download size={16}/> {pendingAction === 'document-pdf' ? 'PDF 생성 중...' : 'PDF'}</button></>}{isMerchant && canRefreshInvoiceStatus(selected) && <button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={refreshInvoiceStatus}><RefreshCw size={16}/> 상태 새로고침</button>}{merchantCanSend && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => settlementWorkflowAction('send')}>{selected.settlement_status === 'revising' ? '업체에 정산서 재발송' : '업체에 정산서 발송'}</button>}{merchantCanBeginRevision && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => settlementWorkflowAction('begin-revision')}>정산서 수정 시작</button>}{merchantCanIssue && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('issue'); }}>세금계산서 발행</button>}{companyCanRequest && <button ref={actionButtonRef} type="button" className="primary" disabled={!recipientReady || Boolean(pendingAction)} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('request'); }}>정산 내용 확인 및 세금계산서 발급 요청</button>}{companyCanDispute && <button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { disputeIdempotencyKeyRef.current = crypto.randomUUID(); setDisputeReason(''); setActionError(''); setDialog('dispute'); }}>정산 내용 이의 제기</button>}{merchantCanMarkPaid && <button ref={actionButtonRef} type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { paymentIdempotencyKeyRef.current = crypto.randomUUID(); setPaymentForm(paymentFormForSettlement(selected)); setActionError(''); dialogReturnRef.current = actionButtonRef.current; setDialog('payment'); }}>입금 등록</button>}</div></div>
     {!isMerchant && !recipientReady && <div className="alert warning" role="alert">정산 확정에 필요한 회사 정보(사업자 정보, 세금계산서 이메일, 담당자명·연락처)가 미완성입니다. <button type="button" className="ghost" onClick={onCompanyInfo}>회사 정보에서 입력하기</button></div>}
     <article className="panel settlement-v2-overview">
       <div className="settlement-v2-overview-row"><span>정산 요약</span><div className="settlement-v2-summary-grid"><div><small>공급자</small><strong>{selected.supplier.name}</strong></div><div><small>정산금액</small><strong className="money">{krw(selected.total_amount)}</strong></div><div><small>정산</small><SettlementV2Status type="settlement" value={selected.settlement_status}/></div><div><small>세금계산서</small><SettlementV2Status type="invoice" value={selected.tax_invoice_status}/></div><div><small>입금</small><SettlementV2Status type="payment" value={selected.payment_status}/></div></div></div>
@@ -1740,17 +1794,43 @@ function CompanySettlementScreen({ token, company, onCompanyInfo }) {
   return <SettlementV2Screen viewer="company" token={token} companyProfile={company} onCompanyInfo={onCompanyInfo} />;
 }
 
-function SettlementEvidencePanel({ settlementRows }) {
+function SettlementEvidencePanel({ settlementRows, token }) {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [kind, setKind] = useState('전체');
   const [type, setType] = useState('전체');
   const [notice, setNotice] = useState('');
-  const evidenceRecords = settlementRows.filter((row) => ['issued', 'nts_sending', 'nts_accepted'].includes(row.tax_invoice_status)).map(settlementV2Evidence);
+  const [error, setError] = useState('');
+  const [downloading, setDownloading] = useState(false);
+  const evidenceRecords = settlementRows
+    .filter((row) => !row.is_demo && ['issued', 'nts_sending', 'nts_accepted'].includes(row.tax_invoice_status))
+    .map(settlementV2Evidence);
   const evidenceYears = [...new Set([String(new Date().getFullYear()), ...evidenceRecords.map((row) => row.writtenAt.slice(0, 4))])].sort().reverse();
   const rows = evidenceRecords.filter((row) => row.writtenAt.startsWith(year) && (kind === '전체' || row.kind === kind) && (type === '전체' || row.type === type));
+
+  async function downloadVatReference() {
+    if (downloading) return;
+    setNotice(''); setError('');
+    if (rows.length === 0) {
+      setError('현재 조회 조건에 다운로드할 증빙 내역이 없습니다.');
+      return;
+    }
+    setDownloading(true);
+    try {
+      const { blob, disposition } = await apiFileFetch(
+        `/admin/merchant/settlements/evidence/export?year=${encodeURIComponent(year)}`,
+        token,
+      );
+      saveBlob(blob, responseFilename(disposition, `부가가치세_신고_참고자료_${year}.xlsx`));
+      setNotice(`${year}년 부가가치세 신고 참고자료를 다운로드했습니다.`);
+    } catch (downloadError) {
+      setError(downloadError.message);
+    } finally { setDownloading(false); }
+  }
+
   return <section id="tax-invoice-evidence-panel" role="tabpanel" aria-labelledby="tax-invoice-evidence-tab">
-    {notice && <div className="alert success">{notice}</div>}
-    <article className="panel"><div className="settlement-v2-evidence-head"><div className="settlement-v2-evidence-filters"><label>조회기간<select value={year} onChange={(event) => setYear(event.target.value)}>{evidenceYears.map((value) => <option key={value}>{value}</option>)}</select></label><label>증빙 구분<select value={kind} onChange={(event) => setKind(event.target.value)}><option>전체</option><option>매출</option><option>매입</option></select></label><label>증빙 유형<select value={type} onChange={(event) => setType(event.target.value)}><option>전체</option><option>세금계산서</option><option>현금영수증</option><option>카드</option></select></label></div><button type="button" className="primary" onClick={() => setNotice('증빙내역 엑셀 다운로드는 현재 제공되지 않습니다.')}><Download size={16}/> 부가가치세 신고 참고자료 엑셀 다운로드</button></div><div className="settlement-v2-guide"><span>· 조회기간은 각 증빙의 작성일자 기준입니다.</span><span>· 국세청 부가가치세 신고 참고자료로써 증빙내역을 표시합니다. 상세는 매출 정산에서 확인해 주세요.</span></div><div className="table-wrap"><table><thead><tr><th>증빙 구분</th><th>품목명</th><th>증빙 유형</th><th>공급받는자</th><th>발급수단(사업자)번호</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">총액</th><th>작성일자</th><th>승인번호</th><th>승인일자</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><SettlementV2Status value={row.kind}/></td><td>{row.item}</td><td>{row.type}</td><td>{row.recipient}</td><td>{row.bizNo}</td><td className="money">{krw(row.supply)}</td><td className="money">{krw(row.vat)}</td><td className="money">{krw(row.total)}</td><td>{row.writtenAt}</td><td>{row.approvalNo}</td><td>{row.approvedAt}</td></tr>)}</tbody></table></div>{rows.length === 0 && <SettlementV2Empty text="증빙 내역이 없습니다"/>}</article>
+    {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
+    {error && <div className="alert error" role="alert" aria-live="assertive">{error}</div>}
+    <article className="panel"><div className="settlement-v2-evidence-head"><div className="settlement-v2-evidence-filters"><label>조회기간<select value={year} onChange={(event) => { setYear(event.target.value); setNotice(''); setError(''); }}>{evidenceYears.map((value) => <option key={value}>{value}</option>)}</select></label><label>증빙 구분<select value={kind} onChange={(event) => { setKind(event.target.value); setNotice(''); setError(''); }}><option>전체</option><option>매출</option><option>매입</option></select></label><label>증빙 유형<select value={type} onChange={(event) => { setType(event.target.value); setNotice(''); setError(''); }}><option>전체</option><option>세금계산서</option><option>현금영수증</option><option>카드</option></select></label></div><button type="button" className="primary" disabled={downloading} onClick={downloadVatReference}><Download size={16}/> {downloading ? '엑셀 생성 중...' : '부가가치세 신고 참고자료 엑셀 다운로드'}</button></div><div className="settlement-v2-guide"><span>· 조회기간은 각 증빙의 작성일자 기준입니다.</span><span>· 국세청 부가가치세 신고 참고자료로써 증빙내역을 표시합니다. 상세는 매출 정산에서 확인해 주세요.</span></div><div className="table-wrap"><table><thead><tr><th>증빙 구분</th><th>품목명</th><th>증빙 유형</th><th>공급받는자</th><th>발급수단(사업자)번호</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">총액</th><th>작성일자</th><th>승인번호</th><th>승인일자</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><SettlementV2Status value={row.kind}/></td><td>{row.item}</td><td>{row.type}</td><td>{row.recipient}</td><td>{row.bizNo}</td><td className="money">{krw(row.supply)}</td><td className="money">{krw(row.vat)}</td><td className="money">{krw(row.total)}</td><td>{row.writtenAt}</td><td>{row.approvalNo}</td><td>{row.approvedAt}</td></tr>)}</tbody></table></div>{rows.length === 0 && <SettlementV2Empty text="증빙 내역이 없습니다"/>}</article>
   </section>;
 }
 
@@ -1791,7 +1871,7 @@ function MerchantTaxInvoiceScreen({ token, initialTab = 'issue' }) {
       ?.querySelector(`#tax-invoice-${nextTab}-tab`)
       ?.focus();
   }
-  return <AdminPage title="세금계산서" description="발행 관리부터 완료된 증빙 조회까지 한곳에서 처리합니다." showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
+  return <AdminPage title="증빙 내역" description="발행 관리부터 완료된 증빙 조회까지 한곳에서 처리합니다." showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
     {loadError && <div className="alert error" role="alert">{loadError} <button type="button" className="ghost" onClick={reload} disabled={loading}>다시 시도</button></div>}
     {loadWarning && <div className="alert warning" role="alert">{loadWarning} <button type="button" className="ghost" onClick={reload} disabled={loading}>다시 시도</button></div>}
     {issueError && <div className="alert error" role="alert">{issueError} <button type="button" className="ghost" onClick={reload} disabled={loading || Boolean(pendingId)}>다시 시도</button></div>}
@@ -1801,7 +1881,7 @@ function MerchantTaxInvoiceScreen({ token, initialTab = 'issue' }) {
       <button id="tax-invoice-evidence-tab" type="button" role="tab" aria-selected={activeTab === 'evidence'} aria-controls="tax-invoice-evidence-panel" tabIndex={activeTab === 'evidence' ? 0 : -1} className={activeTab === 'evidence' ? 'active' : ''} onKeyDown={handleTabKeyDown} onClick={() => setActiveTab('evidence')}>발행 완료·증빙 내역</button>
     </div>
     {activeTab === 'issue' && <article id="tax-invoice-issue-panel" role="tabpanel" aria-labelledby="tax-invoice-issue-tab" className="panel">{loadedItems === null ? <SettlementV2Empty text="세금계산서 내역을 불러오는 중입니다"/> : <><div className="table-wrap"><table><thead><tr><th>정산월</th><th>업체명</th><th className="money">공급가액</th><th className="money">부가세</th><th>상태</th><th>처리</th></tr></thead><tbody>{items.map((item) => { const legal = canMerchantIssue(item); const refreshable = canRefreshInvoiceStatus(item); return <tr key={item.id}><td>{item.period_start.slice(0, 7)}</td><td><strong>{item.recipient.name || '확인 필요'}</strong></td><td className="money">{krw(item.supply_amount)}</td><td className="money">{krw(item.vat_amount)}</td><td><SettlementV2Status type="invoice" value={item.tax_invoice_status}/></td><td><div className="row-actions">{legal && <button type="button" className="ghost" disabled={Boolean(pendingId)} onClick={() => mutate(item.id, 'issue')}>발행</button>}{refreshable && <button type="button" className="ghost" disabled={Boolean(pendingId)} onClick={() => mutate(item.id, 'refresh-status')}><RefreshCw size={14}/> 상태 새로고침</button>}{!legal && !refreshable && <span className="panel-note">처리 불가</span>}</div></td></tr>; })}</tbody></table></div>{items.length === 0 && <SettlementV2Empty />}</>}</article>}
-    {activeTab === 'evidence' && <SettlementEvidencePanel settlementRows={items} />}
+    {activeTab === 'evidence' && <SettlementEvidencePanel settlementRows={items} token={token} />}
   </AdminPage>;
 }
 function MerchantPrepurchaseScreen({ token, onChanged, refreshVersion }) {
@@ -3246,7 +3326,7 @@ function Dashboard({ session, onLogout }) {
 
   const merchantNavGroups = [
     [['main', '대시보드', Home], ['payment-history', '실시간 매출', CreditCard]],
-    [['companies', '업체 정보', Building2], ['settlements-by-company', '매출 정산', WalletCards], ['tax-invoices', '세금계산서', FileText]],
+    [['companies', '업체 정보', Building2], ['settlements-by-company', '매출 정산', WalletCards], ['tax-invoices', '증빙 내역', FileText]],
     [['restaurant-management', '식당 관리', Coffee], ['supplier-info', '공급자 정보', Settings]],
   ];
   const companyManagementTabs = [
@@ -3267,7 +3347,7 @@ function Dashboard({ session, onLogout }) {
   ];
   const companyNavGroups = [
     [['company-dashboard', '대시보드', Home]],
-    [['company-billing', '청구 내역', WalletCards], ['company-tax-invoices', '세금계산서', FileText], ['company-info', '회사 정보', Settings]],
+    [['company-billing', '청구 내역', WalletCards], ['company-tax-invoices', '증빙 내역', FileText], ['company-info', '회사 정보', Settings]],
     [['legacy-employees', '사원 관리', Users], ['company-usage', '이용 내역', BarChart3]],
   ];
   const companyUsageTabs = [['employee-usage', '사원별 사용'], ['monthly-usage', '월별 이용']];

@@ -1,9 +1,11 @@
+import io
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from app.auth import bearer_token
 import app.routers.settlements as settlements_router
@@ -30,6 +32,7 @@ class FakeSettlements:
         self.demo = False
         self.generated = False
         self.generated_lookup_error = None
+        self.list_items = None
         self.detail = {"id": SETTLEMENT_ID, "tax_invoice_status": "issued", "tax_invoices": [
             {"document_type": "original", "invoicer_mgt_key": "GEAAAAAAAAAAAAAAAAAAAAAA"}
         ], "events": []}
@@ -50,7 +53,8 @@ class FakeSettlements:
 
     def list_merchant(self, merchant_id, limit, offset):
         self.calls.append(("list_merchant", merchant_id, limit, offset))
-        return [{"id": "s1", "merchant_id": merchant_id}]
+        items = self.list_items if self.list_items is not None else [{"id": "s1", "merchant_id": merchant_id}]
+        return items[offset:offset + limit]
 
     def supplier_popbill_readiness(self, merchant_id, configured_corp_num):
         self.calls.append(("readiness", merchant_id, configured_corp_num))
@@ -291,6 +295,88 @@ def test_merchant_detail_falls_back_to_owned_demo_detail_and_keeps_transactions_
         ("merchant_detail", UUID(SETTLEMENT_ID), "merchant-own", True),
         ("merchant_demo_detail", UUID(SETTLEMENT_ID), "merchant-own", True),
     ]
+
+
+def _document_detail():
+    return {
+        "id": SETTLEMENT_ID,
+        "period_ym": "2026-07",
+        "period_from": "2026-07-01",
+        "period_to": "2026-07-31",
+        "supply_amount": 10000,
+        "vat_amount": 1000,
+        "total_amount": 11000,
+        "settlement_status": "confirmed",
+        "tax_invoice_status": "issued",
+        "payment_status": "unpaid",
+        "supplier_information": {"name": "돈토식당", "biz_reg_no": "123-45-67890"},
+        "business_information": {"name": "그린회사", "biz_reg_no": "111-22-33333"},
+        "transactions": [{
+            "created_at": "2026-07-03T12:34:00+09:00", "employee_name": "홍길동",
+            "department": "영업팀", "employee_no": "A-1", "kind": "spend",
+            "pay_type": "ledger", "item": "중식", "supply_amount": 10000,
+            "vat_amount": 1000, "total_amount": 11000, "tx_code": "TX-1",
+        }],
+        "tax_invoices": [{
+            "document_type": "original", "write_date": "2026-07-31",
+            "recipient_snapshot": {"name": "그린회사", "biz_reg_no": "111-22-33333"},
+            "nts_confirm_num": "NTS-1", "issued_at": "2026-08-01T09:00:00+09:00",
+        }],
+        "events": [],
+    }
+
+
+@pytest.mark.parametrize("role,prefix", [
+    ("merchant_admin", "/v1/admin/merchant/settlements"),
+    ("company_admin", "/v1/admin/settlements"),
+])
+def test_settlement_documents_are_tenant_scoped_and_downloadable(client_factory, role, prefix):
+    client, repo = client_factory(role)
+    repo.detail = _document_detail()
+
+    xlsx = client.get(f"{prefix}/{SETTLEMENT_ID}/document?format=xlsx")
+    html = client.get(f"{prefix}/{SETTLEMENT_ID}/document?format=html")
+
+    assert xlsx.status_code == 200
+    assert xlsx.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    assert "attachment" in xlsx.headers["content-disposition"]
+    assert "UTF-8''" in xlsx.headers["content-disposition"]
+    workbook = load_workbook(io.BytesIO(xlsx.content))
+    assert workbook["매출 정산"]["F5"].value == 11000
+    assert html.status_code == 200
+    assert html.headers["content-type"].startswith("text/html")
+    assert "inline" in html.headers["content-disposition"]
+    assert "매출 정산서" in html.text
+    expected_call = "merchant_detail" if role == "merchant_admin" else "company_detail"
+    assert any(call[0] == expected_call and call[-1] is True for call in repo.calls if isinstance(call, tuple))
+
+
+def test_merchant_vat_reference_export_filters_year_status_and_demo(client_factory):
+    client, repo = client_factory("merchant_admin")
+    issued = _document_detail()
+    repo.list_items = [
+        issued,
+        {**issued, "id": "demo", "is_demo": True},
+        {**issued, "id": "pending", "tax_invoice_status": "requested"},
+        {**issued, "id": "old", "tax_invoices": [{**issued["tax_invoices"][0], "write_date": "2025-12-31"}]},
+    ]
+
+    response = client.get("/v1/admin/merchant/settlements/evidence/export?year=2026")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    assert "attachment" in response.headers["content-disposition"]
+    sheet = load_workbook(io.BytesIO(response.content))["부가가치세 신고 참고자료"]
+    assert sheet.max_row == 5
+    assert sheet["D5"].value == "그린회사"
+    assert sheet["H5"].value == 11000
+    assert repo.calls[-1] == ("list_merchant", "merchant-own", 100, 0)
+
+
+def test_settlement_document_rejects_unknown_format(client_factory):
+    client, _ = client_factory("merchant_admin")
+    response = client.get(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/document?format=csv")
+    assert response.status_code == 422
 
 
 def test_confirm_requires_all_three_explicit_true_and_uses_no_client_snapshot(client_factory):

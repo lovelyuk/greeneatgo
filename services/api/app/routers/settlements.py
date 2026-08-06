@@ -1,9 +1,11 @@
 import logging
 from datetime import date, datetime
+from typing import cast
+from urllib.parse import quote
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from app.auth import bearer_token
@@ -16,6 +18,13 @@ from app.settlement_schemas import (
 )
 from app.services.join_flow import JoinFlowError
 from app.services.popbill_service import PopbillConfig, PopbillError, PopbillService
+from app.services.settlement_documents import (
+    XLSX_MEDIA_TYPE,
+    build_settlement_html,
+    build_settlement_pdf,
+    build_settlement_xlsx,
+    build_vat_reference_xlsx,
+)
 
 company_router = APIRouter(prefix="/company/settlements", tags=["company-settlements"])
 company_alias_router = APIRouter(prefix="/admin/settlements", tags=["company-settlements"])
@@ -190,6 +199,36 @@ def _public(value):
     return projected
 
 
+def _content_disposition(filename: str, *, inline: bool = False) -> str:
+    mode = "inline" if inline else "attachment"
+    extension = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
+    return f"{mode}; filename=\"settlement.{extension}\"; filename*=UTF-8''{quote(filename)}"
+
+
+def _settlement_document_response(detail: dict, format: str) -> Response:
+    period = str(detail.get("period_ym") or detail.get("period_from") or "정산")
+    if format == "xlsx":
+        filename = f"매출정산_{period}.xlsx"
+        return Response(
+            build_settlement_xlsx(detail),
+            media_type=XLSX_MEDIA_TYPE,
+            headers={"Content-Disposition": _content_disposition(filename)},
+        )
+    if format == "pdf":
+        filename = f"매출정산_{period}.pdf"
+        return Response(
+            build_settlement_pdf(detail),
+            media_type="application/pdf",
+            headers={"Content-Disposition": _content_disposition(filename)},
+        )
+    filename = f"매출정산_{period}.html"
+    return Response(
+        build_settlement_html(detail),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": _content_disposition(filename, inline=True)},
+    )
+
+
 def _company_list(limit: int, offset: int, token: str, repo: SettlementRepository):
     actor = _actor(repo, token, "company_admin")
     assert actor.company_id is not None
@@ -200,7 +239,10 @@ def _company_list(limit: int, offset: int, token: str, repo: SettlementRepositor
         raise _rpc_error(exc) from exc
 
 
-def _company_detail(settlement_id: UUID, token: str, repo: SettlementRepository, include_transactions: bool = False):
+def _company_detail(
+    settlement_id: UUID, token: str, repo: SettlementRepository,
+    include_transactions: bool = False,
+) -> dict:
     actor = _actor(repo, token, "company_admin")
     assert actor.company_id is not None
     try:
@@ -210,7 +252,7 @@ def _company_detail(settlement_id: UUID, token: str, repo: SettlementRepository,
         raise _rpc_error(exc) from exc
     if row is None:
         raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
-    return _public(row)
+    return cast(dict, _public(row))
 
 
 @company_router.get("")
@@ -237,6 +279,18 @@ def company_list_alias(ym: str | None = Query(default=None, pattern=r"^\d{4}-\d{
 @company_alias_router.get("/{settlement_id}")
 def company_detail(settlement_id: UUID, include_transactions: bool = False, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository)):
     return {"ok": True, "data": _company_detail(settlement_id, token, repo, include_transactions), "error": None}
+
+
+@company_router.get("/{settlement_id}/document")
+@company_alias_router.get("/{settlement_id}/document")
+def company_settlement_document(
+    settlement_id: UUID,
+    format: str = Query(pattern="^(xlsx|html|pdf)$"),
+    token: str = Depends(bearer_token),
+    repo: SettlementRepository = Depends(get_settlement_repository),
+):
+    detail = _company_detail(settlement_id, token, repo, include_transactions=True)
+    return _settlement_document_response(detail, format)
 
 
 @company_router.post("/{settlement_id}/confirm-and-request-tax-invoice")
@@ -364,7 +418,7 @@ def merchant_popbill_readiness(token: str = Depends(bearer_token), repo: Settlem
 def _merchant_detail(
     settlement_id: UUID, token: str, repo: SettlementRepository,
     include_transactions: bool = False, allow_demo: bool = False,
-):
+) -> dict:
     actor = _actor(repo, token, "merchant_admin")
     assert actor.merchant_id is not None
     try:
@@ -378,7 +432,7 @@ def _merchant_detail(
         raise _rpc_error(exc) from exc
     if row is None:
         raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
-    return _public(row)
+    return cast(dict, _public(row))
 
 
 @merchant_router.get("/{settlement_id}")
@@ -386,6 +440,44 @@ def merchant_detail(settlement_id: UUID, include_transactions: bool = False, tok
     return {"ok": True, "data": _merchant_detail(
         settlement_id, token, repo, include_transactions, allow_demo=True,
     ), "error": None}
+
+
+@merchant_router.get("/evidence/export")
+def merchant_vat_reference_export(
+    year: str = Query(pattern=r"^\d{4}$"),
+    token: str = Depends(bearer_token),
+    repo: SettlementRepository = Depends(get_settlement_repository),
+):
+    actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
+    rows: list[dict] = []
+    try:
+        while True:
+            page = repo.list_merchant(actor.merchant_id, 100, len(rows))
+            rows.extend(page)
+            if len(page) < 100:
+                break
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+    filename = f"부가가치세_신고_참고자료_{year}.xlsx"
+    return Response(
+        build_vat_reference_xlsx(rows, year),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": _content_disposition(filename)},
+    )
+
+
+@merchant_router.get("/{settlement_id}/document")
+def merchant_settlement_document(
+    settlement_id: UUID,
+    format: str = Query(pattern="^(xlsx|html|pdf)$"),
+    token: str = Depends(bearer_token),
+    repo: SettlementRepository = Depends(get_settlement_repository),
+):
+    detail = _merchant_detail(
+        settlement_id, token, repo, include_transactions=True, allow_demo=True,
+    )
+    return _settlement_document_response(detail, format)
 
 
 @merchant_router.post("/{settlement_id}/send")

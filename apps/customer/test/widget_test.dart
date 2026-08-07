@@ -515,6 +515,35 @@ void main() {
     expect(shouldRetryPaymentConfirmation(other, 0), isFalse);
   });
 
+  test('profile load retries one transient server error and then succeeds',
+      () async {
+    var calls = 0;
+    final result = await loadProfileWithTransientRetry(() async {
+      calls++;
+      if (calls == 1) {
+        throw const ApiException(statusCode: 502, message: 'temporary');
+      }
+      return 'ok';
+    }, retryDelay: Duration.zero);
+
+    expect(result, 'ok');
+    expect(calls, 2);
+  });
+
+  test('profile load does not retry authentication errors', () async {
+    var calls = 0;
+
+    await expectLater(
+      loadProfileWithTransientRetry(() async {
+        calls++;
+        throw const ApiException(statusCode: 401, message: 'unauthorized');
+      }, retryDelay: Duration.zero),
+      throwsA(isA<ApiException>()
+          .having((error) => error.statusCode, 'statusCode', 401)),
+    );
+    expect(calls, 1);
+  });
+
   test('external payment app resume does not imply payment approval', () {
     expect(
       shouldConfirmPaymentOnResume(

@@ -433,6 +433,22 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+bool isTransientProfileLoadError(Object error) =>
+    error is ApiException && error.statusCode >= 500 && error.statusCode < 600;
+
+Future<T> loadProfileWithTransientRetry<T>(
+  Future<T> Function() load, {
+  Duration retryDelay = const Duration(milliseconds: 600),
+}) async {
+  try {
+    return await load();
+  } catch (error) {
+    if (!isTransientProfileLoadError(error)) rethrow;
+    await Future<void>.delayed(retryDelay);
+    return load();
+  }
+}
+
 const paymentConfirmationMaxAttempts = 8;
 
 enum PaymentRedirectOutcome { success, failure, close }
@@ -799,7 +815,11 @@ class _AppGateState extends State<AppGate> {
       setState(() => _error = null);
     }
     try {
-      final me = await ApiClient(session).getMe();
+      final me = showLoading
+          ? await loadProfileWithTransientRetry(
+              () => ApiClient(session).getMe(),
+            )
+          : await ApiClient(session).getMe();
       if (!_isCurrentLoad(generation, uid)) return;
       setState(() => _me = me);
       final accountId = me['user_id'] as String?;

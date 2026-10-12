@@ -1,0 +1,173 @@
+.purchase-app .purchase-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.purchase-app .purchase-check input {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  flex: 0 0 22px;
+  padding: 0;
+  accent-color: #166647;
+}
+.purchase-app .secondary {
+  background: #edf5ef;
+  color: #18372c;
+  margin-top: 12px;
+}
+.purchase-products {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.purchase-app .selected {
+  box-shadow: 0 0 0 3px #a7d9b8;
+}
+.purchase-detail {
+  margin-top: 24px;
+  border-top: 1px solid #d4e3db;
+  padding-top: 16px;
+}
+.purchase-quote {
+  margin-top: 20px;
+}
+.purchase-card .purchase-card {
+  background: #f7fbf8;
+}
+.purchase-app p {
+  line-height: 1.6;
+}
+.purchase-app li {
+  padding: 12px 0;
+  border-bottom: 1px solid #d4e3db;
+}
+.purchase-app li p {
+  margin-bottom: 0;
+  color: #557466;
+}
+.purchase-app .purchase-card a {
+  display: inline-block;
+  margin: 10px 16px 10px 0;
+}
+.purchase-app .purchase-card button + button {
+  margin-left: 10px;
+}
+.purchase-app {
+  overflow-wrap: anywhere;
+}
+.purchase-app {
+  max-width: 1120px;
+  margin: auto;
+  padding: 24px;
+  color: #18372c;
+  font-family: system-ui, sans-serif;
+}
+.purchase-app header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid #d4e3db;
+  padding-bottom: 18px;
+}
+.purchase-app header img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+.purchase-app header button {
+  margin-left: auto;
+}
+.purchase-app h1 {
+  font-size: 36px;
+  margin: 12px 0;
+}
+.purchase-app h2 {
+  font-size: 22px;
+}
+.purchase-app button {
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  border: 1px solid #b5cfbf;
+  background: #166647;
+  color: white;
+  cursor: pointer;
+}
+.purchase-app button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.purchase-app label {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.purchase-app input,
+.purchase-app select {
+  width: 100%;
+  min-height: 44px;
+  padding: 12px;
+  border: 1px solid #afc5b8;
+  border-radius: 10px;
+  background: white;
+  color: #18372c;
+}
+.purchase-app :focus-visible {
+  outline: 3px solid #f0b734;
+  outline-offset: 3px;
+}
+.purchase-login {
+  max-width: 440px;
+  margin: 72px auto;
+}
+.purchase-hero {
+  padding: 40px 0;
+}
+.purchase-app .eyebrow {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #47735c;
+}
+.purchase-card {
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #d4e3db;
+  border-radius: 18px;
+  margin: 20px 0;
+}
+.purchase-app footer {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 24px 0;
+  font-size: 13px;
+}
+.purchase-app [role="alert"] {
+  background: #fff1df;
+  color: #7d3516;
+  padding: 16px;
+  border-radius: 10px;
+}
+.purchase-app [role="status"] {
+  padding: 12px;
+  background: #e8f3ec;
+  border-radius: 10px;
+}
+@media (max-width: 600px) {
+  .purchase-app {
+    padding: 16px;
+  }
+  .purchase-app h1 {
+    font-size: 30px;
+  }
+  .purchase-login {
+    margin: 40px auto;
+  }
+  .purchase-card {
+    padding: 20px;
+  }
+}

@@ -6,6 +6,7 @@ import Cropper from 'react-easy-crop';
 import './style.css';
 import { PaymentHistoryDashboard } from './PaymentFeatures.jsx';
 import SettlementDemoPanel from './SettlementDemoPanel.jsx';
+const PurchaseApp = React.lazy(() => import('./PurchaseApp.jsx'));
 import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
 import { PREPURCHASE_MAX_QUANTITY, PREPURCHASE_MAX_UNIT_PRICE, prepurchaseChargeInvalid, prepurchaseChargePayload, prepurchaseChargeTotal, prepurchaseItems } from './prepurchase.js';
 import { captureGeneration, generationIsCurrent } from './generationGuard.js';
@@ -3719,4 +3720,4 @@ function App() {
   return <Dashboard session={session} onLogout={logout} />;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(window.location.pathname === '/shop' || window.location.pathname === '/shop/' ? <React.Suspense fallback={<main className="loading" role="status">구매 화면 불러오는 중…</main>}><PurchaseApp supabase={supabase} apiBaseUrl={apiBaseUrl} /></React.Suspense> : <App />);

@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>개인정보 처리방침 · 그린잇</title>
 <link rel="icon" href="/brand/greeneat_logo.png" />
-<link rel="stylesheet" as="style" crossorigin
-  href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
+
 <style>
   :root{ --ink:#1E2530; --muted:#6B7480; --line:#E7E9ED; --line-soft:#EEF0F3;
          --accent:#2F6BFF; --ph:#B04B2F; --ph-bg:#FDF1EC; }
@@ -58,11 +57,13 @@
       <h2>제2조 (수집하는 개인정보 항목 및 방법)</h2>
       <p><b>① 회원가입·서비스 이용</b></p>
       <ul>
-        <li>필수: 이름, 소속 회사/부서, 휴대전화번호, 로그인 계정정보</li>
-        <li>선택: 이메일</li>
+        <li>웹 가입·로그인 필수: 이메일, 비밀번호 — Supabase Authentication으로 인증하며, 일반 업무 프로필과 구분합니다.</li>
+        <li>개인 구매자 프로필: 이름, 휴대전화번호</li>
+        <li>임직원 가입·소속 관리: 이름, 휴대전화번호, 소속 회사/부서</li>
+        <li>앱 전화번호 인증: 휴대전화번호를 이용한 SOLAPI 문자 OTP 확인 후 Firebase Authentication custom-token 로그인으로 연결합니다. Firebase Phone-provider SMS 방식이 아닙니다.</li>
       </ul>
       <p><b>② 결제·정산 과정</b> — 결제 승인 결과(승인번호, 결제일시, 금액)</p>
-      <div class="note">카드번호 등 결제수단 정보는 결제대행사(키움페이)가 직접 수집·처리하며 서비스는 저장하지 않습니다.</div>
+      <div class="note">키움페이 결제 결과 콜백에는 전체 카드번호(CARDNO)가 전달될 수 있습니다. 애플리케이션 저장 시에는 마지막 4자리만 남기고 나머지를 마스킹합니다. 인프라 로그의 수집·마스킹·보관 여부는 확인 중이며, 이 설명은 전체 카드번호가 모든 처리 경로에서 수집되지 않는다는 보장이 아닙니다.</div>
       <p><b>③ 자동 수집</b> — 접속 IP·로그, 기기/브라우저 정보, 쿠키</p>
 
       <h2>제3조 (보유 및 이용기간)</h2>
@@ -76,7 +77,7 @@
       </table>
 
       <h2>제4조 (개인정보의 제3자 제공)</h2>
-      <p>서비스는 정보주체의 동의 없이 개인정보를 제3자에게 제공하지 않습니다. 다만 법령에 특별한 규정이 있는 경우는 예외로 합니다.</p>
+      <p>소속 회사 관리자는 임직원·소속 및 식대 이용·정산 정보를, 가맹 식당 관리자는 해당 식당의 결제·이용·정산 관련 정보를 업무 권한에 따라 조회할 수 있습니다. 각 수신자의 제3자 제공 또는 처리위탁 해당 여부와 제공 항목·목적·근거·보유기간은 실제 계약과 운영 관계에 따라 확인 중입니다. 이 설명만으로 제3자 제공이 없거나 필요한 고지·동의가 완료되었다고 판단하지 않습니다.</p>
 
       <h2>제5조 (개인정보 처리업무의 위탁)</h2>
       <table>
@@ -85,7 +86,16 @@
         <tr><td><span class="ph">【클라우드/호스팅 사업자】</span></td><td>인프라 운영·데이터 보관</td></tr>
         <tr><td>팝빌</td><td>세금계산서 발행</td></tr>
       </table>
-      <div class="note">클라우드 데이터센터가 국외(예: 미국 리전)라면 <b>제5조의2 국외 이전</b> 조항을 추가하고 이전받는 자·국가·항목·시점·목적·보유기간을 기재해야 합니다.</div>
+      <div class="note">TODO: 클라우드·인증·문자·알림·웹 호스팅의 실제 계약 당사자와 연락처, 업무 범위·처리국가·로그·보유기간을 추가 확인 중입니다. 위 표의 서비스명만으로 계약 법인과 위탁 관계가 모두 확정된 것은 아닙니다.</div>
+
+      <h2>확인된 주 처리지역 / 추가 고지 확인 중</h2>
+      <ul>
+        <li>Supabase greeneat-go 프로젝트: 사용자 제공 Supabase General Settings 화면에서 주 리전 대한민국 서울 — Northeast Asia (Seoul), ap-northeast-2를 확인했습니다. 운영 호스트와의 정확한 매핑은 추가 확인 중이며, 백업·로그·지원 접근까지 모두 국내라는 의미는 아닙니다.</li>
+        <li>Render API: 사용자 제공 리전 화면에서 Oregon (US West), 미국을 확인했습니다. 적용 계약과 로그·지원 접근 등 추가 처리 범위 및 보유기간은 확인 중입니다.</li>
+        <li>Firebase Authentication: <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noreferrer">Firebase 공식 개인정보 문서</a>는 인증 서비스가 미국에서 처리됨을 명시합니다. 앱의 custom-token 인증과 별개로, FCM의 처리국가 전체는 확인 중이며 Authentication의 미국 처리 설명을 FCM 전체에 적용하지 않습니다.</li>
+        <li>Vercel 웹 호스팅: 정적 웹 제공과 접속·운영 로그, CDN·지원 접근의 실제 처리국가 및 보유기간은 확인 중입니다.</li>
+      </ul>
+      <div class="note">TODO: 국외이전의 실제 이전받는 자·연락처, 이전 항목·국가·시기·방법·목적·보유기간, 법적 근거 및 거부 방법·절차·효과를 운영·계약 자료로 확인하여 추가 고지해야 합니다. 이 항목은 확인된 주 처리지역과 남은 확인사항을 구분한 설명이며, 완성된 국외이전 고지 또는 법적 적합성 인증이 아닙니다. 인증·업무 데이터·로그·백업의 실제 보유기간도 추가 확인 중입니다.</div>
 
       <h2>제6조 (개인정보의 파기)</h2>
       <ul>

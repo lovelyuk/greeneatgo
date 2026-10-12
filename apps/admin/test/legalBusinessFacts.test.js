@@ -11,9 +11,14 @@ test('terms publish user-confirmed business facts and exact approved effective d
   }
   assert.ok(!terms.includes('【YYYY.MM.DD】'));
 });
-test('privacy names the user-appointed officer without inventing a private phone or provider', () => {
-  assert.ok(privacy.includes('보호책임자: 손슬기 / 과장'));
+test('privacy publishes approved officer date and contact while unresolved provider keeps purchases blocked', () => {
+  assert.ok(privacy.includes('<li>보호책임자: 손슬기 / 과장</li>'));
+  assert.ok(privacy.includes('<li>연락처: 15555952 / greeneat0419@naver.com</li>'));
+  assert.ok(privacy.includes('· 시행일 2026.10.12</div>'));
+  assert.ok(privacy.includes('이 방침은 2026.10.12부터 적용되며'));
+  assert.ok(!privacy.includes('【YYYY.MM.DD】'));
+  assert.ok(!privacy.includes('【전화】'));
+  assert.ok(!privacy.includes('【이메일】'));
   assert.ok(privacy.includes('【클라우드/호스팅 사업자】'));
-  assert.ok(privacy.includes('【YYYY.MM.DD】'), 'Privacy effective date has not been separately approved');
-  assert.equal(legalDocumentsReady([terms, privacy]), false, 'Incomplete privacy publication must not enable signup or purchase');
+  assert.equal(legalDocumentsReady([terms, privacy]), false, 'Incomplete provider publication must not enable signup or purchase');
 });

@@ -1,173 +1,180 @@
-.purchase-app .purchase-check {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 44px;
-  cursor: pointer;
-}
-.purchase-app .purchase-check input {
-  width: 22px;
-  height: 22px;
-  min-height: 22px;
-  flex: 0 0 22px;
-  padding: 0;
-  accent-color: #166647;
-}
-.purchase-app .secondary {
-  background: #edf5ef;
-  color: #18372c;
-  margin-top: 12px;
-}
-.purchase-products {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.purchase-app .selected {
-  box-shadow: 0 0 0 3px #a7d9b8;
-}
-.purchase-detail {
-  margin-top: 24px;
-  border-top: 1px solid #d4e3db;
-  padding-top: 16px;
-}
-.purchase-quote {
-  margin-top: 20px;
-}
-.purchase-card .purchase-card {
-  background: #f7fbf8;
-}
-.purchase-app p {
-  line-height: 1.6;
-}
-.purchase-app li {
-  padding: 12px 0;
-  border-bottom: 1px solid #d4e3db;
-}
-.purchase-app li p {
-  margin-bottom: 0;
-  color: #557466;
-}
-.purchase-app .purchase-card a {
-  display: inline-block;
-  margin: 10px 16px 10px 0;
-}
-.purchase-app .purchase-card button + button {
-  margin-left: 10px;
-}
-.purchase-app {
-  overflow-wrap: anywhere;
-}
-.purchase-app {
-  max-width: 1120px;
-  margin: auto;
-  padding: 24px;
-  color: #18372c;
-  font-family: system-ui, sans-serif;
-}
-.purchase-app header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  border-bottom: 1px solid #d4e3db;
-  padding-bottom: 18px;
-}
-.purchase-app header img {
-  width: 44px;
-  height: 44px;
-  object-fit: contain;
-}
-.purchase-app header button {
-  margin-left: auto;
-}
-.purchase-app h1 {
-  font-size: 36px;
-  margin: 12px 0;
-}
-.purchase-app h2 {
-  font-size: 22px;
-}
-.purchase-app button {
-  min-height: 44px;
-  padding: 10px 18px;
-  border-radius: 12px;
-  border: 1px solid #b5cfbf;
-  background: #166647;
-  color: white;
-  cursor: pointer;
-}
-.purchase-app button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.purchase-app label {
-  display: grid;
-  gap: 8px;
-  margin: 16px 0;
-}
-.purchase-app input,
-.purchase-app select {
-  width: 100%;
-  min-height: 44px;
-  padding: 12px;
-  border: 1px solid #afc5b8;
-  border-radius: 10px;
-  background: white;
-  color: #18372c;
-}
-.purchase-app :focus-visible {
-  outline: 3px solid #f0b734;
-  outline-offset: 3px;
-}
-.purchase-login {
-  max-width: 440px;
-  margin: 72px auto;
-}
-.purchase-hero {
-  padding: 40px 0;
-}
-.purchase-app .eyebrow {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: #47735c;
-}
-.purchase-card {
-  padding: 24px;
-  background: #fff;
-  border: 1px solid #d4e3db;
-  border-radius: 18px;
-  margin: 20px 0;
-}
-.purchase-app footer {
-  display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
-  padding: 24px 0;
-  font-size: 13px;
-}
-.purchase-app [role="alert"] {
-  background: #fff1df;
-  color: #7d3516;
-  padding: 16px;
-  border-radius: 10px;
-}
-.purchase-app [role="status"] {
-  padding: 12px;
-  background: #e8f3ec;
-  border-radius: 10px;
-}
-@media (max-width: 600px) {
-  .purchase-app {
-    padding: 16px;
-  }
-  .purchase-app h1 {
-    font-size: 30px;
-  }
-  .purchase-login {
-    margin: 40px auto;
-  }
-  .purchase-card {
-    padding: 20px;
-  }
-}
+@font-face{font-family:PurchasePretendard;src:url('/fonts/Pretendard-Regular.otf') format('opentype');font-weight:400;font-display:swap}
+@font-face{font-family:PurchasePretendard;src:url('/fonts/Pretendard-SemiBold.otf') format('opentype');font-weight:600;font-display:swap}
+@font-face{font-family:PurchasePretendard;src:url('/fonts/Pretendard-Bold.otf') format('opentype');font-weight:700;font-display:swap}
+@font-face{font-family:PurchasePretendard;src:url('/fonts/Pretendard-ExtraBold.otf') format('opentype');font-weight:800;font-display:swap}
+/* All rules scoped to the lazy purchaser root; admin/legal retain original styles. */
+.purchase-app{--bg:#0a0d14;--card:#131a2a;--card-hi:#1b2436;--line:#212b3e;--blue:#2c5fff;--blue-soft:#5b87ff;--fg2:#8a93a6;--paper:#f4f1e9;position:relative;min-height:100dvh;background:var(--bg);color:#fff;font-family:PurchasePretendard,sans-serif;font-size:14px;font-weight:600;font-synthesis:none;line-height:1.5;padding:16px 18px 110px;max-width:480px;margin:0 auto;overflow-wrap:anywhere;box-shadow:0 0 0 100vmax var(--bg);clip-path:inset(0 -100vmax)}
+.purchase-app [hidden]{display:none!important}
+.purchase-app *{box-sizing:border-box;min-width:0}
+.purchase-app h1,.purchase-app h2,.purchase-app h3,.purchase-app strong{color:inherit}
+.purchase-app h1{font-size:20px;line-height:1.2;letter-spacing:-.4px;font-weight:800;margin:10px 0 24px}
+.purchase-app h2{font-size:15px;letter-spacing:0;font-weight:700;margin:0 0 10px}
+.purchase-app h3{font-size:14px;margin:12px 0 4px}
+.purchase-app p{margin:0 0 12px;line-height:1.6}
+.purchase-app a{color:var(--fg2);text-decoration:none}
+.purchase-app button{min-height:44px;max-width:100%;padding:10px 16px;border-radius:14px;border:0;background:var(--blue);color:#fff;font:700 14px PurchasePretendard,sans-serif;cursor:pointer;box-shadow:none;white-space:normal}
+.purchase-app button:not(:disabled):hover{transform:none;filter:brightness(1.12)}
+.purchase-app button:disabled{opacity:.5;cursor:not-allowed}
+.purchase-app .secondary{background:var(--card-hi);color:var(--fg2);margin-top:12px}
+.purchase-app :focus-visible{outline:2px solid #9dbf63;outline-offset:3px}
+.purchase-app label{display:grid;gap:8px;margin:16px 0;color:var(--fg2);font-weight:600}
+.purchase-app input,.purchase-app select,.purchase-app textarea{width:100%;max-width:100%;min-height:48px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card-hi);color:#fff;font:inherit;box-shadow:none}
+.purchase-app .purchase-check{display:flex;align-items:center;gap:12px;min-height:44px;color:#fff}
+.purchase-app .purchase-check input{width:22px;height:22px;min-height:22px;flex:0 0 22px;padding:0;accent-color:var(--blue)}
+.purchase-app .purchase-card{padding:18px;background:var(--card);border:1px solid var(--line);border-radius:22px;margin:16px 0}
+.purchase-app .purchase-card .purchase-card{background:var(--card-hi);padding:14px}
+.purchase-app [role=alert]{padding:14px;background:#2d1720;color:#ff7a7a;border-radius:14px;margin:12px 0}
+.purchase-app [role=status]{padding:12px;background:var(--card-hi);border-radius:14px}
+.purchase-app .muted,.purchase-app .wallet-caption{color:var(--fg2);font-size:12px}
+.purchase-app .pre-line{white-space:pre-line}
+.purchase-app footer{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;font-size:11px;padding:26px 0 0;color:var(--fg2)}
+.purchase-app.signed-in footer{margin-top:20px}
+.purchase-app.signed-out{background:#0e1c2b;--bg:#0e1c2b;padding:26px;display:flex;flex-direction:column;justify-content:center}
+.purchase-app .purchase-login{width:100%;margin:30px auto 0;max-width:400px}
+.purchase-app .purchase-login img{display:block;width:94px;aspect-ratio:430/383;object-fit:contain;margin-bottom:28px}
+.purchase-app .purchase-login .login-mode{font-size:11px;color:#9dbf63;letter-spacing:1px;margin-bottom:10px}
+.purchase-app .purchase-login h1{font-size:12px;color:#7b8fa5;margin:0 0 6px;letter-spacing:0}
+.purchase-app .purchase-login .login-headline{color:white;font-size:26px;line-height:1.4;font-weight:600;letter-spacing:-.4px;margin-bottom:8px}
+.purchase-app .purchase-login p{color:#7b8fa5;font-size:12px}
+.purchase-app .purchase-login label{color:#7b8fa5;font-size:12px;margin-top:24px}
+.purchase-app .purchase-login input:not([type=checkbox]){background:transparent;border:0;border-bottom:1px solid #2a3b4f;border-radius:0;font-size:19px;padding:12px 0}
+.purchase-app .purchase-login input:focus{border-color:#9dbf63;box-shadow:none}
+.purchase-app .purchase-login form>button{width:100%;height:52px;margin-top:20px;background:#9dbf63;color:#0e1c2b;border-radius:12px}
+.purchase-app .purchase-login>.secondary{background:transparent;color:#8fa3b8;width:100%;font-size:12px}
+.purchase-app .dashboard-header{display:flex;align-items:center;gap:12px;height:60px;margin-bottom:16px}
+.purchase-app .dashboard-header p{color:var(--fg2);font-size:12px;margin:3px 0 0}
+.purchase-app .avatar{width:44px;height:44px;flex-shrink:0;background:var(--blue);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;padding:0}
+.purchase-app .icon-control{margin-left:auto;background:transparent;padding:8px}
+.purchase-app .meal-ticket{background:var(--paper);border-radius:22px;color:#131a2a;position:relative;overflow:hidden;margin-top:16px}
+.purchase-app .empty-ticket{background:#d8d5cc}
+.purchase-app .ticket-top{min-height:144px;padding:20px 14px 14px 22px}
+.purchase-app .ticket-top h2{font-size:10.5px;letter-spacing:2.1px;font-weight:800;color:#9b7915;margin:0 0 2px}
+.purchase-app .ticket-balance{font-size:25px;line-height:1;font-weight:800;letter-spacing:-1.25px;display:block;margin:5px 0 20px}
+.purchase-app .ticket-balance small{font-size:12px;letter-spacing:0;margin-left:3px}
+.purchase-app .ticket-wallet{display:flex;align-items:center;gap:10px}
+.purchase-app .ticket-wallet>div{display:flex;flex-direction:column;gap:2px;font-size:12px}
+.purchase-app .ticket-wallet>div+div{border-left:1px solid #cfc7b4;padding-left:10px}
+.purchase-app .ticket-wallet span,.purchase-app .ticket-bottom span{font-size:10px;color:#717986;display:block}
+.purchase-app .ticket-wallet button{background:#c64f00;margin-left:auto;font-size:11px;min-height:38px;padding:8px 10px;border-radius:12px;gap:5px}
+.purchase-app .ticket-bottom{border-top:2px dashed #cfc7b4;min-height:80px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px 18px 22px}
+.purchase-app .ticket-bottom:before,.purchase-app .ticket-bottom:after{content:'';position:absolute;width:22px;height:22px;background:var(--bg);border-radius:50%;margin-top:-80px;left:-11px}
+.purchase-app .ticket-bottom:after{left:auto;right:-11px}
+.purchase-app .ticket-bottom strong{font-size:12px;display:block}
+.purchase-app .ticket-bottom button{background:#131a2a;color:var(--paper);font-size:11px;min-height:38px;padding:8px 10px;flex-shrink:0}
+.purchase-app .ticket-bottom button svg{color:#c9a227}
+.purchase-app .wallet-caption{font-size:10px;margin:8px 3px 16px}
+.purchase-app .home-shortcuts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:12px 6px;background:var(--card);border-radius:22px;gap:4px}
+.purchase-app .home-shortcuts button{display:flex;flex-direction:column;background:transparent;font-size:12px;padding:6px 0;gap:7px}
+.purchase-app .home-shortcuts button span{width:38px;height:38px;background:var(--card-hi);border-radius:13px;display:grid;place-items:center;color:var(--blue-soft)}
+.purchase-app .section-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:20px 0 8px}
+.purchase-app .section-heading h2{margin:0}
+.purchase-app .section-heading button{background:transparent;color:var(--fg2);font-size:11px;padding:0;min-height:32px}
+.purchase-app .today-menu .section-heading{margin:0 0 12px}
+.purchase-app .api-picture{width:100%;height:170px;object-fit:cover;border-radius:12px}
+.purchase-app .picture-fallback{min-height:100px;background:var(--card-hi);border-radius:12px;color:var(--fg2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;font-size:11px}
+.purchase-app .empty-state{color:var(--fg2);text-align:center;padding:24px 12px;background:var(--card);border-radius:22px;font-size:12px}
+.purchase-app .usage-row{display:flex;align-items:center;gap:10px;min-height:76px;border-bottom:1px solid #161e2e}
+.purchase-app .usage-row>div{flex:1}
+.purchase-app .usage-row strong{font-size:13px}
+.purchase-app .usage-row p{color:var(--fg2);font-size:10px;margin:4px 0 0}
+.purchase-app .usage-icon{width:36px;height:36px;background:var(--card-hi);border-radius:12px;display:grid;place-items:center;color:var(--blue-soft);flex-shrink:0}
+.purchase-app .usage-amount{color:var(--blue-soft);flex-shrink:0}
+.purchase-app .usage-summary{background:var(--card);border-radius:22px;padding:18px 8px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:14px 0}
+.purchase-app .usage-summary>div{display:flex;flex-direction:column;text-align:center;gap:6px;border-right:1px solid var(--line);font-size:12px}
+.purchase-app .usage-summary>div:last-child{border:0}
+.purchase-app .usage-summary span{color:var(--fg2);font-size:11px}
+.purchase-app .history-month{text-align:center;margin:30px 0 16px}
+.purchase-app .usage-day{font-size:12px;color:var(--fg2);margin-top:22px}
+.purchase-app .profile-heading{display:flex;align-items:center;gap:14px;margin:24px 0}
+.purchase-app .profile-heading .avatar{width:56px;height:56px;border-radius:20px}
+.purchase-app .profile-heading h2{font-size:19px;margin-bottom:4px}
+.purchase-app .profile-heading p{color:var(--fg2);font-size:12px;margin:0}
+.purchase-app .setting-group{padding:0 18px}
+.purchase-app .setting-group>p,.purchase-app .setting-group>button,.purchase-app .setting-group>a{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:58px;padding:12px 0;background:transparent;border-bottom:1px solid #161e2e;border-radius:0;margin:0;font-size:13px;color:#fff;font-weight:600}
+.purchase-app .setting-group>p strong{color:var(--fg2);font-size:12px}
+.purchase-app .setting-group .danger-text{color:#ff7a7a}
+.purchase-app .app-tab-bar{position:fixed;z-index:10;bottom:max(14px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:min(calc(100% - 28px),452px);height:64px;background:rgba(19,26,42,.95);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:26px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:4px}
+.purchase-app .app-tab-bar button{background:transparent;display:flex;flex-direction:column;gap:4px;padding:5px 0;font-size:10px;min-height:54px;color:#8a93a6}
+.purchase-app .app-tab-bar button[aria-current=page]{color:var(--blue-soft)}
+/* main.dart 3847–3986; coupon_wallet.dart 175–330, 546–758. */
+.purchase-app .purchase-catalog{margin:0 0 24px}
+.purchase-app h1:has(+.purchase-catalog){display:none}
+.purchase-app .catalog-header{display:flex;align-items:center;gap:8px;min-height:56px;margin-bottom:8px}
+.purchase-app .catalog-header h2{font-size:20px;margin:0;letter-spacing:-.4px;font-weight:800}
+.purchase-app .catalog-back{background:transparent;padding:10px;margin-left:-10px;display:grid;place-items:center}
+.purchase-app .catalog-count{text-align:right;margin:0 0 18px;color:var(--fg2);font-size:12px}
+.purchase-app .purchase-products{display:grid;gap:14px}
+.purchase-app .product-ticket,.purchase-app .selection-coupon-ticket{position:relative;display:flex;align-items:stretch;width:100%;height:154px;text-align:left;background:linear-gradient(to bottom right,#315ddb,#243b9d);border:1px solid #ffffff3d;padding:0;border-radius:22px;overflow:hidden;color:#fff}
+.purchase-app .product-ticket.event,.purchase-app .selection-coupon-ticket.percent{background:linear-gradient(to bottom right,#6948ef,#315ddb)}
+.purchase-app .product-ticket:before,.purchase-app .product-ticket:after,.purchase-app .selection-coupon-ticket:before,.purchase-app .selection-coupon-ticket:after{content:'';position:absolute;z-index:1;width:18px;height:18px;border-radius:50%;left:51px;top:-9px;background:var(--bg)}
+.purchase-app .product-ticket:after,.purchase-app .selection-coupon-ticket:after{top:auto;bottom:-9px}
+.purchase-app .product-rail{width:60px;flex:0 0 60px;display:grid;place-items:center;border-right:1px solid #ffffff3d;font-size:10.5px;font-weight:800;letter-spacing:2.8px;color:#ffffffb3}
+.purchase-app .product-rail>span{writing-mode:vertical-rl;transform:rotate(180deg)}
+.purchase-app .product-copy{flex:1;display:flex;flex-direction:column;padding:14px 14px 13px 18px;color:#ffffffb3;overflow:hidden}
+.purchase-app .product-ticket-top{display:flex;justify-content:space-between;align-items:center;gap:4px;font-size:11px;font-weight:700;line-height:1}
+.purchase-app .product-ticket-top>span:first-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.purchase-app .purchase-pill{padding:4px 8px;background:#ffffff3d;border-radius:99px;font-size:9px;color:#fff;white-space:nowrap;flex-shrink:0}
+.purchase-app .product-copy .product-price{font-size:30px;line-height:1;font-weight:800;letter-spacing:-1px;color:#fff;margin-top:5px;white-space:nowrap}
+.purchase-app .product-copy strong{font-size:14px;font-weight:800;margin-top:5px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;color:#fff}
+.purchase-app .product-payment{font-size:10.5px;font-weight:600;margin-top:auto;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.purchase-app .purchase-detail{margin:0;padding:0;border:0}
+.purchase-app .purchase-detail .discount-product-title{font-size:20px;line-height:1.2;letter-spacing:-.4px;font-weight:800;margin:4px 0 5px}
+.purchase-app .discount-caption{font-size:12px;color:var(--fg2)}
+.purchase-app .product-terms{padding:12px 0;color:var(--fg2);font-size:11px}
+.purchase-app .product-terms p{margin:0 0 4px}
+.purchase-app .coupon-options{padding:0;margin:12px 0 24px;border:0;min-width:0}
+.purchase-app .coupon-options legend{font-size:15px;font-weight:700;margin-bottom:10px;padding:0;color:#fff}
+.purchase-app .no-coupon-tile{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;min-height:56px;margin:0;color:#fff;padding:12px 16px;cursor:pointer}
+.purchase-app .no-coupon-tile.selected{border-color:var(--blue-soft)}
+.purchase-app .no-coupon-tile input{width:22px;height:22px;min-height:22px;flex:0 0 22px;padding:0;accent-color:var(--blue-soft)}
+.purchase-app .selection-coupon-ticket{margin:12px 0 0;cursor:pointer;gap:0}
+.purchase-app .selection-coupon-ticket.issued{height:192px}
+.purchase-app .selection-coupon-ticket.selected{border:2px solid #fff}
+.purchase-app .selection-coupon-ticket>input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;z-index:2}
+.purchase-app .selection-coupon-ticket:focus-within{outline:2px solid #9dbf63;outline-offset:3px}
+.purchase-app .selection-coupon-copy{flex:1;display:flex;flex-direction:column;padding:16px 16px 14px 18px;overflow:hidden;gap:5px}
+.purchase-app .coupon-merchant{display:flex;align-items:center;justify-content:space-between;color:#ffffffb3;font-size:11px;font-weight:700;line-height:20px}
+.purchase-app .coupon-merchant svg{flex-shrink:0;color:#fff}
+.purchase-app .selection-coupon-copy b{font-size:30px;line-height:1;letter-spacing:-1px;font-weight:800}
+.purchase-app .selection-coupon-copy strong{font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.purchase-app .issued-caption{font-size:10px;color:#ffffffb3}
+.purchase-app .coupon-validity{font-size:10.5px;color:#ffffffb3;margin-top:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Compatibility select stays accessible; native tickets own visual selection. */
+.purchase-app .catalog-select-compat{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.purchase-app .catalog-select-compat:focus-within{position:static;width:auto;height:auto;clip-path:none;overflow:visible;margin:12px 0}
+.purchase-app .points-heading{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--fg2)}
+.purchase-app .points-heading h3{color:#fff;font-size:15px;margin:0}
+.purchase-app .catalog-points label{font-size:12px;margin:10px 0}
+.purchase-app .catalog-points>p{color:var(--fg2);font-size:11px}
+.purchase-app .quote-request{width:100%;height:48px;background:var(--card-hi);border:1px solid var(--line);margin:8px 0}
+.purchase-app .purchase-quote{padding:18px;background:var(--card);border:1px solid var(--line);border-radius:20px;margin:22px 0 16px}
+.purchase-app .purchase-quote .quote-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;font-size:12px;color:var(--fg2)}
+.purchase-app .quote-row b{color:#fff;font-size:13px;font-weight:800;white-space:nowrap}
+.purchase-app .quote-discount b{color:var(--blue-soft)}
+.purchase-app .purchase-quote .quote-total{border-top:1px solid var(--line);padding-top:14px;margin-top:14px;font-size:15px;color:#fff;font-weight:700}
+.purchase-app .quote-total b{font-size:20px}
+.purchase-app .purchase-quote .quote-merchant,.purchase-app .purchase-quote .quote-authority{font-size:11px;color:var(--fg2);margin:0 0 12px}
+.purchase-app .purchase-quote .quote-authority{margin:4px 0 0}
+.purchase-app .catalog-checkout>.purchase-card{padding:16px 0;background:transparent;border:0;border-radius:0;margin:0}
+.purchase-app .catalog-checkout>.purchase-card>p{font-size:12px;color:var(--fg2)}
+.purchase-app .catalog-checkout>.purchase-card>button{width:100%;height:54px;margin-top:8px}
+/* dashboard_components.dart 207–293: body 14px metrics, 140×48 ticket actions. */
+.purchase-app .ticket-wallet strong,.purchase-app .ticket-bottom strong{font-size:14px;font-weight:800}
+.purchase-app .ticket-wallet button,.purchase-app .ticket-bottom button{height:48px;min-height:48px;width:140px;flex:0 0 140px;font-size:12px;font-weight:800;padding:10px;border-radius:12px}
+.purchase-app .ticket-bottom span{font-size:11px}
+.purchase-app .ticket-wallet{gap:6px}
+.purchase-app .ticket-wallet>div{flex:1;overflow:hidden}
+.purchase-app .ticket-wallet strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:340px){.purchase-app .ticket-wallet>div+div{padding-left:6px}.purchase-app .ticket-wallet strong{font-size:12px}}
+@media(max-width:340px){.purchase-app .ticket-wallet button{width:108px;flex-basis:108px;padding:8px;font-size:11px}.purchase-app .ticket-bottom button{width:128px;flex-basis:128px}}
+.purchase-app .coupon-ticket{display:flex;align-items:stretch;border-radius:20px;min-height:154px;background:linear-gradient(120deg,#315ddb,#243b9d);overflow:hidden;margin:12px 0}
+.purchase-app .coupon-ticket.percent{background:linear-gradient(120deg,#6948ef,#315ddb)}
+.purchase-app .coupon-rail{writing-mode:vertical-rl;transform:rotate(180deg);width:60px;display:grid;place-items:center;border-left:2px dashed #ffffff40;font-size:13px;letter-spacing:3px}
+.purchase-app .coupon-ticket>div{padding:20px 18px;flex:1}
+.purchase-app .coupon-ticket strong{font-size:26px;font-weight:800}
+.purchase-app .coupon-ticket p{font-size:11px;color:#c7d3fa;margin:0}
+.purchase-app .back-button{background:transparent;color:var(--fg2);padding:0;margin-bottom:12px}
+.purchase-app .qr-frame{border:1px solid var(--line);border-radius:22px;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;color:var(--blue-soft);background:var(--card)}
+.purchase-app .qr-frame p{font-size:12px;color:var(--fg2)}
+.purchase-app .refresh-button{background:transparent;color:var(--fg2);font-size:12px;display:flex;margin:16px auto}
+@media(max-width:340px){.purchase-app{padding-left:14px;padding-right:14px}.purchase-app.signed-out{padding:26px}.purchase-app .ticket-top{padding-left:18px}.purchase-app .ticket-wallet{gap:6px}.purchase-app .ticket-wallet button{padding:8px;font-size:10px}.purchase-app .ticket-wallet>div{font-size:11px}.purchase-app .ticket-bottom{padding-left:18px}.purchase-app .usage-row{gap:7px}.purchase-app .usage-row strong{font-size:12px}}

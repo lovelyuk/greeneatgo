@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { publishedLegalAvailable } from "./purchaseSafety.js";
 import "./purchase.css";
-import PurchaseCatalog from "./PurchaseCatalog.jsx";
-import PurchaseHistory from "./PurchaseHistory.jsx";
+
+import PurchaseDashboard from "./PurchaseDashboard.jsx";
 
 export function usePublishedLegal() {
   const [legal, setLegal] = useState({ ready: false, terms: "" });
@@ -89,14 +89,7 @@ export default function PurchaseApp({ supabase, apiBaseUrl }) {
     if (result.error) setError(result.error.message);
   }
   return (
-    <main className="purchase-app">
-      <header>
-        <a href="/shop" aria-label="그린잇 구매 홈">
-          <img src="/brand/greeneat_logo.png" alt="그린잇" />
-        </a>
-        <span>GREEN EAT · 식권</span>
-        {session && <button onClick={logout}>로그아웃</button>}
-      </header>
+    <main className={`purchase-app ${session ? "signed-in" : "signed-out"}`}>
       {error && <p role="alert">{error}</p>}
       {!supabase || !apiBaseUrl ? (
         <p role="alert">공개 로그인/API 설정이 없어 사용할 수 없어요.</p>
@@ -109,6 +102,7 @@ export default function PurchaseApp({ supabase, apiBaseUrl }) {
           apiBaseUrl={apiBaseUrl}
           scope={scope}
           userId={session.user.id}
+          logout={logout}
         />
       ) : (
         <Login supabase={supabase} />
@@ -161,8 +155,11 @@ function Login({ supabase }) {
   }
   return (
     <section className="purchase-login">
+      <img src="/brand/greeneat_logo_light.png" alt="그린잇" />
+      <p className="login-mode">웹 전용 이메일 로그인</p>
       <h1>식권 구매</h1>
-      <p>개인 식권 및 회사 보조금 식권을 확인하세요.</p>
+      <p className="login-headline">이메일로<br />맛있는 한 끼를 시작하세요</p>
+      <p>앱의 휴대폰 인증과 다른 로그인 방식이에요.</p>
       <form onSubmit={submit}>
         <label>
           이메일
@@ -302,25 +299,25 @@ function Registration({ api, refresh }) {
     </section>
   );
 }
-function Wallet({ supabase, apiBaseUrl, scope, userId }) {
+function Wallet({ supabase, apiBaseUrl, scope, userId, logout }) {
   const legal = usePublishedLegal();
   const [me, setMe] = useState(null),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(false);
   const version = useRef(0);
-  async function api(path, body) {
+  async function api(path, body, options = {}) {
     const generation = scope.current.generation;
     const current = () =>
       scope.current.id === userId && scope.current.generation === generation;
-    const result = await supabase.auth.getSession();
-    if (result.error || !current() || result.data.session?.user.id !== userId)
+    const result = options.public ? null : await supabase.auth.getSession();
+    if (!current() || (!options.public && (result.error || result.data.session?.user.id !== userId)))
       throw Object.assign(new Error("계정이 변경됐어요."), {
         stale: !current(),
       });
     const response = await fetch(`${apiBaseUrl}${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
-        Authorization: `Bearer ${result.data.session.access_token}`,
+        ...(!options.public ? { Authorization: `Bearer ${result.data.session.access_token}` } : {}),
         "Content-Type": "application/json",
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -335,9 +332,21 @@ function Wallet({ supabase, apiBaseUrl, scope, userId }) {
             payload.error?.message ||
             "요청을 확인하지 못했어요.",
         ),
-        { code: payload.detail?.code || payload.error?.code },
+        {
+          code: payload.detail?.code || payload.error?.code,
+          status: response.status,
+          // Only these actual FastAPI pre-handler refusals prove non-consumption.
+          scanNotConsumed: path === '/transactions/scan' && (
+            (response.status === 400 && payload.detail?.code === 'INVALID_QR') ||
+            (response.status === 422 && Array.isArray(payload.detail) && payload.detail.length > 0 && payload.detail.every(issue =>
+              Array.isArray(issue.loc) && issue.loc.length === 2 && issue.loc[0] === 'body' &&
+              ['qr_data', 'idempotency_key'].includes(issue.loc[1]) &&
+              ['missing', 'string_type', 'string_too_short', 'string_too_long'].includes(issue.type) && typeof issue.msg === 'string'
+            ))
+          ),
+        },
       );
-    return payload.data;
+    return payload.data ?? payload;
   }
   async function refresh() {
     const run = ++version.current;
@@ -362,7 +371,7 @@ function Wallet({ supabase, apiBaseUrl, scope, userId }) {
     me?.status === "no_profile" ||
     (me?.role === "employee" && me.status === "rejected")
   )
-    return <Registration api={api} refresh={refresh} />;
+    return <><Registration api={api} refresh={refresh} /><button onClick={logout}>로그아웃</button></>;
   if (
     me &&
     !(me.status === "active" && ["customer", "employee"].includes(me.role))
@@ -378,37 +387,25 @@ function Wallet({ supabase, apiBaseUrl, scope, userId }) {
         <button onClick={refresh} disabled={loading}>
           새로고침
         </button>
+        <button onClick={logout}>로그아웃</button>
       </section>
     );
   return (
     <>
-      <section className="purchase-hero">
-        <p className="eyebrow">나의 식권</p>
-        <h1>식권 구매</h1>
-        <p>{me?.display_name || "구매자"}님, 오늘도 맛있는 한 끼</p>
-        <button onClick={refresh} disabled={loading}>
-          새로고침
-        </button>
-      </section>
       {error && <p role="alert">{error}</p>}
+      {!me && <><p role="status">계정 확인 중…</p><button disabled={loading} onClick={refresh}>새로고침</button><button onClick={logout}>로그아웃</button></>}
       {me && (
-        <section className="purchase-card">
-          <h2>내 지갑</h2>
-          <p>보유 식권 {me.voucher_balance ?? "—"}장</p>
-          <p>포인트 {me.point_balance ?? "—"}P</p>
-        </section>
-      )}
-      {me && (
-        <PurchaseCatalog
+        <PurchaseDashboard
           api={api}
           me={me}
           revision={version.current}
           apiBaseUrl={apiBaseUrl}
           legal={legal}
           refresh={refresh}
+          logout={logout}
+          loading={loading}
         />
       )}
-      {me && <PurchaseHistory me={me} />}
     </>
   );
 }

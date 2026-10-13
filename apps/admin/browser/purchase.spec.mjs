@@ -54,6 +54,7 @@ async function fixture(page, profile = { role: "customer", status: "active" }) {
         display_name: "테스트 구매자",
         voucher_balance: 3,
         point_balance: 2000,
+        account_type: profile.role === "employee" ? "ledger" : "voucher",
         voucher_use_history: [],
         point_transactions: [],
         recent_transactions: [],
@@ -85,7 +86,7 @@ async function publishedLegal(page) {
     }),
   );
 }
-async function login(page) {
+async function login(page, tab = "구매") {
   await page.goto("/shop");
   await page
     .getByLabel("이메일", { exact: true })
@@ -94,6 +95,9 @@ async function login(page) {
     .getByLabel("비밀번호", { exact: true })
     .fill("mocked-password-only");
   await page.getByRole("button", { name: "로그인", exact: true }).click();
+  const nav = page.getByRole("navigation", { name: "구매자 탭" });
+  if (await nav.waitFor({ state: "visible", timeout: 1000 }).then(() => true).catch(() => false))
+    await nav.getByRole("button", { name: tab, exact: true }).click();
 }
 const product = {
   id: "package-fixture",
@@ -193,6 +197,7 @@ test("failed catalog read shows recoverable error instead of indefinite loading"
   await login(page);
   await expect(page.getByRole("alert")).toContainText("fixture catalog unavailable");
   await expect(page.getByText("상품 확인 중…")).toHaveCount(0);
+  await page.getByRole("navigation").getByRole("button", { name: "홈", exact: true }).click();
   await expect(page.getByRole("button", { name: "새로고침", exact: true })).toBeEnabled();
 });
 test('admin route retains its login and does not load purchaser bundle until shop navigation', async ({ page }) => {
@@ -391,6 +396,7 @@ test("logout during quote response prevents stale quote and purchaser UI from re
   });
   await selectQuote(page);
   await started;
+  await page.getByRole("navigation").getByRole("button", { name: "내정보", exact: true }).click();
   await page.getByRole("button", { name: "로그아웃", exact: true }).click();
   release();
   await expect(
@@ -417,7 +423,7 @@ test("rejected employee may convert only via customer registration endpoint", as
   await page.getByLabel("휴대폰 번호").fill("01012345678");
   await page.getByLabel("약관 및 개인정보 처리방침 확인").check();
   await page.getByRole("button", { name: "일반 구매자로 등록" }).click();
-  await expect(page.getByRole("heading", { name: "내 지갑" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "내 지갑" })).toBeVisible();
   expect(calls.filter((c) => c.path === "/consumer/register")).toHaveLength(1);
 });
 test("negative employee points are rejected before quote API", async ({
@@ -503,6 +509,7 @@ test("logout during order response never opens provider or applies old account r
   await page.getByLabel("구매 조건 확인").check();
   await page.getByRole("button", { name: "구매하기", exact: true }).click();
   await started;
+  await page.getByRole("navigation").getByRole("button", { name: "내정보", exact: true }).click();
   await page.getByRole("button", { name: "로그아웃", exact: true }).click();
   release();
   await expect(
@@ -647,7 +654,7 @@ test("auth rejection displays provider error without rendering wallet", async ({
   );
   await login(page);
   await expect(page.getByRole("alert")).toContainText("invalid credentials");
-  await expect(page.getByRole("heading", { name: "내 지갑" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "내 지갑" })).toHaveCount(0);
 });
 test("none purchase mode hides selectable packages for active noneligible employee", async ({
   page,
@@ -737,7 +744,7 @@ test("card approval renders only authoritative receipt links and keeps malformed
   );
   await expect(page.getByRole("link", { name: "현금영수증" })).toHaveCount(0);
 });
-test("wallet shows server ticket usage, recent payments and point history without inventing expiry", async ({
+test("native history prefers voucher use and does not invent ledger or point tabs", async ({
   page,
 }) => {
   await fixture(page, {
@@ -746,6 +753,8 @@ test("wallet shows server ticket usage, recent payments and point history withou
     voucher_use_history: [
       {
         id: "used-fixture",
+        kind: "voucher_use",
+        voucher_id: "synthetic-used-voucher",
         title: "점심 식권",
         merchant_name: "테스트 식당",
         amount: 8000,
@@ -773,15 +782,12 @@ test("wallet shows server ticket usage, recent payments and point history withou
       },
     ],
   });
-  await login(page);
-  await expect(
-    page.getByRole("heading", { name: "식권 사용 내역" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("점심 식권 · 테스트 식당 · 보너스"),
-  ).toBeVisible();
-  await expect(page.getByText("카드 식사 · 테스트 식당")).toBeVisible();
-  await expect(page.getByText("테스트 적립 · 500P · 잔액 2000P")).toBeVisible();
+  await login(page, '내역');
+  await expect(page.getByRole('heading', { name: '이용내역' })).toBeVisible();
+  await expect(page.locator('.usage-history:visible').getByText('테스트 식당 점심 식권', { exact: true })).toBeVisible();
+  await expect(page.locator('.usage-history:visible .usage-row')).toContainText('보너스');
+  await expect(page.getByText('카드 식사', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('테스트 적립', { exact: false })).toHaveCount(0);
 });
 test("employee invalid checkout is blocked and only server release confirms cancellation", async ({
   page,
@@ -888,8 +894,9 @@ test("point-only employee order completes from authoritative issuance without fo
   await expect(page.getByRole("heading", { name: "결제 완료" })).toBeVisible();
   await expect(page.getByText("발급 식권 11장")).toBeVisible();
   expect(confirmBody).toBeUndefined();
-  await expect(page.getByText("보유 식권 11장")).toBeVisible();
-  await expect(page.getByText("포인트 0P", { exact: true })).toBeVisible();
+  await page.getByRole("navigation").getByRole("button", { name: "홈", exact: true }).click();
+  await expect(page.getByText('보유 보조금 식권 11장 · 실제 결제 방식은 서버에서 확인해요.')).toBeVisible();
+  await expect(page.locator(".ticket-wallet")).toContainText("0P");
   expect(page.context().pages()).toHaveLength(1);
 });
 for (const invalid of ["missing", "wrong-order", "wrong-count", "not-done"]) {
@@ -1082,7 +1089,7 @@ test("ordinary package selection shows API terms and coupon quote without client
   });
   await login(page);
   await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
-  await expect(page.getByText("유료 10장 + 보너스 1장")).toBeVisible();
+  await expect(page.locator('.purchase-detail').getByText("유료 10장 + 보너스 1장")).toBeVisible();
   await expect(page.getByText("할인율 10%")).toBeVisible();
   await page.getByLabel("할인 쿠폰").selectOption("public:coupon-fixture");
   await page.getByRole("button", { name: "견적 확인" }).click();
@@ -1094,7 +1101,7 @@ test("ordinary package selection shows API terms and coupon quote without client
   });
   await expect(page.getByLabel("사용 포인트")).toHaveCount(0);
   await expect(
-    page.getByText("테스트 식당", { exact: true }).first(),
+    page.locator(".purchase-quote").getByText("테스트 식당", { exact: true }),
   ).toBeVisible();
 });
 test("employee requests membership then sees pending server state without catalog", async ({
@@ -1165,7 +1172,7 @@ test("new authenticated purchaser registers with normalized phone and server pro
   await page.getByLabel("휴대폰 번호").fill("010-1234-5678");
   await page.getByLabel("약관 및 개인정보 처리방침 확인").check();
   await page.getByRole("button", { name: "일반 구매자로 등록" }).click();
-  await expect(page.getByRole("heading", { name: "내 지갑" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "내 지갑" })).toBeVisible();
   expect(calls.find((c) => c.path === "/consumer/register").body).toEqual({
     display_name: "새 고객",
     phone: "01012345678",
@@ -1177,7 +1184,7 @@ test("purchaser rejects admin and pending employee instead of exposing a wallet"
   await fixture(page, { role: "merchant_admin", status: "active" });
   await login(page);
   await expect(page.getByRole("alert")).toContainText("구매자 계정이 아니에요");
-  await expect(page.getByRole("heading", { name: "내 지갑" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "내 지갑" })).toHaveCount(0);
 });
 
 test("purchaser sign-in renders its own wallet, refresh and logout", async ({
@@ -1186,9 +1193,11 @@ test("purchaser sign-in renders its own wallet, refresh and logout", async ({
   const calls = await fixture(page);
   await login(page);
   await expect(page.getByRole("heading", { name: "식권 구매" })).toBeVisible();
-  await expect(page.getByText("보유 식권 3장")).toBeVisible();
+  await page.getByRole("navigation").getByRole("button", { name: "홈", exact: true }).click();
+  await expect(page.locator(".ticket-balance")).toHaveText("3장");
   await page.getByRole("button", { name: "새로고침", exact: true }).click();
   await expect.poll(() => calls.filter((c) => c.path === "/me").length).toBe(2);
+  await page.getByRole("navigation").getByRole("button", { name: "내정보", exact: true }).click();
   await page.getByRole("button", { name: "로그아웃", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "로그인", exact: true }),

@@ -7,7 +7,7 @@ import time
 from html import escape
 from urllib.parse import parse_qs, urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
 from app.auth import bearer_token
@@ -378,6 +378,68 @@ async def notification_get(request: Request):
 @router.post("/notification")
 async def notification_post(request: Request):
     return await _notification(request)
+
+
+@router.get("/recovery")
+def recovery(
+    order_id: str = Query(min_length=6, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+    amount: int = Query(gt=0),
+    token: str = Depends(bearer_token),
+):
+    """Recover one owned positive-payment order without creating or approving it.
+
+    A local canceled/failed state is not proof that a provider cannot charge:
+    notification failures/cancels are only acknowledged, and late approvals of
+    non-ready orders are rejected (see _notification). Never tell a client to
+    discard its pending record based on those states. ORDERNO can repeat at the
+    provider; only DAOUTRX identifies a transaction. Recovery must never offer
+    another payable entry without a provider reconciliation/single-entry contract.
+    """
+    repo, settings = JoinRepository(), get_settings()
+    try:
+        _, profile = _customer(repo, token, allow_employee=True)
+        rows = repo.client.rest_get("payment_orders", {
+            "select": ORDER_SELECT, "order_id": f"eq.{order_id}",
+            "user_id": f"eq.{profile.id}", "limit": "1",
+        })
+        if not rows:
+            raise _error(404, "ORDER_NOT_FOUND", "결제 주문을 찾을 수 없어요")
+        order = rows[0]
+        if int(order["amount"]) != amount:
+            raise _error(400, "AMOUNT_MISMATCH", "결제 금액이 주문 금액과 일치하지 않아요")
+        status = order.get("status")
+        data = {
+            "order_id": order_id, "amount": amount,
+            "status": status if status in {
+                "ready", "done", "failed", "canceled", "refund_processing", "refunded",
+            } else "unknown",
+            "recovery_action": "reconcile", "checkout_url": None, "resumable": False,
+        }
+        if status == "done":
+            _require_order_tax_classified(order)
+            data["recovery_action"] = "complete"
+            data["completion"] = present_payment_completion(
+                order, base_url=settings.kiwoompay_base_url, cpid=settings.kiwoompay_cpid,
+            )
+        elif status == "ready":
+            # Preserve the DB clock, started-checkout exclusion and cancel guards.
+            # This is the only permitted side effect of recovery; never mark a
+            # checkout started, release points, fulfill, or contact the provider.
+            order = _enforce_subsidized_order_expiry(repo, order)
+            _require_order_tax_classified(order)
+            _ensure_voucher_order_available(repo, order)
+            if str(order.get("requested_payment_method") or "TOTAL") not in {"TOTAL", "BANK"}:
+                raise _error(409, "INVALID_PAYMENT_METHOD", "주문 결제수단 설정이 올바르지 않아요")
+            # Even a missing checkout_started_at is not proof of no prior PG
+            # form (ordinary voucher entry has no durable single-entry guard).
+            # Keep all recovery orders nonpayable, including apparently ready ones.
+        return {"ok": True, "data": data, "error": None}
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요") from exc
+        raise _error(502, "SUPABASE_ERROR", "결제 주문 상태를 확인하지 못했어요") from exc
 
 
 @router.post("/confirm")

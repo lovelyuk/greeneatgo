@@ -1,0 +1,2 @@
+# Match the optional dependency symlink as well as a real directory.
+/node_modules

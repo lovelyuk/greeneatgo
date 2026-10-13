@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import PurchaseCheckout from "./PurchaseCheckout.jsx";
-import { purchaseDisclosuresReady } from "./purchaseSafety.js";
+
 export const won = (amount) => `${Number(amount).toLocaleString("ko-KR")}원`;
 export default function PurchaseCatalog({
   api,
@@ -240,13 +240,7 @@ export default function PurchaseCatalog({
         }
         quote={quote}
         mode={catalog?.purchase_mode}
-        legalReady={
-          legal.ready &&
-          purchaseDisclosuresReady(
-            legal.terms,
-            quote?.merchant_name || coupons?.merchant?.name,
-          )
-        }
+        legalReady={legal.ready}
       />
     </section>
   );

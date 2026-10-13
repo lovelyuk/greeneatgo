@@ -331,7 +331,7 @@ export default function PurchaseCheckout({
       <h2>주문 확인</h2>
       {!legalReady && (
         <p role="alert">
-          사업자·결제 제공자 고지 또는 약관 정보가 미게시/미확정 상태예요.
+          이용약관 또는 개인정보 처리방침을 불러오지 못했어요.
           구매를 진행할 수 없어요.
         </p>
       )}

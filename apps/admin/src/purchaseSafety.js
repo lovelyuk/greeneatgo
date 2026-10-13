@@ -43,6 +43,18 @@ export function purchaseDisclosuresReady(text, merchantName) {
     !/【|】|YYYY|TODO|PLACEHOLDER/i.test(text)
   );
 }
+// Access checks publication only; disclosure completeness remains a separate audit.
+export function publishedLegalAvailable(documents) {
+  return (
+    Array.isArray(documents) &&
+    documents.length === 2 &&
+    documents.every((text, index) =>
+      typeof text === "string" &&
+      text.includes(index ? "개인정보" : "이용약관") &&
+      text.length >= 20
+    )
+  );
+}
 export function legalDocumentsReady(documents) {
   return (
     Array.isArray(documents) &&

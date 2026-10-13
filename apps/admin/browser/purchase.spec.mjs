@@ -579,7 +579,7 @@ test("ambiguous order network error blocks automatic retry and survives reload",
   ).toBeVisible();
   expect(purchases).toBe(1);
 });
-test("unpublished actual legal pages disable purchase without invoking order API", async ({
+test("actual published legal pages allow purchase despite unresolved disclosure", async ({
   page,
 }) => {
   const calls = await fixture(page);
@@ -589,11 +589,22 @@ test("unpublished actual legal pages disable purchase without invoking order API
   await page.getByLabel("구매 조건 확인").check();
   await expect(
     page.getByRole("button", { name: "구매하기", exact: true }),
-  ).toBeDisabled();
-  await expect(page.getByRole("alert")).toContainText("미게시/미확정");
+  ).toBeEnabled();
+  await expect(page.getByText("가입·구매를 진행할 수 없어요.", { exact: false })).toHaveCount(0);
   expect(calls.some((c) => c.path.includes("/purchase"))).toBe(false);
 });
-test("populated terms without seller/provider facts still block purchase", async ({
+test("unavailable privacy document still disables purchase", async ({ page }) => {
+  const calls = await fixture(page);
+  await page.route("**/privacy.html", route => route.fulfill({ status: 503, body: "" }));
+  await catalogFixture(page);
+  await quoteFixture(page);
+  await selectQuote(page);
+  await page.getByLabel("구매 조건 확인").check();
+  await expect(page.getByRole("button", { name: "구매하기", exact: true })).toBeDisabled();
+  await expect(page.getByRole("alert")).toContainText("불러오지 못했어요");
+  expect(calls.some(c => c.path.includes("/purchase"))).toBe(false);
+});
+test("published terms need not contain the selected merchant to allow purchase", async ({
   page,
 }) => {
   await fixture(page);
@@ -610,7 +621,7 @@ test("populated terms without seller/provider facts still block purchase", async
   await page.getByLabel("구매 조건 확인").check();
   await expect(
     page.getByRole("button", { name: "구매하기", exact: true }),
-  ).toBeDisabled();
+  ).toBeEnabled();
 });
 for (const status of ["pending", "suspended", "inactive"])
   test(`employee ${status} is read-only and never loads purchaser catalog`, async ({
@@ -1111,11 +1122,10 @@ test("employee requests membership then sees pending server state without catalo
   });
   expect(calls.some((c) => c.path === "/vouchers/products")).toBe(false);
 });
-test("signup uses Supabase and waits for email verification without creating a profile", async ({
+test("signup with actual published documents requires consent and waits for email verification", async ({
   page,
 }) => {
   const calls = await fixture(page);
-  await publishedLegal(page);
   let signup;
   await page.route("**/auth-fixture/auth/v1/signup**", async (route) => {
     signup = route.request().postDataJSON();
@@ -1129,6 +1139,7 @@ test("signup uses Supabase and waits for email verification without creating a p
   await page
     .getByLabel("비밀번호", { exact: true })
     .fill("mocked-password-only");
+  await expect(page.getByRole("button", { name: "가입 신청", exact: true })).toBeDisabled();
   await page.getByLabel("약관 및 개인정보 처리방침 확인").check();
   await page.getByRole("button", { name: "가입 신청", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("이메일 인증");

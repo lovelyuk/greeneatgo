@@ -23,7 +23,7 @@ test('privacy identifies company/merchant access without certifying no third-par
 test('privacy publishes bounded Seoul/Oregon/Auth facts with pending additional disclosure', () => {
   contains(['확인된 주 처리지역 / 추가 고지 확인 중', 'Supabase greeneat-go 프로젝트', '대한민국 서울', 'Northeast Asia (Seoul)', 'ap-northeast-2', '운영 호스트와의 정확한 매핑은 추가 확인 중', '백업·로그·지원 접근까지 모두 국내라는 의미는 아닙니다', 'Render API', 'Oregon (US West)', '미국', 'Firebase Authentication', 'href="https://firebase.google.com/support/privacy"', 'FCM의 처리국가 전체는 확인 중', 'Vercel', '실제 계약 당사자', '이전 항목·국가·시기·방법·목적·보유기간', '거부 방법·절차·효과']);
 });
-test('privacy leaves retention/cloud/log/country TODOs and signup/purchase gate closed', () => {
+test('privacy leaves retention/cloud/log/country TODOs and completeness audit unresolved', () => {
   contains(['【클라우드/호스팅 사업자】', 'TODO', '로그', '보유기간', '처리국가']);
   assert.equal(legalDocumentsReady([terms, privacy]), false);
 });

@@ -215,6 +215,7 @@ export default function PurchaseCatalog({
       )}
       <div className="catalog-checkout">
       <PurchaseCheckout
+        clearQuote={() => { generation.current++; setQuote(null); }}
         userId={me.user_id}
         refresh={refresh}
         api={api}

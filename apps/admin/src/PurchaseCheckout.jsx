@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { verifiedOrderClosure } from './paymentClosure.js';
 import { safeCheckoutUrl } from "./purchaseSafety.js";
 import { validateReceiptUrl } from "./receiptUtils.js";
 
@@ -15,7 +16,9 @@ export default function PurchaseCheckout({
   legalReady,
   refresh,
   userId,
+  clearQuote,
 }) {
+  const [closed, setClosed] = useState(null);
   const [completion, setCompletion] = useState(null),
     [canceled, setCanceled] = useState(false);
   const [order, setOrder] = useState(null),
@@ -36,7 +39,7 @@ export default function PurchaseCheckout({
   useEffect(() => {
     generation.current++;
     lock.current = null;
-    setCompletion(null); setCanceled(false); setOrder(null);
+    setCompletion(null); setClosed(null); setCanceled(false); setOrder(null);
     setUnknown(false); setBusy(false); setConsent(false); setError("");
     try {
       const saved = pendingMemory.get(storageKey) ?? JSON.parse(sessionStorage.getItem(storageKey) || "null");
@@ -226,7 +229,18 @@ export default function PurchaseCheckout({
       if (!result || result.resumable === true || result.order_id !== pending.order_id || result.amount !== pending.amount ||
           !["ready", "done", "failed", "canceled", "refund_processing", "refunded", "unknown"].includes(result.status))
         throw new Error("서버 주문 상태 응답을 확인하지 못했어요.");
-      if (result.recovery_action === "complete" && result.status === "done" &&
+      if (verifiedOrderClosure(result, pending, userId)) {
+        // Re-read storage at the destructive boundary: a late response cannot
+        // remove a newer intent even for the same account/document.
+        const stored = JSON.parse(sessionStorage.getItem(run.key) || 'null');
+        const memory = pendingMemory.get(run.key);
+        const matches = value => value?.order_id === pending.order_id && value.amount === pending.amount;
+        if ((stored && !matches(stored)) || (memory && !matches(memory)))
+          throw new Error('저장된 주문이 변경되어 종료 처리를 차단했어요.');
+        if (!clearSaved(run)) return;
+        setConsent(false); clearQuote(); setOrder(null); setClosed(result);
+        popup.current?.close();
+      } else if (result.recovery_action === "complete" && result.status === "done" &&
           result.checkout_url === null && validCompletion(result.completion, pending)) {
         await complete(result.completion, run);
       } else if (result.recovery_action === "reconcile" && result.status !== "done" &&
@@ -287,6 +301,13 @@ export default function PurchaseCheckout({
       finish(run);
     }
   }
+  if (closed)
+    return <section className="purchase-card">
+      <h2>결제 종료 확인</h2>
+      <p>주문 {closed.order_id} · 서버 확정 상태: {closed.status}</p>
+      <p>해당 주문의 종료를 확인했어요. 기존 결제창은 다시 열 수 없어요.</p>
+      <button onClick={() => { setClosed(null); setConsent(false); clearQuote(); }}>새 견적으로 구매 준비</button>
+    </section>;
   if (canceled)
     return (
       <section className="purchase-card">

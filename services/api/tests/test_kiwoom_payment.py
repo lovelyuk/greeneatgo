@@ -161,7 +161,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
 
     def test_checkout_posts_hash_bound_form_without_external_sdk(self):
         order = {
-            "user_id": "user-1", "amount": 8000, "order_id": "GE-order-123",
+            "id": "fixture-order", "user_id": "user-1", "amount": 8000, "order_id": "GE-order-123",
             "product_name": "그린잇 식권", "merchant_name": "돈토", "pay_type": "direct",
             "merchant_id": "merchant-1", "product_id": "product-1", "voucher_product_id": None,
             "requested_payment_method": "TOTAL", "tax_type": "taxable",
@@ -212,7 +212,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
 
     def test_bank_checkout_binds_hash_and_form_to_bank(self):
         order = {
-            "user_id": "user-1", "amount": 80000, "order_id": "GE-V-bank",
+            "id": "fixture-bank-order", "user_id": "user-1", "amount": 80000, "order_id": "GE-V-bank",
             "product_name": "식권 10+1", "merchant_name": "돈토", "pay_type": "voucher",
             "merchant_id": "merchant-1", "product_id": None, "voucher_product_id": "voucher-1",
             "requested_payment_method": "BANK", "tax_type": "tax_free",
@@ -284,7 +284,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual([item.args[0] for item in repo.client.rpc.call_args_list], [
-            "expire_stale_subsidized_orders", "mark_subsidized_checkout_started",
+            "expire_stale_subsidized_orders", "admit_payment_checkout", "assert_payment_checkout_active",
         ])
         request_hash.assert_called_once()
 
@@ -348,7 +348,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertEqual(decoded["CARDNAME"], "징카드")
         self.assertNotIn("\ufffd", decoded["CARDNAME"])
 
-    def test_failed_and_cancel_notifications_ack_without_database_access_or_mutation(self):
+    def test_failed_and_cancel_notifications_ack_after_durable_review_record(self):
         app = FastAPI()
         app.include_router(router)
         settings = SimpleNamespace(
@@ -372,7 +372,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertTrue(all(response.status_code == 200 for response in (failed, canceled)))
         self.assertTrue(all("<RESULT>SUCCESS</RESULT>" in response.text for response in (failed, canceled)))
         repo.client.rest_get.assert_not_called()
-        repo.client.rpc.assert_not_called()
+        self.assertEqual([c.args[0] for c in repo.client.rpc.call_args_list], ["record_kiwoom_nonapproval_notification"]*2)
         repo.client.rest_post.assert_not_called()
         repo.client.rest_patch.assert_not_called()
 
@@ -498,7 +498,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertEqual(repo.client.rpc.call_args.args[0], "complete_kiwoom_payment_notification")
         self.assertEqual(repo.client.rest_get.call_count, 1)
 
-    def test_notification_rejects_expired_subsidized_order(self):
+    def test_notification_durably_quarantines_expired_subsidized_order(self):
         app = FastAPI()
         app.include_router(router)
         order = {
@@ -521,9 +521,9 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
                 "DAOUTRX": "late-trx", "AMOUNT": "6000",
             })
 
-        self.assertEqual(response.status_code, 409)
-        self.assertIn("<RESULT>FAIL</RESULT>", response.text)
-        repo.client.rpc.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("<RESULT>SUCCESS</RESULT>", response.text)
+        self.assertEqual(repo.client.rpc.call_args.args[0], "complete_kiwoom_payment_notification")
 
     def test_quarantined_notification_is_durably_enqueued_acked_and_duplicate_safe(self):
         app = FastAPI()

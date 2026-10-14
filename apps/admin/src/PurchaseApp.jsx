@@ -354,6 +354,10 @@ function Wallet({ supabase, apiBaseUrl, scope, userId, logout }) {
     setError("");
     try {
       const profile = await api("/me");
+      if (!profile || (profile.status === 'active' && ['customer', 'employee'].includes(profile.role) && profile.user_id !== userId)) {
+        if (run === version.current) setMe(null);
+        throw new Error('계정 소유자 정보를 확인하지 못했어요. 계정을 다시 확인해 주세요.');
+      }
       if (run === version.current) setMe(profile);
     } catch (e) {
       if (!e.stale && run === version.current) setError(e.message);
@@ -393,7 +397,7 @@ function Wallet({ supabase, apiBaseUrl, scope, userId, logout }) {
   return (
     <>
       {error && <p role="alert">{error}</p>}
-      {!me && <><p role="status">계정 확인 중…</p><button disabled={loading} onClick={refresh}>새로고침</button><button onClick={logout}>로그아웃</button></>}
+      {!me && <>{loading ? <p role="status">계정 확인 중…</p> : <p>계정 정보를 불러오지 못했어요.</p>}<button disabled={loading} onClick={refresh}>계정 다시 확인</button><button onClick={logout}>로그아웃</button></>}
       {me && (
         <PurchaseDashboard
           api={api}

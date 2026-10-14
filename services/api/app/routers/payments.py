@@ -34,6 +34,7 @@ KIWOOM_NOTIFICATION_STORED_FIELDS = frozenset({
     "ORDERNO",
     "AMOUNT",
     "SETTDATE",
+    "CANCELDATE",
     "PAYMENTTYPE",
     "RESULTCODE",
     "AUTHNO",
@@ -152,6 +153,12 @@ def checkout(checkout_token: str):
     if pay_method not in {"TOTAL", "BANK"}:
         raise _error(409, "INVALID_PAYMENT_METHOD", "주문 결제수단 설정이 올바르지 않아요")
     try:
+        # The committed row-lock admission fences finalization and repeat entry
+        # for direct, voucher and subsidized orders before contacting the PG.
+        repo.client.rpc('admit_payment_checkout', {'p_order_id': order['id']})
+    except SupabaseHttpError as exc:
+        raise _error(409, 'ORDER_NOT_READY', '이미 처리되었거나 결제할 수 없는 주문이에요') from exc
+    try:
         secure_hash = request_payment_hash(settings.kiwoompay_base_url, KiwoomHashInput(
             cpid=settings.kiwoompay_cpid, order_id=order["order_id"], amount=int(order["amount"]),
             pay_method=pay_method,
@@ -159,14 +166,10 @@ def checkout(checkout_token: str):
     except KiwoomPaymentError as exc:
         raise _error(exc.status if 400 <= exc.status < 500 else 502, exc.code, exc.message) from exc
 
-    if order.get("pay_type") == "subsidized":
-        try:
-            # Durable provider-entry boundary: started checkouts are never
-            # wall-clock expired or canceled merely because a client disappears.
-            repo.client.rpc("mark_subsidized_checkout_started", {"p_order_id": order["id"]})
-        except SupabaseHttpError as exc:
-            raise _error(409, "ORDER_NOT_READY", "이미 처리되었거나 결제할 수 없는 주문이에요") from exc
-
+    try:
+        repo.client.rpc('assert_payment_checkout_active', {'p_order_id': order['id']})
+    except SupabaseHttpError as exc:
+        raise _error(409, 'ORDER_NOT_READY', '이미 처리되었거나 결제할 수 없는 주문이에요') from exc
     order_id = _safe_text(order["order_id"], 50)
     amount = str(int(order["amount"]))
     public_base = urlsplit(settings.public_api_base_url)
@@ -303,8 +306,14 @@ async def _notification(request: Request) -> Response:
             return _ack(False, 400)
         pay_method = str(values.get("PAYMETHOD") or "")
         if not _is_successful_notification_outcome(values):
-            # SUCCESS acknowledges receipt. Cancellation and explicit failures
-            # are terminal provider outcomes, not payment approvals.
+            # Receipt is ACKed only after durable storage, never as order
+            # finality. BANK_CANCEL legitimately omits ORDERNO.
+            repo.client.rpc('record_kiwoom_nonapproval_notification', {
+                'p_cpid': values['CPID'], 'p_provider_order_id': values.get('ORDERNO'),
+                'p_provider_transaction_id': values.get('DAOUTRX'),
+                'p_amount': int(values.get('AMOUNT') or 0), 'p_payment_method': pay_method,
+                'p_payload': _normalized_notification_payload(values, source_ip), 'p_source_ip': source_ip,
+            })
             _log_notification_outcome("kiwoom_notification_acknowledged", "explicit_failure_or_cancel")
             return _ack(True)
         order_id, transaction_id = values.get("ORDERNO"), values.get("DAOUTRX")
@@ -328,9 +337,6 @@ async def _notification(request: Request) -> Response:
         if not pay_method:
             _log_notification_outcome("kiwoom_notification_rejected", "missing_method")
             return _ack(False, 400)
-        if order.get("status") not in {"ready", "done"}:
-            _log_notification_outcome("kiwoom_notification_rejected", "invalid_status")
-            return _ack(False, 409)
         legacy_subsidized = (
             order.get("voucher_product_id") is None
             and int(order.get("voucher_count") or 0) == 1
@@ -421,6 +427,24 @@ def recovery(
             data["completion"] = present_payment_completion(
                 order, base_url=settings.kiwoompay_base_url, cpid=settings.kiwoompay_cpid,
             )
+        elif status in {'failed', 'canceled'}:
+            closures = repo.client.rest_get('payment_order_closures', {
+                'select': 'id,evidence_sha256,outcome,closed_at',
+                'order_id': f"eq.{order['id']}", 'user_id': f'eq.{profile.id}',
+                'amount': f'eq.{amount}', 'outcome': f'eq.{status}', 'limit': '1',
+            })
+            if closures:
+                from app.services.payment_closure import public_closure
+                closure = public_closure(closures[0], status)
+                if closure:
+                    late_approvals = repo.client.rest_get('payment_callback_discrepancies', {
+                        'select': 'id', 'order_id': f"eq.{order['id']}",
+                        'kind': 'eq.late_approval', 'limit': '1',
+                    })
+                    # An observed real charge contradicts the attestation. Keep
+                    # immutable history but do not advertise verified finality.
+                    if not late_approvals:
+                        data.update(recovery_action='closed', user_id=str(profile.id), completion=None, closure=closure)
         elif status == "ready":
             # Preserve the DB clock, started-checkout exclusion and cancel guards.
             # This is the only permitted side effect of recovery; never mark a

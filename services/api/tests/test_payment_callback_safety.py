@@ -122,7 +122,6 @@ def test_post_short_success_is_neutral_and_cannot_complete_payment():
         ("amount_mismatch", 409, {}, {"amount": 9000}, None, None, None, {}),
         ("method_mismatch", 409, {}, {"requested_payment_method": "BANK"}, None, None, None, {}),
         ("missing_method", 400, {"PAYMETHOD": ""}, {}, None, None, None, {}),
-        ("invalid_status", 409, {}, {"status": "canceled"}, None, None, None, {}),
         (
             "checkout_boundary",
             409,

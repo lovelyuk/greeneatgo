@@ -1,5 +1,7 @@
 // Deterministic mocked I/O ONLY. No real auth, merchant or Kiwoom calls.
 import { test, expect } from "@playwright/test";
+import { writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { dirname, join } from "node:path";
 const runtimeErrors = new WeakMap();
 test.beforeEach(async ({ context, page }) => {
@@ -104,6 +106,199 @@ test("recovery restored ordinary order never exposes reopen or enters checkout",
   expect(recoveries).toBe(1); expect(entered).toBe(0);
   expect(context.pages()).toHaveLength(1);
   expect(calls.some(call => call.path.includes("/purchase"))).toBe(false);
+});
+test('profile GET failure ends loading and retries only profile read', async ({ page }) => {
+  const calls = await fixture(page);
+  let reads = 0;
+  await page.route('**/api-fixture/me', route => {
+    reads++;
+    return route.fulfill({ status: 503, json: { detail: { message: 'synthetic profile unavailable' } } });
+  });
+  await login(page);
+  await expect(page.getByRole('alert')).toContainText('synthetic profile unavailable');
+  await expect(page.getByText('계정 확인 중…', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '계정 다시 확인' }).click();
+  await expect.poll(() => reads).toBe(2);
+  expect(calls.some(call => call.body)).toBe(false);
+});
+test('profile mismatched owner fails closed before purchase dashboard', async ({ page }) => {
+  await fixture(page, { role: 'customer', status: 'active', user_id: '22222222-2222-4222-8222-222222222222' });
+  await login(page);
+  await expect(page.getByRole('alert')).toContainText('계정 소유자');
+  await expect(page.getByRole('navigation', { name: '구매자 탭' })).toHaveCount(0);
+});
+function producer(command, payload) {
+  return JSON.parse(execFileSync(process.env.FINALIZE_FIXTURE_PYTHON,
+    ['browser/finalization-producer.py', command, ...(payload ? [JSON.stringify(payload)] : [])],
+    { encoding: 'utf8', env: { ...process.env, ENV: 'test', SUPABASE_URL: 'https://fixture.invalid',
+      SUPABASE_ANON_KEY: 'synthetic', SUPABASE_SERVICE_ROLE_KEY: 'synthetic' } }));
+}
+test('real router PG closure lifecycle retains audit and explicit purchase creates new ID after reload', async ({ page, context }) => {
+  test.skip(!process.env.FINALIZE_FIXTURE_PYTHON || !process.env.FINALIZE_TEST_DATABASE_URL, 'requires isolated local PostgreSQL producer adapter');
+  const seed = producer('init');
+  await fixture(page); await publishedLegal(page);
+  await page.addInitScript(seed => {
+    if (!sessionStorage.getItem('synthetic-closure-reload')) sessionStorage.setItem(`greeneat-purchase-pending:${seed.owner}`,
+      JSON.stringify({ order_id: seed.order_id, amount: seed.amount, mode: 'voucher', checkout_started: true }));
+  }, seed);
+  await page.route('**/api-fixture/coupons', route => route.fulfill({ json: { ok: true, data: {
+    merchant: { id: '33333333-3333-4333-8333-333333333333', name: 'Synthetic merchant' }, items: [], issued: [] } } }));
+  const writes = [], recoveries = [];
+  for (const glob of ['**/api-fixture/vouchers/products', '**/api-fixture/vouchers/quote', '**/api-fixture/vouchers/purchase', '**/api-fixture/payments/recovery?**'])
+    await page.route(glob, route => {
+      const url = new URL(route.request().url());
+      const path = url.pathname.replace('/api-fixture', '') + url.search;
+      const result = producer('request', { method: route.request().method(), path, body: route.request().postDataJSON() });
+      if (route.request().method() === 'POST') writes.push({ path, ...result });
+      if (path.startsWith('/payments/recovery?')) recoveries.push(result);
+      return route.fulfill({ status: result.status, json: result.json });
+    });
+  await context.route('**/api-fixture/payments/checkout/**', route => route.fulfill({ body: 'SYNTHETIC ONLY: provider entry deliberately not executed' }));
+  await login(page);
+  await page.getByRole('button', { name: 'Synthetic ticket 선택' }).click();
+  await page.getByRole('button', { name: '견적 확인', exact: true }).click();
+  await expect(page.getByText('최종 결제', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '저장된 주문 상태 확인' }).click();
+  await expect(page.getByRole('alert')).toContainText('관리자에게 거래 확인');
+  const body = { user_id: seed.owner, amount: seed.amount, outcome: 'failed', source_sha256: 'b'.repeat(64),
+    source_reference: 'synthetic restricted evidence document', attempts: [{ transaction_id: 'synthetic-attempt', outcome: 'failed' }],
+    authority: 'trusted_provider_irreversible_closure', complete_attempt_coverage: true, irreversible_no_future_approval: true,
+    provider_closure_reference: 'synthetic irreversible all-attempts attestation', dry_run: true };
+  const path = `/admin/platform/payment-orders/${seed.internal_id}/review`;
+  const dry = producer('request', { method: 'POST', token: 'fixture-operator', path, body });
+  expect(dry.status).toBe(200); expect(dry.json.data.closed).toBe(false); expect(dry.json.data.eligible).toBe(true);
+  const applied = producer('request', { method: 'POST', token: 'fixture-operator', path, body: { ...body, dry_run: false } });
+  expect(applied.status).toBe(200); expect(applied.json.data.closed).toBe(true);
+  await page.getByRole('button', { name: '저장된 주문 상태 확인' }).click();
+  await expect(page.getByRole('heading', { name: '결제 종료 확인' })).toBeVisible();
+  await expect(page.getByText('최종 결제', { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(owner => sessionStorage.getItem(`greeneat-purchase-pending:${owner}`), seed.owner)).toBe(null);
+  expect(writes.filter(w => w.path === '/vouchers/purchase')).toHaveLength(0);
+  // Remove the seed initializer before reload: a real pending intent is not reinserted.
+  await page.evaluate(() => { sessionStorage.setItem('synthetic-closure-reload', 'yes'); });
+  await page.getByRole('button', { name: '새 견적으로 구매 준비' }).click();
+  await expect(page.getByRole('button', { name: '구매하기', exact: true })).toHaveCount(0);
+  await page.reload();
+  await page.getByRole('navigation').getByRole('button', { name: '구매', exact: true }).click();
+  await page.getByRole('button', { name: 'Synthetic ticket 선택' }).click();
+  await page.getByRole('button', { name: '견적 확인', exact: true }).click();
+  await expect(page.getByLabel('구매 조건 확인')).not.toBeChecked();
+  await page.getByLabel('구매 조건 확인').check();
+  await page.getByRole('button', { name: '구매하기', exact: true }).click();
+  await expect.poll(() => writes.filter(w => w.path === '/vouchers/purchase').length).toBe(1);
+  const fresh = writes.find(w => w.path === '/vouchers/purchase').json.data;
+  expect(fresh.order_id).not.toBe(seed.order_id);
+  const audit = producer('audit');
+  expect(audit.closures).toHaveLength(1); expect(audit.reviews.count).toBe(1);
+  expect(audit.orders).toHaveLength(2);
+  expect(audit.orders.find(o => o.order_id === seed.order_id).status).toBe('failed');
+  expect(audit.orders.find(o => o.order_id === fresh.order_id).status).toBe('ready');
+  expect(recoveries.map(r => r.json.data.recovery_action)).toEqual(['reconcile', 'closed']);
+  if (process.env.PURCHASE_RECEIPTS) writeFileSync(join(process.env.PURCHASE_RECEIPTS, 'frontend-router-pg-proof.json'),
+    JSON.stringify({ synthetic_only: true, seed, dry, applied, recoveries, fresh_order_id: fresh.order_id, audit,
+      provider_executed: false, source: 'real FastAPI routers and migrated PostgreSQL RPC' }, null, 2));
+});
+const verifiedClosure = {
+  ...recoveryReady, user_id: '11111111-1111-4111-8111-111111111111', status: 'canceled',
+  recovery_action: 'closed', resumable: false, checkout_url: null, completion: null,
+  closure: { id: '33333333-3333-4333-8333-333333333333', evidence_sha256: 'a'.repeat(64),
+    scope: 'order', finality: 'verified', outcome: 'canceled', closed_at: '2026-10-14T10:00:00+09:00' },
+};
+test('verified closed recovery releases only matching intent and requires fresh quote', async ({ page, context }) => {
+  const calls = await restoredRecovery(page);
+  await page.route('**/api-fixture/payments/recovery?**', route => route.fulfill({ json: { ok: true, data: verifiedClosure } }));
+  await login(page);
+  await page.evaluate(() => sessionStorage.setItem('greeneat-purchase-pending:other-owner', 'keep-other-owner'));
+  await page.getByRole('button', { name: '저장된 주문 상태 확인' }).click();
+  await expect(page.getByRole('heading', { name: '결제 종료 확인' })).toBeVisible();
+  expect(await page.evaluate(key => sessionStorage.getItem(key), 'greeneat-purchase-pending:11111111-1111-4111-8111-111111111111')).toBe(null);
+  expect(await page.evaluate(() => sessionStorage.getItem('greeneat-purchase-pending:other-owner'))).toBe('keep-other-owner');
+  await page.getByRole('button', { name: '새 견적으로 구매 준비' }).click();
+  await expect(page.getByRole('button', { name: '구매하기', exact: true })).toHaveCount(0);
+  expect(calls.some(call => call.path.includes('/purchase'))).toBe(false);
+  expect(context.pages()).toHaveLength(1);
+});
+for (const failure of ['owner', 'missing-owner', 'id', 'hash', 'scope', 'finality', 'outcome', 'timestamp', 'resumable', 'url', 'completion'])
+  test(`closed recovery rejects malformed ${failure}`, async ({ page, context }) => {
+    const calls = await restoredRecovery(page);
+    const data = structuredClone(verifiedClosure);
+    if (failure === 'owner') data.user_id = 'other-owner';
+    if (failure === 'missing-owner') delete data.user_id;
+    if (failure === 'id') data.closure.id = 'not-uuid';
+    if (failure === 'hash') data.closure.evidence_sha256 = 'A'.repeat(64);
+    if (failure === 'scope') data.closure.scope = 'attempt';
+    if (failure === 'finality') data.closure.finality = 'unknown';
+    if (failure === 'outcome') data.closure.outcome = 'failed';
+    if (failure === 'timestamp') data.closure.closed_at = '2026-02-30T00:00:00Z';
+    if (failure === 'resumable') delete data.resumable;
+    if (failure === 'url') data.checkout_url = 'https://fixture.invalid';
+    if (failure === 'completion') data.completion = {};
+    await page.route('**/api-fixture/payments/recovery?**', route => route.fulfill({ json: { ok: true, data } }));
+    await login(page);
+    await page.getByRole('button', { name: '저장된 주문 상태 확인' }).click();
+    await expect(page.getByRole('alert')).toContainText('저장된 주문을 유지');
+    await expect(page.getByRole('heading', { name: '진행 중인 결제' })).toBeVisible();
+    expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)).order_id, recoveryStorageKey)).toBe(recoveryReady.order_id);
+    expect(calls.some(c => c.path.includes('/purchase'))).toBe(false); expect(context.pages()).toHaveLength(1);
+  });
+for (const failure of ['getItem', 'removeItem', 'new-intent']) test(`closed recovery fails closed on storage ${failure}`, async ({ page }) => {
+  await restoredRecovery(page);
+  let release, requested;
+  const started = new Promise(resolve => requested = resolve), barrier = new Promise(resolve => release = resolve);
+  await page.route('**/api-fixture/payments/recovery?**', async route => { requested(); await barrier; await route.fulfill({ json: { ok: true, data: verifiedClosure } }); });
+  await login(page); await page.getByRole('button', { name: '저장된 주문 상태 확인' }).click(); await started;
+  await page.evaluate(({ failure, key }) => {
+    if (failure === 'new-intent') sessionStorage.setItem(key, JSON.stringify({ order_id: 'GE-newer-intent', amount: 72000, mode: 'voucher' }));
+    else { const original = Storage.prototype[failure]; Storage.prototype[failure] = function(key, ...args) {
+      if (key.startsWith('greeneat-purchase-pending:')) throw new Error('synthetic storage unavailable');
+      return original.call(this, key, ...args);
+    }; }
+  }, { failure, key: recoveryStorageKey });
+  release();
+  await expect(page.getByRole('alert')).toContainText(failure === 'removeItem' ? '지우지 못했어요' : '저장된 주문을 유지');
+  await expect(page.getByRole('heading', { name: '진행 중인 결제' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '새 견적으로 구매 준비' })).toHaveCount(0);
+});
+for (const destination of ['logout', 'other-owner', 'ABA']) test(`closed recovery stale ${destination} cannot clear intent`, async ({ page }) => {
+  await restoredRecovery(page);
+  let release, requested;
+  const started = new Promise(resolve => requested = resolve), barrier = new Promise(resolve => release = resolve);
+  await page.route('**/api-fixture/payments/recovery?**', async route => { requested(); await barrier; await route.fulfill({ json: { ok: true, data: verifiedClosure } }); });
+  await login(page); await page.getByRole('button', { name: '저장된 주문 상태 확인' }).click(); await started;
+  const signOut = async () => {
+    await page.getByRole('navigation').getByRole('button', { name: '내정보', exact: true }).click();
+    await page.getByRole('button', { name: '로그아웃', exact: true }).click();
+    await expect(page.getByRole('button', { name: '로그인', exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => Object.keys(localStorage).filter(key => key.includes('auth-token')).length)).toBe(0);
+  };
+  const authenticate = async () => {
+    await page.getByLabel('이메일', { exact: true }).fill('fixture@example.invalid');
+    await page.getByLabel('비밀번호', { exact: true }).fill('mocked-password-only');
+    await page.getByRole('button', { name: '로그인', exact: true }).click();
+    await expect(page.getByRole('navigation', { name: '구매자 탭' })).toBeVisible();
+  };
+  await signOut();
+  if (destination !== 'logout') {
+    const id = '22222222-2222-4222-8222-222222222222';
+    await page.route('**/auth-fixture/auth/v1/**', route => new URL(route.request().url()).pathname.endsWith('/logout')
+      ? route.fulfill({ status: 204 }) : route.fulfill({ json: { access_token: 'fixture-B', refresh_token: 'fixture-B-refresh', expires_in: 3600, token_type: 'bearer', user: { id, email: 'fixture@example.invalid', aud: 'authenticated', role: 'authenticated' } } }));
+    await page.route('**/api-fixture/me', route => route.fulfill({ json: { ok: true, data: { user_id: id, role: 'customer', status: 'active', voucher_balance: 0 } } }));
+    await authenticate();
+    if (destination === 'ABA') {
+      await signOut();
+      await page.unroute('**/auth-fixture/auth/v1/**'); await page.unroute('**/api-fixture/me');
+      await fixture(page); await authenticate();
+    }
+  }
+  release();
+  // A subsequent authenticated GET fences completion of the released response.
+  if (destination !== 'logout') {
+    await page.getByRole('navigation').getByRole('button', { name: '홈', exact: true }).click();
+    await page.getByRole('button', { name: '새로고침', exact: true }).click();
+    await expect(page.getByRole('button', { name: '새로고침', exact: true })).toBeEnabled();
+  }
+  await expect(page.getByRole('heading', { name: '결제 종료 확인' })).toHaveCount(0);
+  expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)).order_id, recoveryStorageKey)).toBe(recoveryReady.order_id);
 });
 const recoveryStorageKey = "greeneat-purchase-pending:11111111-1111-4111-8111-111111111111";
 const recoveryCompletion = {

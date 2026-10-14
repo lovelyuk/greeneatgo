@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.checkout_maintenance import CheckoutMaintenanceMiddleware
 from app.config import get_settings
 from app.logging_filters import install_payment_notification_access_log_filter
 
@@ -10,6 +11,9 @@ settings = get_settings()
 install_payment_notification_access_log_filter()
 
 app = FastAPI(title="greeneatGo API", version="0.1.0")
+# Register first: Starlette wraps later middleware outside it, so CORS also
+# decorates maintenance responses and handles preflight before the ingress guard.
+app.add_middleware(CheckoutMaintenanceMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_allowed_origins),

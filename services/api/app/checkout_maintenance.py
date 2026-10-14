@@ -9,7 +9,7 @@ import re
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-CHECKOUT_MAINTENANCE_ENABLED = True
+CHECKOUT_MAINTENANCE_ENABLED = False
 
 # Match only the payable routes audited at d9aacd5, including slash redirects.
 # ASGI path is already decoded; never unquote again, parse a raw URI, or inspect

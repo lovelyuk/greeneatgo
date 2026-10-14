@@ -11,11 +11,11 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 CHECKOUT_MAINTENANCE_ENABLED = False
 
-# Match only the payable routes audited at d9aacd5, including slash redirects.
-# ASGI path is already decoded; never unquote again, parse a raw URI, or inspect
-# query strings. In particular, checkout tokens are exactly one route segment.
+# Match the payable inventory including the owner-bound PC SDK route and
+# slash redirects. ASGI path is already decoded; never unquote it again.
+# Do not inspect query strings. Checkout tokens are exactly one route segment.
 _PAYABLE_PATH = re.compile(
-    r"/v1/(?:vouchers/(?:purchase|purchase-subsidized)|payments/checkout/[^/]+)/?"
+    r"/v1/(?:vouchers/(?:purchase|purchase-subsidized)|payments/checkout/[^/]+(?:/sdk)?)/?"
 )
 
 

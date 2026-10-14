@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { verifiedOrderClosure } from './paymentClosure.js';
 import { safeCheckoutUrl } from "./purchaseSafety.js";
+import { checkoutPresentation, loadSdk, validateSdkData, openSdkFrame } from './kiwoomSdk.js';
 import { validateReceiptUrl } from "./receiptUtils.js";
 
 // A failed storage write must not discard an order already returned by the server.
@@ -17,6 +18,7 @@ export default function PurchaseCheckout({
   refresh,
   userId,
   clearQuote,
+  paymentMethod = 'TOTAL',
 }) {
   const [closed, setClosed] = useState(null);
   const [completion, setCompletion] = useState(null),
@@ -27,6 +29,9 @@ export default function PurchaseCheckout({
     [error, setError] = useState("");
   const [unknown, setUnknown] = useState(false);
   const storageKey = `greeneat-purchase-pending:${userId}`;
+  const sdkClose = useRef(null), recoveryRef = useRef(null);
+  const liveQuote = useRef(quote), liveLegal = useRef(legalReady), liveConsent = useRef(consent);
+  liveQuote.current = quote; liveLegal.current = legalReady; liveConsent.current = consent;
   const lock = useRef(null),
     generation = useRef(0),
     scopeKey = useRef(storageKey),
@@ -59,10 +64,12 @@ export default function PurchaseCheckout({
     return () => {
       generation.current++;
       popup.current?.close();
+      sdkClose.current?.(); sdkClose.current = null;
     };
   }, [storageKey]);
   function begin() {
-    const run = { generation: generation.current, key: storageKey, popup: null };
+    const run = { generation: generation.current, key: storageKey, popup: null,
+      presentation: checkoutPresentation(navigator, paymentMethod) };
     lock.current = run;
     setBusy(true); setError("");
     return run;
@@ -93,6 +100,7 @@ export default function PurchaseCheckout({
     const done = { ...result, storage_blocked: !cleared };
     pendingMemory.set(run.key, { completion: done });
     setCompletion(done); setOrder(null); run.popup?.close();
+    sdkClose.current?.(); sdkClose.current = null;
     if (current(run)) await refresh();
   }
   function blankPopup(run) {
@@ -109,7 +117,17 @@ export default function PurchaseCheckout({
     if (lock.current || order || unknown || !quote || !legalReady || !consent)
       return;
     const run = begin();
-    if (quote.payment_amount > 0 && !blankPopup(run)) { finish(run); return; }
+    if (quote.payment_amount > 0 && run.presentation === 'popup' && !blankPopup(run)) { finish(run); return; }
+    let sdk;
+    if (quote.payment_amount > 0 && run.presentation === 'frame') {
+      try { sdk = await loadSdk(); }
+      catch (e) { if (current(run)) setError(e.message); finish(run); return; }
+      if (!current(run)) return;
+      if (liveQuote.current !== quote || !liveLegal.current || !liveConsent.current) {
+        setError('SDK 로딩 중 견적 또는 구매 조건이 변경됐어요. 주문을 생성하지 않았어요.');
+        finish(run); return;
+      }
+    }
     try {
       sessionStorage.setItem(run.key, JSON.stringify({ unknown: true }));
       pendingMemory.set(run.key, { unknown: true });
@@ -188,8 +206,7 @@ export default function PurchaseCheckout({
         }
         if (
           !pricingMatchesQuote ||
-          !run.popup ||
-          run.popup.closed
+          (run.presentation === 'popup' && (!run.popup || run.popup.closed))
         ) {
           run.popup?.close();
           setError(
@@ -198,7 +215,17 @@ export default function PurchaseCheckout({
           return;
         }
         saveOrder({ ...next, checkout_started: true }, run.key);
-        run.popup.location.replace(url);
+        if (run.presentation === 'frame') {
+          const basePath = new URL(apiBaseUrl).pathname.replace(/\/$/, '');
+          const checkoutPath = new URL(url).pathname.slice(basePath.length);
+          const data = await api(`${checkoutPath}/sdk`, {});
+          if (!current(run)) return;
+          const checked = validateSdkData(data, next);
+          sdkClose.current = openSdkFrame(sdk, checked, {
+            onEvent: () => { if (current(run)) recoveryRef.current?.(); },
+            onClose: () => { sdkClose.current = null; if (current(run)) setError('결제창을 닫았어요. 주문은 유지했어요. 서버 주문 상태를 확인해 주세요.'); },
+          });
+        } else run.popup.location.replace(url);
       } else run.popup?.close();
     } catch (e) {
       run.popup?.close();
@@ -240,6 +267,7 @@ export default function PurchaseCheckout({
         if (!clearSaved(run)) return;
         setConsent(false); clearQuote(); setOrder(null); setClosed(result);
         popup.current?.close();
+        sdkClose.current?.(); sdkClose.current = null;
       } else if (result.recovery_action === "complete" && result.status === "done" &&
           result.checkout_url === null && validCompletion(result.completion, pending)) {
         await complete(result.completion, run);
@@ -254,6 +282,7 @@ export default function PurchaseCheckout({
         setError(`주문 상태 확인 오류: ${e.message} 저장된 주문을 유지했어요. 중복 구매하지 말고 관리자에게 확인해 주세요.`);
     } finally { finish(run); }
   }
+  recoveryRef.current = recover;
   async function confirm() {
     if (lock.current || !order) return;
     const pending = order;
@@ -416,6 +445,7 @@ export default function PurchaseCheckout({
   return (
     <section className="purchase-card">
       <h2>주문 확인</h2>
+      {paymentMethod === 'BANK' && <p>계좌이체 전용 상품은 결제수단 제한을 유지하기 위해 기존 새 결제창(팝업)으로 진행해요.</p>}
       {!legalReady && (
         <p role="alert">
           이용약관 또는 개인정보 처리방침을 불러오지 못했어요.

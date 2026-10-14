@@ -1,5 +1,7 @@
 // Real production UI with deterministic backend-contract I/O; no live payment.
 import { test, expect } from "@playwright/test";
+// Preserve legacy popup/point-only acceptance under explicit mobile UA.
+test.use({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148' });
 import { setup, submit, purchaseResponse } from "./final-L1-fixture.mjs";
 
 for (const actual of [40000, 50000]) {

@@ -224,6 +224,7 @@ export default function PurchaseCatalog({
           quote ? { ...payload, requested_point_amount: quote.point_amount } : payload
         }
         quote={quote}
+        paymentMethod={item?.kiwoom_pay_method || 'TOTAL'}
         mode={catalog?.purchase_mode}
         legalReady={legal.ready}
       />

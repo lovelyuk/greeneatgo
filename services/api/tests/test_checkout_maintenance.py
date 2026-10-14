@@ -18,11 +18,19 @@ PAYABLE_ROUTES = {
     ("POST", "/v1/vouchers/purchase", "purchase"),
     ("POST", "/v1/vouchers/purchase-subsidized", "purchase_subsidized"),
     ("GET", "/v1/payments/checkout/{checkout_token}", "checkout"),
+    ("POST", "/v1/payments/checkout/{checkout_token}/sdk", "checkout_sdk"),
 }
 BLOCKED_PATHS = [
     "/v1/vouchers/purchase", "/v1/vouchers/purchase-subsidized",
     "/v1/payments/checkout/offline-fixture",
+    "/v1/payments/checkout/offline-fixture/sdk",
 ]
+
+
+@pytest.fixture(autouse=True)
+def enabled_for_maintenance_tests(monkeypatch):
+    # Test the emergency switch without changing its production-disabled value.
+    monkeypatch.setattr(maintenance, "CHECKOUT_MAINTENANCE_ENABLED", True)
 
 
 @pytest.fixture(scope="module")
@@ -78,11 +86,11 @@ def test_actual_payable_route_inventory(real_app):
                    and n.args[0].value == "payment_orders" for n in ast.walk(function)):
                 creators.add(function.name)
     assert creators == {"purchase", "purchase_subsidized"}
-    actual = {(m, p, next(endpoint for endpoint in sorted(creators | {"checkout"},
+    actual = {(m, p, next(endpoint for endpoint in sorted(creators | {"checkout", "checkout_sdk"},
                                                          key=len, reverse=True)
                           if op.startswith(endpoint + "_")))
               for m, p, op in inventory
-              if any(op.startswith(endpoint + "_") for endpoint in creators | {"checkout"})}
+              if any(op.startswith(endpoint + "_") for endpoint in creators | {"checkout", "checkout_sdk"})}
     assert actual == PAYABLE_ROUTES
 
 

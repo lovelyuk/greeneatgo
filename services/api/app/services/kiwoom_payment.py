@@ -88,7 +88,7 @@ def _request_json(
         raise KiwoomPaymentError(502, "KIWOOMPAY_NETWORK_ERROR", "키움페이에 연결하지 못했어요") from exc
 
 
-def request_payment_hash(base_url: str, payload: KiwoomHashInput) -> str:
+def request_payment_hash(base_url: str, payload: KiwoomHashInput, *, strict_response: bool = False) -> str:
     if payload.amount <= 0:
         raise KiwoomPaymentError(400, "INVALID_AMOUNT", "결제 금액이 올바르지 않아요")
     response = _request_json(
@@ -101,6 +101,10 @@ def request_payment_hash(base_url: str, payload: KiwoomHashInput) -> str:
             "AMOUNT": str(payload.amount),
         },
     )
+    # The PC SDK must reject malformed provider JSON before string conversion.
+    # Default retains the existing mobile/native hash contract unchanged.
+    if strict_response and not isinstance(response.get("KIWOOM_ENC"), str):
+        raise KiwoomPaymentError(502, "KIWOOMPAY_INVALID_RESPONSE", "키움페이 응답 형식이 올바르지 않아요")
     if str(response.get("RESULTCODE")) != "0000" or not response.get("KIWOOM_ENC"):
         raise KiwoomPaymentError(
             502,

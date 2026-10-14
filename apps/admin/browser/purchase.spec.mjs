@@ -1,5 +1,7 @@
 // Deterministic mocked I/O ONLY. No real auth, merchant or Kiwoom calls.
 import { test, expect } from "@playwright/test";
+// Legacy popup contract tests explicitly exercise the preserved mobile path.
+test.use({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148' });
 import { writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from "node:path";

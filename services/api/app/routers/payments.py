@@ -8,7 +8,7 @@ from html import escape
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app.auth import bearer_token
 from app.config import get_settings
@@ -197,6 +197,102 @@ def checkout(checkout_token: str):
 <style>html,body{{margin:0;background:#fff}}form{{display:none}}</style></head>
 <body><form id="payment" method="post" action="{action}" accept-charset="EUC-KR">{hidden}</form>
 <script type="text/javascript" charset="EUC-KR">document.charset='EUC-KR';document.getElementById('payment').submit();</script></body></html>""")
+
+
+@router.post("/checkout/{checkout_token}/sdk")
+def checkout_sdk(checkout_token: str, token: str = Depends(bearer_token)):
+    """Issue one owner-bound PC TOTAL payload, never a BANK-to-TOTAL fallback."""
+    repo, settings = JoinRepository(), get_settings()
+    try:
+        _, profile = _customer(repo, token, allow_employee=True)
+        rows = repo.client.rest_get("payment_orders", {
+            "select": ORDER_SELECT, "checkout_token": f"eq.{checkout_token}",
+            "user_id": f"eq.{profile.id}", "status": "eq.ready", "limit": "1",
+        })
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요") from exc
+        raise _error(502, "SUPABASE_ERROR", "결제 주문을 불러오지 못했어요") from exc
+    if not rows:
+        raise _error(404, "ORDER_NOT_FOUND", "결제할 주문이 없거나 이미 처리됐어요")
+    order = rows[0]
+    pay_method = str(order.get("requested_payment_method") or "TOTAL")
+    if pay_method == "BANK":
+        raise _error(409, "SDK_PAYMENT_METHOD_UNSUPPORTED", "계좌이체 전용 주문은 기존 결제창을 이용해 주세요")
+    if pay_method != "TOTAL":
+        raise _error(409, "INVALID_PAYMENT_METHOD", "주문 결제수단 설정이 올바르지 않아요")
+
+    # Exact API origins only: no normalization, suffix matching, or DEV default.
+    sdk_mode = {
+        "https://api.kiwoompay.co.kr": "REAL",
+        "https://apitest.kiwoompay.co.kr": "DEV",
+    }.get(settings.kiwoompay_base_url)
+    cpid = settings.kiwoompay_cpid
+    if not sdk_mode or not isinstance(cpid, str) or len(cpid) != 8 or not cpid.isascii() or not cpid.isalnum():
+        raise _error(503, "KIWOOMPAY_SDK_NOT_CONFIGURED", "PC 결제창 설정이 올바르지 않아요")
+
+    def valid_text(value: object, limit: int) -> bool:
+        return (isinstance(value, str) and bool(value.strip()) and len(value) <= limit
+                and "|" not in value and all(ord(char) >= 32 and ord(char) != 127 for char in value))
+
+    try:
+        order = _enforce_subsidized_order_expiry(repo, order)
+        _require_order_tax_classified(order)
+        _ensure_voucher_order_available(repo, order)
+    except SupabaseHttpError as exc:
+        raise _error(502, "SUPABASE_ERROR", "결제 주문을 확인하지 못했어요") from exc
+    raw_amount = order.get("amount")
+    if (isinstance(raw_amount, bool) or not isinstance(raw_amount, (int, str))
+            or not 1 <= len(str(raw_amount)) <= 10
+            or not str(raw_amount).isascii() or not str(raw_amount).isdigit()
+            or not 0 < int(raw_amount) <= 9999999999):
+        raise _error(409, "INVALID_SDK_CHECKOUT", "결제 주문 정보가 올바르지 않아요")
+    amount = int(raw_amount)
+    # ORDERNO must be identical in hash and form; never truncate or sanitize it.
+    order_id = order.get("order_id")
+    product_name = _safe_text(order.get("product_name"), 50)
+    user_id = _safe_text(order.get("user_id"), 30)
+    if not valid_text(order_id, 50) or not valid_text(product_name, 50) or not valid_text(user_id, 30):
+        raise _error(409, "INVALID_SDK_CHECKOUT", "결제 주문 정보가 올바르지 않아요")
+    public_base = urlsplit(settings.public_api_base_url)
+    public_origin = f"{public_base.scheme}://{public_base.netloc}"
+    success_url = f"{public_origin}/p"
+    fields = {
+        "PAYMETHOD": "TOTAL", "TYPE": "P", "CPID": cpid,
+        "ORDERNO": order_id, "PRODUCTTYPE": "2", "AMOUNT": str(amount),
+        "PRODUCTNAME": product_name,
+        "PRODUCTCODE": _safe_text(order.get("product_id") or order.get("voucher_product_id") or "GE", 10),
+        "USERID": user_id, "RETURNURL": success_url, "HOMEURL": success_url,
+        "FAILURL": f"{public_origin}/f", "CLOSEURL": f"{public_origin}/c",
+        "APPURL": settings.kiwoompay_app_url, "DIRECTRESULTFLAG": "Y",
+    }
+    if (public_base.scheme not in {"http", "https"} or not public_base.netloc
+            or public_base.username or public_base.password
+            or any(not valid_text(fields[key], 100) for key in ("RETURNURL", "HOMEURL", "FAILURL", "CLOSEURL"))
+            or not isinstance(fields["APPURL"], str) or len(fields["APPURL"]) > 100
+            or (fields["APPURL"] and not valid_text(fields["APPURL"], 100))):
+        raise _error(503, "KIWOOMPAY_SDK_NOT_CONFIGURED", "PC 결제창 설정이 올바르지 않아요")
+    try:
+        # Same 0064 row-lock, committed single-entry boundary as native GET.
+        repo.client.rpc("admit_payment_checkout", {"p_order_id": order["id"]})
+    except SupabaseHttpError as exc:
+        raise _error(409, "ORDER_NOT_READY", "이미 처리되었거나 결제할 수 없는 주문이에요") from exc
+    try:
+        secure_hash = request_payment_hash(settings.kiwoompay_base_url, KiwoomHashInput(
+            cpid=cpid, order_id=order_id, amount=amount, payment_type="P", pay_method="TOTAL",
+        ), strict_response=True)
+    except KiwoomPaymentError as exc:
+        # Provider messages/codes can contain raw data; expose only a fixed error.
+        raise _error(502, "KIWOOMPAY_HASH_FAILED", "키움페이 결제 보안값을 발급하지 못했어요") from exc
+    if not valid_text(secure_hash, 1000) or any(char.isspace() for char in secure_hash):
+        raise _error(502, "KIWOOMPAY_INVALID_RESPONSE", "키움페이 응답 형식이 올바르지 않아요")
+    try:
+        repo.client.rpc("assert_payment_checkout_active", {"p_order_id": order["id"]})
+    except SupabaseHttpError as exc:
+        raise _error(409, "ORDER_NOT_READY", "이미 처리되었거나 결제할 수 없는 주문이에요") from exc
+    fields["KIWOOM_ENC"] = secure_hash
+    return JSONResponse({"ok": True, "data": {"sdk_mode": sdk_mode, "fields": fields}, "error": None},
+                        headers={"Cache-Control": "no-store"})
 
 
 def _decode_form(raw: bytes) -> dict[str, str]:

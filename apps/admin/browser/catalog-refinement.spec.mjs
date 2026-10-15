@@ -27,6 +27,37 @@ async function fixture(page, employee = false) {
   await page.getByRole('navigation', { name: '구매자 탭' }).getByRole('button', { name: '구매', exact: true }).click();
   return quotes;
 }
+test('selecting a product automatically prices once without a confirmation button or order', async ({ page }, testInfo) => {
+  const quotes = await fixture(page);
+  const writes = [];
+  page.on('request', r => { if (/\/purchase(?:-subsidized)?$|\/sdk|\/payments\//.test(r.url())) writes.push(r.url()); });
+  await page.getByRole('button', { name: `${product.name} 선택` }).click();
+  await expect(page.locator('.quote-total')).toHaveText('최종 결제 72,000원');
+  await expect(page.getByRole('button', { name: '견적 확인', exact: true })).toHaveCount(0);
+  expect(quotes).toEqual([{ product_id: product.id, requested_point_amount: 0 }]);
+  expect(writes).toEqual([]);
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`automatic-quote-${width}.png`), fullPage: true, animations: 'disabled' });
+  }
+});
+test('leaving purchase while price is pending discards hidden response and requires fresh pricing on return', async ({ page }) => {
+  await fixture(page);
+  const pending = [];
+  await page.route('**/api-fixture/vouchers/quote', route => pending.push(route));
+  await page.getByRole('button', { name: `${product.name} 선택` }).click();
+  await expect.poll(() => pending.length).toBe(1);
+  const nav = page.getByRole('navigation');
+  await nav.getByRole('button', { name: '홈', exact: true }).click();
+  await pending[0].fulfill({ json: { ok: true, data: { product_id: product.id, merchant_id: 'merchant-fixture', merchant_name: '테스트 식당', purchase_mode: 'voucher', gross_amount: 72000, point_amount: 0, coupon_discount_amount: 0, payment_amount: 72000 } } });
+  await nav.getByRole('button', { name: '구매', exact: true }).click();
+  await expect(page.locator('.purchase-quote')).toHaveCount(0);
+  await expect.poll(() => pending.length).toBe(2);
+  await page.getByRole('button', { name: '상품 다시 선택' }).click();
+  await pending[1].fulfill({ json: { ok: true, data: { product_id: product.id, merchant_id: 'merchant-fixture', merchant_name: '테스트 식당', purchase_mode: 'voucher', gross_amount: 72000, point_amount: 0, coupon_discount_amount: 0, payment_amount: 72000 } } });
+  await expect(page.locator('.purchase-quote')).toHaveCount(0);
+});
 test('native catalog ticket geometry and header count at every supported width', async ({ page }, testInfo) => {
   await fixture(page);
   const ticket = page.getByRole('button', { name: `${product.name} 선택` });
@@ -53,12 +84,12 @@ test('radio tickets preserve public and issued identities; refusal never silentl
   await expect(page.locator('.selection-coupon-ticket.issued')).toHaveCSS('height', '192px');
   await expect(page.locator('.selection-coupon-ticket.issued')).toContainText('5%');
   await expect(page.locator('.selection-coupon-ticket:not(.issued)')).toHaveCSS('height', '154px');
-  expect(quotes).toHaveLength(0);
+  await expect(page.locator('.quote-total')).toHaveText('최종 결제 72,000원');
+  expect(quotes).toHaveLength(1);
   await page.getByRole('radio', { name: '공개 할인', exact: true }).check();
   await expect(page.getByLabel('할인 쿠폰', { exact: true })).toHaveValue('public:public-fixture');
-  await page.getByRole('button', { name: '견적 확인' }).click();
   await expect(page.locator('.purchase-quote .quote-total')).toHaveText('최종 결제 71,000원');
-  expect(quotes).toEqual([{ product_id: product.id, requested_point_amount: 0, coupon_id: 'public-fixture' }]);
+  expect(quotes).toEqual([{ product_id: product.id, requested_point_amount: 0 }, { product_id: product.id, requested_point_amount: 0, coupon_id: 'public-fixture' }]);
   await expect(page.getByRole('button', { name: '구매하기', exact: true })).toBeDisabled();
   await page.getByLabel('구매 조건 확인').check();
   await expect(page.getByRole('button', { name: '구매하기', exact: true })).toBeEnabled();
@@ -71,21 +102,20 @@ test('radio tickets preserve public and issued identities; refusal never silentl
   await page.getByLabel('할인 쿠폰', { exact: true }).selectOption('issued:issued-fixture');
   await expect(page.getByRole('radio', { name: '보유 할인', exact: true })).toBeChecked();
   await expect(page.locator('.purchase-quote')).toHaveCount(0);
-  await page.getByRole('button', { name: '견적 확인' }).click();
   await expect(page.getByRole('alert')).toContainText('fixture coupon refusal');
-  expect(quotes).toHaveLength(2); expect(quotes[1].user_coupon_id).toBe('issued-fixture'); expect(quotes[1].coupon_id).toBeUndefined();
+  expect(quotes).toHaveLength(3); expect(quotes[2].user_coupon_id).toBe('issued-fixture'); expect(quotes[2].coupon_id).toBeUndefined();
   await expect(page.getByRole('radio', { name: '보유 할인', exact: true })).toBeChecked();
   await expect(page.getByRole('button', { name: '구매하기', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '상품 다시 선택' }).click();
   await expect(page.locator('.catalog-count')).toHaveText('1종');
 });
-test('employee point intent remains manual; server bounds authoritative and edits invalidate compact quote', async ({ page }) => {
+test('employee point intent automatically prices; server bounds authoritative and edits invalidate compact quote', async ({ page }) => {
   const quotes = await fixture(page, true);
   await page.getByRole('button', { name: `${product.name} 선택` }).click();
   await expect(page.getByRole('button', { name: '최대', exact: true })).toHaveCount(0);
-  await page.getByLabel('사용 포인트').fill('-1'); await page.getByRole('button', { name: '견적 확인' }).click();
+  await page.getByLabel('사용 포인트').fill('-1');
   await expect(page.getByRole('alert')).toContainText('0 이상의 정수'); expect(quotes).toHaveLength(0);
-  await page.getByLabel('사용 포인트').fill('5000'); await page.getByRole('button', { name: '견적 확인' }).click();
+  await page.getByLabel('사용 포인트').fill('5000');
   await expect(page.locator('.quote-total')).toHaveText('최종 결제 40,000원');
   expect(quotes[0].requested_point_amount).toBe(5000);
   await expect(page.locator('.purchase-quote')).toContainText('포인트 사용 2,000P');

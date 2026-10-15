@@ -1,4 +1,5 @@
 
+import { expect } from "@playwright/test";
 const id = "11111111-1111-4111-8111-111111111111";
 export function purchaseResponse(gross, requested, available = 50000, discount = 0) {
   // reserve_subsidized_order_points locks wallet and caps request to burden/balance.
@@ -42,7 +43,7 @@ export async function submit(page, points) {
   await page.getByLabel("사용 포인트").fill(String(points));
   if (await page.getByLabel("할인 쿠폰").locator('option[value="public:coupon-fixture"]').count())
     await page.getByLabel("할인 쿠폰").selectOption("public:coupon-fixture");
-  await page.getByRole("button", { name: "견적 확인" }).click();
+  await expect(page.locator('.purchase-quote')).toBeVisible();
   await page.getByLabel("구매 조건 확인").check();
   await page.getByRole("button", { name: "구매하기", exact: true }).click();
 }

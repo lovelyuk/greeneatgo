@@ -158,7 +158,7 @@ test('real router PG closure lifecycle retains audit and explicit purchase creat
   await context.route('**/api-fixture/payments/checkout/**', route => route.fulfill({ body: 'SYNTHETIC ONLY: provider entry deliberately not executed' }));
   await login(page);
   await page.getByRole('button', { name: 'Synthetic ticket 선택' }).click();
-  await page.getByRole('button', { name: '견적 확인', exact: true }).click();
+  await expect(page.locator('.purchase-quote')).toBeVisible();
   await expect(page.getByText('최종 결제', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '저장된 주문 상태 확인' }).click();
   await expect(page.getByRole('alert')).toContainText('관리자에게 거래 확인');
@@ -183,7 +183,7 @@ test('real router PG closure lifecycle retains audit and explicit purchase creat
   await page.reload();
   await page.getByRole('navigation').getByRole('button', { name: '구매', exact: true }).click();
   await page.getByRole('button', { name: 'Synthetic ticket 선택' }).click();
-  await page.getByRole('button', { name: '견적 확인', exact: true }).click();
+  await expect(page.locator('.purchase-quote')).toBeVisible();
   await expect(page.getByLabel('구매 조건 확인')).not.toBeChecked();
   await page.getByLabel('구매 조건 확인').check();
   await page.getByRole('button', { name: '구매하기', exact: true }).click();
@@ -656,7 +656,7 @@ async function quoteFixture(
 async function selectQuote(page) {
   await login(page);
   await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
-  await page.getByRole("button", { name: "견적 확인" }).click();
+  await expect(page.locator('.purchase-quote')).toBeVisible();
 }
 test("loaded empty purchaser catalog displays explicit empty state", async ({ page }) => {
   await fixture(page);
@@ -756,7 +756,7 @@ test("mixed employee issued-coupon purchase follows API form and remains pending
   await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
   await page.getByLabel("사용 포인트").fill("2000");
   await page.getByLabel("할인 쿠폰").selectOption("issued:issued-fixture");
-  await page.getByRole("button", { name: "견적 확인" }).click();
+  await expect(page.locator('.purchase-quote')).toBeVisible();
   await page.getByLabel("구매 조건 확인").check();
   await page.getByRole("button", { name: "구매하기", exact: true }).click();
   await expect.poll(() => checkoutEntered).toBe(1);
@@ -867,7 +867,8 @@ test("logout during quote response prevents stale quote and purchaser UI from re
       },
     });
   });
-  await selectQuote(page);
+  await login(page);
+  await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
   await started;
   await page.getByRole("navigation").getByRole("button", { name: "내정보", exact: true }).click();
   await page.getByRole("button", { name: "로그아웃", exact: true }).click();
@@ -911,7 +912,7 @@ test("negative employee points are rejected before quote API", async ({
   await login(page);
   await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
   await page.getByLabel("사용 포인트").fill("-1");
-  await page.getByRole("button", { name: "견적 확인" }).click();
+  await expect(page.locator('.purchase-quote')).toHaveCount(0);
   await expect(page.getByRole("alert")).toContainText("0 이상의 정수");
   expect(calls.some((c) => c.path === "/vouchers/quote")).toBe(false);
 });
@@ -1155,7 +1156,8 @@ test("malformed quote amount blocks purchase and never displays a payable quote"
   await publishedLegal(page);
   await catalogFixture(page);
   await quoteFixture(page, "voucher", -1);
-  await selectQuote(page);
+  await login(page);
+  await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
   await expect(page.getByRole("alert")).toContainText("견적 금액");
   await expect(
     page.getByRole("button", { name: "구매하기", exact: true }),
@@ -1296,7 +1298,10 @@ test("employee invalid checkout is blocked and only server release confirms canc
       });
     },
   );
-  await selectQuote(page);
+  await login(page);
+  await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
+  await page.getByLabel("사용 포인트").fill("2000");
+  await expect(page.locator(".quote-total")).toHaveText("최종 결제 40,000원");
   await page.getByLabel("구매 조건 확인").check();
   await page.getByRole("button", { name: "구매하기", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("결제창 URL");
@@ -1357,7 +1362,7 @@ test("point-only employee order completes from authoritative issuance without fo
   await login(page);
   await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
   await page.getByLabel("사용 포인트").fill("42000");
-  await page.getByRole("button", { name: "견적 확인" }).click();
+  await expect(page.locator('.purchase-quote')).toBeVisible();
   await page.getByLabel("구매 조건 확인").check();
   await page.getByRole("button", { name: "구매하기", exact: true }).click();
   expect(orderBody).toEqual({
@@ -1390,7 +1395,7 @@ for (const invalid of ["missing", "wrong-order", "wrong-count", "not-done"]) {
     await login(page);
     await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
     await page.getByLabel("사용 포인트").fill("42000");
-    await page.getByRole("button", { name: "견적 확인" }).click();
+    await expect(page.locator('.purchase-quote')).toBeVisible();
     await page.getByLabel("구매 조건 확인").check();
     await page.getByRole("button", { name: "구매하기", exact: true }).click();
     await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
@@ -1525,7 +1530,7 @@ test("eligible employee point quote preserves server split and invalidates quote
   await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
   await expect(page.getByText("회사 지원 합계 20,000원")).toBeVisible();
   await page.getByLabel("사용 포인트").fill("2000");
-  await page.getByRole("button", { name: "견적 확인" }).click();
+  await expect(page.locator('.purchase-quote')).toBeVisible();
   expect(quoted).toEqual({
     product_id: product.id,
     requested_point_amount: 2000,
@@ -1565,7 +1570,7 @@ test("ordinary package selection shows API terms and coupon quote without client
   await expect(page.locator('.purchase-detail').getByText("유료 10장 + 보너스 1장")).toBeVisible();
   await expect(page.getByText("할인율 10%")).toBeVisible();
   await page.getByLabel("할인 쿠폰").selectOption("public:coupon-fixture");
-  await page.getByRole("button", { name: "견적 확인" }).click();
+  await expect(page.locator('.purchase-quote')).toBeVisible();
   await expect(page.getByText("최종 결제 71,000원")).toBeVisible();
   expect(quoted).toEqual({
     product_id: product.id,

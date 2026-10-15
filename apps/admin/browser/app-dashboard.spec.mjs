@@ -130,7 +130,7 @@ test('synthetic fixture screenshots and zero overflow at all requested widths an
     }
     await page.getByRole('navigation').getByRole('button', { name: '구매', exact: true }).click();
     await page.getByRole('button', { name: '합성 10+1 식권 선택' }).click();
-    await page.getByRole('button', { name: '견적 확인', exact: true }).click();
+    await expect(page.locator('.purchase-quote')).toBeVisible();
     await expect(page.getByText('최종 결제 72,000원')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${width} checkout`).toBe(true);
     if (receipts) await page.screenshot({ path: join(receipts, `synthetic-checkout-${width}.png`), fullPage: true, animations: 'disabled' });
@@ -249,7 +249,7 @@ test('nonvoucher currency and voucher_id count use real history fields', async (
 test('quote and consent survive native tab switch without making order', async ({ page, context }) => {
   const { calls } = await setup(page, context); await login(page);
   const nav = page.getByRole('navigation'); await nav.getByRole('button', { name: '구매', exact: true }).click();
-  await page.getByRole('button', { name: '합성 10+1 식권 선택' }).click(); await page.getByRole('button', { name: '견적 확인', exact: true }).click();
+  await page.getByRole('button', { name: '합성 10+1 식권 선택' }).click(); await expect(page.locator('.purchase-quote')).toBeVisible();
   await expect(page.getByText('최종 결제 72,000원')).toBeVisible();
   await page.getByLabel('구매 조건 확인').check();
   await nav.getByRole('button', { name: '홈', exact: true }).click(); await nav.getByRole('button', { name: '구매', exact: true }).click();

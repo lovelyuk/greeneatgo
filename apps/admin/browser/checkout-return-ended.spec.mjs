@@ -25,7 +25,7 @@ async function fixture(page,context,{bank=false}={}){
  await page.goto('/shop');await page.getByLabel('이메일',{exact:true}).fill('fixture@example.invalid');await page.getByLabel('비밀번호',{exact:true}).fill('mocked-password-only');await page.getByRole('button',{name:'로그인',exact:true}).click();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();
  return {seed,calls,state};
 }
-async function buy(page){await page.getByRole('button',{name:'Synthetic ticket 선택'}).click();await page.getByRole('button',{name:'견적 확인',exact:true}).click();await expect(page.getByLabel('구매 조건 확인')).not.toBeChecked();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();}
+async function buy(page){await page.getByRole('button',{name:'Synthetic ticket 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();await expect(page.getByLabel('구매 조건 확인')).not.toBeChecked();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();}
 for(const reason of ['cancel','fail'])test(`official FRAME ${reason} actual identical TYPE FAIL -> real owned stop -> original catalog -> distinct fresh purchase`,async({page,context})=>{
  test.skip(!process.env.FINALIZE_FIXTURE_PYTHON,'requires disposable PG runner');const {calls,state}=await fixture(page,context);await buy(page);await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();
  const forms=await page.evaluate(()=>window.__forms);expect(forms[0].CLOSEURL).toBe(forms[0].FAILURL);expect(forms[0].FAILURL).toContain('TYPE=FAIL');

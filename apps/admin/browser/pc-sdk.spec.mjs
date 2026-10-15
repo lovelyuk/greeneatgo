@@ -170,6 +170,22 @@ test('quote change during slow preload invalidates purchase before order creatio
  await submit(page,1000);await request;await page.getByRole('button',{name:'상품 다시 선택'}).click();release();
  await page.waitForTimeout(250);expect(state.purchases).toBe(0);expect(state.hashes).toBe(0);
 });
+for (const returnBeforeLoad of [false, true]) test(`leaving purchase tab during SDK preload cannot create a hidden order; returnBeforeLoad=${returnBeforeLoad}`, async ({ page, context }) => {
+ const state = await sdkFixture(page, context);
+ let release, started;
+ const barrier = new Promise(r => release = r), request = new Promise(r => started = r);
+ await context.route(SDK_URL, async route => { state.scripts++; started(); await barrier; return route.fulfill({ contentType: 'application/javascript', body: source }); });
+ await submit(page, 1000); await request;
+ await page.getByRole('navigation').getByRole('button', { name: '홈', exact: true }).click();
+ if (returnBeforeLoad) await page.getByRole('navigation').getByRole('button', { name: '구매', exact: true }).click();
+ release();
+ await page.waitForFunction(() => Boolean(window.KiwoomPaySDK));
+ if (!returnBeforeLoad) await page.getByRole('navigation').getByRole('button', { name: '구매', exact: true }).click();
+ await expect(page.getByRole('alert')).toContainText('SDK 로딩 중 견적 또는 구매 조건이 변경');
+ expect(state.purchases).toBe(0); expect(state.hashes).toBe(0);
+ await expect(page.locator('.quote-total')).toHaveText('최종 결제 41,000원');
+ await expect(page.getByLabel('구매 조건 확인')).toBeChecked();
+});
 test('actual SDK creation throw after hash retains pending, no popup or retry',async({page,context})=>{
  const state=await sdkFixture(page,context);
  await page.addInitScript(()=>{HTMLFormElement.prototype.submit=function(){throw new Error('synthetic provider transport disabled');};});

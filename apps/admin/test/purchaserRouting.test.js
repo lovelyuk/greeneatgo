@@ -7,6 +7,7 @@ test('Vercel serves purchaser deep links without rewriting admin or static asset
   assert.ok(existsSync(configPath), 'Purchaser deep links need an explicit Vercel rewrite');
   const config = JSON.parse(readFileSync(configPath, 'utf8'));
   assert.deepEqual(config.rewrites, [
+    { source: '/payment-return', destination: '/payment-return/index.html' },
     { source: '/shop', destination: '/index.html' },
     { source: '/shop/', destination: '/index.html' },
   ]);

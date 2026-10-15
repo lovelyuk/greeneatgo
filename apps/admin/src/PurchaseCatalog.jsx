@@ -32,6 +32,7 @@ export default function PurchaseCatalog({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [points, setPoints] = useState("0");
+  const [returnNotice, setReturnNotice] = useState('');
   const generation = useRef(0),
     lock = useRef(false);
   useEffect(() => {
@@ -58,6 +59,7 @@ export default function PurchaseCatalog({
   }, [revision, eventsOnly]);
   function change(action) {
     generation.current++;
+    setReturnNotice('');
     setQuote(null);
     setError("");
     action();
@@ -136,6 +138,7 @@ export default function PurchaseCatalog({
       </header>
       {!item && catalog && eligible && <p className="catalog-count">{visibleProducts.length}종</p>}
       {error && <p role="alert">{error}</p>}
+      {returnNotice && <p role="status">{returnNotice}</p>}
       {!catalog ? (
         error ? <p>상품을 불러오지 못했어요. 새로고침으로 다시 확인해 주세요.</p> : <p role="status">상품 확인 중…</p>
       ) : !eligible ? (
@@ -215,6 +218,10 @@ export default function PurchaseCatalog({
       )}
       <div className="catalog-checkout">
       <PurchaseCheckout
+        onCheckoutEnded={kind => {
+          generation.current++; setQuote(null); setItem(null); setCoupon(''); setPoints('0'); setError('');
+          setReturnNotice(kind === 'mobile_cancel' ? '구매 진행을 취소했어요' : '구매 진행이 종료됐어요');
+        }}
         clearQuote={() => { generation.current++; setQuote(null); }}
         userId={me.user_id}
         refresh={refresh}

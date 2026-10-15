@@ -734,7 +734,7 @@ test("mixed employee issued-coupon purchase follows API form and remains pending
       });
     },
   );
-  await context.route(`**/api-fixture/payments/checkout/${token}`, (route) => {
+  await context.route(`**/api-fixture/payments/checkout/${token}?return_nonce=*`, (route) => {
     checkoutEntered++;
     return route.fulfill({
       contentType: "text/html",
@@ -1440,7 +1440,7 @@ test("ordinary order opens exact API server form, callback and popup close canno
       },
     });
   });
-  await context.route(`**/api-fixture/payments/checkout/${token}`, (route) =>
+  await context.route(`**/api-fixture/payments/checkout/${token}?return_nonce=*`, (route) =>
     route.fulfill({
       contentType: "text/html",
       body: '<h1>MOCK SERVER CHECKOUT FORM</h1><form method="post" action="https://apitest.kiwoompay.co.kr/pay/linkEnc" accept-charset="EUC-KR"><input name="ORDERNO" value="GE-V-fixture"><input name="AMOUNT" value="72000"></form><script>document.querySelector("form").submit()</script>',

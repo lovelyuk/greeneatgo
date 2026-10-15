@@ -23,7 +23,7 @@ async function sdkFixture(page,context,{failScript=false,mode='DEV',badFields={}
   if(state.scripts===0) { expect(context.pages()).toHaveLength(2); expect(context.pages()[1].url()).toBe('about:blank'); }
   if(delay)await new Promise(r=>setTimeout(r,delay));return route.fulfill({json:{ok:true,data:purchaseResponse(42000,priceMismatch?999:1000)}});
  });
- await page.route('**/api-fixture/payments/checkout/*/sdk',async route=>{
+ await page.route('**/api-fixture/payments/checkout/*/sdk?**',async route=>{
   state.hashes++; expect(route.request().method()).toBe('POST'); expect(route.request().headers().authorization).toBe('Bearer fixture-access');
   expect(await page.evaluate(key=>JSON.parse(sessionStorage.getItem(key)),pendingKey)).toMatchObject({order_id:fields.ORDERNO,amount:41000,checkout_started:true});
   return route.fulfill(hashFailure?{status:502,json:{detail:{message:'synthetic hash failure'}}}:{json:{ok:true,data:{sdk_mode:mode,fields:{...fields,...badFields}}}});
@@ -35,7 +35,7 @@ for (const mode of ['DEV', 'REAL']) test(`real router exported contract executes
  test.skip(!process.env.PC_SDK_ROUTER_RECEIPTS, 'requires synthetic real-router contract export');
  const contract = JSON.parse(readFileSync(`${process.env.PC_SDK_ROUTER_RECEIPTS}/router-sdk-contract-${mode}.json`, 'utf8'));
  const state = await sdkFixture(page, context, { mode });
- await page.route('**/api-fixture/payments/checkout/*/sdk', async route => {
+ await page.route('**/api-fixture/payments/checkout/*/sdk?**', async route => {
   state.hashes++;
   expect(route.request().headers().authorization).toBe('Bearer fixture-access');
   expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)), pendingKey)).toMatchObject({ order_id: contract.fields.ORDERNO, amount: Number(contract.fields.AMOUNT), checkout_started: true });
@@ -103,9 +103,9 @@ for(const mode of ['DEV','REAL']) test(`exact ${mode} origin/source/type guard; 
  expect(state.recoveries).toBe(0);await message(page,{origin});await expect.poll(()=>state.recoveries).toBe(1);
  await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();expect(state.confirm).toBe(0);expect(state.purchases).toBe(1);expect(state.hashes).toBe(1);expect(state.errors).toEqual([]);
 });
-test('valid FAIL cannot cancel or clear pending, only server read',async({page,context})=>{
+test('trusted FAIL with unavailable local-stop receipt retains pending, never invents closure',async({page,context})=>{
  const state=await sdkFixture(page,context);await submit(page,1000);await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();
- await message(page,{data:{TYPE:'FAIL',RESULTCODE:'9999'}});await expect.poll(()=>state.recoveries).toBe(1);
+ await message(page,{data:{TYPE:'FAIL'}});await expect.poll(()=>state.recoveries).toBe(1);
  await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();expect(await page.evaluate(key=>!!sessionStorage.getItem(key),pendingKey)).toBe(true);
 });
 test('close control and focus cycle use official close, retain pending without cancellation',async({page,context})=>{
@@ -120,7 +120,7 @@ for(const phase of ['script','hash','frame','callback']) test(`logout fences lat
  const state=await sdkFixture(page,context);let release,started;
  const barrier=new Promise(r=>release=r), request=new Promise(r=>started=r);
  if(phase==='script')await context.route(SDK_URL,async route=>{started();await barrier;await route.fulfill({contentType:'application/javascript',body:source});});
- if(phase==='hash')await page.route('**/api-fixture/payments/checkout/*/sdk',async route=>{state.hashes++;started();await barrier;await route.fulfill({json:{ok:true,data:{sdk_mode:'DEV',fields}}});});
+ if(phase==='hash')await page.route('**/api-fixture/payments/checkout/*/sdk?**',async route=>{state.hashes++;started();await barrier;await route.fulfill({json:{ok:true,data:{sdk_mode:'DEV',fields}}});});
  await submit(page,1000);
  if(['script','hash'].includes(phase))await request;else await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();
  await page.evaluate(phase=>{

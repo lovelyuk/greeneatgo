@@ -18,6 +18,7 @@ export default function PurchaseCheckout({
   refresh,
   userId,
   clearQuote,
+  onCheckoutEnded,
   paymentMethod = 'TOTAL',
 }) {
   const [closed, setClosed] = useState(null);
@@ -36,6 +37,7 @@ export default function PurchaseCheckout({
   const [unknown, setUnknown] = useState(false);
   const storageKey = `greeneat-purchase-pending:${userId}`;
   const sdkClose = useRef(null), recoveryRef = useRef(null);
+  const bridgeChannel = useRef(null), returnedIntent = useRef(null);
   const liveQuote = useRef(quote), liveLegal = useRef(legalReady), liveConsent = useRef(consent);
   liveQuote.current = quote; liveLegal.current = legalReady; liveConsent.current = consent;
   const lock = useRef(null),
@@ -51,6 +53,7 @@ export default function PurchaseCheckout({
     generation.current++;
     lock.current = null;
     queuedRead.current = false;
+    returnedIntent.current = null;
     setCompletion(null); setClosed(null); setAbandoned(null); setCanceled(false); setOrder(null);
     setCheckoutOpen(false); setStopEligible(false); setStopWarning(false); setStopConsent(false);
     setUnknown(false); setBusy(false); setConsent(false); setError("");
@@ -62,7 +65,7 @@ export default function PurchaseCheckout({
         } else {
           // A stored receipt is only a hint. Reauthenticate and reread the exact
           // order before offering a fresh purchase, including after page reload.
-          setOrder(saved.pending); queuedRead.current = true;
+          setOrder(saved.pending); returnedIntent.current = saved.pending.return_intent || null; queuedRead.current = true;
         }
       } else if (saved?.completion) {
         setCompletion(saved.completion);
@@ -72,13 +75,19 @@ export default function PurchaseCheckout({
         saved && validOrderId(saved.order_id) &&
         Number.isSafeInteger(saved.amount) && saved.amount > 0 &&
         ["voucher", "subsidized"].includes(saved.mode)
-      ) setOrder(saved);
+      ) {
+        setOrder(saved);
+        if (['sdk_frame_fail','mobile_fail','mobile_cancel'].includes(saved.return_intent)) {
+          returnedIntent.current = saved.return_intent; queuedRead.current = true;
+        }
+      }
       else if (saved) setUnknown(true);
     } catch {
       setUnknown(true);
     }
     return () => {
       generation.current++;
+      bridgeChannel.current?.close(); bridgeChannel.current = null;
       popup.current?.close();
       sdkClose.current?.(); sdkClose.current = null;
     };
@@ -99,15 +108,25 @@ export default function PurchaseCheckout({
       if (queuedRead.current) { queuedRead.current = false; setReturnSignal(value => value + 1); }
     }
   }
-  // Close/FAIL/return signals authorize one read, never cancellation or confirm.
-  function checkoutReturned(run) {
+  // Unsafe close authorizes only a read. A matched normal FAIL/CLOSE also
+  // carries owner local-stop intent, never provider cancellation or approval.
+  function checkoutReturned(run, intent = null, pending = null) {
     if (!current(run)) return;
+    if (intent) {
+      if (!pending || returnedIntent.current || !['sdk_frame_fail','mobile_fail','mobile_cancel'].includes(intent)) return;
+      returnedIntent.current = intent;
+      try { saveOrder({ ...pending, checkout_started: true, return_intent: intent }, run.key); }
+      catch (e) { setError(`복귀 안내 저장 오류: ${e.message} 저장된 주문을 유지했어요. 상태 확인으로 다시 시도해 주세요.`); return; }
+    }
     setCheckoutOpen(false); setStopEligible(false);
     queuedRead.current = true;
     if (!lock.current) { queuedRead.current = false; setReturnSignal(value => value + 1); }
   }
   useEffect(() => {
     if (!order) return;
+    if (order.presentation === 'popup' && /^[0-9a-f]{32}$/.test(order.return_nonce || '') && !order.return_intent && !bridgeChannel.current) {
+      connectReturnBridge({ generation: generation.current, key: storageKey }, order);
+    }
     if (queuedRead.current && !lock.current) {
       queuedRead.current = false; setReturnSignal(value => value + 1);
     }
@@ -159,9 +178,25 @@ export default function PurchaseCheckout({
     run.popup.opener = null;
     return true;
   }
+  function connectReturnBridge(run, pending) {
+    bridgeChannel.current?.close();
+    const channel = new BroadcastChannel(`greeneat-checkout-return:${pending.return_nonce}`);
+    bridgeChannel.current = channel;
+    let consumed = false;
+    channel.onmessage = event => {
+      const d = event.data;
+      if (consumed || !current(run) || event.origin !== window.location.origin ||
+          !d || Object.keys(d).sort().join(',') !== 'kind,nonce,type' ||
+          d.type !== 'greeneat_checkout_return' || d.nonce !== pending.return_nonce ||
+          !['cancel','fail','success'].includes(d.kind)) return;
+      consumed = true; channel.close();
+      checkoutReturned(run, d.kind === 'cancel' ? 'mobile_cancel' : d.kind === 'fail' ? 'mobile_fail' : null, pending);
+    };
+  }
   async function purchase() {
     if (lock.current || order || unknown || !quote || !legalReady || !consent)
       return;
+    generation.current++; returnedIntent.current = null;
     const run = begin();
     if (quote.payment_amount > 0 && run.presentation === 'popup' && !blankPopup(run)) { finish(run); return; }
     let sdk;
@@ -191,6 +226,8 @@ export default function PurchaseCheckout({
       )
         throw new Error("주문 응답을 확인하지 못했어요.");
       const next = {
+        presentation: run.presentation,
+        return_nonce: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2,'0')).join(''),
         order_id: result.order_id,
         amount: result.amount,
         mode,
@@ -265,16 +302,20 @@ export default function PurchaseCheckout({
         if (run.presentation === 'frame') {
           const basePath = new URL(apiBaseUrl).pathname.replace(/\/$/, '');
           const checkoutPath = new URL(url).pathname.slice(basePath.length);
-          const data = await api(`${checkoutPath}/sdk`, {});
+          const data = await api(`${checkoutPath}/sdk?return_nonce=${next.return_nonce}`, {});
           if (!current(run)) return;
           const checked = validateSdkData(data, next);
           sdkClose.current = openSdkFrame(sdk, checked, {
-            // Official SDK close is delivered for SUCCESS/FAIL too. One close
-            // signal covers both, avoiding two simultaneous recovery requests.
-            onEvent: () => {},
+            // The adapter emits one guarded semantic event and suppresses the
+            // SDK's accompanying close; ordinary force-close stays uncertain.
+            onEvent: event => checkoutReturned(run, event.TYPE === 'FAIL' ? 'sdk_frame_fail' : null, next),
             onClose: () => { sdkClose.current = null; checkoutReturned(run); },
           });
-        } else run.popup.location.replace(url);
+        } else {
+          connectReturnBridge(run, next);
+          const correlated = new URL(url); correlated.searchParams.set('return_nonce', next.return_nonce);
+          run.popup.location.replace(correlated.href);
+        }
       } else run.popup?.close();
     } catch (e) {
       run.popup?.close();
@@ -313,6 +354,15 @@ export default function PurchaseCheckout({
     // Write the tombstone before changing memory/UI; storage errors fail closed.
     sessionStorage.setItem(run.key, JSON.stringify(saved));
     pendingMemory.set(run.key, saved);
+    const intent = returnedIntent.current || pending.return_intent;
+    if (['sdk_frame_fail','mobile_fail','mobile_cancel'].includes(intent)) {
+      sessionStorage.removeItem(run.key); pendingMemory.delete(run.key);
+      returnedIntent.current = null; bridgeChannel.current?.close(); bridgeChannel.current = null;
+      setConsent(false); setOrder(null); setAbandoned(null); setError(''); setCheckoutOpen(false);
+      queuedRead.current = false; popup.current?.close(); popup.current = null;
+      sdkClose.current?.(); sdkClose.current = null;
+      onCheckoutEnded?.(intent); clearQuote(); return;
+    }
     setConsent(false); clearQuote(); setOrder(null); setAbandoned(result);
     setCheckoutOpen(false); setStopWarning(false); setStopConsent(false); setStopEligible(false);
     popup.current?.close(); popup.current = null;
@@ -345,6 +395,16 @@ export default function PurchaseCheckout({
         await complete(result.completion, run);
       } else if (result.recovery_action === "reconcile" && result.status !== "done" &&
           result.checkout_url === null && !result.completion) {
+        const intent = returnedIntent.current || pending.return_intent;
+        if (result.status === 'ready' && !result.local_abandonment && ['sdk_frame_fail','mobile_fail','mobile_cancel'].includes(intent)) {
+          assertMatchingSaved(pending, run);
+          const stopped = await api(`/payments/orders/${encodeURIComponent(pending.order_id)}/abandon`, {
+            amount: pending.amount,
+            ...(intent === 'mobile_cancel' ? { explicit_checkout_cancel_intent: true } : { checkout_return_ended: intent }),
+          }, { requestTimeoutMs: 10000 });
+          if (!current(run)) return;
+          retireLocal(stopped, pending, run); return;
+        }
         setStopEligible(result.status === 'ready' && !result.local_abandonment);
         setError(result.local_abandonment
           ? '중단한 주문에 후속 승인 또는 불일치가 있어요. 실제 청구를 확인해야 하며 자동 식권 발급·환불은 하지 않아요. 내역에서 주문 상태를 확인해 주세요.'
@@ -576,6 +636,7 @@ export default function PurchaseCheckout({
       <p>
         선택한 상품 수량·가격과 기존 이용약관/개인정보 처리방침을 확인했습니다.
       </p>
+      <p>결제창에서 취소·실패로 정상 복귀하면 서버 확인 후 서비스 내 구매 진행을 중단하고 상품 목록으로 돌아가요. PG 취소·환불 확정은 아니며, 후속 청구는 내역에 재확인 대상으로 보존해요. 새 구매는 새 견적과 동의로 직접 시작해요.</p>
       <button disabled={busy || !legalReady || !consent} onClick={purchase}>
         구매하기
       </button>

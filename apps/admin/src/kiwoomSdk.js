@@ -32,11 +32,12 @@ export function validateSdkData(data, pending) {
     throw new Error('서버 SDK 결제 정보를 확인하지 못했어요. 같은 주문의 결제창을 다시 열지 마세요.');
   return { sdk_mode: data.sdk_mode, fields: { ...f } };
 }
-export function validSdkMessage(event, mode, source) {
+export function validSdkMessage(event, mode, source, orderId = null) {
   const origin = mode === 'REAL' ? 'https://ssl-v2.kiwoompay.co.kr' : mode === 'DEV' ? 'https://ssltest-v2.kiwoompay.co.kr' : null;
   const d = event.data;
   return !!origin && !!source && event.origin === origin && event.source === source &&
     !!d && typeof d === 'object' && !Array.isArray(d) && ['SUCCESS','FAIL'].includes(d.TYPE) &&
+    (d.ORDERNO === undefined || d.ORDERNO === orderId) &&
     (d.RESULTCODE === undefined || (typeof d.RESULTCODE === 'string' && /^\d{4}$/.test(d.RESULTCODE))) &&
     !(d.TYPE === 'FAIL' && d.RESULTCODE === '0000') && !(d.TYPE === 'SUCCESS' && d.RESULTCODE !== undefined && d.RESULTCODE !== '0000');
 }
@@ -56,7 +57,7 @@ export function openSdkFrame(sdk, data, { onEvent, onClose }, win = window, doc 
     for (const [element, wasInert] of background) element.inert = wasInert;
     if (previousFocus?.isConnected && previousFocus !== doc.body) previousFocus.focus?.();
     else doc.querySelector('.purchase-card button')?.focus();
-    if (notify) onClose();
+    if (notify && !acceptedEvent) onClose();
   };
   const close = () => { acceptedEvent = false; originalClose.call(sdk); cleanup(); };
   const focus = e => { if (!closed && !dimmer?.contains(e.target)) sdk.o_iframeCancel?.focus(); };
@@ -68,7 +69,9 @@ export function openSdkFrame(sdk, data, { onEvent, onClose }, win = window, doc 
       e.preventDefault(); (doc.activeElement === frame ? sdk.o_iframeCancel : frame)?.focus();
     }
   };
-  const callback = () => { if (acceptedEvent) { acceptedEvent = false; onEvent(); } };
+  // The official callback is delayed until after f_closeFrame. Emit only at
+  // the strict guard, never from an unfenced delayed callback.
+  const callback = () => {};
   sdk.f_setInit(data.sdk_mode, 'FRAME');
   sdk.f_setFrameSize(900, 550);
   try {
@@ -79,8 +82,9 @@ export function openSdkFrame(sdk, data, { onEvent, onClose }, win = window, doc 
     // and this replacement. Only the SDK listener is removed, never app listeners.
     win.removeEventListener('message', originalHandler);
     guarded = event => {
-      if (closed || !validSdkMessage(event, data.sdk_mode, frame.contentWindow)) return;
+      if (closed || !validSdkMessage(event, data.sdk_mode, frame.contentWindow, data.fields.ORDERNO)) return;
       acceptedEvent = true;
+      onEvent(event.data);
       originalHandler.call(win, event);
     };
     sdk.f_messageHandler = guarded;

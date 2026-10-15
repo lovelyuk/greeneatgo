@@ -5,10 +5,11 @@ import json
 import logging
 import time
 from html import escape
+from typing import Annotated, Literal
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 from app.services.local_abandonment import LOCAL_SELECT, local_recovery
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
@@ -134,9 +135,36 @@ def _safe_text(value: object, limit: int) -> str:
 
 
 
+def _checkout_return_urls(settings, return_nonce: str | None) -> tuple[str, str, str]:
+    """Correlation only: configured merchant origin, no token or financial data."""
+    if return_nonce is None:
+        base = urlsplit(settings.public_api_base_url)
+        origin = f"{base.scheme}://{base.netloc}"
+        return f"{origin}/p", f"{origin}/f", f"{origin}/c"
+    try:
+        base = urlsplit(settings.admin_app_url)
+        if (base.scheme not in {'https', 'http'} or not base.hostname
+                or base.username is not None or base.password is not None
+                or base.query or base.fragment or base.path not in {'', '/'}
+                or any(ord(c) < 33 or ord(c) > 126 for c in settings.admin_app_url)
+                or '\\' in settings.admin_app_url):
+            raise ValueError('invalid merchant origin')
+        # Access port to reject malformed configured ports before admission.
+        base.port
+        origin = f"{base.scheme}://{base.netloc}"
+        urls = tuple(f"{origin}/payment-return#{kind}.{return_nonce}"
+                     for kind in ('success', 'fail', 'cancel'))
+        if any(len(url) > 100 for url in urls):
+            raise ValueError('provider return URL too long')
+        return urls[0], urls[1], urls[2]
+    except (ValueError, AttributeError):
+        raise _error(503, 'CHECKOUT_RETURN_NOT_CONFIGURED', '결제창 복귀 설정이 올바르지 않아요') from None
+
+
 @router.get("/checkout/{checkout_token}", response_class=HTMLResponse)
-def checkout(checkout_token: str):
+def checkout(checkout_token: str, return_nonce: Annotated[str | None, Query(pattern=r'^[0-9a-f]{32}$', min_length=32, max_length=32)] = None):
     repo, settings = JoinRepository(), get_settings()
+    success_url, fail_url, close_url = _checkout_return_urls(settings, return_nonce)
     if not settings.kiwoompay_cpid:
         raise _error(503, "KIWOOMPAY_NOT_CONFIGURED", "키움페이 가맹점 ID가 설정되지 않았어요")
     try:
@@ -174,11 +202,6 @@ def checkout(checkout_token: str):
         raise _error(409, 'ORDER_NOT_READY', '이미 처리되었거나 결제할 수 없는 주문이에요') from exc
     order_id = _safe_text(order["order_id"], 50)
     amount = str(int(order["amount"]))
-    public_base = urlsplit(settings.public_api_base_url)
-    public_origin = f"{public_base.scheme}://{public_base.netloc}"
-    success_url = f"{public_origin}/p"
-    fail_url = f"{public_origin}/f"
-    close_url = f"{public_origin}/c"
     fields = {
         "PAYMETHOD": pay_method, "TYPE": "W", "CPID": settings.kiwoompay_cpid,
         "ORDERNO": order_id, "PRODUCTTYPE": "2", "AMOUNT": amount,
@@ -202,9 +225,11 @@ def checkout(checkout_token: str):
 
 
 @router.post("/checkout/{checkout_token}/sdk")
-def checkout_sdk(checkout_token: str, token: str = Depends(bearer_token)):
+def checkout_sdk(checkout_token: str, token: str = Depends(bearer_token),
+                 return_nonce: Annotated[str | None, Query(pattern=r'^[0-9a-f]{32}$', min_length=32, max_length=32)] = None):
     """Issue one owner-bound PC TOTAL payload, never a BANK-to-TOTAL fallback."""
     repo, settings = JoinRepository(), get_settings()
+    success_url, fail_url, close_url = _checkout_return_urls(settings, return_nonce)
     try:
         _, profile = _customer(repo, token, allow_employee=True)
         rows = repo.client.rest_get("payment_orders", {
@@ -257,15 +282,13 @@ def checkout_sdk(checkout_token: str, token: str = Depends(bearer_token)):
     if not valid_text(order_id, 50) or not valid_text(product_name, 50) or not valid_text(user_id, 30):
         raise _error(409, "INVALID_SDK_CHECKOUT", "결제 주문 정보가 올바르지 않아요")
     public_base = urlsplit(settings.public_api_base_url)
-    public_origin = f"{public_base.scheme}://{public_base.netloc}"
-    success_url = f"{public_origin}/p"
     fields = {
         "PAYMETHOD": "TOTAL", "TYPE": "P", "CPID": cpid,
         "ORDERNO": order_id, "PRODUCTTYPE": "2", "AMOUNT": str(amount),
         "PRODUCTNAME": product_name,
         "PRODUCTCODE": _safe_text(order.get("product_id") or order.get("voucher_product_id") or "GE", 10),
         "USERID": user_id, "RETURNURL": success_url, "HOMEURL": success_url,
-        "FAILURL": f"{public_origin}/f", "CLOSEURL": f"{public_origin}/c",
+        "FAILURL": fail_url, "CLOSEURL": close_url,
         "APPURL": settings.kiwoompay_app_url, "DIRECTRESULTFLAG": "Y",
     }
     if (public_base.scheme not in {"http", "https"} or not public_base.netloc
@@ -487,14 +510,21 @@ async def notification_post(request: Request):
 class LocalAbandonmentRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     amount: int = Field(gt=0, strict=True)
-    acknowledge_provider_uncertainty: StrictBool
+    acknowledge_provider_uncertainty: StrictBool | None = None
+    explicit_checkout_cancel_intent: StrictBool | None = None
+    checkout_return_ended: Literal['sdk_frame_fail', 'mobile_fail'] | None = None
 
-    @field_validator('acknowledge_provider_uncertainty')
-    @classmethod
-    def explicit_consent(cls, value):
-        if value is not True:
-            raise ValueError('Explicit provider uncertainty acknowledgement required')
-        return value
+    @model_validator(mode='after')
+    def explicit_local_authorization(self):
+        # Do not silently assert the old warning checkbox on the cancel path.
+        supplied = self.model_fields_set
+        if supplied == {'amount', 'acknowledge_provider_uncertainty'} and self.acknowledge_provider_uncertainty is True:
+            return self
+        if supplied == {'amount', 'explicit_checkout_cancel_intent'} and self.explicit_checkout_cancel_intent is True:
+            return self
+        if supplied == {'amount', 'checkout_return_ended'} and self.checkout_return_ended is not None:
+            return self
+        raise ValueError('Exactly one explicit local-stop authorization required')
 
 
 @router.post('/orders/{order_id}/abandon')
@@ -507,10 +537,19 @@ def abandon_order(
     repo = JoinRepository()
     try:
         _, profile = _customer(repo, token, allow_employee=True)
-        repo.client.rpc('abandon_owned_payment_order', {
+        args = {
             'p_order_id': order_id, 'p_user_id': str(profile.id), 'p_amount': payload.amount,
             'p_acknowledge_provider_uncertainty': payload.acknowledge_provider_uncertainty,
-        })
+        }
+        if payload.checkout_return_ended is not None:
+            args['p_explicit_checkout_cancel_intent'] = False
+            args['p_checkout_return_ended'] = payload.checkout_return_ended
+            repo.client.rpc('abandon_owned_payment_order_intent', args)
+        elif payload.explicit_checkout_cancel_intent is True:
+            args['p_explicit_checkout_cancel_intent'] = True
+            repo.client.rpc('abandon_owned_payment_order_intent', args)
+        else:
+            repo.client.rpc('abandon_owned_payment_order', args)
         # Read back the exact owner/order/amount; do not invent a terminal DTO
         # from the request or assume write success means durable local receipt.
         result = recovery(order_id=order_id, amount=payload.amount, token=token)

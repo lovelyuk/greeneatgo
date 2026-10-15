@@ -45,7 +45,7 @@ export function openSdkFrame(sdk, data, { onEvent, onClose }, win = window, doc 
   let guarded, originalHandler, frame, dimmer, closed = false, acceptedEvent = false;
   const background = [];
   const originalClose = sdk.f_closeFrame;
-  const cleanup = () => {
+  const cleanup = (notify = true) => {
     if (closed) return;
     closed = true;
     win.removeEventListener('message', guarded);
@@ -56,7 +56,7 @@ export function openSdkFrame(sdk, data, { onEvent, onClose }, win = window, doc 
     for (const [element, wasInert] of background) element.inert = wasInert;
     if (previousFocus?.isConnected && previousFocus !== doc.body) previousFocus.focus?.();
     else doc.querySelector('.purchase-card button')?.focus();
-    onClose();
+    if (notify) onClose();
   };
   const close = () => { acceptedEvent = false; originalClose.call(sdk); cleanup(); };
   const focus = e => { if (!closed && !dimmer?.contains(e.target)) sdk.o_iframeCancel?.focus(); };
@@ -102,6 +102,6 @@ export function openSdkFrame(sdk, data, { onEvent, onClose }, win = window, doc 
     doc.addEventListener('keydown', keyboard, true); doc.addEventListener('focusin', focus, true); button.focus();
     return close;
   } catch (e) {
-    originalClose.call(sdk); cleanup(); throw e;
+    originalClose.call(sdk); cleanup(false); throw e;
   }
 }

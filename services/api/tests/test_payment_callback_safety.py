@@ -104,7 +104,7 @@ def test_post_short_success_is_neutral_and_cannot_complete_payment():
 
     assert post_response.status_code == 200
     assert post_response.text == get_response.text
-    assert "결제 승인 확인 중" in post_response.text
+    assert "PG 승인·취소·환불 확정이 아닙니다" in post_response.text
     repo_class.assert_not_called()
     present_completion.assert_not_called()
     decode_form.assert_not_called()

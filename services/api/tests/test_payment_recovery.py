@@ -173,49 +173,48 @@ def test_ambiguous_states_never_clear_pending_or_expose_checkout(harness, status
 
 
 @pytest.mark.parametrize("status", ["ready", "done"])
-def test_tax_guard_preserved(harness, status):
+def test_done_tax_guard_preserved_but_ready_is_nonpayable_read(harness, status):
     client, repo, _, _ = harness
     repo.client.rest_get.return_value = [order(status=status, tax_type="unclassified")]
-    assert_error(recover(client), 409, "TAX_TYPE_UNCLASSIFIED")
+    if status == 'done':
+        assert_error(recover(client), 409, 'TAX_TYPE_UNCLASSIFIED')
+    else:
+        assert recover(client).json()['data']['recovery_action'] == 'reconcile'
+        repo.client.rpc.assert_not_called()
 
 
 @pytest.mark.parametrize("pay_type", ["voucher", "subsidized"])
-def test_unavailable_product_cannot_resume(harness, pay_type):
+def test_unavailable_product_remains_readable_but_cannot_resume(harness, pay_type):
     client, repo, _, _ = harness
     row = order(pay_type=pay_type, voucher_product_id="fixture-product", voucher_count=2)
-    repo.client.rest_get.side_effect = [[row], [row], []] if pay_type == "subsidized" else [[row], []]
-    assert_error(recover(client), 409, "VOUCHER_PRODUCT_NOT_EXPOSED")
+    repo.client.rest_get.return_value = [row]
+    data = recover(client).json()['data']
+    assert data['status'] == 'ready' and data['resumable'] is False and data['checkout_url'] is None
+    assert repo.client.rest_get.call_count == 1
+    repo.client.rpc.assert_not_called()
 
 
 @pytest.mark.parametrize("started", [None, "2026-01-01T00:00:00Z"])
-def test_subsidized_ready_uses_db_expiry_and_does_not_mark_or_cancel(harness, started):
+def test_subsidized_ready_status_does_not_expire_release_or_mark(harness, started):
     client, repo, _, _ = harness
-    row = order(pay_type="subsidized", checkout_started_at=started, voucher_count=1, paid_voucher_count=1, bonus_voucher_count=0)
-    repo.client.rest_get.side_effect = [[row], [row]]
+    repo.client.rest_get.return_value = [order(pay_type="subsidized", checkout_started_at=started)]
     response = recover(client)
     assert response.status_code == 200
-    assert response.json()["data"]["recovery_action"] == "reconcile"
-    repo.client.rpc.assert_called_once_with("expire_stale_subsidized_orders", {"p_user_id": USER_ID})
+    assert response.json()['data']['recovery_action'] == 'reconcile'
+    repo.client.rpc.assert_not_called()
+    assert repo.client.rest_get.call_count == 1
 
 
-def test_expired_subsidized_order_keeps_existing_error_guard(harness):
+@pytest.mark.parametrize('changes',[{'requested_payment_method':'INVALID'}, {'created_at':'2020-01-01T00:00:00Z'}, {'checkout_token':None}])
+def test_nonpayable_status_read_does_not_admit_or_expire_an_order(harness,changes):
     client, repo, _, _ = harness
-    repo.client.rest_get.side_effect = [[order(pay_type="subsidized")], [order(pay_type="subsidized", status="canceled")]]
-    assert_error(recover(client), 409, "ORDER_EXPIRED")
-
-
-@pytest.mark.parametrize("refreshed", [[], [order(status="done", pay_type="subsidized")]])
-def test_expiry_refresh_cannot_return_stale_resume_url(harness, refreshed):
-    client, repo, _, _ = harness
-    repo.client.rest_get.side_effect = [[order(pay_type="subsidized")], refreshed]
-    expected = (409, "ORDER_NOT_READY") if refreshed else (404, "ORDER_NOT_FOUND")
-    assert_error(recover(client), *expected)
-
-
-def test_ready_invalid_method_is_blocked(harness):
-    client, repo, _, _ = harness
-    repo.client.rest_get.return_value = [order(requested_payment_method="INVALID")]
-    assert_error(recover(client), 409, "INVALID_PAYMENT_METHOD")
+    repo.client.rest_get.return_value = [order(pay_type='subsidized',**changes)]
+    response = recover(client)
+    assert response.status_code == 200
+    assert response.json()['data']['recovery_action'] == 'reconcile'
+    assert response.json()['data']['checkout_url'] is None
+    repo.client.rpc.assert_not_called()
+    assert repo.client.rest_get.call_count == 1
 
 
 def test_missing_checkout_token_requires_reconciliation(harness):
@@ -227,7 +226,7 @@ def test_missing_checkout_token_requires_reconciliation(harness):
     assert response.json()["data"]["checkout_url"] is None
 
 
-@pytest.mark.parametrize("stage", ["auth", "profile", "order", "expiry", "refresh", "availability"])
+@pytest.mark.parametrize("stage", ["auth", "profile", "order", "closure", "local_receipt", "discrepancy"])
 def test_database_failures_are_bounded_and_do_not_leak(harness, stage):
     client, repo, _, _ = harness
     failure = SupabaseHttpError(503, "hidden-provider private-db-id existing_fixture_token")
@@ -237,12 +236,15 @@ def test_database_failures_are_bounded_and_do_not_leak(harness, stage):
         repo.get_profile.side_effect = failure
     elif stage == "order":
         repo.client.rest_get.side_effect = failure
-    elif stage in {"expiry", "refresh"}:
-        repo.client.rest_get.side_effect = [[order(pay_type="subsidized")], failure]
-        if stage == "expiry":
-            repo.client.rpc.side_effect = failure
     else:
-        repo.client.rest_get.side_effect = [[order(pay_type="voucher", voucher_product_id="fixture-product")], failure]
+        # These are the actual read boundaries now. No expiry/reservation RPC
+        # runs on GET; closure/local receipt/discrepancy storage must fail closed.
+        row = order(status='canceled')
+        receipt = {'id':'33333333-3333-4333-8333-333333333333','order_id':row['id'],'user_id':USER_ID,
+          'amount':8000,'source':'owner_request','scope':'local_order','outcome':'abandoned','requested_by':USER_ID,
+          'requested_at':'2026-10-15T01:02:03Z','provider_finality':'unknown','residual_late_approval_possible':True}
+        repo.client.rest_get.side_effect = ([ [row], failure ] if stage == 'closure'
+          else [ [row], [], failure ] if stage == 'local_receipt' else [ [row], [], [receipt], failure ])
     assert_error(recover(client), 502, "SUPABASE_ERROR")
 
 

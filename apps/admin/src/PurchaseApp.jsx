@@ -316,6 +316,7 @@ function Wallet({ supabase, apiBaseUrl, scope, userId, logout }) {
       });
     const response = await fetch(`${apiBaseUrl}${path}`, {
       method: body === undefined ? "GET" : "POST",
+      ...(body === undefined && options.readTimeoutMs ? { signal: AbortSignal.timeout(options.readTimeoutMs) } : {}),
       headers: {
         ...(!options.public ? { Authorization: `Bearer ${result.data.session.access_token}` } : {}),
         "Content-Type": "application/json",

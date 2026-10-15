@@ -47,7 +47,7 @@ class SqlClient:
         self.db = db
         self.settings = settings
     def rest_get(self, table, params):
-        allowed = {'payment_orders', 'payment_order_closures', 'payment_callback_discrepancies', 'voucher_products', 'merchants', 'app_users'}
+        allowed = {'payment_order_local_abandonments', 'payment_orders', 'payment_order_closures', 'payment_callback_discrepancies', 'voucher_products', 'merchants', 'app_users'}
         assert table in allowed, table
         select = params.get('select', '*')
         columns = sql.SQL('*') if select == '*' else sql.SQL(',').join(sql.Identifier(c) for c in select.split(','))
@@ -59,9 +59,10 @@ class SqlClient:
             if value == 'is.null':
                 query += sql.SQL(' and {} is null').format(sql.Identifier(key))
             else:
-                assert value.startswith('eq.'), (key, value)
-                query += sql.SQL(' and {}=%s').format(sql.Identifier(key))
-                args.append(value[3:])
+                assert value.startswith(('eq.', 'neq.')), (key, value)
+                op = sql.SQL('<>') if value.startswith('neq.') else sql.SQL('=')
+                query += sql.SQL(' and {}{}%s').format(sql.Identifier(key), op)
+                args.append(value.split('.', 1)[1])
         if 'order' in params:
             orders = []
             for term in params['order'].split(','):
@@ -81,7 +82,7 @@ class SqlClient:
             sql.SQL(',').join(map(sql.Identifier, keys)), sql.SQL(',').join(sql.Placeholder() for _ in keys))
         return self.db.execute(query, [Jsonb(values[k]) if isinstance(values[k], dict) else values[k] for k in keys]).fetchall()
     def rpc(self, name, args):
-        assert name in {'review_failed_payment_order', 'admit_payment_checkout', 'assert_payment_checkout_active'}
+        assert name in {'review_failed_payment_order', 'admit_payment_checkout', 'assert_payment_checkout_active', 'abandon_owned_payment_order'}
         query = sql.SQL('select {}({}) as result').format(sql.Identifier(name), sql.SQL(',').join(
             sql.SQL('{} => %s').format(sql.Identifier(k)) for k in args))
         try:
@@ -100,7 +101,7 @@ class Repo:
         row['id'] = str(row['id'])
         return SimpleNamespace(**row)
 
-def initialize():
+def initialize(local=False):
     with psycopg.connect(URL.replace('/phoneauth_test_frontend_finalize', '/postgres'), autocommit=True) as db:
         if not db.execute("select 1 from pg_database where datname='phoneauth_test_frontend_finalize'").fetchone():
             db.execute('create database phoneauth_test_frontend_finalize')
@@ -108,14 +109,15 @@ def initialize():
     from test_kiwoom_notification_postgres import notification_db
     notification_db.__wrapped__()
     with psycopg.connect(URL, row_factory=dict_row) as db:
-        db.execute((ROOT / 'supabase/migrations/0064_failed_order_finalization.sql').read_text())
+        for name in ['0064_failed_order_finalization.sql','0065_manual_database_order_closure.sql','0066_owner_local_abandonment.sql']:
+            db.execute((ROOT / 'supabase/migrations' / name).read_text())
         db.execute("insert into app_users(id,display_name,role,status) values(%s,'Synthetic buyer','customer','active'),(%s,'Synthetic operator','platform_admin','active')", (OWNER, ACTOR))
         db.execute("insert into merchants(id,name,qr_token,view_token) values(%s,'Synthetic merchant','synthetic-qr','synthetic-view')", (MERCHANT,))
         db.execute("insert into voucher_products(id,merchant_id,name,voucher_count,unit_price,tax_type) values(%s,%s,'Synthetic ticket',1,1100,'taxable')", (PRODUCT, MERCHANT))
         db.execute("insert into payment_orders(order_id,checkout_token,user_id,merchant_id,voucher_product_id,merchant_name,product_name,amount,status,pay_type,tax_type,voucher_count,paid_voucher_count,bonus_voucher_count,voucher_purchase_price,gross_amount,requested_point_amount) values(%s,'synthetic-old-token',%s,%s,%s,'Synthetic merchant','Synthetic ticket',1100,'ready','voucher','taxable',1,1,0,1100,1100,0)", (OLD, OWNER, MERCHANT, PRODUCT))
         order = db.execute('select id from payment_orders where order_id=%s', (OLD,)).fetchone()['id']
         db.execute('select admit_payment_checkout(%s)', (order,))
-        db.execute("update payment_orders set status='failed' where id=%s", (order,))
+        if not local: db.execute("update payment_orders set status='failed' where id=%s", (order,))
     return {'owner':OWNER, 'product_id':PRODUCT, 'order_id':OLD, 'internal_id':str(order), 'amount':1100}
 
 def request(payload):
@@ -128,9 +130,10 @@ def request(payload):
         stack.enter_context(patch.object(payments, 'request_payment_hash', side_effect=AssertionError('provider forbidden')))
         app = FastAPI()
         for module in [payments, platform, voucher_products]: app.include_router(module.router)
+        app.include_router(payments.short_redirect_router)
         response = TestClient(app).request(payload.get('method', 'GET'), payload['path'],
             json=payload.get('body'), headers={'Authorization':'Bearer ' + payload.get('token', 'fixture-access')})
-        return {'status': response.status_code, 'json': response.json()}
+        return {'status': response.status_code, **({'json': response.json()} if 'application/json' in response.headers.get('content-type','') else {'html': response.text})}
 
 def audit():
     with psycopg.connect(URL, row_factory=dict_row) as db:
@@ -138,8 +141,19 @@ def audit():
             'orders': db.execute('select order_id,status,checkout_started_at is not null as started from payment_orders order by created_at').fetchall(),
             'closures': db.execute('select id,evidence_sha256,outcome,closed_at from payment_order_closures').fetchall(),
             'reviews': db.execute('select count(*) as count from payment_order_reviews').fetchone(),
+            'local_receipts': db.execute('select * from payment_order_local_abandonments').fetchall(),
+            'discrepancies': db.execute('select kind,transaction_id from payment_callback_discrepancies').fetchall(),
+            'voucher_count': db.execute('select count(*) as count from vouchers').fetchone(),
+            'refund_count': db.execute('select count(*) as count from refund_requests').fetchone(),
         }
 
+def late_approval():
+    with psycopg.connect(URL, row_factory=dict_row) as db:
+        order = db.execute('select id,order_id,amount from payment_orders where order_id=%s', (OLD,)).fetchone()
+        return db.execute("select complete_kiwoom_payment_notification(%s,%s,'TEST0001',%s,'CARD','synthetic-late-local',%s,'127.0.0.1') as result",
+            (order['id'],order['order_id'],order['amount'],Jsonb({'RESULTCODE':'0000','DAOUTRX':'synthetic-late-local','AMOUNT':str(order['amount']),'PAYMETHOD':'CARD'}))).fetchone()['result']
+
+
 command = sys.argv[1]
-result = initialize() if command == 'init' else audit() if command == 'audit' else request(json.loads(sys.argv[2]))
+result = initialize(local=command=='init-local') if command in {'init','init-local'} else audit() if command == 'audit' else late_approval() if command == 'late-local' else request(json.loads(sys.argv[2]))
 print(json.dumps(result, default=str))

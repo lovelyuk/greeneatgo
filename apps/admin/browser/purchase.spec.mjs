@@ -1484,7 +1484,7 @@ test("ordinary order opens exact API server form, callback and popup close canno
   );
   await page.getByRole("button", { name: "승인 상태 확인" }).click();
   await expect(
-    page.getByText("결제 승인 확인 중", { exact: true }),
+    page.getByText("주문 상태 확인 필요 · 자동 확인은 대기 중이 아니에요", { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "결제 완료" })).toHaveCount(0);
   expect(confirms).toBe(1);

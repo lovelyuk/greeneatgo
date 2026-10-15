@@ -7,7 +7,9 @@ import time
 from html import escape
 from urllib.parse import parse_qs, urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from app.services.local_abandonment import LOCAL_SELECT, local_recovery
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app.auth import bearer_token
@@ -482,6 +484,89 @@ async def notification_post(request: Request):
     return await _notification(request)
 
 
+class LocalAbandonmentRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    amount: int = Field(gt=0, strict=True)
+    acknowledge_provider_uncertainty: StrictBool
+
+    @field_validator('acknowledge_provider_uncertainty')
+    @classmethod
+    def explicit_consent(cls, value):
+        if value is not True:
+            raise ValueError('Explicit provider uncertainty acknowledgement required')
+        return value
+
+
+@router.post('/orders/{order_id}/abandon')
+def abandon_order(
+    payload: LocalAbandonmentRequest,
+    order_id: str = Path(min_length=6, max_length=64, pattern=r'^[A-Za-z0-9_-]+$'),
+    token: str = Depends(bearer_token),
+):
+    """Owner explicitly stops local checkout, not external payment/refund."""
+    repo = JoinRepository()
+    try:
+        _, profile = _customer(repo, token, allow_employee=True)
+        repo.client.rpc('abandon_owned_payment_order', {
+            'p_order_id': order_id, 'p_user_id': str(profile.id), 'p_amount': payload.amount,
+            'p_acknowledge_provider_uncertainty': payload.acknowledge_provider_uncertainty,
+        })
+        # Read back the exact owner/order/amount; do not invent a terminal DTO
+        # from the request or assume write success means durable local receipt.
+        result = recovery(order_id=order_id, amount=payload.amount, token=token)
+        if not result['data'].get('local_abandonment'):
+            raise _error(503, 'LOCAL_ABANDONMENT_UNAVAILABLE', '주문 중단 결과를 확인하지 못했어요. 상태를 다시 확인해 주세요')
+        return result
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, 'UNAUTHENTICATED', '로그인 정보가 올바르지 않아요') from exc
+        for code, status in [('ORDER_NOT_FOUND', 404), ('AMOUNT_MISMATCH', 400),
+                             ('OWNER_NOT_ELIGIBLE', 403), ('ORDER_HAS_PAYMENT_OR_RESOURCE_HISTORY', 409),
+                             ('COUPON_RESERVATION_CONFLICT', 409), ('RESERVATION_OWNERSHIP_CONFLICT', 409)]:
+            if code in exc.body:
+                raise _error(status, code, '주문을 중단할 수 없어요. 주문 상태를 다시 확인해 주세요') from exc
+        raise _error(503, 'LOCAL_ABANDONMENT_UNAVAILABLE', '주문 상태를 확인하지 못했어요. 다시 확인해 주세요') from exc
+    except Exception as exc:
+        raise _error(503, 'LOCAL_ABANDONMENT_UNAVAILABLE', '주문 상태를 확인하지 못했어요. 다시 확인해 주세요') from exc
+
+
+@router.get('/local-abandonments')
+def local_abandonment_history(
+    limit: int = Query(default=20, ge=1, le=50), token: str = Depends(bearer_token),
+):
+    """Bounded owner-only history survives retiring the active checkout intent."""
+    repo = JoinRepository()
+    try:
+        _, profile = _customer(repo, token, allow_employee=True)
+        receipts = repo.client.rest_get('payment_order_local_abandonments', {
+            'select': LOCAL_SELECT, 'user_id': f'eq.{profile.id}',
+            'order': 'requested_at.desc,id.desc', 'limit': str(limit),
+        })
+        orders = []
+        for receipt in receipts:
+            rows = repo.client.rest_get('payment_orders', {
+                'select': ORDER_SELECT, 'id': f"eq.{receipt['order_id']}",
+                'user_id': f'eq.{profile.id}', 'amount': f"eq.{receipt['amount']}", 'limit': '1',
+            })
+            if not rows:
+                raise ValueError('Missing owned local order')
+            data = local_recovery(repo, rows[0], str(profile.id))
+            if data is None:
+                raise ValueError('Missing local receipt')
+            orders.append(data)
+        return {'ok': True, 'data': {'orders': orders}, 'error': None}
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, 'UNAUTHENTICATED', '로그인 정보가 올바르지 않아요') from exc
+        raise _error(503, 'LOCAL_HISTORY_UNAVAILABLE', '중단한 주문 내역을 확인하지 못했어요') from exc
+    except Exception as exc:
+        raise _error(503, 'LOCAL_HISTORY_UNAVAILABLE', '중단한 주문 내역을 확인하지 못했어요') from exc
+
+
 @router.get("/recovery")
 def recovery(
     order_id: str = Query(min_length=6, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
@@ -490,12 +575,11 @@ def recovery(
 ):
     """Recover one owned positive-payment order without creating or approving it.
 
-    A local canceled/failed state is not proof that a provider cannot charge:
-    notification failures/cancels are only acknowledged, and late approvals of
-    non-ready orders are rejected (see _notification). Never tell a client to
-    discard its pending record based on those states. ORDERNO can repeat at the
-    provider; only DAOUTRX identifies a transaction. Recovery must never offer
-    another payable entry without a provider reconciliation/single-entry contract.
+    A local canceled/failed state alone is not proof that a provider cannot charge.
+    Only an immutable owner-scoped local receipt authorizes retiring local intent;
+    it retains unknown provider finality and is overridden by late-charge history.
+    0064 durably quarantines non-ready/second approvals without fulfillment/refund.
+    Recovery never offers another payable entry or contacts the provider.
     """
     repo, settings = JoinRepository(), get_settings()
     try:
@@ -541,18 +625,17 @@ def recovery(
                     # immutable history but do not advertise verified finality.
                     if not late_approvals:
                         data.update(recovery_action='closed', user_id=str(profile.id), completion=None, closure=closure)
-        elif status == "ready":
-            # Preserve the DB clock, started-checkout exclusion and cancel guards.
-            # This is the only permitted side effect of recovery; never mark a
-            # checkout started, release points, fulfill, or contact the provider.
-            order = _enforce_subsidized_order_expiry(repo, order)
-            _require_order_tax_classified(order)
-            _ensure_voucher_order_available(repo, order)
-            if str(order.get("requested_payment_method") or "TOTAL") not in {"TOTAL", "BANK"}:
-                raise _error(409, "INVALID_PAYMENT_METHOD", "주문 결제수단 설정이 올바르지 않아요")
-            # Even a missing checkout_started_at is not proof of no prior PG
-            # form (ordinary voucher entry has no durable single-entry guard).
-            # Keep all recovery orders nonpayable, including apparently ready ones.
+            else:
+                try:
+                    local = local_recovery(repo, order, str(profile.id))
+                except (ValueError, KeyError, TypeError) as exc:
+                    raise _error(503, 'LOCAL_RECEIPT_INVALID', '중단한 주문 상태를 확인하지 못했어요') from exc
+                if local is not None:
+                    data = local
+        # A ready status read is intentionally mutation-free. Expiry/release and
+        # payable eligibility belong to their existing write/admission paths,
+        # not to bounded close/return refresh. Hidden/expired products must not
+        # prevent an owner from observing and explicitly stopping this intent.
         return {"ok": True, "data": data, "error": None}
     except HTTPException:
         raise
@@ -601,9 +684,21 @@ def confirm(payload: PaymentConfirmRequest, token: str = Depends(bearer_token)):
         raise _error(502, "SUPABASE_ERROR", "결제 승인 결과를 확인하지 못했어요") from exc
 
 
+def _checkout_return_page():
+    # No query/callback data, opener messages or payment authority. A popup
+    # closing is only a UI signal; the parent reads its own authenticated order.
+    return HTMLResponse("""<!doctype html><html lang="ko"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>구매 화면으로 돌아가기</title><body><h1>결제창에서 돌아왔습니다</h1>
+<p>이 화면은 PG 승인·취소·환불 확정이 아닙니다. 구매 화면에서 서버 주문 상태를 확인해 주세요.</p>
+<button type="button" onclick="window.close()">결제창 닫고 구매 화면으로 돌아가기</button>
+<p>창이 닫히지 않으면 직접 닫은 뒤 기존 구매 화면으로 돌아가 주세요. 이전 결제창은 다시 열지 마세요.</p>
+<script>window.close();</script></body></html>""", headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+
 @router.get("/redirect/success", response_class=HTMLResponse)
 def redirect_success():
-    return HTMLResponse("<h1>결제 승인 확인 중입니다. 앱으로 돌아가 주세요.</h1>")
+    return _checkout_return_page()
 
 
 @short_redirect_router.get("/p", response_class=HTMLResponse)
@@ -614,19 +709,19 @@ def short_redirect_success():
 
 @short_redirect_router.get("/f", response_class=HTMLResponse)
 def short_redirect_fail():
-    return HTMLResponse("<h1>결제에 실패했습니다. 앱으로 돌아가 주세요.</h1>")
+    return _checkout_return_page()
 
 
 @short_redirect_router.get("/c", response_class=HTMLResponse)
 def short_redirect_close():
-    return HTMLResponse("<h1>결제가 취소되었습니다. 앱으로 돌아가 주세요.</h1>")
+    return _checkout_return_page()
 
 
 @router.get("/redirect/fail", response_class=HTMLResponse)
 def redirect_fail():
-    return HTMLResponse("<h1>결제에 실패했어요. 앱으로 돌아가 다시 시도해 주세요.</h1>")
+    return _checkout_return_page()
 
 
 @router.get("/redirect/close", response_class=HTMLResponse)
 def redirect_close():
-    return HTMLResponse("<h1>결제가 취소되었어요. 앱으로 돌아가 주세요.</h1>")
+    return _checkout_return_page()

@@ -208,7 +208,7 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         for path in ("/p", "/f", "/c"):
             response = client.get(path)
             self.assertEqual(response.status_code, 200)
-            self.assertIn("앱으로 돌아가", response.text)
+            self.assertIn("구매 화면으로 돌아가", response.text)
 
     def test_bank_checkout_binds_hash_and_form_to_bank(self):
         order = {

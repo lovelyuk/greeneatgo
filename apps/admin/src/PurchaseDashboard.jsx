@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Home, ShoppingBag, ScanLine, ReceiptText, UserRound, Ticket, PartyPopper, Megaphone, MessageSquare, Menu, ChevronRight, Utensils, QrCode, ArrowLeft } from 'lucide-react';
 import PurchaseCatalog, { won } from './PurchaseCatalog.jsx';
 import PurchaseHistory from './PurchaseHistory.jsx';
+import LocalAbandonmentHistory from './LocalAbandonmentHistory.jsx';
 import { dashboardTransactions, couponCount, scanIntent } from './purchaseDashboard.js';
 
 const tabs = [['홈', Home], ['구매', ShoppingBag], ['QR', ScanLine], ['내역', ReceiptText], ['내정보', UserRound]];
@@ -113,7 +114,7 @@ export default function PurchaseDashboard({ me, api, apiBaseUrl, legal, refresh,
     {/* Kept mounted like native IndexedStack: pending checkout must survive tab switches. */}
     <div hidden={tab !== 1 && page !== '이벤트'}><PurchaseCatalog onClose={() => go(0)} api={api} me={me} revision={revision} apiBaseUrl={apiBaseUrl} legal={legal} refresh={refresh} eventsOnly={page === '이벤트'} /></div>
     <div hidden={tab !== 2}><QrPayment api={api} refresh={refresh} userId={me.user_id} /></div>
-    <div hidden={tab !== 3}><PurchaseHistory me={me} /></div>
+    <div hidden={tab !== 3}><PurchaseHistory me={me} />{tab === 3 && <LocalAbandonmentHistory api={api} userId={me.user_id} />}</div>
     <div hidden={tab !== 4}><h1>내정보</h1><div className="profile-heading"><span className="avatar">{Array.from(name)[0]}</span><div><h2>{name}</h2><p>{me.company?.name || (me.role === 'employee' ? '회사 임직원' : '개인 구매자')}</p></div></div><section className="purchase-card setting-group"><p><span>휴대폰 번호</span><strong>{me.phone || '—'}</strong></p><p><span>인증수단</span><strong>이메일 (웹)</strong></p><p><span>결제수단</span><strong>{me.account_type === 'ledger' ? '회사 장부' : '식권'}</strong></p></section><section className="purchase-card setting-group" aria-label="알림 및 초대"><button disabled>결제 알림<strong>웹에서 저장 불가</strong></button><button disabled>초대코드 입력<strong>활성 계정 재등록 미지원</strong></button></section><section className="purchase-card setting-group">{[['쿠폰함', () => open('쿠폰함')], ['식권 상품', () => go(1)], ['공지사항', () => open('공지사항')], ['구매 인증 리뷰', () => open('리뷰')]].map(([label, action]) => <button key={label} onClick={action}>{label}<ChevronRight size={16} /></button>)}</section><section className="purchase-card setting-group"><a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침<ChevronRight size={16} /></a><a href="/terms.html" target="_blank" rel="noreferrer">이용약관<ChevronRight size={16} /></a><p><span>웹 버전</span><strong>구매자 웹</strong></p><button className="danger-text" onClick={logout}>로그아웃<ChevronRight size={16} /></button></section><p className="muted">결제 알림 설정은 앱에도 저장 API가 없어요. 활성 계정의 초대코드 재등록은 진행 중 결제 보호를 위해 이 웹에서 제공하지 않아요.</p></div>
     {page === '쿠폰함' && <>{readError && <><p role="alert">{readError}</p><button onClick={refresh} disabled={loading}>다시 시도</button></>}{wallet ? <CouponWallet wallet={wallet} /> : !readError && <p role="status">쿠폰 확인 중…</p>}</>}
     {['공지사항', '리뷰'].includes(page) && <ReadBoard key={page} kind={page} api={api} />}

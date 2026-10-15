@@ -113,7 +113,7 @@ test('close control and focus cycle use official close, retain pending without c
  const close=page.getByRole('button',{name:'결제창 닫기'});await expect(close).toBeFocused();
  await page.keyboard.press('Tab');await expect(page.locator('#___kiwoompayIframe___')).toBeFocused();
  await page.keyboard.press('Shift+Tab');await expect(close).toBeFocused();await close.click();
- await expect(page.getByRole('dialog')).toHaveCount(0);expect(state.hashes).toBe(1);expect(state.recoveries).toBe(0);
+ await expect(page.getByRole('dialog')).toHaveCount(0);expect(state.hashes).toBe(1);await expect.poll(()=>state.recoveries).toBe(1);
  expect(await page.evaluate(key=>!!sessionStorage.getItem(key),pendingKey)).toBe(true);
 });
 for(const phase of ['script','hash','frame','callback']) test(`logout fences late ${phase} and cleans frame`,async({page,context})=>{
@@ -129,7 +129,7 @@ for(const phase of ['script','hash','frame','callback']) test(`logout fences lat
  },phase);
  await page.locator('button').filter({hasText:'로그아웃'}).evaluate(b=>b.click());release();
  await expect(page.getByRole('button',{name:'로그인',exact:true})).toBeVisible();await expect(page.locator('#___kiwoompayIframe___')).toHaveCount(0);
- await page.waitForTimeout(200);expect(state.recoveries).toBe(0);if(phase==='script')expect(state.purchases).toBe(0);
+ await page.waitForTimeout(200);expect(state.recoveries).toBe(phase==='callback'?1:0);if(phase==='script')expect(state.purchases).toBe(0);
 });
 test('slow purchase locks double-click; resize never converts active desktop',async({page,context})=>{
  const state=await sdkFixture(page,context,{delay:250});await submit(page,1000);

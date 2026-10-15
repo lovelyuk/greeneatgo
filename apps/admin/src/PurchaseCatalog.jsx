@@ -226,9 +226,10 @@ export default function PurchaseCatalog({
       )}
       <div className="catalog-checkout">
       <PurchaseCheckout
+        active={active}
         onCheckoutEnded={kind => {
           generation.current++; setQuote(null); setItem(null); setCoupon(''); setPoints('0'); setError('');
-          setReturnNotice(kind === 'mobile_cancel' ? '구매 진행을 취소했어요' : '구매 진행이 종료됐어요');
+          setReturnNotice(kind === 'mobile_cancel' ? '구매 진행을 취소했어요' : kind === 'locally_abandoned' ? '구매 진행을 중단했어요. PG 취소·환불 확정은 아니에요.' : kind === 'verified_closed' ? '이전 주문의 종료를 확인했어요.' : '구매 진행이 종료됐어요');
         }}
         clearQuote={() => { generation.current++; setQuote(null); setItem(null); setCoupon(''); setPoints('0'); }}
         userId={me.user_id}

@@ -4,6 +4,15 @@ import { test, expect } from "@playwright/test";
 test.use({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148' });
 import { setup, submit, purchaseResponse } from "./final-L1-fixture.mjs";
 
+async function expectPendingDiagnostic(page, diagnostic) {
+ await expect(page.getByRole('alert')).toBeVisible();
+ const details=page.locator('details');
+ await expect(details).toHaveCount(1);
+ if (!(await details.getAttribute('open') !== null)) await details.locator('summary').click();
+ await expect(details).toContainText(diagnostic);
+ await details.locator('summary').click();
+}
+
 for (const actual of [40000, 50000]) {
   test(`FINAL-L1 issued point-only pricing discrepancy discloses actual ${actual} points without retry`, async ({ page, context }) => {
     const state = await setup(page, context, { gross: 42000, points: 42000 });
@@ -55,9 +64,10 @@ test("FINAL-L1 stale balance becomes unpaid card order without opening checkout"
     return route.fulfill({ json: { ok: true, data: purchaseResponse(42000, state.bodies.at(-1).requested_point_amount, 10000) } });
   });
   await submit(page, 50000);
-  await expect(page.getByRole("heading", { name: "진행 중인 결제" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+  await page.getByText("상세 보기",{exact:true}).click();
   await expect(page.getByText("서버 주문 금액 32,000원")).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("변경");
+  await expectPendingDiagnostic(page, "변경");
   expect(state.bodies[0].requested_point_amount).toBe(42000);
   expect(state.checkout).toBe(0);
   expect(state.confirm).toBe(0);
@@ -88,10 +98,11 @@ for (const changed of ["gross-discount", "points-card"]) {
       return route.fulfill({ json: { ok: true, data: result } });
     });
     await submit(page, 2000);
-    await expect(page.getByRole("heading", { name: "진행 중인 결제" })).toBeVisible();
-    await expect(page.getByRole("alert")).toContainText("변경");
+    await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+    await expectPendingDiagnostic(page, "변경");
     expect(state.checkout).toBe(0);
     await expect.poll(() => context.pages().length).toBe(1);
+    await page.getByText("상세 보기",{exact:true}).click();
     await expect(page.getByRole("button", { name: "예약 취소 요청" })).toBeVisible();
     expect(state.errors).toEqual([]);
   });
@@ -106,8 +117,9 @@ test("FINAL-L1 clamps 50000 request to accepted 42000 before stale 50000 reprice
   await submit(page, 50000);
   await expect.poll(() => state.bodies.length).toBe(1);
   expect(state.bodies[0].requested_point_amount).toBe(42000);
-  await expect(page.getByRole("heading", { name: "진행 중인 결제" })).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("변경");
+  await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+  await expectPendingDiagnostic(page, "변경");
+  await page.getByText("상세 보기",{exact:true}).click();
   await expect(page.getByText("서버 주문 금액 8,000원")).toBeVisible();
   expect(state.checkout).toBe(0);
   expect(context.pages()).toHaveLength(1);

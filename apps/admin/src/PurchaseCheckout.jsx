@@ -20,6 +20,7 @@ export default function PurchaseCheckout({
   clearQuote,
   onCheckoutEnded,
   paymentMethod = 'TOTAL',
+  active = true,
 }) {
   const [closed, setClosed] = useState(null);
   const [abandoned, setAbandoned] = useState(null);
@@ -35,6 +36,7 @@ export default function PurchaseCheckout({
     [consent, setConsent] = useState(false),
     [error, setError] = useState("");
   const [unknown, setUnknown] = useState(false);
+  const [entryError, setEntryError] = useState('');
   const storageKey = `greeneat-purchase-pending:${userId}`;
   const sdkClose = useRef(null), recoveryRef = useRef(null);
   const bridgeChannel = useRef(null), returnedIntent = useRef(null);
@@ -49,14 +51,27 @@ export default function PurchaseCheckout({
     scopeKey.current = storageKey;
     generation.current++;
   }
+  const autoOrderId = useRef(null), autoAttempt = useRef(null), entry = useRef(0);
+  const liveActive = useRef(active);
+  if (liveActive.current !== active) {
+    liveActive.current = active;
+    entry.current++;
+    autoOrderId.current = order?.order_id || null;
+  }
+  useEffect(() => {
+    if (!active) {
+      if (lock.current && !lock.current.admission && !order) setError('SDK 로딩 중 견적 또는 구매 조건이 변경됐어요. 주문을 생성하지 않았어요.');
+      lock.current = null; queuedRead.current = false; setBusy(false);
+    }
+  }, [active]);
   useEffect(() => {
     generation.current++;
     lock.current = null;
     queuedRead.current = false;
-    returnedIntent.current = null;
+    returnedIntent.current = null; autoOrderId.current = null; autoAttempt.current = null;
     setCompletion(null); setClosed(null); setAbandoned(null); setCanceled(false); setOrder(null);
     setCheckoutOpen(false); setStopEligible(false); setStopWarning(false); setStopConsent(false);
-    setUnknown(false); setBusy(false); setConsent(false); setError("");
+    setUnknown(false); setBusy(false); setConsent(false); setError(""); setEntryError('');
     try {
       const saved = pendingMemory.get(storageKey) ?? JSON.parse(sessionStorage.getItem(storageKey) || "null");
       if (saved?.local_abandonment_receipt) {
@@ -65,9 +80,11 @@ export default function PurchaseCheckout({
         } else {
           // A stored receipt is only a hint. Reauthenticate and reread the exact
           // order before offering a fresh purchase, including after page reload.
-          setOrder(saved.pending); returnedIntent.current = saved.pending.return_intent || null; queuedRead.current = true;
+          setOrder(saved.pending); autoOrderId.current = saved.pending.order_id; returnedIntent.current = saved.pending.return_intent || null;
         }
-      } else if (saved?.completion) {
+      } else if (saved?.completion && pendingMemory.get(storageKey) === saved) {
+        // Only this document's authenticated completion cache is trusted. A
+        // serialized completion is not a server receipt and cannot prove issue.
         setCompletion(saved.completion);
         setError(saved.storage_error || "");
       } else if (saved?.unknown) setUnknown(true);
@@ -76,9 +93,9 @@ export default function PurchaseCheckout({
         Number.isSafeInteger(saved.amount) && saved.amount > 0 &&
         ["voucher", "subsidized"].includes(saved.mode)
       ) {
-        setOrder(saved);
+        setOrder(saved); autoOrderId.current = saved.order_id;
         if (['sdk_frame_fail','mobile_fail','mobile_cancel'].includes(saved.return_intent)) {
-          returnedIntent.current = saved.return_intent; queuedRead.current = true;
+          returnedIntent.current = saved.return_intent;
         }
       }
       else if (saved) setUnknown(true);
@@ -93,14 +110,15 @@ export default function PurchaseCheckout({
     };
   }, [storageKey]);
   function begin() {
-    const run = { generation: generation.current, key: storageKey, popup: null,
+    const run = { generation: generation.current, entry: entry.current, key: storageKey, popup: null,
       presentation: checkoutPresentation(navigator, paymentMethod) };
     lock.current = run;
     setBusy(true); setError("");
     return run;
   }
   function current(run) {
-    return generation.current === run.generation && scopeKey.current === run.key;
+    return liveActive.current && (run.entry === undefined || run.entry === entry.current) &&
+      generation.current === run.generation && scopeKey.current === run.key;
   }
   function finish(run) {
     if (current(run) && lock.current === run) {
@@ -143,8 +161,16 @@ export default function PurchaseCheckout({
     return () => clearInterval(timer);
   }, [order?.order_id, storageKey]);
   useEffect(() => {
-    if (returnSignal) recoveryRef.current?.();
+    if (active && returnSignal) recoveryRef.current?.();
   }, [returnSignal]);
+  // Entry identity is independent of API function identity and same-order updates.
+  useEffect(() => {
+    if (!active || !order || autoOrderId.current !== order.order_id) return;
+    const key = `${storageKey}:${entry.current}:${order.order_id}`;
+    if (autoAttempt.current === key) return;
+    autoAttempt.current = key;
+    recoveryRef.current?.();
+  }, [active, storageKey, order?.order_id]);
   function saveOrder(next, key = storageKey) {
     pendingMemory.set(key, next);
     setOrder(next);
@@ -160,7 +186,9 @@ export default function PurchaseCheckout({
       return false;
     }
   }
-  async function complete(result, run) {
+  async function complete(result, run, pending = result) {
+    assertMatchingSaved(pending, run);
+    setUnknown(false);
     const cleared = clearSaved(run);
     const done = { ...result, storage_blocked: !cleared };
     pendingMemory.set(run.key, { completion: done });
@@ -194,9 +222,9 @@ export default function PurchaseCheckout({
     };
   }
   async function purchase() {
-    if (lock.current || order || unknown || !quote || !legalReady || !consent)
+    if (!active || lock.current || order || unknown || !quote || !legalReady || !consent)
       return;
-    generation.current++; returnedIntent.current = null;
+    generation.current++; returnedIntent.current = null; setEntryError('');
     const run = begin();
     if (quote.payment_amount > 0 && run.presentation === 'popup' && !blankPopup(run)) { finish(run); return; }
     let sdk;
@@ -210,8 +238,11 @@ export default function PurchaseCheckout({
       }
     }
     try {
-      sessionStorage.setItem(run.key, JSON.stringify({ unknown: true }));
-      pendingMemory.set(run.key, { unknown: true });
+      run.admission = crypto.randomUUID();
+      const admission = { unknown: true, attempt_id: run.admission };
+      sessionStorage.setItem(run.key, JSON.stringify(admission));
+      pendingMemory.set(run.key, admission);
+      setUnknown(true);
       const result = await api(
         mode === "subsidized"
           ? "/vouchers/purchase-subsidized"
@@ -226,6 +257,7 @@ export default function PurchaseCheckout({
       )
         throw new Error("주문 응답을 확인하지 못했어요.");
       const next = {
+        admission_attempt: run.admission,
         presentation: run.presentation,
         return_nonce: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2,'0')).join(''),
         order_id: result.order_id,
@@ -277,10 +309,13 @@ export default function PurchaseCheckout({
         }, run);
         return;
       }
+      assertMatchingSaved(next, run);
       saveOrder(next, run.key);
+      setUnknown(false);
       if (result.amount > 0) {
         const url = safeCheckoutUrl(result.checkout_url, apiBaseUrl);
         if (!url) {
+          setEntryError("결제 제공자/결제창 URL 정보가 올바르지 않아 결제를 차단했어요.");
           run.popup?.close();
           setError(
             "결제 제공자/결제창 URL 정보가 올바르지 않아 결제를 차단했어요.",
@@ -292,6 +327,7 @@ export default function PurchaseCheckout({
           (run.presentation === 'popup' && (!run.popup || run.popup.closed))
         ) {
           run.popup?.close();
+          setEntryError("최종 주문 금액 또는 결제창 상태가 변경되어 자동 진입을 차단했어요.");
           setError(
             "최종 주문 금액 또는 결제창 상태가 변경되어 자동 진입을 차단했어요.",
           );
@@ -308,11 +344,11 @@ export default function PurchaseCheckout({
           sdkClose.current = openSdkFrame(sdk, checked, {
             // The adapter emits one guarded semantic event and suppresses the
             // SDK's accompanying close; ordinary force-close stays uncertain.
-            onEvent: event => checkoutReturned(run, event.TYPE === 'FAIL' ? 'sdk_frame_fail' : null, next),
-            onClose: () => { sdkClose.current = null; checkoutReturned(run); },
+            onEvent: event => checkoutReturned({ generation: run.generation, key: run.key }, event.TYPE === 'FAIL' ? 'sdk_frame_fail' : null, next),
+            onClose: () => { sdkClose.current = null; checkoutReturned({ generation: run.generation, key: run.key }); },
           });
         } else {
-          connectReturnBridge(run, next);
+          connectReturnBridge({ generation: run.generation, key: run.key }, next);
           const correlated = new URL(url); correlated.searchParams.set('return_nonce', next.return_nonce);
           run.popup.location.replace(correlated.href);
         }
@@ -321,8 +357,9 @@ export default function PurchaseCheckout({
       run.popup?.close();
       if (current(run) && !e.stale) {
         setCheckoutOpen(false);
+        setEntryError(e.message);
         const known = pendingMemory.get(run.key);
-        if (!known?.order_id || known.amount === 0) setUnknown(true);
+        setUnknown(!known?.order_id || known.amount === 0);
         setError(
           known?.order_id && known.amount > 0
             ? `${e.message} 서버 주문 번호는 이 화면에 유지했지만 저장 또는 결제창 진입을 확인하지 못했어요. 이 화면을 닫지 말고 같은 주문의 상태를 확인해 주세요. 중복 구매하지 마세요.`
@@ -341,6 +378,8 @@ export default function PurchaseCheckout({
     const stored = JSON.parse(sessionStorage.getItem(run.key) || 'null');
     const memory = pendingMemory.get(run.key);
     const matches = value => {
+      const admission = run.admission || pending.admission_attempt;
+      if (admission && value?.unknown === true && value.attempt_id === admission) return true;
       const intent = value?.local_abandonment_receipt ? value.pending : value;
       return intent?.order_id === pending.order_id && intent.amount === pending.amount;
     };
@@ -355,22 +394,17 @@ export default function PurchaseCheckout({
     sessionStorage.setItem(run.key, JSON.stringify(saved));
     pendingMemory.set(run.key, saved);
     const intent = returnedIntent.current || pending.return_intent;
-    if (['sdk_frame_fail','mobile_fail','mobile_cancel'].includes(intent)) {
-      sessionStorage.removeItem(run.key); pendingMemory.delete(run.key);
-      returnedIntent.current = null; bridgeChannel.current?.close(); bridgeChannel.current = null;
-      setConsent(false); setOrder(null); setAbandoned(null); setError(''); setCheckoutOpen(false);
-      queuedRead.current = false; popup.current?.close(); popup.current = null;
-      sdkClose.current?.(); sdkClose.current = null;
-      onCheckoutEnded?.(intent); clearQuote(); return;
-    }
-    setConsent(false); clearQuote(); setOrder(null); setAbandoned(result);
-    setCheckoutOpen(false); setStopWarning(false); setStopConsent(false); setStopEligible(false);
-    popup.current?.close(); popup.current = null;
+    sessionStorage.removeItem(run.key); pendingMemory.delete(run.key);
+    returnedIntent.current = null; bridgeChannel.current?.close(); bridgeChannel.current = null;
+    setConsent(false); setOrder(null); setAbandoned(null); setError(''); setCheckoutOpen(false);
+    setStopWarning(false); setStopConsent(false); setStopEligible(false);
+    queuedRead.current = false; popup.current?.close(); popup.current = null;
     sdkClose.current?.(); sdkClose.current = null;
-    queuedRead.current = false;
+    onCheckoutEnded?.(intent || 'locally_abandoned'); clearQuote();
   }
+
   async function recover() {
-    if (lock.current || !order) return;
+    if (!active || lock.current || !order) return;
     const pending = order;
     const run = begin();
     setStopEligible(false);
@@ -387,12 +421,13 @@ export default function PurchaseCheckout({
         // remove a newer intent even for the same account/document.
         assertMatchingSaved(pending, run);
         if (!clearSaved(run)) return;
-        setConsent(false); clearQuote(); setOrder(null); setClosed(result);
+        setConsent(false); clearQuote(); setOrder(null); setClosed(null); setError('');
+        onCheckoutEnded?.('verified_closed');
         popup.current?.close();
         sdkClose.current?.(); sdkClose.current = null;
       } else if (result.recovery_action === "complete" && result.status === "done" &&
           result.checkout_url === null && validCompletion(result.completion, pending)) {
-        await complete(result.completion, run);
+        await complete(result.completion, run, pending);
       } else if (result.recovery_action === "reconcile" && result.status !== "done" &&
           result.checkout_url === null && !result.completion) {
         const intent = returnedIntent.current || pending.return_intent;
@@ -419,25 +454,8 @@ export default function PurchaseCheckout({
     } finally { finish(run); }
   }
   recoveryRef.current = recover;
-  async function confirm() {
-    if (lock.current || !order) return;
-    const pending = order;
-    const run = begin();
-    run.popup = popup.current;
-    try {
-      const result = await api("/payments/confirm", { order_id: pending.order_id, amount: pending.amount });
-      if (!current(run)) return;
-      if (!validCompletion(result, pending)) throw new Error("서버 승인 응답을 확인하지 못했어요.");
-      await complete(result, run);
-    } catch (e) {
-      if (current(run) && !e.stale)
-        setError(e.code === "PAYMENT_PENDING"
-          ? "아직 승인 대기 중이에요. 저장된 주문 상태를 확인해 주세요. 결제창 재진입은 중복 결제 위험 때문에 차단했어요. 중복 구매하지 말고 관리자에게 거래 확인을 요청해 주세요."
-          : `승인 상태 확인 오류: ${e.message}`);
-    } finally { finish(run); }
-  }
   async function abandon() {
-    if (lock.current || !order || !stopEligible || !stopConsent) return;
+    if (!active || lock.current || !order || !stopEligible || !stopConsent) return;
     const pending = order, run = begin();
     setStopEligible(false);
     try {
@@ -586,32 +604,26 @@ export default function PurchaseCheckout({
     );
   if (order)
     return (
-      <section className="purchase-card">
-        <h2>진행 중인 결제</h2>
-        <p>주문 {order.order_id}</p>
-        <p>서버 주문 금액 {Number(order.amount).toLocaleString("ko-KR")}원</p>
-        <p role="status">{busy ? '서버 주문 상태 확인 중…' : checkoutOpen ? '결제창이 열려 있어요' : '주문 상태 확인 필요 · 자동 확인은 대기 중이 아니에요'}</p>
-        <p>결제창 종료·실패·성공 안내만으로는 승인 여부를 알 수 없어요.</p>
-        <button disabled={busy} onClick={confirm}>
-          승인 상태 확인
-        </button>
-        <button disabled={busy} onClick={recover}>
-          저장된 주문 상태 확인
-        </button>
-        <p>결제창 재진입은 중복 결제 위험 때문에 차단했어요. 상태 조회는 구매·취소를 자동 재시도하지 않아요.</p>
-        {stopEligible && !stopWarning && <button disabled={busy} onClick={() => { setStopWarning(true); setStopConsent(false); }}>이 주문 구매 중단</button>}
+      <section className="purchase-card recovery-card">
+        <h2>{busy ? '결제 결과 확인 중' : checkoutOpen ? '진행 중인 결제' : '이전 결제 결과를 확인하지 못했어요.'}</h2>
+        {busy ? <p role="status">결제 결과 확인 중…</p> : <p role="alert">{error.startsWith('주문 상태 확인 오류:') ? '주문 상태 확인 오류 · 다시 확인해 주세요.' : error.startsWith('구매 중단 결과 확인 필요:') ? '구매 중단 결과를 확인하지 못했어요. 다시 확인해 주세요.' : checkoutOpen ? '결제창에서 진행해 주세요.' : '결제 여부가 아직 확정되지 않았어요. 청구 내역도 확인해 주세요.'}</p>}
+        <button disabled={busy} onClick={recover}>다시 확인</button>
+        {stopEligible && !stopWarning && <button disabled={busy} onClick={() => { setStopWarning(true); setStopConsent(false); }}>구매 진행 중단</button>}
         {stopWarning && <section aria-label="구매 진행 중단 안내">
-          <p>이 요청은 서비스 안에서 이 주문의 구매 진행만 중단해요. PG 취소·환불 확정이 아니며, 이미 열린 결제창에서 나중에 승인·청구될 수 있어요. 사용하지 않은 예약 포인트·쿠폰만 해제해요. 후속 승인은 재확인 대상으로 남기며 식권 자동 발급·환불은 하지 않아요. 기존 결제창은 다시 이용하지 마세요. 새 구매는 새 견적과 동의로 직접 시작해야 해요.</p>
+          <p>서비스 내 구매 진행만 중단해요. PG 취소·환불 확정이 아니며, 기존 결제창에서 나중에 승인·청구될 수 있어요. 사용하지 않은 예약 포인트·쿠폰만 해제하고 기존 주문은 내역에 남겨요. 기존 결제창은 다시 이용하지 마세요.</p>
           <label className="purchase-check"><input type="checkbox" checked={stopConsent} onChange={e => setStopConsent(e.target.checked)} />PG 취소·환불 확정이 아님을 이해했습니다</label>
           <button disabled={busy || !stopEligible || !stopConsent} onClick={abandon}>확인하고 구매 진행 중단</button>
           <button disabled={busy} onClick={() => { setStopWarning(false); setStopConsent(false); }}>계속 상태 확인하기</button>
         </section>}
-        {order.mode === "subsidized" && !order.checkout_started && (
-          <button disabled={busy} onClick={cancel}>
-            예약 취소 요청
-          </button>
-        )}
-        {error && <p role="alert">{error}</p>}
+        <details>
+          <summary>상세 보기</summary>
+          <p>주문 {order.order_id}</p>
+          <p>서버 주문 금액 {Number(order.amount).toLocaleString("ko-KR")}원</p>
+          <p>결제창은 다시 열지 않아요. 조회는 새 구매나 PG 취소·환불 요청이 아니에요.</p>
+          {order.mode === "subsidized" && !order.checkout_started && <button disabled={busy} onClick={cancel}>예약 취소 요청</button>}
+          {entryError && <p>{entryError}</p>}
+          {error && <p>{error}</p>}
+        </details>
       </section>
     );
   if (!quote) return null;

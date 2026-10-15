@@ -53,21 +53,21 @@ for(const kind of ['origin','source','order','noevent','blur','forceclose'])test
  if(kind==='order')await frameMessage(page,{TYPE:'FAIL',ORDERNO:'GE-other-order'});
  if(kind==='blur')await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
  if(kind==='forceclose')await page.keyboard.press('Escape');
- await page.waitForTimeout(450);expect(calls.filter(c=>c.path.endsWith('/abandon'))).toHaveLength(0);expect(producer('audit').local_receipts).toHaveLength(0);await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();
+ await page.waitForTimeout(450);expect(calls.filter(c=>c.path.endsWith('/abandon'))).toHaveLength(0);expect(producer('audit').local_receipts).toHaveLength(0);await expect(page.getByRole('heading',{name:kind==='forceclose'?/이전.*결과/:'진행 중인 결제'})).toBeVisible();
 });
 for(const kind of ['success-ready','success-paid','fail-paid'])test(`${kind} uses server completion; no return hint financial authority`,async({page,context})=>{
  test.skip(!process.env.FINALIZE_FIXTURE_PYTHON,'requires disposable PG');const {calls}=await readyFrame(page,context);const order=calls.find(c=>c.path==='/vouchers/purchase').json.data.order_id;
  if(kind.endsWith('paid'))producer('approve',{order_id:order});await frameMessage(page,{TYPE:kind.startsWith('fail')?'FAIL':'SUCCESS'});
  await expect.poll(()=>calls.filter(c=>c.path.startsWith('/payments/recovery?')).length).toBe(1);expect(calls.filter(c=>c.path.endsWith('/abandon'))).toHaveLength(0);
- if(kind.endsWith('paid'))await expect(page.getByRole('heading',{name:'결제 완료',exact:true})).toBeVisible();else await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();
+ if(kind.endsWith('paid'))await expect(page.getByRole('heading',{name:'결제 완료',exact:true})).toBeVisible();else await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();
 });
 for(const failure of ['read','write-lost','write-refused','storage'])test(`normal ended ${failure} retains exact intent with actionable retry`,async({page,context})=>{
  test.skip(!process.env.FINALIZE_FIXTURE_PYTHON,'requires disposable PG');const {calls}=await readyFrame(page,context);let faults=0;
  if(failure==='read')await page.route('**/api-fixture/payments/recovery?**',r=>++faults===1?r.abort():r.fallback());
  if(failure.startsWith('write'))await page.route('**/api-fixture/payments/orders/*/abandon',r=>{if(++faults!==1)return r.fallback();if(failure==='write-lost'){const u=new URL(r.request().url());producer('request',{method:'POST',path:u.pathname.replace('/api-fixture',''),body:r.request().postDataJSON()});}return r.abort();});
  if(failure==='storage')await page.evaluate(()=>{const remove=Storage.prototype.removeItem;window.__restoreStorage=()=>Storage.prototype.removeItem=remove;Storage.prototype.removeItem=function(k){if(k.startsWith('greeneat-purchase-pending:'))throw Error('synthetic storage failure');return remove.call(this,k);};});
- await frameMessage(page);await expect(page.getByRole('alert')).toBeVisible();await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();expect(await page.evaluate(()=>Object.keys(sessionStorage).some(k=>k.startsWith('greeneat-purchase-pending:')))).toBe(true);
- if(failure==='storage')await page.evaluate(()=>window.__restoreStorage());await page.getByRole('button',{name:'저장된 주문 상태 확인'}).click();await expect(page.getByRole('button',{name:'Synthetic ticket 선택'})).toBeVisible();expect(producer('audit').local_receipts).toHaveLength(1);expect(calls.filter(c=>c.path==='/vouchers/purchase')).toHaveLength(1);
+ await frameMessage(page);await expect(page.getByRole('alert')).toBeVisible();await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();expect(await page.evaluate(()=>Object.keys(sessionStorage).some(k=>k.startsWith('greeneat-purchase-pending:')))).toBe(true);
+ if(failure==='storage')await page.evaluate(()=>window.__restoreStorage());await page.getByRole('button',{name:'다시 확인'}).click();await expect(page.getByRole('button',{name:'Synthetic ticket 선택'})).toBeVisible();expect(producer('audit').local_receipts).toHaveLength(1);expect(calls.filter(c=>c.path==='/vouchers/purchase')).toHaveLength(1);
 });
 test('ended survives reload after failed read, no second checkbox',async({page,context})=>{
  test.skip(!process.env.FINALIZE_FIXTURE_PYTHON,'requires disposable PG');await readyFrame(page,context);let first=true;await page.route('**/api-fixture/payments/recovery?**',r=>{if(first){first=false;return r.abort();}return r.fallback();});await frameMessage(page);await expect(page.getByRole('alert')).toBeVisible();await page.reload();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();await expect(page.getByRole('button',{name:'Synthetic ticket 선택'})).toBeVisible();expect(producer('audit').local_receipts).toHaveLength(1);
@@ -83,11 +83,11 @@ for(const scenario of ['wrong-nonce','foreign-origin','success','forceclose','re
   await context.route('https://foreign.invalid/**',r=>r.fulfill({contentType:'text/html',body:`<script>new BroadcastChannel('greeneat-checkout-return:${nonce}').postMessage({type:'greeneat_checkout_return',kind:'cancel',nonce:'${nonce}'});</script>`}));await child.goto('https://foreign.invalid/return');
  }else await child.goto(`/payment-return#${scenario==='success'?'success':'cancel'}.${scenario==='wrong-nonce'?'0'.repeat(32):nonce}`).catch(()=>{});
  if(scenario==='reload'){await expect(page.getByRole('button',{name:'Synthetic ticket 선택'})).toBeVisible();expect(producer('audit').local_receipts).toHaveLength(1);}
- else{await page.waitForTimeout(500);expect(calls.filter(c=>c.path.endsWith('/abandon'))).toHaveLength(0);expect(producer('audit').local_receipts).toHaveLength(0);await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();}
+ else{await page.waitForTimeout(500);expect(calls.filter(c=>c.path.endsWith('/abandon'))).toHaveLength(0);expect(producer('audit').local_receipts).toHaveLength(0);await expect(page.getByRole('heading',{name:['forceclose','success','wrong-nonce'].includes(scenario)?/이전.*결과/:'진행 중인 결제'})).toBeVisible();}
 });
 test('ended read timeout is bounded and retains actionable retry, no local write',async({page,context})=>{
  test.skip(!process.env.FINALIZE_FIXTURE_PYTHON,'requires disposable PG');const {calls}=await readyFrame(page,context);let release;const barrier=new Promise(r=>release=r);await page.route('**/api-fixture/payments/recovery?**',async r=>{await barrier;try{await r.abort();}catch{}});await frameMessage(page);
- try{await expect(page.getByRole('alert')).toContainText('주문 상태 확인 오류',{timeout:12000});await expect(page.getByRole('button',{name:'저장된 주문 상태 확인'})).toBeEnabled();expect(calls.filter(c=>c.path.endsWith('/abandon'))).toHaveLength(0);}finally{release();}
+ try{await expect(page.getByRole('alert')).toContainText('주문 상태 확인 오류',{timeout:12000});await expect(page.getByRole('button',{name:'다시 확인'})).toBeEnabled();expect(calls.filter(c=>c.path.endsWith('/abandon'))).toHaveLength(0);}finally{release();}
 });
 test('real stopped order late approval is quarantined exactly once after catalog reset',async({page,context})=>{
  test.skip(!process.env.FINALIZE_FIXTURE_PYTHON,'requires disposable PG');const {calls}=await readyFrame(page,context);const order=calls.find(c=>c.path==='/vouchers/purchase').json.data.order_id;await frameMessage(page);await expect(page.getByRole('button',{name:'Synthetic ticket 선택'})).toBeVisible();for(let i=0;i<2;i++)expect(producer('approve',{order_id:order}).reconciliation_required).toBe(true);const audit=producer('audit');expect(audit.voucher_count.count).toBe(0);expect(audit.refund_count.count).toBe(0);expect(audit.discrepancies).toHaveLength(1);expect(audit.local_receipts).toHaveLength(1);if(receipts)writeFileSync(`${receipts}/resume-ui-late-approval.json`,JSON.stringify(audit,null,2));

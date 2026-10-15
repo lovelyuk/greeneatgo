@@ -11,6 +11,14 @@ test.afterEach(async ({page}) => { expect(states.get(page)?.errors || []).toEqua
 const receipts=process.env.PURCHASE_RECEIPTS;
 const pendingKey='greeneat-purchase-pending:11111111-1111-4111-8111-111111111111';
 const fields={TYPE:'P',PAYMETHOD:'TOTAL',CPID:'TEST0001',ORDERNO:'GE-S-final-L1',AMOUNT:'41000',KIWOOM_ENC:'synthetic-hash',PRODUCTNAME:'fixture ticket',USERID:'fixture-user'};
+async function expectRecoveryDiagnostic(page, diagnostic) {
+ await expect(page.getByRole('alert')).toBeVisible();
+ const details=page.locator('details');
+ await expect(details).toHaveCount(1);
+ if (!(await details.getAttribute('open') !== null)) await details.locator('summary').click();
+ await expect(details).toContainText(diagnostic);
+ await details.locator('summary').click();
+}
 async function sdkFixture(page,context,{failScript=false,mode='DEV',badFields={},delay=0,priceMismatch=false,hashFailure=false}={}){
  const state=await setup(page,context,{gross:42000,points:1000});
  states.set(page,state);
@@ -59,16 +67,16 @@ test('desktop actual official SDK FRAME, no popup, single hash, persistence and 
  const forms=await page.evaluate(()=>window.__forms);expect(forms).toHaveLength(1);expect(forms[0].target).toBe('___kiwoompayIframe___');expect(forms[0].action).toBe('https://apitest.kiwoompay.co.kr/pay/linkEnc');expect(forms[0].fields.TYPE).toBe('P');expect(forms[0].fields.PAYMETHOD).toBe('TOTAL');
  expect(await page.evaluate(key=>JSON.parse(sessionStorage.getItem(key)).checkout_started,pendingKey)).toBe(true);
  await page.keyboard.press('Escape');await expect(page.locator('#___kiwoompayIframe___')).toHaveCount(0);
- await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();await page.reload();
- await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();expect(state.hashes).toBe(1);expect(state.purchases).toBe(1);expect(state.scripts).toBe(1);
+ await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();await page.reload();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();
+ await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();expect(state.hashes).toBe(1);expect(state.purchases).toBe(1);expect(state.scripts).toBe(1);await expect.poll(()=>state.recoveries).toBe(2);
  if(receipts)writeFileSync(`${receipts}/official-sdk-browser-trace.json`,JSON.stringify({source_sha256:createHash('sha256').update(source).digest('hex'),forms,provider_transport:false,hashes:state.hashes,purchases:state.purchases},null,2));
 });
 for (const options of [{hashFailure:true},{badFields:{TYPE:'W'}},{badFields:{PAYMETHOD:'BANK'}},{badFields:{AMOUNT:'1'}},{mode:'OTHER'}]) {
  test(`admitted SDK failure retains pending no retry/fallback ${JSON.stringify(options)}`,async({page,context})=>{
   const state=await sdkFixture(page,context,options);await submit(page,1000);
-  await expect(page.getByRole('alert')).toContainText('같은 주문의 상태');
+  await expectRecoveryDiagnostic(page,'같은 주문의 상태');
   await expect(page.locator('#___kiwoompayIframe___')).toHaveCount(0);expect(context.pages()).toHaveLength(1);
-  await page.getByRole('button',{name:'저장된 주문 상태 확인'}).click();expect(state.hashes).toBe(1);expect(state.purchases).toBe(1);
+  await page.getByRole('button',{name:'다시 확인'}).click();expect(state.hashes).toBe(1);expect(state.purchases).toBe(1);
   expect(await page.evaluate(key=>JSON.parse(sessionStorage.getItem(key)).checkout_started,pendingKey)).toBe(true);expect(state.errors).toEqual([]);
  });
 }
@@ -89,7 +97,7 @@ test('consent withdrawn during delayed SDK preload prevents order and hash creat
 });
 test('desktop pricing mismatch never admits SDK; pending retained',async({page,context})=>{
  const state=await sdkFixture(page,context,{priceMismatch:true});await submit(page,1000);
- await expect(page.getByRole('alert')).toContainText('최종 주문 금액');expect(state.hashes).toBe(0);expect(context.pages()).toHaveLength(1);
+ await expectRecoveryDiagnostic(page,'최종 주문 금액');expect(state.hashes).toBe(0);expect(context.pages()).toHaveLength(1);
 });
 async function message(page,{origin='https://ssltest-v2.kiwoompay.co.kr',data={TYPE:'SUCCESS',RESULTCODE:'0000'},source='frame'}={}){
  await page.evaluate(({origin,data,source})=>window.dispatchEvent(new MessageEvent('message',{origin,data,source:source==='frame'?document.querySelector('#___kiwoompayIframe___').contentWindow:window})),{origin,data,source});
@@ -101,12 +109,12 @@ for(const mode of ['DEV','REAL']) test(`exact ${mode} origin/source/type guard; 
   await message(page,attack);await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();
  }
  expect(state.recoveries).toBe(0);await message(page,{origin});await expect.poll(()=>state.recoveries).toBe(1);
- await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();expect(state.confirm).toBe(0);expect(state.purchases).toBe(1);expect(state.hashes).toBe(1);expect(state.errors).toEqual([]);
+ await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();expect(state.confirm).toBe(0);expect(state.purchases).toBe(1);expect(state.hashes).toBe(1);expect(state.errors).toEqual([]);
 });
 test('trusted FAIL with unavailable local-stop receipt retains pending, never invents closure',async({page,context})=>{
  const state=await sdkFixture(page,context);await submit(page,1000);await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();
  await message(page,{data:{TYPE:'FAIL'}});await expect.poll(()=>state.recoveries).toBe(1);
- await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();expect(await page.evaluate(key=>!!sessionStorage.getItem(key),pendingKey)).toBe(true);
+ await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();expect(await page.evaluate(key=>!!sessionStorage.getItem(key),pendingKey)).toBe(true);
 });
 test('close control and focus cycle use official close, retain pending without cancellation',async({page,context})=>{
  const state=await sdkFixture(page,context);await submit(page,1000);
@@ -129,11 +137,12 @@ for(const phase of ['script','hash','frame','callback']) test(`logout fences lat
  },phase);
  await page.locator('button').filter({hasText:'로그아웃'}).evaluate(b=>b.click());release();
  await expect(page.getByRole('button',{name:'로그인',exact:true})).toBeVisible();await expect(page.locator('#___kiwoompayIframe___')).toHaveCount(0);
- await page.waitForTimeout(200);expect(state.recoveries).toBe(phase==='callback'?1:0);if(phase==='script')expect(state.purchases).toBe(0);
+ await page.waitForTimeout(200);expect(state.recoveries).toBe(0);if(phase==='script')expect(state.purchases).toBe(0);
 });
 test('slow purchase locks double-click; resize never converts active desktop',async({page,context})=>{
- const state=await sdkFixture(page,context,{delay:250});await submit(page,1000);
- await page.getByRole('button',{name:'구매하기',exact:true}).evaluate(b=>{b.click();b.click();});
+ const state=await sdkFixture(page,context,{delay:250});
+ await page.goto('/shop');await page.getByLabel('이메일',{exact:true}).fill('fixture@example.invalid');await page.getByLabel('비밀번호',{exact:true}).fill('mocked-password-only');await page.getByRole('button',{name:'로그인',exact:true}).click();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();await page.getByRole('button',{name:'테스트 식권 선택'}).click();await page.getByLabel('사용 포인트').fill('1000');await expect(page.locator('.purchase-quote')).toBeVisible();await page.getByLabel('구매 조건 확인').check();
+ await page.getByRole('button',{name:'구매하기',exact:true}).evaluate(b=>{b.click();b.click();b.click();});
  await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();await page.setViewportSize({width:360,height:780});
  await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();expect(state.purchases).toBe(1);expect(state.hashes).toBe(1);expect(context.pages()).toHaveLength(1);
 });
@@ -189,9 +198,9 @@ for (const returnBeforeLoad of [false, true]) test(`leaving purchase tab during 
 test('actual SDK creation throw after hash retains pending, no popup or retry',async({page,context})=>{
  const state=await sdkFixture(page,context);
  await page.addInitScript(()=>{HTMLFormElement.prototype.submit=function(){throw new Error('synthetic provider transport disabled');};});
- await submit(page,1000);await expect(page.getByRole('alert')).toContainText('같은 주문의 상태');
- await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();await expect(page.locator('#___kiwoompayIframe___')).toHaveCount(0);
- await page.getByRole('button',{name:'저장된 주문 상태 확인'}).click();expect(state.hashes).toBe(1);expect(state.purchases).toBe(1);expect(context.pages()).toHaveLength(1);
+ await submit(page,1000);await expectRecoveryDiagnostic(page,'같은 주문의 상태');
+ await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();await expect(page.locator('#___kiwoompayIframe___')).toHaveCount(0);
+ await page.getByRole('button',{name:'다시 확인'}).click();expect(state.hashes).toBe(1);expect(state.purchases).toBe(1);expect(context.pages()).toHaveLength(1);
 });
 test('desktop lost purchase response preserves unknown on reload, no hash or retry',async({page,context})=>{
  const state=await sdkFixture(page,context);await page.route('**/api-fixture/vouchers/purchase-subsidized',route=>{state.purchases++;return route.abort();});
@@ -201,7 +210,7 @@ test('desktop lost purchase response preserves unknown on reload, no hash or ret
 test('desktop pending write failure stops before authenticated SDK POST',async({page,context})=>{
  const state=await sdkFixture(page,context);
  await page.addInitScript(()=>{const original=Storage.prototype.setItem;let writes=0;Storage.prototype.setItem=function(key,value){if(key.startsWith('greeneat-purchase-pending:')&&++writes===2)throw new Error('synthetic pending write failure');return original.call(this,key,value);};});
- await submit(page,1000);await expect(page.getByRole('heading',{name:'진행 중인 결제'})).toBeVisible();await expect(page.getByRole('alert')).toContainText('저장 또는 결제창 진입');expect(state.hashes).toBe(0);expect(state.purchases).toBe(1);
+ await submit(page,1000);await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();await expectRecoveryDiagnostic(page,'저장 또는 결제창 진입');expect(state.hashes).toBe(0);expect(state.purchases).toBe(1);
 });
 test('malformed loaded SDK blocks before purchase',async({page,context})=>{
  const state=await sdkFixture(page,context);await context.route(SDK_URL,route=>{state.scripts++;return route.fulfill({contentType:'application/javascript',body:'// deliberately missing SDK object'});});

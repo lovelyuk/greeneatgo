@@ -314,16 +314,17 @@ function Wallet({ supabase, apiBaseUrl, scope, userId, logout }) {
       throw Object.assign(new Error("계정이 변경됐어요."), {
         stale: !current(),
       });
+    const isForm = typeof FormData !== "undefined" && body instanceof FormData;
     const response = await fetch(`${apiBaseUrl}${path}`, {
-      method: body === undefined ? "GET" : "POST",
+      method: options.method || (body === undefined ? "GET" : "POST"),
       ...((options.requestTimeoutMs || (body === undefined && options.readTimeoutMs)) ? { signal: AbortSignal.timeout(options.requestTimeoutMs || options.readTimeoutMs) } : {}),
       headers: {
         ...(!options.public ? { Authorization: `Bearer ${result.data.session.access_token}` } : {}),
-        "Content-Type": "application/json",
+        ...(isForm ? {} : { "Content-Type": "application/json" }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : { body: isForm ? body : JSON.stringify(body) }),
     });
-    const payload = await response.json();
+    const payload = response.status === 204 ? { ok: true, data: null } : await response.json();
     if (!current())
       throw Object.assign(new Error("계정이 변경됐어요."), { stale: true });
     if (!response.ok || payload.ok === false)
@@ -402,6 +403,7 @@ function Wallet({ supabase, apiBaseUrl, scope, userId, logout }) {
       {me && (
         <PurchaseDashboard
           api={api}
+          supabase={supabase}
           me={me}
           revision={version.current}
           apiBaseUrl={apiBaseUrl}

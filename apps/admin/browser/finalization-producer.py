@@ -50,7 +50,7 @@ class SqlClient:
         self.db = db
         self.settings = settings
     def rest_get(self, table, params):
-        allowed = {'payment_order_local_abandonments', 'payment_orders', 'payment_order_closures', 'payment_callback_discrepancies', 'voucher_products', 'merchants', 'app_users'}
+        allowed = {'payment_order_operator_local_stops', 'payment_notification_inbox', 'payment_order_local_abandonments', 'payment_orders', 'payment_order_closures', 'payment_callback_discrepancies', 'voucher_products', 'merchants', 'app_users'}
         assert table in allowed, table
         select = params.get('select', '*')
         columns = sql.SQL('*') if select == '*' else sql.SQL(',').join(sql.Identifier(c) for c in select.split(','))
@@ -112,7 +112,7 @@ def initialize(local=False, bank=False):
     from test_kiwoom_notification_postgres import notification_db
     notification_db.__wrapped__()
     with psycopg.connect(URL, row_factory=dict_row) as db:
-        for name in ['0064_failed_order_finalization.sql','0065_manual_database_order_closure.sql','0066_owner_local_abandonment.sql','0067_explicit_checkout_cancel_intent.sql']:
+        for name in ['0064_failed_order_finalization.sql','0065_manual_database_order_closure.sql','0066_owner_local_abandonment.sql','0067_explicit_checkout_cancel_intent.sql','0068_operator_local_stop.sql']:
             db.execute((ROOT / 'supabase/migrations' / name).read_text())
         db.execute("insert into app_users(id,display_name,role,status) values(%s,'Synthetic buyer','customer','active'),(%s,'Synthetic operator','platform_admin','active')", (OWNER, ACTOR))
         db.execute("insert into merchants(id,name,qr_token,view_token) values(%s,'Synthetic merchant','synthetic-qr','synthetic-view')", (MERCHANT,))
@@ -145,6 +145,7 @@ def audit():
             'orders': db.execute('select order_id,status,checkout_started_at is not null as started from payment_orders order by created_at').fetchall(),
             'closures': db.execute('select id,evidence_sha256,outcome,closed_at from payment_order_closures').fetchall(),
             'reviews': db.execute('select count(*) as count from payment_order_reviews').fetchone(),
+            'operator_receipts': db.execute('select id,source,actor_kind,provider_finality from payment_order_operator_local_stops').fetchall(),
             'local_receipts': db.execute('select * from payment_order_local_abandonments').fetchall(),
             'discrepancies': db.execute('select kind,transaction_id from payment_callback_discrepancies').fetchall(),
             'voucher_count': db.execute('select count(*) as count from vouchers').fetchone(),
@@ -158,6 +159,20 @@ def late_approval(provider_order_id=OLD):
             (order['id'],order['order_id'],order['amount'],Jsonb({'RESULTCODE':'0000','DAOUTRX':'synthetic-late-local','AMOUNT':str(order['amount']),'PAYMETHOD':'CARD'}))).fetchone()['result']
 
 
+def operator_stop():
+    import hashlib
+    with psycopg.connect(URL, row_factory=dict_row) as db:
+        row = db.execute("select to_jsonb(o)-array['checkout_token','provider_response']::text[] as observed from payment_orders o where order_id=%s", (OLD,)).fetchone()['observed']
+        e = dict(authority='local_stop_adjudication', reason='manual_local_stop_unknown_provider',
+            order_id=row['id'], merchant_order_id=OLD, user_id=row['user_id'], amount=row['amount'],
+            source_sha256='b'*64, authorization_reference='synthetic explicitly authorized operator stop',
+            provider_finality='unknown', residual_late_approval_possible=True, observed=row,
+            observed_discrepancies=[])
+        canonical=json.dumps(e,sort_keys=True,separators=(',',':'))
+        return db.execute('select operator_stop_payment_order(%s,%s,%s,%s,false) as result',
+            (row['id'],Jsonb(e),hashlib.sha256(canonical.encode()).hexdigest(),canonical)).fetchone()['result']
+
+
 command = sys.argv[1]
-result = initialize(local=command!='init',bank=command=='init-bank') if command in {'init','init-local','init-bank'} else audit() if command == 'audit' else late_approval() if command == 'late-local' else late_approval(json.loads(sys.argv[2])['order_id']) if command == 'approve' else request(json.loads(sys.argv[2]))
+result = operator_stop() if command == 'operator-stop' else initialize(local=command!='init',bank=command=='init-bank') if command in {'init','init-local','init-bank'} else audit() if command == 'audit' else late_approval() if command == 'late-local' else late_approval(json.loads(sys.argv[2])['order_id']) if command == 'approve' else request(json.loads(sys.argv[2]))
 print(json.dumps(result, default=str))

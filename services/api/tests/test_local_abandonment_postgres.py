@@ -24,6 +24,9 @@ def db(notification_db):
             c.execute(MANUAL.read_text())
         if LOCAL.exists() and not c.execute("select to_regprocedure('abandon_owned_payment_order(text,uuid,integer,boolean)')").fetchone()[0]:
             c.execute(LOCAL.read_text())
+        operator = MIGRATION.with_name('0068_operator_local_stop.sql')
+        if operator.exists() and not c.execute("select to_regprocedure('operator_stop_payment_order(uuid,jsonb,text,text,boolean)')").fetchone()[0]:
+            c.execute(operator.read_text())
         yield c
         c.rollback()
 
@@ -145,7 +148,7 @@ class LocalClient:
         assert name=='abandon_owned_payment_order'
         return self.db.execute('select abandon_owned_payment_order(%s,%s,%s,%s)',(args['p_order_id'],args['p_user_id'],args['p_amount'],args['p_acknowledge_provider_uncertainty'])).fetchone()[0]
     def rest_get(self,table,filters):
-        assert table in ['payment_orders','payment_order_closures','payment_callback_discrepancies','payment_order_local_abandonments']
+        assert table in ['payment_orders','payment_order_closures','payment_callback_discrepancies','payment_order_local_abandonments','payment_order_operator_local_stops','payment_notification_inbox']
         columns=filters['select'].split(',');where=[];values=[]
         for key,value in filters.items():
             if key in ['select','limit','order']: continue

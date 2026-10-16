@@ -537,7 +537,7 @@ export default function PurchaseCheckout({
     return <section className="purchase-card">
       <h2>구매 진행 중단 접수</h2>
       <p>주문 {abandoned.order_id} · {abandoned.amount.toLocaleString('ko-KR')}원</p>
-      <p>요청에 따라 이 주문의 서비스 내 구매 진행을 중단했어요. 기존 주문과 영수증은 내역에 보존되며 기존 결제창은 다시 열 수 없어요.</p>
+      <p>{abandoned.local_abandonment.source === 'manual_database_operator' ? '운영자 판정으로' : '요청에 따라'} 이 주문의 서비스 내 구매 진행을 중단했어요. 기존 주문과 영수증은 내역에 보존되며 기존 결제창은 다시 열 수 없어요.</p>
       <p>PG 취소·환불 확정이 아니에요. 기존 결제창에서 나중에 승인·청구될 가능성이 남아 있어요. 그런 경우 재확인 대상으로 기록하며 식권 발급이나 자동 환불은 하지 않아요. 내역의 ‘중단한 구매 주문’에서 최신 상태를 확인해 주세요.</p>
       <button onClick={() => {
         try {

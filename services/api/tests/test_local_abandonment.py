@@ -25,7 +25,7 @@ def harness():
         if table=='payment_orders': return [ROW.copy()]
         if table=='payment_order_closures': return []
         if table=='payment_order_local_abandonments': return [RECORD.copy()]
-        if table=='payment_callback_discrepancies': return []
+        if table in ['payment_callback_discrepancies','payment_order_operator_local_stops','payment_notification_inbox']: return []
         raise AssertionError(table)
     repo.client.rest_get.side_effect=get
     app=FastAPI();app.include_router(payments.router)
@@ -97,7 +97,7 @@ def test_successful_rpc_without_durable_readback_is_503(harness):
 
 def test_late_charge_keeps_receipt_not_verified_closure(harness):
     client,repo=harness
-    repo.client.rest_get.side_effect=[[ROW],[],[RECORD],[{'kind':'late_approval'}]]
+    repo.client.rest_get.side_effect=[[ROW],[],[RECORD],[],[{'kind':'late_approval'}],[]]
     response=client.get('/payments/recovery',params=dict(order_id='GE-synthetic',amount=100),headers=HEADERS)
     assert response.status_code==200
     data=response.json()['data']

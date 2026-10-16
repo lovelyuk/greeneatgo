@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
-from app.services.local_abandonment import LOCAL_SELECT, local_recovery
+from app.services.local_abandonment import LOCAL_SELECT, OPERATOR_SELECT, local_recovery
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app.auth import bearer_token
@@ -583,8 +583,20 @@ def local_abandonment_history(
             'select': LOCAL_SELECT, 'user_id': f'eq.{profile.id}',
             'order': 'requested_at.desc,id.desc', 'limit': str(limit),
         })
+        operator_receipts = repo.client.rest_get('payment_order_operator_local_stops', {
+            'select': OPERATOR_SELECT, 'user_id': f'eq.{profile.id}',
+            'order': 'requested_at.desc,id.desc', 'limit': str(limit),
+        })
+        from datetime import datetime
+        receipts = sorted(receipts + operator_receipts,
+                          key=lambda row: (datetime.fromisoformat(row['requested_at'].replace('Z', '+00:00')), row['id']),
+                          reverse=True)[:limit]
         orders = []
+        seen = set()
         for receipt in receipts:
+            if receipt['order_id'] in seen:
+                raise ValueError('Conflicting local history receipts')
+            seen.add(receipt['order_id'])
             rows = repo.client.rest_get('payment_orders', {
                 'select': ORDER_SELECT, 'id': f"eq.{receipt['order_id']}",
                 'user_id': f'eq.{profile.id}', 'amount': f"eq.{receipt['amount']}", 'limit': '1',

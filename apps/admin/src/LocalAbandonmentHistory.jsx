@@ -37,7 +37,7 @@ export default function LocalAbandonmentHistory({ api, userId }) {
     {error && <p role="alert">{error} 위 버튼으로 조회만 다시 시도할 수 있어요.</p>}
     {!busy && !error && !orders.length && <p>중단한 구매 주문이 없어요.</p>}
     {orders.map(row => <article key={row.order_id}>
-      <h3>{row.order_id}</h3><p>{row.amount.toLocaleString('ko-KR')}원 · 중단 접수 {row.local_abandonment.requested_at}</p>
+      <h3>{row.order_id}</h3><p>{row.amount.toLocaleString('ko-KR')}원 · {row.local_abandonment.source === 'manual_database_operator' ? '운영자 로컬 중단 판정' : '중단 접수'} {row.local_abandonment.requested_at}</p>
       {row.recovery_action === 'reconcile'
         ? <p role="alert">후속 승인 또는 불일치가 있어 실제 청구 재확인이 필요해요. 식권 발급·자동 환불하지 않았어요. 이 주문 번호로 관리자에게 확인해 주세요.</p>
         : <p>구매 진행 중단 접수 · PG 최종 결과 미확정. 후속 승인이 오면 재확인 내역으로 남아요.</p>}

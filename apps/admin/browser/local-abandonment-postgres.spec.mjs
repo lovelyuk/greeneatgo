@@ -1,3 +1,4 @@
+import { openRecovery } from './recovery-navigation.mjs';
 // Built React -> actual authenticated FastAPI routes -> local PostgreSQL RPCs.
 import {test,expect} from '@playwright/test';
 import {execFileSync} from 'node:child_process';
@@ -16,7 +17,7 @@ test('real owner stop producer to reload/new distinct purchase and durable late 
   const result=producer('request',{method:r.request().method(),path,body:r.request().postDataJSON()});calls.push({path,...result});return r.fulfill({status:result.status,json:result.json});
  });
  await page.goto('/shop');await page.getByLabel('이메일',{exact:true}).fill('fixture@example.invalid');await page.getByLabel('비밀번호',{exact:true}).fill('mocked-password-only');await page.getByRole('button',{name:'로그인',exact:true}).click();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();
- await expect.poll(()=>calls.filter(c=>c.path.startsWith('/payments/recovery?')).length).toBe(1);await page.getByRole('button',{name:'구매 진행 중단',exact:true}).click();await page.getByLabel('PG 취소·환불 확정이 아님을 이해했습니다').check();await page.getByRole('button',{name:'확인하고 구매 진행 중단'}).click();await expect(page.getByRole('button',{name:'Synthetic ticket 선택'})).toBeVisible();
+ await expect.poll(()=>calls.filter(c=>c.path.startsWith('/payments/recovery?')).length).toBe(1);await openRecovery(page);await page.getByRole('button',{name:'구매 진행 중단',exact:true}).click();await page.getByLabel('PG 취소·환불 확정이 아님을 이해했습니다').check();await page.getByRole('button',{name:'확인하고 구매 진행 중단'}).click();await expect(page.getByRole('button',{name:'Synthetic ticket 선택'})).toBeVisible();
  const stop=calls.find(c=>c.path.endsWith('/abandon'));expect(stop.status).toBe(200);expect(stop.json.data.local_abandonment.provider_finality).toBe('unknown');
  await page.reload();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();await expect(page.getByRole('button',{name:'Synthetic ticket 선택'})).toBeVisible();
  await expect(page.getByRole('button',{name:'새 견적으로 구매 준비'})).toHaveCount(0);await page.getByRole('button',{name:'Synthetic ticket 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();await expect(page.getByLabel('구매 조건 확인')).not.toBeChecked();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();
@@ -35,5 +36,5 @@ for(const path of ['/c','/f','/p'])test(`actual safe return page ${path} closes 
  await page.route('**/api-fixture/payments/recovery?**',r=>{reads++;return r.fulfill({json:{ok:true,data:{order_id:'GE-S-final-L1',amount:41000,status:'ready',recovery_action:'reconcile',resumable:false,checkout_url:null}}});});
  await page.route('**/api-fixture/payments/orders/*/abandon',r=>{stops++;return r.abort();});
  await context.route(`**/return-fixture${path}`,r=>r.fulfill({contentType:'text/html',body:html}));await submit(page,1000);await expect.poll(()=>state.checkout).toBe(1);const child=context.pages().find(p=>p!==page);await child.waitForURL('**/api-fixture/payments/checkout/**');await child.waitForLoadState();expect(await child.evaluate(()=>window.opener)).toBeNull();const closed=child.waitForEvent('close');await child.goto(`/return-fixture${path}`).catch(()=>{});await closed;
- await expect.poll(()=>reads).toBe(1);await expect(page.getByRole('button',{name:'구매 진행 중단',exact:true})).toBeVisible();expect(stops).toBe(0);expect(state.confirm).toBe(0);
+ await expect.poll(()=>reads).toBe(1);await openRecovery(page);await expect(page.getByRole('button',{name:'구매 진행 중단',exact:true})).toBeVisible();expect(reads).toBe(2);expect(stops).toBe(0);expect(state.confirm).toBe(0);
 });

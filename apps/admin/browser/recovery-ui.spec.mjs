@@ -1,3 +1,4 @@
+import { openRecovery } from './recovery-navigation.mjs';
 import { test, expect } from '@playwright/test';
 import { setup } from './final-L1-fixture.mjs';
 const owner='11111111-1111-4111-8111-111111111111';
@@ -12,14 +13,14 @@ async function restored(page,context,result=ready){
 }
 test('legacy unknown automatically reads once, shows two actions and collapsed technical details',async({page,context})=>{
  const f=await restored(page,context);await login(page);
- await expect(page.getByRole('heading',{name:'이전 결제 결과를 확인하지 못했어요.'})).toBeVisible();
- expect(f.reads()).toBe(1);
+ await openRecovery(page);await expect(page.getByRole('heading',{name:'이전 결제 결과를 확인하지 못했어요.'})).toBeVisible();
+ expect(f.reads()).toBe(2); // automatic catalog entry + explicit history entry
  await expect(page.getByRole('button',{name:'다시 확인',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'구매 진행 중단',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'승인 상태 확인',exact:true})).toHaveCount(0);
  await expect(page.getByText(`주문 ${pending.order_id}`,{exact:true})).not.toBeVisible();
- await page.getByText('상세 보기',{exact:true}).click();await expect(page.getByText(`주문 ${pending.order_id}`,{exact:true})).toBeVisible();
- await page.waitForTimeout(350);expect(f.reads()).toBe(1);expect(f.state.confirm).toBe(0);
- await page.getByRole('button',{name:'다시 확인',exact:true}).click();await expect.poll(f.reads).toBe(2);
+ await openRecovery(page);await page.getByText('상세 보기',{exact:true}).click();await expect(page.getByText(`주문 ${pending.order_id}`,{exact:true})).toBeVisible();
+ await page.waitForTimeout(350);expect(f.reads()).toBe(2);expect(f.state.confirm).toBe(0);
+ await openRecovery(page);await page.getByRole('button',{name:'다시 확인',exact:true}).click();await expect.poll(f.reads).toBe(3);
 });
 const stopped={...ready,user_id:owner,status:'canceled',recovery_action:'locally_abandoned',completion:null,local_abandonment:{id:'22222222-2222-4222-8222-222222222222',source:'owner_request',scope:'local_order',outcome:'abandoned',requested_by:owner,requested_at:'2026-10-15T01:02:03+09:00',provider_finality:'unknown',residual_late_approval_possible:true}};
 test('trusted local stop receipt returns original catalog without another buyer step',async({page,context})=>{

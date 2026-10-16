@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from 'react-dom';
 import { verifiedOrderClosure, validLocalAbandonment } from './paymentClosure.js';
 import { safeCheckoutUrl } from "./purchaseSafety.js";
 import { checkoutPresentation, loadSdk, validateSdkData, openSdkFrame } from './kiwoomSdk.js';
@@ -21,6 +22,10 @@ export default function PurchaseCheckout({
   onCheckoutEnded,
   paymentMethod = 'TOTAL',
   active = true,
+  purchaseActive = active,
+  recoveryView = false,
+  recoveryTarget,
+  onRecoveryNeeded,
 }) {
   const [closed, setClosed] = useState(null);
   const [abandoned, setAbandoned] = useState(null);
@@ -53,6 +58,19 @@ export default function PurchaseCheckout({
   }
   const autoOrderId = useRef(null), autoAttempt = useRef(null), entry = useRef(0);
   const liveActive = useRef(active);
+  const viewEpoch = useRef(0), lastRecoveryView = useRef(recoveryView), livePurchase = useRef(purchaseActive);
+  livePurchase.current = purchaseActive;
+  if (lastRecoveryView.current !== recoveryView) {
+    lastRecoveryView.current = recoveryView;
+    viewEpoch.current++;
+  }
+  useEffect(() => {
+    // Fence read/stop responses on navigation, never an admitted purchase POST.
+    if (lock.current?.viewEpoch !== undefined) {
+      lock.current = null; setBusy(false);
+    }
+    setStopWarning(false); setStopConsent(false);
+  }, [recoveryView]);
   if (liveActive.current !== active) {
     liveActive.current = active;
     entry.current++;
@@ -110,7 +128,7 @@ export default function PurchaseCheckout({
     };
   }, [storageKey]);
   function begin() {
-    const run = { generation: generation.current, entry: entry.current, key: storageKey, popup: null,
+    const run = { generation: generation.current, entry: entry.current, key: storageKey, popup: null, presentationEpoch: viewEpoch.current,
       presentation: checkoutPresentation(navigator, paymentMethod) };
     lock.current = run;
     setBusy(true); setError("");
@@ -118,6 +136,7 @@ export default function PurchaseCheckout({
   }
   function current(run) {
     return liveActive.current && (run.entry === undefined || run.entry === entry.current) &&
+      (run.viewEpoch === undefined || run.viewEpoch === viewEpoch.current) &&
       generation.current === run.generation && scopeKey.current === run.key;
   }
   function finish(run) {
@@ -222,6 +241,8 @@ export default function PurchaseCheckout({
     };
   }
   async function purchase() {
+    if (!purchaseActive) return;
+    if (order || unknown || completion?.storage_blocked) { onRecoveryNeeded?.(); return; }
     if (!active || lock.current || order || unknown || !quote || !legalReady || !consent)
       return;
     generation.current++; returnedIntent.current = null; setEntryError('');
@@ -312,6 +333,8 @@ export default function PurchaseCheckout({
       assertMatchingSaved(next, run);
       saveOrder(next, run.key);
       setUnknown(false);
+      // Never open a payment presentation after the buyer left purchase.
+      if (!livePurchase.current || run.presentationEpoch !== viewEpoch.current) { run.popup?.close(); return; }
       if (result.amount > 0) {
         const url = safeCheckoutUrl(result.checkout_url, apiBaseUrl);
         if (!url) {
@@ -340,6 +363,9 @@ export default function PurchaseCheckout({
           const checkoutPath = new URL(url).pathname.slice(basePath.length);
           const data = await api(`${checkoutPath}/sdk?return_nonce=${next.return_nonce}`, {});
           if (!current(run)) return;
+          if (!livePurchase.current || run.presentationEpoch !== viewEpoch.current) {
+            setCheckoutOpen(false); return;
+          }
           const checked = validateSdkData(data, next);
           sdkClose.current = openSdkFrame(sdk, checked, {
             // The adapter emits one guarded semantic event and suppresses the
@@ -407,6 +433,7 @@ export default function PurchaseCheckout({
     if (!active || lock.current || !order) return;
     const pending = order;
     const run = begin();
+    run.viewEpoch = viewEpoch.current;
     setStopEligible(false);
     try {
       const result = await api(`/payments/recovery?order_id=${encodeURIComponent(pending.order_id)}&amount=${pending.amount}`, undefined, { readTimeoutMs: 10000 });
@@ -454,9 +481,14 @@ export default function PurchaseCheckout({
     } finally { finish(run); }
   }
   recoveryRef.current = recover;
+  useEffect(() => {
+    // One authenticated read on history entry; never reopen the old PG flow.
+    if (recoveryView && order) recoveryRef.current?.();
+  }, [recoveryView]);
   async function abandon() {
     if (!active || lock.current || !order || !stopEligible || !stopConsent) return;
     const pending = order, run = begin();
+    run.viewEpoch = viewEpoch.current;
     setStopEligible(false);
     try {
       const result = await api(`/payments/orders/${encodeURIComponent(pending.order_id)}/abandon`, {
@@ -470,16 +502,18 @@ export default function PurchaseCheckout({
   }
   async function cancel() {
     if (
+      !active || !recoveryView ||
       lock.current ||
       !order ||
       order.mode !== "subsidized" ||
       order.checkout_started
     )
       return;
-    const run = begin();
+    const pending = order, run = begin();
+    run.viewEpoch = viewEpoch.current;
     try {
       const result = await api(
-        `/vouchers/subsidized-orders/${encodeURIComponent(order.order_id)}/cancel`,
+        `/vouchers/subsidized-orders/${encodeURIComponent(pending.order_id)}/cancel`,
         {},
       );
       if (!current(run)) return;
@@ -487,6 +521,7 @@ export default function PurchaseCheckout({
         throw new Error(
           "서버에서 취소를 확인하지 못했어요. 승인 상태를 다시 확인해 주세요.",
         );
+      assertMatchingSaved(pending, run);
       if (!clearSaved(run)) return;
       setCanceled(true);
       setOrder(null);
@@ -522,7 +557,7 @@ export default function PurchaseCheckout({
       <button onClick={() => { setClosed(null); setConsent(false); clearQuote(); }}>새 견적으로 구매 준비</button>
     </section>;
   if (canceled)
-    return (
+    return presentCompletion(
       <section className="purchase-card">
         <h2>결제 취소 확인</h2>
         <p>서버에서 예약 취소를 확인했어요.</p>
@@ -536,8 +571,11 @@ export default function PurchaseCheckout({
         </button>
       </section>
     );
+  function presentCompletion(content) {
+    return recoveryView && recoveryTarget ? createPortal(content, recoveryTarget) : content;
+  }
   if (completion)
-    return (
+    return presentCompletion(
       <section className="purchase-card">
         <h2>결제 완료</h2>
         {completion.pricing_discrepancy && (
@@ -592,8 +630,8 @@ export default function PurchaseCheckout({
         </button>}
       </section>
     );
-  if (unknown)
-    return (
+  if (unknown && recoveryView)
+    return recoveryTarget && createPortal((
       <section className="purchase-card">
         <h2>주문 상태 확인 필요</h2>
         <p role="alert">
@@ -601,9 +639,9 @@ export default function PurchaseCheckout({
             "이전 주문 생성 결과를 확인할 수 없어요. 중복 구매하지 말고 관리자에게 확인해 주세요."}
         </p>
       </section>
-    );
-  if (order)
-    return (
+    ), recoveryTarget);
+  if (order && recoveryView)
+    return recoveryTarget && createPortal((
       <section className="purchase-card recovery-card">
         <h2>{busy ? '결제 결과 확인 중' : checkoutOpen ? '진행 중인 결제' : '이전 결제 결과를 확인하지 못했어요.'}</h2>
         {busy ? <p role="status">결제 결과 확인 중…</p> : <p role="alert">{error.startsWith('주문 상태 확인 오류:') ? '주문 상태 확인 오류 · 다시 확인해 주세요.' : error.startsWith('구매 중단 결과 확인 필요:') ? '구매 중단 결과를 확인하지 못했어요. 다시 확인해 주세요.' : checkoutOpen ? '결제창에서 진행해 주세요.' : '결제 여부가 아직 확정되지 않았어요. 청구 내역도 확인해 주세요.'}</p>}
@@ -625,8 +663,8 @@ export default function PurchaseCheckout({
           {error && <p>{error}</p>}
         </details>
       </section>
-    );
-  if (!quote) return null;
+    ), recoveryTarget);
+  if (!purchaseActive || !quote) return null;
   return (
     <section className="purchase-card">
       <h2>주문 확인</h2>
@@ -649,10 +687,10 @@ export default function PurchaseCheckout({
         선택한 상품 수량·가격과 기존 이용약관/개인정보 처리방침을 확인했습니다.
       </p>
       <p>결제창에서 취소·실패로 정상 복귀하면 서버 확인 후 서비스 내 구매 진행을 중단하고 상품 목록으로 돌아가요. PG 취소·환불 확정은 아니며, 후속 청구는 내역에 재확인 대상으로 보존해요. 새 구매는 새 견적과 동의로 직접 시작해요.</p>
-      <button disabled={busy || !legalReady || !consent} onClick={purchase}>
+      <button disabled={(busy && !order && !unknown) || !legalReady || !consent} onClick={purchase}>
         구매하기
       </button>
-      {error && <p role="alert">{error}</p>}
+      {error && !order && !unknown && <p role="alert">{error}</p>}
     </section>
   );
 }

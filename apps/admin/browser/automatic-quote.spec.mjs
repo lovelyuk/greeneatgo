@@ -1,3 +1,4 @@
+import { openRecovery } from './recovery-navigation.mjs';
 // Production bundle, synthetic account/pricing I/O only. No provider transport.
 import { test, expect } from '@playwright/test';
 const product = { id: 'auto-product', name: '자동 견적 식권', voucher_count: 10, bonus_count: 1, unit_price: 8000, sale_price: 72000, employee_pay_amount: 42000, total_company_subsidy_amount: 20000, total_restaurant_subsidy_amount: 10000, kiwoom_pay_method: 'TOTAL' };
@@ -131,7 +132,7 @@ test.describe('accepted normalized point authority', () => {
     await page.getByRole('button', { name: '구매하기', exact: true }).click();
     await expect.poll(() => s.writes.length).toBe(1);
     expect(s.writes).toEqual([{ path: '/vouchers/purchase-subsidized', body: { product_id: product.id, requested_point_amount: 2000 } }]);
-    await expect(page.getByRole('heading', { name: '주문 상태 확인 필요' })).toBeVisible();
+    await openRecovery(page);await expect(page.getByRole('heading', { name: '주문 상태 확인 필요' })).toBeVisible();
     expect(s.quotes.at(-1).requested_point_amount).toBe(5000);
     expect(s.errors).toEqual([]);
   });

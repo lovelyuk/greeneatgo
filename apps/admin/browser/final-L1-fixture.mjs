@@ -25,8 +25,9 @@ export async function setup(page, context, quote) {
     let data = {};
     if (path === "/me") data = { user_id: id, role: "employee", status: "active", company_id: "company-fixture", display_name: "테스트 구매자", point_balance: 50000, voucher_balance: 0, voucher_use_history: [], point_transactions: [], recent_transactions: [] };
     if (path === "/coupons") data = { merchant: { id: "merchant-fixture", name: "테스트 식당" }, items: quote.discount ? [{ id: "coupon-fixture", name: "테스트 할인", discount_type: "fixed", discount_value: quote.discount }] : [], issued: [] };
-    if (path === "/vouchers/products") data = { purchase_mode: "subsidized", items: [{ id: "package-fixture", name: "테스트 식권", voucher_count: 10, bonus_count: 1, unit_price: 8000, sale_price: 72000, employee_pay_amount: 42000, kiwoom_pay_method: "TOTAL" }] };
+    if (path === "/vouchers/products") data = { purchase_mode: "subsidized", items: [{ id: "package-fixture", name: "테스트 식권", voucher_count: 10, bonus_count: 1, unit_price: 8000, sale_price: 72000, employee_pay_amount: 42000, total_company_subsidy_amount: 30000, total_restaurant_subsidy_amount: 0, kiwoom_pay_method: "TOTAL" }] };
     if (path === "/vouchers/quote") data = { merchant_id: "merchant-fixture", merchant_name: "테스트 식당", product_id: "package-fixture", purchase_mode: "subsidized", gross_amount: quote.gross, coupon_discount_amount: quote.discount || 0, point_amount: quote.points, payment_amount: quote.gross - (quote.discount || 0) - quote.points };
+    if (path === "/payments/local-abandonments") data = { orders: [] };
     if (path === "/payments/confirm") state.confirm++;
     return route.fulfill({ json: { ok: true, data } });
   });

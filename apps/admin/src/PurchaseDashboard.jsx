@@ -83,7 +83,8 @@ function QrPayment({ api, refresh, userId }) {
 
 export default function PurchaseDashboard({ me, api, apiBaseUrl, legal, refresh, revision, logout, loading }) {
   const [tab, setTab] = useState(() => {
-    // Restore the recovery screen rather than hiding an unresolved order on home.
+    // Restore the catalog for a pending intent. Its mounted checkout performs
+    // the bounded owner read; recovery controls render only in history.
     try { return sessionStorage.getItem(`greeneat-purchase-pending:${me.user_id}`) ? 1 : 0; }
     catch { return 1; }
   }), [page, setPage] = useState(''), [wallet, setWallet] = useState(null), [menu, setMenu] = useState(null), [readError, setReadError] = useState('');
@@ -94,7 +95,8 @@ export default function PurchaseDashboard({ me, api, apiBaseUrl, legal, refresh,
     api('/daily-menu', undefined, { public: true }).then(d => { if (alive) setMenu(d); }).catch(e => { if (alive && !e.stale) setMenu({ unavailable: true }); });
     return () => { alive = false; };
   }, [revision]);
-  function go(index) { setPage(''); setTab(index); }
+  const [recoveryTarget, setRecoveryTarget] = useState(null), [recoveryNotice, setRecoveryNotice] = useState('');
+  function go(index) { setPage(''); setTab(index); setRecoveryNotice(''); }
   function open(destination) { setPage(destination); setTab(0); }
   const monthUsage = isVoucher ? me.voucher_month_used_count != null ? `${me.voucher_month_used_count}장 · ${won(me.voucher_month_used_amount ?? 0)}` : '이번 달 사용 정보 없음' : me.month_used != null ? won(me.month_used) : '사용 정보 없음';
   return <div className="dashboard-shell">
@@ -111,10 +113,26 @@ export default function PurchaseDashboard({ me, api, apiBaseUrl, legal, refresh,
       <PurchaseHistory me={me} recent />
       <button className="refresh-button" disabled={loading} onClick={refresh}>새로고침</button>
     </div>
-    {/* Kept mounted like native IndexedStack: pending checkout must survive tab switches. */}
-    <div hidden={tab !== 1 && page !== '이벤트'}><PurchaseCatalog active={tab === 1 || page === '이벤트'} onClose={() => go(0)} api={api} me={me} revision={revision} apiBaseUrl={apiBaseUrl} legal={legal} refresh={refresh} eventsOnly={page === '이벤트'} /></div>
+    {/* Exactly one catalog/checkout owns admission and persisted pending state.
+        Recovery is portaled into history, not a second financial component. */}
+    <div hidden={tab !== 1 && page !== '이벤트'}>
+      <PurchaseCatalog
+        active={tab === 1 || tab === 3 || page === '이벤트'}
+        purchaseActive={tab === 1 || page === '이벤트'}
+        recoveryView={tab === 3 && !page}
+        recoveryTarget={recoveryTarget}
+        onRecoveryNeeded={() => {
+          go(3);
+          setRecoveryNotice('이전 주문의 결제 결과를 먼저 확인해 주세요. 중복 구매를 막기 위해 새 주문은 만들지 않았어요.');
+        }}
+        onRecoveryEnded={() => go(1)}
+        onClose={() => go(0)}
+        api={api} me={me} revision={revision} apiBaseUrl={apiBaseUrl}
+        legal={legal} refresh={refresh} eventsOnly={page === '이벤트'}
+      />
+    </div>
     <div hidden={tab !== 2}><QrPayment api={api} refresh={refresh} userId={me.user_id} /></div>
-    <div hidden={tab !== 3}><PurchaseHistory me={me} />{tab === 3 && <LocalAbandonmentHistory api={api} userId={me.user_id} />}</div>
+    <div hidden={tab !== 3}>{recoveryNotice && tab === 3 && <p role="status">{recoveryNotice}</p>}<div ref={setRecoveryTarget} /><PurchaseHistory me={me} />{tab === 3 && <LocalAbandonmentHistory api={api} userId={me.user_id} />}</div>
     <div hidden={tab !== 4}><h1>내정보</h1><div className="profile-heading"><span className="avatar">{Array.from(name)[0]}</span><div><h2>{name}</h2><p>{me.company?.name || (me.role === 'employee' ? '회사 임직원' : '개인 구매자')}</p></div></div><section className="purchase-card setting-group"><p><span>휴대폰 번호</span><strong>{me.phone || '—'}</strong></p><p><span>인증수단</span><strong>이메일 (웹)</strong></p><p><span>결제수단</span><strong>{me.account_type === 'ledger' ? '회사 장부' : '식권'}</strong></p></section><section className="purchase-card setting-group" aria-label="알림 및 초대"><button disabled>결제 알림<strong>웹에서 저장 불가</strong></button><button disabled>초대코드 입력<strong>활성 계정 재등록 미지원</strong></button></section><section className="purchase-card setting-group">{[['쿠폰함', () => open('쿠폰함')], ['식권 상품', () => go(1)], ['공지사항', () => open('공지사항')], ['구매 인증 리뷰', () => open('리뷰')]].map(([label, action]) => <button key={label} onClick={action}>{label}<ChevronRight size={16} /></button>)}</section><section className="purchase-card setting-group"><a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침<ChevronRight size={16} /></a><a href="/terms.html" target="_blank" rel="noreferrer">이용약관<ChevronRight size={16} /></a><p><span>웹 버전</span><strong>구매자 웹</strong></p><button className="danger-text" onClick={logout}>로그아웃<ChevronRight size={16} /></button></section><p className="muted">결제 알림 설정은 앱에도 저장 API가 없어요. 활성 계정의 초대코드 재등록은 진행 중 결제 보호를 위해 이 웹에서 제공하지 않아요.</p></div>
     {page === '쿠폰함' && <>{readError && <><p role="alert">{readError}</p><button onClick={refresh} disabled={loading}>다시 시도</button></>}{wallet ? <CouponWallet wallet={wallet} /> : !readError && <p role="status">쿠폰 확인 중…</p>}</>}
     {['공지사항', '리뷰'].includes(page) && <ReadBoard key={page} kind={page} api={api} />}

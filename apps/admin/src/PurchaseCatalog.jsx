@@ -24,6 +24,11 @@ export default function PurchaseCatalog({
   onClose,
   eventsOnly = false,
   active = true,
+  purchaseActive = active,
+  recoveryView = false,
+  recoveryTarget,
+  onRecoveryNeeded,
+  onRecoveryEnded,
 }) {
   const [catalog, setCatalog] = useState(null),
     [coupons, setCoupons] = useState(null),
@@ -89,16 +94,16 @@ export default function PurchaseCatalog({
   const signature = item && eligible && sourceScope === accountScope && coupons?.merchant?.id && validPoints
     ? JSON.stringify([accountScope, item, catalog.purchase_mode, coupons.merchant, coupon, points]) : null;
   const currentSignature = useRef(signature);
-  currentSignature.current = active ? signature : null;
+  currentSignature.current = purchaseActive ? signature : null;
   const quote = signature && priced?.signature === signature ? priced.result : null;
   // A tab round-trip retains displayed pricing/consent, but changes the quote
   // identity observed by the SDK preload guard so a hidden attempt cannot resume.
-  const checkoutQuote = useMemo(() => active && quote ? { ...quote } : null, [active, quote]);
+  const checkoutQuote = useMemo(() => purchaseActive && quote ? { ...quote } : null, [purchaseActive, quote]);
   const busy = Boolean(signature && !quote && !error);
   useEffect(() => {
     const run = ++generation.current;
     let alive = true, timeout;
-    if (!active || (signature && priced?.signature === signature)) return;
+    if (!purchaseActive || (signature && priced?.signature === signature)) return;
     setQuote(null);
     setError('');
     if (item && !validPoints) {
@@ -130,7 +135,7 @@ export default function PurchaseCatalog({
       } finally { clearTimeout(timeout); }
     }, 250);
     return () => { alive = false; clearTimeout(timer); clearTimeout(timeout); };
-  }, [signature, retry, active]);
+  }, [signature, retry, purchaseActive]);
   const visibleProducts = catalog?.items.filter(product => !eventsOnly || product.is_event) || [];
   const choices = [
     ...(coupons?.issued || []).map(c => ({ ...c, value: `issued:${c.id}`, data: c.coupon_snapshot || {}, issued: true })),
@@ -227,9 +232,14 @@ export default function PurchaseCatalog({
       <div className="catalog-checkout">
       <PurchaseCheckout
         active={active}
+        purchaseActive={purchaseActive}
+        recoveryView={recoveryView}
+        recoveryTarget={recoveryTarget}
+        onRecoveryNeeded={onRecoveryNeeded}
         onCheckoutEnded={kind => {
           generation.current++; setQuote(null); setItem(null); setCoupon(''); setPoints('0'); setError('');
           setReturnNotice(kind === 'mobile_cancel' ? '구매 진행을 취소했어요' : kind === 'locally_abandoned' ? '구매 진행을 중단했어요. PG 취소·환불 확정은 아니에요.' : kind === 'verified_closed' ? '이전 주문의 종료를 확인했어요.' : '구매 진행이 종료됐어요');
+          onRecoveryEnded?.();
         }}
         clearQuote={() => { generation.current++; setQuote(null); setItem(null); setCoupon(''); setPoints('0'); }}
         userId={me.user_id}

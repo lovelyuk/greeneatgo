@@ -1,3 +1,4 @@
+import { openRecovery } from './recovery-navigation.mjs';
 // Deterministic mocked I/O ONLY. No real auth, merchant or Kiwoom calls.
 import { test, expect } from "@playwright/test";
 // Legacy popup contract tests explicitly exercise the preserved mobile path.
@@ -53,6 +54,7 @@ async function fixture(page, profile = { role: "customer", status: "active" }) {
     calls.push({ path, body: route.request().postDataJSON() });
     expect(path, "purchase UI observes recovery; confirm is not an approval command").not.toBe("/payments/confirm");
     let data = {};
+    if (path === "/payments/local-abandonments") data = { orders: [] };
     if (path === "/me")
       data = {
         user_id: user.id,
@@ -78,6 +80,7 @@ async function fixture(page, profile = { role: "customer", status: "active" }) {
   return calls;
 }
 async function expectRecoveryDiagnostic(page, diagnostic) {
+ await openRecovery(page);
  await expect(page.getByRole('alert')).toBeVisible();
  const details=page.locator('details');
  await expect(details).toHaveCount(1);
@@ -112,8 +115,8 @@ test("recovery restored ordinary order never exposes reopen or enters checkout",
   await context.route(recoveryReady.checkout_url, route => { entered++; return route.fulfill({ body: "MOCK ONLY" }); });
   await login(page);
   await expect(page.getByRole("button", { name: "기존 결제창 다시 열기" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
-  await expect.poll(() => recoveries).toBe(1); expect(entered).toBe(0);
+  await openRecovery(page);await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+  await expect.poll(() => recoveries).toBe(2); expect(entered).toBe(0);
   expect(context.pages()).toHaveLength(1);
   expect(calls.some(call => call.path.includes("/purchase"))).toBe(false);
 });
@@ -166,7 +169,7 @@ test('real router PG closure lifecycle retains audit and explicit purchase creat
   await context.route('**/api-fixture/payments/checkout/**', route => route.fulfill({ body: 'SYNTHETIC ONLY: provider entry deliberately not executed' }));
   await login(page);
   await expect(page.locator('.purchase-quote')).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+  await openRecovery(page);await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
   const body = { user_id: seed.owner, amount: seed.amount, outcome: 'failed', source_sha256: 'b'.repeat(64),
     source_reference: 'synthetic restricted evidence document', attempts: [{ transaction_id: 'synthetic-attempt', outcome: 'failed' }],
     authority: 'trusted_provider_irreversible_closure', complete_attempt_coverage: true, irreversible_no_future_approval: true,
@@ -176,7 +179,7 @@ test('real router PG closure lifecycle retains audit and explicit purchase creat
   expect(dry.status).toBe(200); expect(dry.json.data.closed).toBe(false); expect(dry.json.data.eligible).toBe(true);
   const applied = producer('request', { method: 'POST', token: 'fixture-operator', path, body: { ...body, dry_run: false } });
   expect(applied.status).toBe(200); expect(applied.json.data.closed).toBe(true);
-  await page.getByRole('button', { name: '다시 확인', exact: true }).click();
+  await openRecovery(page);await page.getByRole('button', { name: '다시 확인', exact: true }).click();
   await expect(page.getByRole('button', { name: /선택$/ }).first()).toBeVisible();
   await expect(page.getByRole('status')).toContainText(/종료|취소/);
   await expect(page.getByText('최종 결제', { exact: true })).toHaveCount(0);
@@ -201,7 +204,7 @@ test('real router PG closure lifecycle retains audit and explicit purchase creat
   expect(audit.orders).toHaveLength(2);
   expect(audit.orders.find(o => o.order_id === seed.order_id).status).toBe('failed');
   expect(audit.orders.find(o => o.order_id === fresh.order_id).status).toBe('ready');
-  expect(recoveries.map(r => r.json.data.recovery_action)).toEqual(['reconcile', 'closed']);
+  expect(recoveries.map(r => r.json.data.recovery_action)).toEqual(['reconcile', 'reconcile', 'closed']);
   if (process.env.PURCHASE_RECEIPTS) writeFileSync(join(process.env.PURCHASE_RECEIPTS, 'frontend-router-pg-proof.json'),
     JSON.stringify({ synthetic_only: true, seed, dry, applied, recoveries, fresh_order_id: fresh.order_id, audit,
       provider_executed: false, source: 'real FastAPI routers and migrated PostgreSQL RPC' }, null, 2));
@@ -247,8 +250,8 @@ for (const failure of ['owner', 'missing-owner', 'id', 'hash', 'scope', 'finalit
     if (failure === 'completion') data.completion = {};
     await page.route('**/api-fixture/payments/recovery?**', route => route.fulfill({ json: { ok: true, data } }));
     await login(page);
-    await expect(page.getByRole('alert')).toContainText('주문 상태 확인 오류');
-    await expect(page.getByRole('heading', { name: /이전.*결과/ })).toBeVisible();
+    await openRecovery(page);await expect(page.getByRole('alert')).toContainText('주문 상태 확인 오류');
+    await openRecovery(page);await expect(page.getByRole('heading', { name: /이전.*결과/ })).toBeVisible();
     expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)).order_id, recoveryStorageKey)).toBe(recoveryReady.order_id);
     expect(calls.some(c => c.path.includes('/purchase'))).toBe(false); expect(context.pages()).toHaveLength(1);
   });
@@ -267,7 +270,7 @@ for (const failure of ['getItem', 'removeItem', 'new-intent']) test(`closed reco
   }, { failure, key: recoveryStorageKey });
   release();
   await expectRecoveryDiagnostic(page, failure === 'removeItem' ? '지우지 못했어요' : '저장된 주문을 유지');
-  await expect(page.getByRole('heading', { name: /이전.*결과/ })).toBeVisible();
+  await openRecovery(page);await expect(page.getByRole('heading', { name: /이전.*결과/ })).toBeVisible();
   await expect(page.getByRole('button', { name: '새 견적으로 구매 준비' })).toHaveCount(0);
 });
 for (const destination of ['logout', 'other-owner', 'ABA']) test(`closed recovery stale ${destination} cannot clear intent`, async ({ page }) => {
@@ -327,8 +330,8 @@ test("recovery status works when window.open is forbidden", async ({ page }) => 
   await page.route("**/api-fixture/payments/recovery?**", route => route.fulfill({ json: { ok: true, data: { ...recoveryReady, recovery_action: "reconcile", checkout_url: null } } }));
   await login(page);
   await page.evaluate(() => { window.open = () => { throw new Error("Recovery must not open PG"); }; });
-  await page.getByRole("button", { name: "다시 확인", exact: true }).click();
-  await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+  await openRecovery(page);await page.getByRole("button", { name: "다시 확인", exact: true }).click();
+  await openRecovery(page);await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
   expect(calls.some(call => call.path.includes("purchase"))).toBe(false);
   expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)).order_id, recoveryStorageKey)).toBe(recoveryReady.order_id);
 });
@@ -347,7 +350,7 @@ for (const status of ["ready", "failed", "canceled", "refund_processing", "refun
   const calls = await restoredRecovery(page);
   await page.route("**/api-fixture/payments/recovery?**", route => route.fulfill({ json: { ok: true, data: { ...recoveryReady, status, recovery_action: "reconcile", checkout_url: null } } }));
   await login(page);
-  await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+  await openRecovery(page);await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "구매하기", exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '다시 확인', exact: true })).toHaveCount(1);
   await expect(page.getByRole('button', { name: '구매 진행 중단', exact: true })).toHaveCount(status === 'ready' ? 1 : 0);
@@ -371,7 +374,7 @@ for (const failure of ["401", "502", "404", "network", "malformed", "amount", "o
     return route.fulfill({ json: { ok: true, data } });
   });
   await login(page);
-  await expect(page.getByRole("alert")).toContainText("주문 상태 확인 오류");
+  await openRecovery(page);await expect(page.getByRole("alert")).toContainText("주문 상태 확인 오류");
   const details = page.locator('details').filter({ hasText: /주문|오류|확인|MOCK|fetch|Failed/ });
   await expect(details).toHaveCount(1);
   await expect(details).not.toHaveAttribute('open', '');
@@ -385,7 +388,7 @@ test("recovery status ready gives pending guidance without automatic popup", asy
   await restoredRecovery(page);
   await page.route("**/api-fixture/payments/recovery?**", route => route.fulfill({ json: { ok: true, data: { ...recoveryReady, recovery_action: "reconcile", checkout_url: null } } }));
   await login(page);
-  await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+  await openRecovery(page);await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "구매 진행 중단", exact: true })).toBeVisible();
   expect(context.pages()).toHaveLength(1);
 });
@@ -395,10 +398,10 @@ test("recovery entry reads once; duplicate manual retry adds one bounded GET and
   await page.route("**/api-fixture/payments/recovery?**", route => { count++; return route.fulfill({ json: { ok: true, data: { ...recoveryReady, recovery_action: "reconcile", checkout_url: null } } }); });
   await login(page);
   await expect.poll(() => count).toBe(1);
-  await expect(page.getByRole("button", { name: "다시 확인", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "다시 확인" }).evaluate(button => { button.click(); button.click(); });
-  await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
-  await expect.poll(() => count).toBe(2);
+  await openRecovery(page);await expect(page.getByRole("button", { name: "다시 확인", exact: true })).toBeEnabled();
+  await openRecovery(page);await page.getByRole("button", { name: "다시 확인" }).evaluate(button => { button.click(); button.click(); });
+  await openRecovery(page);await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+  await expect.poll(() => count).toBe(3);
   await expect.poll(() => context.pages().length).toBe(1);
 });
 test("recovery late response after logout and new account cannot navigate, refresh or clear old lock", async ({ page, context }) => {
@@ -434,19 +437,19 @@ test("recovery storage write failure before purchase refuses order API", async (
   await selectQuote(page); await page.getByLabel("구매 조건 확인").check();
   await page.evaluate(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) { if (key.startsWith("greeneat-purchase-pending:")) throw new Error("MOCK storage write failure"); return original.call(this, key, value); }; });
   await page.getByRole("button", { name: "구매하기", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
+  await openRecovery(page);await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
   expect(calls.some(call => call.path.includes("/purchase"))).toBe(false);
   await expect.poll(() => context.pages().length).toBe(1);
 });
 test("recovery known purchase order survives storage write failure and tab remount", async ({ page, context }) => {
   await fixture(page); await publishedLegal(page); await catalogFixture(page); await quoteFixture(page);
-  let purchases = 0;
+  let purchases = 0, reads = 0;
   await page.route("**/api-fixture/vouchers/purchase", route => { purchases++; return route.fulfill({ json: { ok: true, data: { order_id: recoveryReady.order_id, amount: 72000, product_id: product.id, gross_amount: 72000, coupon_discount_amount: 0, point_amount: 0, checkout_url: recoveryReady.checkout_url } } }); });
-  await page.route("**/api-fixture/payments/recovery?**", route => route.fulfill({ json: { ok: true, data: { ...recoveryReady, status: "done", recovery_action: "complete", checkout_url: null, completion: recoveryCompletion } } }));
+  await page.route("**/api-fixture/payments/recovery?**", route => route.fulfill({ json: { ok: true, data: ++reads === 1 ? { ...recoveryReady, recovery_action: "reconcile", checkout_url: null } : { ...recoveryReady, status: "done", recovery_action: "complete", checkout_url: null, completion: recoveryCompletion } } }));
   await selectQuote(page); await page.getByLabel("구매 조건 확인").check();
   await page.evaluate(() => { const original = Storage.prototype.setItem; let writes = 0; Storage.prototype.setItem = function(key, value) { if (key.startsWith("greeneat-purchase-pending:") && ++writes > 1) throw new Error("MOCK storage write failure"); return original.call(this, key, value); }; });
   await page.getByRole("button", { name: "구매하기", exact: true }).click();
-  if (await page.locator("details").getAttribute("open") === null) await page.getByText("상세 보기", {exact:true}).click();
+  await openRecovery(page);if (await page.locator("details").getAttribute("open") === null)await page.getByText("상세 보기", {exact:true}).click();
   await expect(page.getByText(`주문 ${recoveryReady.order_id}`, { exact: true })).toBeVisible();
   await page.getByRole("navigation").getByRole("button", { name: "홈", exact: true }).click();
   await page.getByRole("navigation").getByRole("button", { name: "구매", exact: true }).click();
@@ -468,7 +471,7 @@ test("recovery storage read failure remains blocked without order API", async ({
   const calls = await fixture(page); await catalogFixture(page);
   await page.addInitScript(() => { const original = Storage.prototype.getItem; Storage.prototype.getItem = function(key) { if (key.startsWith("greeneat-purchase-pending:")) throw new Error("MOCK read failure"); return original.call(this, key); }; });
   await login(page);
-  await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
+  await openRecovery(page);await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
   expect(calls.some(call => call.path.includes("purchase") || call.path.includes("recovery"))).toBe(false);
 });
 test("recovery stale purchase pricing stays blocked across tabs and reload", async ({ page, context }) => {
@@ -479,15 +482,15 @@ test("recovery stale purchase pricing stays blocked across tabs and reload", asy
   await page.route("**/api-fixture/payments/recovery?**", route => { recoveryCalls++; return route.fulfill({ json: { ok: true, data: { ...recoveryReady, amount: 73000 } } }); });
   await selectQuote(page); await page.getByLabel("구매 조건 확인").check();
   await page.getByRole("button", { name: "구매하기", exact: true }).click();
-  if (await page.locator("details").getAttribute("open") === null) await page.getByText("상세 보기", {exact:true}).click();
+  await openRecovery(page);if (await page.locator("details").getAttribute("open") === null)await page.getByText("상세 보기", {exact:true}).click();
   await expect(page.getByText(`주문 ${recoveryReady.order_id}`, { exact: true })).toBeVisible();
   await page.getByRole("navigation").getByRole("button", { name: "홈", exact: true }).click();
   await page.getByRole("navigation").getByRole("button", { name: "구매", exact: true }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "주문 상태 확인 오류" })).toBeVisible();
+  await openRecovery(page);await expect(page.getByRole("alert").filter({ hasText: "주문 상태 확인 오류" })).toBeVisible();
   await page.reload();
   await page.getByRole("navigation").getByRole("button", { name: "구매", exact: true }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "주문 상태 확인 오류" })).toBeVisible();
-  expect(entered).toBe(0); expect(recoveryCalls).toBe(2); expect(purchases).toBe(1);
+  await openRecovery(page);await expect(page.getByRole("alert").filter({ hasText: "주문 상태 확인 오류" })).toBeVisible();
+  expect(entered).toBe(0); expect(recoveryCalls).toBe(5); expect(purchases).toBe(1);
   await expect.poll(() => context.pages().length).toBe(1);
 });
 for (const started of [false, undefined]) test(`recovery legacy unaccepted price ${started} cannot reopen amount-only order`, async ({ page, context }) => {
@@ -504,11 +507,11 @@ for (const started of [false, undefined]) test(`recovery legacy unaccepted price
   });
   await context.route(recoveryReady.checkout_url, route => { entered++; return route.fulfill({ body: "MOCK ONLY" }); });
   await login(page);
-  await expect(page.getByRole("alert")).toContainText("주문 상태 확인 오류");
-  if (await page.locator("details").getAttribute("open") === null) await page.getByText("상세 보기", {exact:true}).click();
+  await openRecovery(page);await expect(page.getByRole("alert")).toContainText("주문 상태 확인 오류");
+  await openRecovery(page);if (await page.locator("details").getAttribute("open") === null)await page.getByText("상세 보기", {exact:true}).click();
   await expect(page.getByText(`주문 ${recoveryReady.order_id}`, { exact: true })).toBeVisible();
   expect(entered).toBe(0);
-  await expect.poll(() => recoveries).toBe(1);
+  await expect.poll(() => recoveries).toBe(2);
   expect(calls.some(call => call.path.includes("/purchase"))).toBe(false);
   expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)).order_id, recoveryStorageKey)).toBe(recoveryReady.order_id);
   expect(context.pages()).toHaveLength(1);
@@ -526,11 +529,15 @@ test("recovery accepted pricing belongs to saved order, not a different selected
   await page.route("**/api-fixture/payments/recovery?**", route => route.fulfill({ json: { ok: true, data: recoveryReady } }));
   await context.route(recoveryReady.checkout_url, route => { entered++; return route.fulfill({ body: "MOCK ONLY" }); });
   await login(page);
-  await expect(page.getByRole("alert")).toContainText("주문 상태 확인 오류");
+  await openRecovery(page);await expect(page.getByRole("alert")).toContainText("주문 상태 확인 오류");
   expect(entered).toBe(0);
   const saved = await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)), recoveryStorageKey);
+  await page.getByRole('navigation').getByRole('button', { name: '구매', exact: true }).click();
   await page.getByRole("button", { name: "테스트 10+1 식권 선택" }).click();
   await expect(page.locator(".purchase-quote")).toBeVisible();
+  await page.getByLabel('구매 조건 확인').check();
+  await page.getByRole('button', { name: '구매하기', exact: true }).click();
+  await expect(page.getByRole('navigation').getByRole('button', { name: '내역', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole("button", { name: "구매하기", exact:true })).toHaveCount(0);
   expect(entered).toBe(0);
   expect(saved.accepted_pricing.product_id).toBe("previous-product-fixture");
@@ -543,9 +550,9 @@ test("recovery read is mutation-free even when storage writes fail and preserves
   await context.route(recoveryReady.checkout_url, route => { entered++; return route.fulfill({ body: "MOCK ONLY" }); });
   await login(page);
   await page.evaluate(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) { if (key.startsWith("greeneat-purchase-pending:")) throw new Error("MOCK storage write failure"); return original.call(this, key, value); }; });
-  await page.getByRole("button", { name: "다시 확인", exact: true }).click();
-  await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
-  if (await page.locator("details").getAttribute("open") === null) await page.getByText("상세 보기", {exact:true}).click();
+  await openRecovery(page);await page.getByRole("button", { name: "다시 확인", exact: true }).click();
+  await openRecovery(page);await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+  await openRecovery(page);if (await page.locator("details").getAttribute("open") === null)await page.getByText("상세 보기", {exact:true}).click();
   await expect(page.getByText(`주문 ${recoveryReady.order_id}`, { exact: true })).toBeVisible();
   expect(entered).toBe(0);
   await expect.poll(() => context.pages().length).toBe(1);
@@ -560,7 +567,7 @@ test("recovery never opens popup before delayed authenticated GET returns", asyn
   expect(context.pages()).toHaveLength(1);
   await expect(page.getByRole("button", { name: "기존 결제창 다시 열기" })).toHaveCount(0);
   release();
-  await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+  await openRecovery(page);await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
   await expect.poll(() => context.pages().length).toBe(1);
 });
 async function publishedLegal(page) {
@@ -786,8 +793,8 @@ test("mixed employee issued-coupon purchase follows API form and remains pending
   await expect(
     page.getByRole("button", { name: "예약 취소 요청" }),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "다시 확인" }).click();
-  await expect(page.getByRole("alert")).toContainText("주문 상태 확인 오류");
+  await openRecovery(page);await page.getByRole("button", { name: "다시 확인" }).click();
+  await openRecovery(page);await expect(page.getByRole("alert")).toContainText("주문 상태 확인 오류");
   await expect(page.getByRole("heading", { name: "결제 완료" })).toHaveCount(0);
   await page.route("**/api-fixture/payments/recovery?**", async (route) => {
     expect(route.request().method()).toBe("GET");
@@ -807,7 +814,7 @@ test("mixed employee issued-coupon purchase follows API form and remains pending
       },
     });
   });
-  await page.getByRole("button", { name: "다시 확인" }).click();
+  await openRecovery(page);await page.getByRole("button", { name: "다시 확인" }).click();
   await expect(page.getByRole("heading", { name: "결제 완료" })).toBeVisible();
   expect(confirmed).toEqual({ order_id: "GE-S-mixed-fixture", amount: 39000 });
 });
@@ -849,12 +856,13 @@ test("cancel refusal preserves pending authority and cannot mark canceled", asyn
     order_id: "GE-S-refused-fixture", amount: 40000, status: "ready", recovery_action: "reconcile", resumable: false, checkout_url: null,
   } } }));
   await login(page);
-  if (await page.locator("details").getAttribute("open") === null) await page.getByText("상세 보기", {exact:true}).click();
+  await openRecovery(page);if (await page.locator("details").getAttribute("open") === null)await page.getByText("상세 보기", {exact:true}).click();
   await page.getByRole("button", { name: "예약 취소 요청" }).click();
   await expectRecoveryDiagnostic(page, "already started");
   await expect(
     page.getByRole("heading", { name: "결제 취소 확인" }),
   ).toHaveCount(0);
+  await openRecovery(page);
   await expect(
     page.getByRole("heading", { name: /이전.*결과/ }),
   ).toBeVisible();
@@ -1049,16 +1057,18 @@ test("duplicate submit and refresh cannot create a second order and pending surv
       button.click();
       button.click();
     });
+  await openRecovery(page);
   await expect(
     page.getByRole("heading", { name: /이전.*결과/ }),
   ).toBeVisible();
   expect(purchases).toBe(1);
   await page.reload();
   await page.getByRole("navigation").getByRole("button", { name: "구매", exact: true }).click();
+  await openRecovery(page);
   await expect(
     page.getByRole("heading", { name: /이전.*결과/ }),
   ).toBeVisible();
-  if (await page.locator("details").getAttribute("open") === null) await page.getByText("상세 보기", {exact:true}).click();
+  await openRecovery(page);if (await page.locator("details").getAttribute("open") === null)await page.getByText("상세 보기", {exact:true}).click();
   await expect(page.getByText("주문 GE-V-recover-fixture")).toBeVisible();
   expect(purchases).toBe(1);
 });
@@ -1077,11 +1087,13 @@ test("ambiguous order network error blocks automatic retry and survives reload",
   await selectQuote(page);
   await page.getByLabel("구매 조건 확인").check();
   await page.getByRole("button", { name: "구매하기", exact: true }).click();
+  await openRecovery(page);
   await expect(
     page.getByRole("heading", { name: "주문 상태 확인 필요" }),
   ).toBeVisible();
   await page.reload();
   await page.getByRole("navigation").getByRole("button", { name: "구매", exact: true }).click();
+  await openRecovery(page);
   await expect(
     page.getByRole("heading", { name: "주문 상태 확인 필요" }),
   ).toBeVisible();
@@ -1215,7 +1227,7 @@ test("card recovery renders only authoritative receipt links and keeps malformed
       json: {
         ok: true,
         data: { ...completedRecovery({
-          order_id: count === 1 ? "wrong-order" : "GE-V-receipt-fixture",
+          order_id: count <= 2 ? "wrong-order" : "GE-V-receipt-fixture",
           status: "done",
           amount: 72000,
           product_name: product.name,
@@ -1237,9 +1249,9 @@ test("card recovery renders only authoritative receipt links and keeps malformed
   });
   await login(page);
   await expect.poll(() => count).toBe(1);
-  await expect(page.getByRole("alert")).toContainText("주문 상태 확인 오류");
+  await openRecovery(page);await expect(page.getByRole("alert")).toContainText("주문 상태 확인 오류");
   await expect(page.getByRole("heading", { name: "결제 완료" })).toHaveCount(0);
-  await page.getByRole("button", { name: "다시 확인" }).click();
+  await openRecovery(page);await page.getByRole("button", { name: "다시 확인" }).click();
   await expect(page.getByRole("heading", { name: "결제 완료" })).toBeVisible();
   await expect(page.getByRole("link", { name: "매출전표" })).toHaveAttribute(
     "href",
@@ -1336,7 +1348,7 @@ test("employee invalid checkout is blocked and only server release confirms canc
   await expect(
     page.getByRole("heading", { name: "결제 취소 확인" }),
   ).toHaveCount(0);
-  if (await page.locator("details").getAttribute("open") === null) await page.getByText("상세 보기", {exact:true}).click();
+  await openRecovery(page);if (await page.locator("details").getAttribute("open") === null)await page.getByText("상세 보기", {exact:true}).click();
   await page.getByRole("button", { name: "예약 취소 요청" }).click();
   await expect(
     page.getByRole("heading", { name: "결제 취소 확인" }),
@@ -1427,11 +1439,11 @@ for (const invalid of ["missing", "wrong-order", "wrong-count", "not-done"]) {
     await expect(page.locator('.purchase-quote')).toBeVisible();
     await page.getByLabel("구매 조건 확인").check();
     await page.getByRole("button", { name: "구매하기", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
+    await openRecovery(page);await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "결제 완료" })).toHaveCount(0);
     await page.reload();
   await page.getByRole("navigation").getByRole("button", { name: "구매", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
+    await openRecovery(page);await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
     expect(purchases).toBe(1);
     expect(calls.some(c => c.path === "/payments/confirm")).toBe(false);
     expect(page.context().pages()).toHaveLength(1);
@@ -1441,7 +1453,7 @@ test("restored zero-card order remains unresolved without forbidden confirm or c
   const calls = await fixture(page, { role: "employee", status: "active" });
   await page.addInitScript(() => sessionStorage.setItem("greeneat-purchase-pending:11111111-1111-4111-8111-111111111111", JSON.stringify({ order_id: "GE-S-zero-unresolved", amount: 0, mode: "subsidized", checkout_started: false })));
   await login(page);
-  await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
+  await openRecovery(page);await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
   await expect(page.getByRole("button", { name: "다시 확인" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "예약 취소 요청" })).toHaveCount(0);
   expect(calls.some(c => c.path === "/payments/confirm")).toBe(false);
@@ -1518,11 +1530,12 @@ test("ordinary order opens exact API server form, callback and popup close canno
     ),
   );
   await expect.poll(() => recoveryReads).toBe(1);
+  await openRecovery(page);
   await expect(
     page.getByRole("heading", { name: /이전.*결과/ }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "결제 완료" })).toHaveCount(0);
-  expect(recoveryReads).toBe(1);
+  expect(recoveryReads).toBe(2);
   await expect(
     page.getByRole("button", { name: "구매하기", exact: true }),
   ).toHaveCount(0);
@@ -1726,9 +1739,9 @@ for (const [label, saved] of [
   await expect(page.getByRole("button", { name: "기존 결제창 다시 열기" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "구매하기", exact: true })).toHaveCount(0);
   if (label === "null-pricing") {
-    await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
+    await openRecovery(page);await expect(page.getByRole("heading", { name: /이전.*결과/ })).toBeVisible();
   } else {
-    await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
+    await openRecovery(page);await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toBeVisible();
     expect(calls.some(call => call.path.includes("recovery"))).toBe(false);
   }
   expect(calls.some(call => call.path.includes("purchase"))).toBe(false);

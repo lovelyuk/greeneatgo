@@ -46,7 +46,7 @@ export default function PurchaseCheckout({
   const [unknown, setUnknown] = useState(false);
   const [entryError, setEntryError] = useState('');
   const storageKey = `greeneat-purchase-pending:${userId}`;
-  const sdkClose = useRef(null), recoveryRef = useRef(null);
+  const sdkClose = useRef(null), recoveryRef = useRef(null), reservedPopup = useRef(null);
   const bridgeChannel = useRef(null), returnedIntent = useRef(null);
   const liveQuote = useRef(quote), liveLegal = useRef(legalReady), liveConsent = useRef(consent);
   liveQuote.current = quote; liveLegal.current = legalReady; liveConsent.current = consent;
@@ -193,7 +193,10 @@ export default function PurchaseCheckout({
     const key = `${storageKey}:${entry.current}:${order.order_id}`;
     if (autoAttempt.current === key) return;
     autoAttempt.current = key;
-    recoveryRef.current?.();
+    // An embedded (PC) payment frame cannot survive a reload/remount, so a
+    // restored started frame order was closed by the buyer.
+    const frameGone = order.presentation === 'frame' && order.checkout_started && !sdkClose.current && !lock.current;
+    recoveryRef.current?.(frameGone ? 'user_close' : null);
   }, [active, storageKey, order?.order_id]);
   function saveOrder(next, key = storageKey) {
     pendingMemory.set(key, next);
@@ -221,7 +224,8 @@ export default function PurchaseCheckout({
     if (current(run)) await refresh();
   }
   function blankPopup(run) {
-    run.popup = window.open("about:blank", "_blank");
+    const reserved = reservedPopup.current; reservedPopup.current = null;
+    run.popup = reserved && !reserved.closed ? reserved : window.open("about:blank", "_blank");
     popup.current = run.popup;
     if (!run.popup) {
       setError("팝업이 차단됐어요. 팝업을 허용해 주세요.");
@@ -247,15 +251,27 @@ export default function PurchaseCheckout({
   }
   async function purchase() {
     if (!purchaseActive) return;
-    if (order && !unknown && !completion?.storage_blocked && !lock.current) {
-      // A leftover unpaid order from a cancelled checkout must not block a new
-      // purchase: re-check it and stop it locally when it is still unpaid.
-      const settled = await recover('user_close');
-      if (!settled) onRecoveryNeeded?.();
-      return;
+    let leftover = !!(order || unknown);
+    if (leftover && !completion?.storage_blocked && !lock.current && active && quote && legalReady && consent) {
+      // A leftover order from a cancelled/abandoned checkout must not block a new
+      // purchase. Re-check it: paid -> show completion; unpaid -> stop it quietly
+      // and continue; still undecidable -> set it aside (an unpaid order cannot
+      // charge, and a later real approval is still fulfilled by the server).
+      // Mobile popup must be reserved inside the click, before any await.
+      const reserved = quote.payment_amount > 0 && checkoutPresentation(navigator, paymentMethod) === 'popup'
+        ? window.open('about:blank', '_blank') : null;
+      if (reserved) reserved.opener = null;
+      const outcome = order ? await recover('user_close', { silent: true }) : false;
+      if (outcome === 'completed' || (!outcome && !parkLeftover())) {
+        reserved?.close();
+        if (outcome !== 'completed') onRecoveryNeeded?.();
+        return;
+      }
+      reservedPopup.current = reserved;
+      leftover = false;
     }
-    if (order || unknown || completion?.storage_blocked) { onRecoveryNeeded?.(); return; }
-    if (!active || lock.current || order || unknown || !quote || !legalReady || !consent)
+    if (leftover || completion?.storage_blocked) { onRecoveryNeeded?.(); return; }
+    if (!active || lock.current || !quote || !legalReady || !consent)
       return;
     generation.current++; returnedIntent.current = null; setEntryError('');
     const run = begin();
@@ -424,7 +440,7 @@ export default function PurchaseCheckout({
     if ((stored && !matches(stored)) || (memory && !matches(memory)))
       throw new Error('저장된 주문이 변경되어 종료 처리를 차단했어요.');
   }
-  function retireLocal(result, pending, run, endedKind = null) {
+  function retireLocal(result, pending, run, endedKind = null, silent = false) {
     if (!validLocalAbandonment(result, pending, userId)) throw new Error('구매 진행 중단 영수증을 확인하지 못했어요.');
     assertMatchingSaved(pending, run);
     const saved = { local_abandonment_receipt: result, pending };
@@ -435,14 +451,23 @@ export default function PurchaseCheckout({
     const intent = rawIntent === 'user_close' ? 'mobile_cancel' : rawIntent;
     sessionStorage.removeItem(run.key); pendingMemory.delete(run.key);
     returnedIntent.current = null; bridgeChannel.current?.close(); bridgeChannel.current = null;
-    setConsent(false); setOrder(null); setAbandoned(null); setError(''); setCheckoutOpen(false);
+    setOrder(null); setAbandoned(null); setError(''); setCheckoutOpen(false);
+    if (!silent) setConsent(false);
     setStopWarning(false); setStopConsent(false); setStopEligible(false);
     queuedRead.current = false; popup.current?.close(); popup.current = null;
     sdkClose.current?.(); sdkClose.current = null;
-    onCheckoutEnded?.(intent || 'locally_abandoned'); clearQuote();
+    if (!silent) { onCheckoutEnded?.(intent || 'locally_abandoned'); clearQuote(); }
+  }
+  // Set aside an undecidable leftover so it no longer blocks the buyer.
+  function parkLeftover() {
+    try { sessionStorage.removeItem(storageKey); } catch { return false; }
+    pendingMemory.delete(storageKey);
+    returnedIntent.current = null; bridgeChannel.current?.close(); bridgeChannel.current = null;
+    setOrder(null); setUnknown(false); setError(''); setStopEligible(false); setStopWarning(false);
+    return true;
   }
 
-  async function recover(forcedIntent = null) {
+  async function recover(forcedIntent = null, { silent = false } = {}) {
     if (!active || lock.current || !order) return false;
     const pending = order;
     const run = begin();
@@ -467,20 +492,20 @@ export default function PurchaseCheckout({
         if (!current(run)) return false;
       }
       if (validLocalAbandonment(result, pending, userId)) {
-        retireLocal(result, pending, run); return true;
+        retireLocal(result, pending, run, null, silent); return 'stopped';
       } else if (verifiedOrderClosure(result, pending, userId)) {
         // Re-read storage at the destructive boundary: a late response cannot
         // remove a newer intent even for the same account/document.
         assertMatchingSaved(pending, run);
         if (!clearSaved(run)) return false;
-        setConsent(false); clearQuote(); setOrder(null); setClosed(null); setError('');
-        onCheckoutEnded?.('verified_closed');
+        setOrder(null); setClosed(null); setError('');
+        if (!silent) { setConsent(false); clearQuote(); onCheckoutEnded?.('verified_closed'); }
         popup.current?.close();
         sdkClose.current?.(); sdkClose.current = null;
-        return true;
+        return 'stopped';
       } else if (result.recovery_action === "complete" && result.status === "done" &&
           result.checkout_url === null && validCompletion(result.completion, pending)) {
-        await complete(result.completion, run, pending); return true;
+        await complete(result.completion, run, pending); return 'completed';
       } else if (result.recovery_action === "reconcile" && result.status !== "done" &&
           result.checkout_url === null && !result.completion) {
         const intent = forcedIntent || returnedIntent.current || pending.return_intent;
@@ -492,7 +517,7 @@ export default function PurchaseCheckout({
               ...(['mobile_cancel', 'user_close'].includes(intent) ? { explicit_checkout_cancel_intent: true } : { checkout_return_ended: intent }),
             }, { requestTimeoutMs: RECOVERY_TIMEOUT_MS });
             if (!current(run)) return false;
-            retireLocal(stopped, pending, run, intent === 'user_close' ? 'mobile_cancel' : null); return true;
+            retireLocal(stopped, pending, run, intent === 'user_close' ? 'mobile_cancel' : null, silent); return 'stopped';
           } catch (stopError) {
             // Never repeat an automatic stop write in this session; the buyer can
             // re-check or stop manually from history.

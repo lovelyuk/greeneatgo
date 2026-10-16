@@ -7,7 +7,7 @@ async function login(page){await page.goto('/shop');await page.getByLabel('이�
 const tab=(page,name)=>page.getByRole('navigation').getByRole('button',{name,exact:true});
 
 const receipt={...ready,user_id:owner,status:'canceled',recovery_action:'locally_abandoned',completion:null,local_abandonment:{id:'22222222-2222-4222-8222-222222222222',source:'owner_request',scope:'local_order',outcome:'abandoned',requested_by:owner,requested_at:'2026-10-15T01:02:03+09:00',provider_finality:'unknown',residual_late_approval_possible:true}};
-test('buy again with a leftover unpaid order stops it automatically and returns fresh catalog without automatic purchase',async({page,context})=>{
+test('buy again with a leftover unpaid order stops it silently and continues straight into the new purchase',async({page,context})=>{
  const state=await setup(page,context,{gross:1100,points:0});let stops=0,purchases=0;const bodies=[];
  await page.addInitScript(({owner,pending})=>{if(!sessionStorage.getItem('seeded')){sessionStorage.setItem(`greeneat-purchase-pending:${owner}`,JSON.stringify(pending));sessionStorage.setItem('seeded','1');}},{owner,pending});
  await page.route('**/api-fixture/payments/recovery?**',r=>r.fulfill({json:{ok:true,data:stops?receipt:ready}}));
@@ -15,10 +15,10 @@ test('buy again with a leftover unpaid order stops it automatically and returns 
  await page.addInitScript(()=>Object.defineProperty(navigator,'userAgent',{value:'iPhone'}));
  await page.route('**/api-fixture/vouchers/purchase-subsidized',r=>{purchases++;return r.fulfill({json:{ok:true,data:purchaseResponse(1100,0)}});});
  await login(page);await page.getByRole('button',{name:'테스트 식권 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();
- await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible({timeout:8000});
- await expect(tab(page,'구매')).toHaveAttribute('aria-current','page');await expect(page.getByRole('heading',{name:/이전.*결과/})).toHaveCount(0);
- expect(purchases).toBe(0);expect(stops).toBe(1);expect(bodies).toEqual([{amount:1100,explicit_checkout_cancel_intent:true}]);
- await page.getByRole('button',{name:'테스트 식권 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();await expect(page.getByLabel('구매 조건 확인')).not.toBeChecked();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();await expect.poll(()=>purchases).toBe(1);expect(state.confirm).toBe(0);
+ await expect.poll(()=>purchases,{timeout:8000}).toBe(1);
+ expect(stops).toBe(1);expect(bodies).toEqual([{amount:1100,explicit_checkout_cancel_intent:true}]);
+ await expect(tab(page,'구매')).toHaveAttribute('aria-current','page');await expect(page.getByText('이전 주문의 결제 결과를 먼저 확인해 주세요',{exact:false})).toHaveCount(0);
+ expect(state.confirm).toBe(0);
 });
 test('manual history stop still requires meaningful consent when the automatic stop is not possible',async({page,context})=>{
  const state=await setup(page,context,{gross:1100,points:0});let stops=0;
@@ -60,23 +60,20 @@ test('history read cannot retire pending after navigating away',async({page,cont
  expect(JSON.parse(await page.evaluate(owner=>sessionStorage.getItem(`greeneat-purchase-pending:${owner}`),owner))).toEqual(pending);
  await expect(page.getByRole('heading',{name:'결제 완료',exact:true})).toHaveCount(0);
 });
-test('legacy pending is absent from purchase DOM, explicit purchase routes to history without order or hash',async({page,context})=>{
+test('legacy pending is absent from purchase DOM; explicit purchase sets it aside and continues on purchase',async({page,context})=>{
  const state=await setup(page,context,{gross:1100,points:0});let reads=0,writes=0;
- await page.addInitScript(({owner,pending})=>sessionStorage.setItem(`greeneat-purchase-pending:${owner}`,JSON.stringify(pending)),{owner,pending});
+ await page.addInitScript(({owner,pending})=>{if(!sessionStorage.getItem('seeded')){sessionStorage.setItem(`greeneat-purchase-pending:${owner}`,JSON.stringify(pending));sessionStorage.setItem('seeded','1');}},{owner,pending});
  await page.route('**/api-fixture/payments/recovery?**',r=>{reads++;expect(r.request().headers().authorization).toBe('Bearer fixture-access');return r.fulfill({json:{ok:true,data:ready}});});
+ await page.route('**/api-fixture/payments/orders/*/abandon',r=>r.fulfill({status:409,json:{detail:{code:'ORDER_HAS_PAYMENT_OR_RESOURCE_HISTORY',message:'synthetic refusal'}}}));
+ await page.addInitScript(()=>Object.defineProperty(navigator,'userAgent',{value:'iPhone'}));
  await page.route('**/api-fixture/vouchers/purchase-subsidized',r=>{writes++;return r.abort();});
  await login(page);await expect.poll(()=>reads).toBe(1);
  await expect(page.locator('.purchase-catalog .recovery-card')).toHaveCount(0);
  await expect(page.getByRole('heading',{name:'이전 결제 결과를 확인하지 못했어요.'})).toHaveCount(0);
- await expect(page.getByRole('button',{name:'다시 확인',exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'테스트 식권 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();
  await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();
- await expect(tab(page,'내역')).toHaveAttribute('aria-current','page');
- await expect(page.getByRole('status').filter({hasText:'이전 주문의 결제 결과를 먼저 확인해 주세요.'})).toBeVisible();
- await expect(page.getByRole('button',{name:'다시 확인',exact:true})).toBeVisible();
- await expect(page.getByRole('button',{name:'구매 진행 중단',exact:true})).toBeVisible();
- await expect(page.getByText(`주문 ${pending.order_id}`,{exact:true})).not.toBeVisible();
- expect(writes).toBe(0);expect(state.checkout).toBe(0);expect(state.confirm).toBe(0);
- await tab(page,'구매').click();await expect(page.getByRole('button',{name:'다시 확인',exact:true})).toHaveCount(0);
- expect(JSON.parse(await page.evaluate(owner=>sessionStorage.getItem(`greeneat-purchase-pending:${owner}`),owner))).toEqual(pending);
+ await expect.poll(()=>writes,{timeout:8000}).toBe(1);
+ await expect(tab(page,'구매')).toHaveAttribute('aria-current','page');
+ await expect(page.getByText('이전 주문의 결제 결과를 먼저 확인해 주세요',{exact:false})).toHaveCount(0);
+ expect(state.confirm).toBe(0);
 });

@@ -34,7 +34,7 @@ for(const scenario of ['hidden','roundtrip','newer','sentinel','corrupt','unread
   await page.evaluate(()=>window.restoreCancelStorage?.());
   expect(await page.evaluate(key=>sessionStorage.getItem(key),key)).toBe(expected);
   await expect(page.getByRole('heading',{name:'결제 취소 확인'})).toHaveCount(0);
-  await tab(page,'구매').click();await page.getByRole('button',{name:'테스트 식권 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();await expect(tab(page,'내역')).toHaveAttribute('aria-current','page');
+  await tab(page,'구매').click();await page.getByRole('button',{name:'테스트 식권 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();await expect(tab(page,'구매')).toHaveAttribute('aria-current','page');await expect(page.getByText('이전 주문의 결제 결과를 먼저 확인해 주세요',{exact:false})).toHaveCount(0);
  }
  expect(started).toBe(1);
 });

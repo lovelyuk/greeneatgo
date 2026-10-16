@@ -84,7 +84,7 @@ await expect(page.getByRole('button',{name:'구매 진행 중단',exact:true})).
 });
 test('late approval becomes visible reconciliation in history after reload, never fake no-charge',async({page,context})=>{
  const s=await fixture(page,context);await submit(page,1000);await s.close();await s.stop();await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible();s.local={...receipt(),recovery_action:'reconcile'};
- await page.reload();await page.getByRole('navigation').getByRole('button',{name:'내역',exact:true}).click();await expect(page.getByRole('alert')).toContainText('실제 청구 재확인');await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible();expect(await page.evaluate(k=>sessionStorage.getItem(k),key)).toBeNull();expect(s.stops).toBe(1);expect(s.purchases).toBe(1);
+ await page.reload();await page.getByRole('navigation').getByRole('button',{name:'내역',exact:true}).click();await expect(page.getByRole('region',{name:'결제 확인이 필요한 주문'})).toContainText('이후 결제가 승인된 주문');await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible();expect(await page.evaluate(k=>sessionStorage.getItem(k),key)).toBeNull();expect(s.stops).toBe(1);expect(s.purchases).toBe(1);
 });
 test('late authenticated stop result after logout cannot retire or expose account state',async({page,context})=>{
  const s=await fixture(page,context);let release,started;const barrier=new Promise(r=>release=r),request=new Promise(r=>started=r);

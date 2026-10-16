@@ -537,8 +537,9 @@ test("recovery accepted pricing belongs to saved order, not a different selected
   await expect(page.locator(".purchase-quote")).toBeVisible();
   await page.getByLabel('구매 조건 확인').check();
   await page.getByRole('button', { name: '구매하기', exact: true }).click();
-  await expect(page.getByRole('navigation').getByRole('button', { name: '내역', exact: true })).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole("button", { name: "구매하기", exact:true })).toHaveCount(0);
+  // Undecidable leftover is set aside; buyer stays on purchase, old checkout never reopened.
+  await expect(page.getByRole('navigation').getByRole('button', { name: '구매', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByText('이전 주문의 결제 결과를 먼저 확인해 주세요', { exact: false })).toHaveCount(0);
   expect(entered).toBe(0);
   expect(saved.accepted_pricing.product_id).toBe("previous-product-fixture");
   expect(saved.accepted_pricing.coupon_discount_amount).toBe(1000);

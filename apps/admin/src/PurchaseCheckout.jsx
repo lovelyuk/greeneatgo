@@ -9,6 +9,9 @@ import { validateReceiptUrl } from "./receiptUtils.js";
 // This account-scoped fallback also survives checkout remounts in this document.
 const pendingMemory = new Map();
 const validOrderId = id => typeof id === "string" && /^[A-Za-z0-9_-]{6,64}$/.test(id);
+const RECOVERY_TIMEOUT_MS = 30000; // Render cold start can exceed 10s
+const USER_CLOSE_SETTLE_MS = 2000;
+
 export default function PurchaseCheckout({
   api,
   apiBaseUrl,
@@ -112,7 +115,7 @@ export default function PurchaseCheckout({
         ["voucher", "subsidized"].includes(saved.mode)
       ) {
         setOrder(saved); autoOrderId.current = saved.order_id;
-        if (['sdk_frame_fail','mobile_fail','mobile_cancel'].includes(saved.return_intent)) {
+        if (['sdk_frame_fail','mobile_fail','mobile_cancel','user_close'].includes(saved.return_intent)) {
           returnedIntent.current = saved.return_intent;
         }
       }
@@ -150,7 +153,7 @@ export default function PurchaseCheckout({
   function checkoutReturned(run, intent = null, pending = null) {
     if (!current(run)) return;
     if (intent) {
-      if (!pending || returnedIntent.current || !['sdk_frame_fail','mobile_fail','mobile_cancel'].includes(intent)) return;
+      if (!pending || returnedIntent.current || !['sdk_frame_fail','mobile_fail','mobile_cancel','user_close'].includes(intent)) return;
       returnedIntent.current = intent;
       try { saveOrder({ ...pending, checkout_started: true, return_intent: intent }, run.key); }
       catch (e) { setError(`복귀 안내 저장 오류: ${e.message} 저장된 주문을 유지했어요. 상태 확인으로 다시 시도해 주세요.`); return; }
@@ -175,7 +178,9 @@ export default function PurchaseCheckout({
       if (!child.closed) return;
       clearInterval(timer);
       if (popup.current === child) popup.current = null;
-      checkoutReturned(run);
+      // The buyer closed the payment window: treat as cancel intent. The server
+      // status read below still decides; a paid order completes normally.
+      checkoutReturned(run, 'user_close', order);
     }, 350);
     return () => clearInterval(timer);
   }, [order?.order_id, storageKey]);
@@ -242,6 +247,13 @@ export default function PurchaseCheckout({
   }
   async function purchase() {
     if (!purchaseActive) return;
+    if (order && !unknown && !completion?.storage_blocked && !lock.current) {
+      // A leftover unpaid order from a cancelled checkout must not block a new
+      // purchase: re-check it and stop it locally when it is still unpaid.
+      const settled = await recover('user_close');
+      if (!settled) onRecoveryNeeded?.();
+      return;
+    }
     if (order || unknown || completion?.storage_blocked) { onRecoveryNeeded?.(); return; }
     if (!active || lock.current || order || unknown || !quote || !legalReady || !consent)
       return;
@@ -371,7 +383,7 @@ export default function PurchaseCheckout({
             // The adapter emits one guarded semantic event and suppresses the
             // SDK's accompanying close; ordinary force-close stays uncertain.
             onEvent: event => checkoutReturned({ generation: run.generation, key: run.key }, event.TYPE === 'FAIL' ? 'sdk_frame_fail' : null, next),
-            onClose: () => { sdkClose.current = null; checkoutReturned({ generation: run.generation, key: run.key }); },
+            onClose: ({ user } = {}) => { sdkClose.current = null; checkoutReturned({ generation: run.generation, key: run.key }, user ? 'user_close' : null, next); },
           });
         } else {
           connectReturnBridge({ generation: run.generation, key: run.key }, next);
@@ -412,14 +424,15 @@ export default function PurchaseCheckout({
     if ((stored && !matches(stored)) || (memory && !matches(memory)))
       throw new Error('저장된 주문이 변경되어 종료 처리를 차단했어요.');
   }
-  function retireLocal(result, pending, run) {
+  function retireLocal(result, pending, run, endedKind = null) {
     if (!validLocalAbandonment(result, pending, userId)) throw new Error('구매 진행 중단 영수증을 확인하지 못했어요.');
     assertMatchingSaved(pending, run);
     const saved = { local_abandonment_receipt: result, pending };
     // Write the tombstone before changing memory/UI; storage errors fail closed.
     sessionStorage.setItem(run.key, JSON.stringify(saved));
     pendingMemory.set(run.key, saved);
-    const intent = returnedIntent.current || pending.return_intent;
+    const rawIntent = endedKind || returnedIntent.current || pending.return_intent;
+    const intent = rawIntent === 'user_close' ? 'mobile_cancel' : rawIntent;
     sessionStorage.removeItem(run.key); pendingMemory.delete(run.key);
     returnedIntent.current = null; bridgeChannel.current?.close(); bridgeChannel.current = null;
     setConsent(false); setOrder(null); setAbandoned(null); setError(''); setCheckoutOpen(false);
@@ -429,43 +442,66 @@ export default function PurchaseCheckout({
     onCheckoutEnded?.(intent || 'locally_abandoned'); clearQuote();
   }
 
-  async function recover() {
-    if (!active || lock.current || !order) return;
+  async function recover(forcedIntent = null) {
+    if (!active || lock.current || !order) return false;
     const pending = order;
     const run = begin();
     run.viewEpoch = viewEpoch.current;
     setStopEligible(false);
-    try {
-      const result = await api(`/payments/recovery?order_id=${encodeURIComponent(pending.order_id)}&amount=${pending.amount}`, undefined, { readTimeoutMs: 10000 });
-      if (!current(run)) return;
-      if (!result || result.resumable === true || result.order_id !== pending.order_id || result.amount !== pending.amount ||
-          !["ready", "done", "failed", "canceled", "refund_processing", "refunded", "unknown"].includes(result.status))
+    const read = async () => {
+      const value = await api(`/payments/recovery?order_id=${encodeURIComponent(pending.order_id)}&amount=${pending.amount}`, undefined, { readTimeoutMs: RECOVERY_TIMEOUT_MS });
+      if (!value || value.resumable === true || value.order_id !== pending.order_id || value.amount !== pending.amount ||
+          !["ready", "done", "failed", "canceled", "refund_processing", "refunded", "unknown"].includes(value.status))
         throw new Error("서버 주문 상태 응답을 확인하지 못했어요.");
+      return value;
+    };
+    try {
+      let result = await read();
+      if (!current(run)) return false;
+      const intentNow = forcedIntent || returnedIntent.current || pending.return_intent;
+      if (intentNow === 'user_close' && result.status === 'ready' && !result.local_abandonment) {
+        // Give a just-finished approval notification time to land before stopping.
+        await new Promise(resolve => setTimeout(resolve, USER_CLOSE_SETTLE_MS));
+        if (!current(run)) return false;
+        result = await read();
+        if (!current(run)) return false;
+      }
       if (validLocalAbandonment(result, pending, userId)) {
-        retireLocal(result, pending, run);
+        retireLocal(result, pending, run); return true;
       } else if (verifiedOrderClosure(result, pending, userId)) {
         // Re-read storage at the destructive boundary: a late response cannot
         // remove a newer intent even for the same account/document.
         assertMatchingSaved(pending, run);
-        if (!clearSaved(run)) return;
+        if (!clearSaved(run)) return false;
         setConsent(false); clearQuote(); setOrder(null); setClosed(null); setError('');
         onCheckoutEnded?.('verified_closed');
         popup.current?.close();
         sdkClose.current?.(); sdkClose.current = null;
+        return true;
       } else if (result.recovery_action === "complete" && result.status === "done" &&
           result.checkout_url === null && validCompletion(result.completion, pending)) {
-        await complete(result.completion, run, pending);
+        await complete(result.completion, run, pending); return true;
       } else if (result.recovery_action === "reconcile" && result.status !== "done" &&
           result.checkout_url === null && !result.completion) {
-        const intent = returnedIntent.current || pending.return_intent;
-        if (result.status === 'ready' && !result.local_abandonment && ['sdk_frame_fail','mobile_fail','mobile_cancel'].includes(intent)) {
+        const intent = forcedIntent || returnedIntent.current || pending.return_intent;
+        if (result.status === 'ready' && !result.local_abandonment && ['sdk_frame_fail','mobile_fail','mobile_cancel','user_close'].includes(intent)) {
           assertMatchingSaved(pending, run);
-          const stopped = await api(`/payments/orders/${encodeURIComponent(pending.order_id)}/abandon`, {
-            amount: pending.amount,
-            ...(intent === 'mobile_cancel' ? { explicit_checkout_cancel_intent: true } : { checkout_return_ended: intent }),
-          }, { requestTimeoutMs: 10000 });
-          if (!current(run)) return;
-          retireLocal(stopped, pending, run); return;
+          try {
+            const stopped = await api(`/payments/orders/${encodeURIComponent(pending.order_id)}/abandon`, {
+              amount: pending.amount,
+              ...(['mobile_cancel', 'user_close'].includes(intent) ? { explicit_checkout_cancel_intent: true } : { checkout_return_ended: intent }),
+            }, { requestTimeoutMs: RECOVERY_TIMEOUT_MS });
+            if (!current(run)) return false;
+            retireLocal(stopped, pending, run, intent === 'user_close' ? 'mobile_cancel' : null); return true;
+          } catch (stopError) {
+            // Never repeat an automatic stop write in this session; the buyer can
+            // re-check or stop manually from history.
+            if (intent === 'user_close') {
+              returnedIntent.current = null;
+              try { const { return_intent, ...rest } = pending; saveOrder(rest, run.key); } catch { /* keep pending */ }
+            }
+            throw Object.assign(new Error(`구매 중단 결과 확인 필요: ${stopError.message} 저장된 주문은 유지했어요. 상태를 다시 조회해 주세요.`), { stale: stopError.stale, stopFailure: true });
+          }
         }
         setStopEligible(result.status === 'ready' && !result.local_abandonment);
         setError(result.local_abandonment
@@ -474,10 +510,12 @@ export default function PurchaseCheckout({
             ? '서버 주문 상태: ready. PG 승인 여부는 아직 확정하지 못했어요. 상태를 다시 확인하거나, 안내에 동의하고 이 주문의 구매 진행을 중단할 수 있어요. 실제 청구가 있거나 도움이 필요하면 관리자에게 거래 확인을 요청해 주세요.'
             : `서버 주문 상태: ${result.status}. 결제 여부를 확정하지 못했어요. 조회만 다시 시도할 수 있어요. 관리자에게 거래 확인을 요청해 주세요.`);
       } else throw new Error("서버 결제 복구 응답을 확인하지 못했어요.");
+      return false;
     } catch (e) {
       run.popup?.close();
       if (current(run) && !e.stale)
-        setError(`주문 상태 확인 오류: ${e.message} 저장된 주문을 유지했어요. 아래 상태 확인으로 다시 조회해 주세요. 구매나 취소 요청은 자동 재시도하지 않아요.`);
+        setError(e.stopFailure ? e.message : `주문 상태 확인 오류: ${e.message} 저장된 주문을 유지했어요. 아래 상태 확인으로 다시 조회해 주세요. 구매나 취소 요청은 자동 재시도하지 않아요.`);
+      return false;
     } finally { finish(run); }
   }
   recoveryRef.current = recover;

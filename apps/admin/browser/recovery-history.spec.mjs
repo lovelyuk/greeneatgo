@@ -7,19 +7,31 @@ async function login(page){await page.goto('/shop');await page.getByLabel('이�
 const tab=(page,name)=>page.getByRole('navigation').getByRole('button',{name,exact:true});
 
 const receipt={...ready,user_id:owner,status:'canceled',recovery_action:'locally_abandoned',completion:null,local_abandonment:{id:'22222222-2222-4222-8222-222222222222',source:'owner_request',scope:'local_order',outcome:'abandoned',requested_by:owner,requested_at:'2026-10-15T01:02:03+09:00',provider_finality:'unknown',residual_late_approval_possible:true}};
-test('manual history stop requires meaningful consent and returns fresh catalog without automatic purchase',async({page,context})=>{
- const state=await setup(page,context,{gross:1100,points:0});let stops=0,purchases=0;
+test('buy again with a leftover unpaid order stops it automatically and returns fresh catalog without automatic purchase',async({page,context})=>{
+ const state=await setup(page,context,{gross:1100,points:0});let stops=0,purchases=0;const bodies=[];
+ await page.addInitScript(({owner,pending})=>{if(!sessionStorage.getItem('seeded')){sessionStorage.setItem(`greeneat-purchase-pending:${owner}`,JSON.stringify(pending));sessionStorage.setItem('seeded','1');}},{owner,pending});
+ await page.route('**/api-fixture/payments/recovery?**',r=>r.fulfill({json:{ok:true,data:stops?receipt:ready}}));
+ await page.route('**/api-fixture/payments/orders/*/abandon',r=>{stops++;bodies.push(r.request().postDataJSON());return r.fulfill({json:{ok:true,data:receipt}});});
+ await page.addInitScript(()=>Object.defineProperty(navigator,'userAgent',{value:'iPhone'}));
+ await page.route('**/api-fixture/vouchers/purchase-subsidized',r=>{purchases++;return r.fulfill({json:{ok:true,data:purchaseResponse(1100,0)}});});
+ await login(page);await page.getByRole('button',{name:'테스트 식권 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();
+ await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible({timeout:8000});
+ await expect(tab(page,'구매')).toHaveAttribute('aria-current','page');await expect(page.getByRole('heading',{name:/이전.*결과/})).toHaveCount(0);
+ expect(purchases).toBe(0);expect(stops).toBe(1);expect(bodies).toEqual([{amount:1100,explicit_checkout_cancel_intent:true}]);
+ await page.getByRole('button',{name:'테스트 식권 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();await expect(page.getByLabel('구매 조건 확인')).not.toBeChecked();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();await expect.poll(()=>purchases).toBe(1);expect(state.confirm).toBe(0);
+});
+test('manual history stop still requires meaningful consent when the automatic stop is not possible',async({page,context})=>{
+ const state=await setup(page,context,{gross:1100,points:0});let stops=0;
  await page.addInitScript(({owner,pending})=>sessionStorage.setItem(`greeneat-purchase-pending:${owner}`,JSON.stringify(pending)),{owner,pending});
  await page.route('**/api-fixture/payments/recovery?**',r=>r.fulfill({json:{ok:true,data:ready}}));
  await page.route('**/api-fixture/payments/orders/*/abandon',r=>{stops++;expect(r.request().postDataJSON()).toEqual({amount:1100,acknowledge_provider_uncertainty:true});return r.fulfill({json:{ok:true,data:receipt}});});
  await page.addInitScript(()=>Object.defineProperty(navigator,'userAgent',{value:'iPhone'}));
- await page.route('**/api-fixture/vouchers/purchase-subsidized',r=>{purchases++;return r.fulfill({json:{ok:true,data:purchaseResponse(1100,0)}});});
- await login(page);await page.getByRole('button',{name:'테스트 식권 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();
+ await login(page);await tab(page,'내역').click();
  await page.getByRole('button',{name:'구매 진행 중단',exact:true}).click();await expect(page.getByRole('region',{name:'구매 진행 중단 안내'})).toContainText('나중에 승인·청구될 수 있어요');await expect(page.getByRole('button',{name:'확인하고 구매 진행 중단'})).toBeDisabled();expect(stops).toBe(0);
  await page.getByLabel('PG 취소·환불 확정이 아님을 이해했습니다').check();await page.getByRole('button',{name:'확인하고 구매 진행 중단'}).click();
- await expect(tab(page,'구매')).toHaveAttribute('aria-current','page');await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible();expect(purchases).toBe(0);expect(stops).toBe(1);
- await page.getByRole('button',{name:'테스트 식권 선택'}).click();await expect(page.locator('.purchase-quote')).toBeVisible();await expect(page.getByLabel('구매 조건 확인')).not.toBeChecked();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();await expect.poll(()=>purchases).toBe(1);expect(state.confirm).toBe(0);
+ await expect(tab(page,'구매')).toHaveAttribute('aria-current','page');await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible();expect(stops).toBe(1);expect(state.confirm).toBe(0);
 });
+
 for(const points of [0,1100])test(`purchase POST survives buy-history view change without new financial admission ${points}`,async({page,context})=>{
  await setup(page,context,{gross:1100,points});let writes=0,release;const barrier=new Promise(r=>release=r);
  await page.addInitScript(()=>Object.defineProperty(navigator,'userAgent',{value:'iPhone'}));

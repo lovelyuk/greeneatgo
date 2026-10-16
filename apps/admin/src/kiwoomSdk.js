@@ -43,7 +43,7 @@ export function validSdkMessage(event, mode, source, orderId = null) {
 }
 export function openSdkFrame(sdk, data, { onEvent, onClose }, win = window, doc = document) {
   const previousFocus = doc.activeElement;
-  let guarded, originalHandler, frame, dimmer, closed = false, acceptedEvent = false;
+  let guarded, originalHandler, frame, dimmer, closed = false, acceptedEvent = false, userClosed = false;
   const background = [];
   const originalClose = sdk.f_closeFrame;
   const cleanup = (notify = true) => {
@@ -57,9 +57,10 @@ export function openSdkFrame(sdk, data, { onEvent, onClose }, win = window, doc 
     for (const [element, wasInert] of background) element.inert = wasInert;
     if (previousFocus?.isConnected && previousFocus !== doc.body) previousFocus.focus?.();
     else doc.querySelector('.purchase-card button')?.focus();
-    if (notify && !acceptedEvent) onClose();
+    // user=true only for the buyer's own close button / Escape.
+    if (notify && !acceptedEvent) onClose({ user: userClosed });
   };
-  const close = () => { acceptedEvent = false; originalClose.call(sdk); cleanup(); };
+  const close = () => { acceptedEvent = false; userClosed = true; originalClose.call(sdk); cleanup(); };
   const focus = e => { if (!closed && !dimmer?.contains(e.target)) sdk.o_iframeCancel?.focus(); };
   const keyboard = e => {
     if (e.key === 'Escape') { e.preventDefault(); close(); }

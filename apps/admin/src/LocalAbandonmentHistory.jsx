@@ -5,13 +5,13 @@ import { validLocalAbandonment } from './paymentClosure.js';
 export default function LocalAbandonmentHistory({ api, userId }) {
   const [orders, setOrders] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const generation = useRef(0), locked = useRef(false);
-  async function load() {
+  async function load(retry = 1) {
     if (locked.current) return;
     locked.current = true;
     const run = generation.current;
     setBusy(true); setError('');
     try {
-      const result = await api('/payments/local-abandonments?limit=20', undefined, { readTimeoutMs: 10000 });
+      const result = await api('/payments/local-abandonments?limit=20', undefined, { readTimeoutMs: 30000 });
       if (run !== generation.current) return;
       const ids = new Set();
       if (!Array.isArray(result?.orders) || result.orders.length > 20 || result.orders.some(row => {
@@ -20,9 +20,13 @@ export default function LocalAbandonmentHistory({ api, userId }) {
       })) throw new Error('주문 내역 응답을 확인하지 못했어요.');
       setOrders(result.orders);
     } catch (e) {
-      if (run === generation.current && !e.stale) { setOrders([]); setError(`중단한 주문 내역 확인 오류: ${e.message}`); }
+      if (run === generation.current && !e.stale) {
+        // Read-only: one automatic retry for a slow (cold-start) server.
+        if (e.timeout && retry > 0) { locked.current = false; return load(retry - 1); }
+        setOrders([]); setError(`중단한 주문 내역 확인 오류: ${e.message}`);
+      }
     } finally {
-      if (run === generation.current) { locked.current = false; setBusy(false); }
+      if (run === generation.current && locked.current) { locked.current = false; setBusy(false); }
     }
   }
   useEffect(() => {
@@ -32,7 +36,7 @@ export default function LocalAbandonmentHistory({ api, userId }) {
   return <section className="purchase-card" aria-label="중단한 구매 주문">
     <h2>중단한 구매 주문</h2>
     <p>최근 20건 · 서비스 내 구매 중단이며 PG 취소·환불 확정이 아니에요. 기존 결제창은 다시 이용하지 마세요.</p>
-    <button disabled={busy} onClick={load}>중단한 주문 최신 상태 확인</button>
+    <button disabled={busy} onClick={() => load()}>중단한 주문 최신 상태 확인</button>
     {busy && <p role="status">중단한 주문 조회 중…</p>}
     {error && <p role="alert">{error} 위 버튼으로 조회만 다시 시도할 수 있어요.</p>}
     {!busy && !error && !orders.length && <p>중단한 구매 주문이 없어요.</p>}

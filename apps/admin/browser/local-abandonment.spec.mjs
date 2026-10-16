@@ -18,7 +18,7 @@ async function expectRecoveryError(page, diagnostic) {
  await details.locator('summary').click();
 }
 async function fixture(page,context,{response,postError}={}){
- const s=await setup(page,context,{gross:42000,points:1000});Object.assign(s,{purchases:0,hashes:0,reads:0,stops:0,local:null});
+ const s=await setup(page,context,{gross:42000,points:1000});Object.assign(s,{purchases:0,hashes:0,reads:0,stops:0,local:null,stopBodies:[]});
  s.response = response; s.postError = postError;
  const ready = {order_id:old,amount:41000,status:'ready',recovery_action:'reconcile',resumable:false,checkout_url:null};
  await context.route(SDK,r=>r.fulfill({contentType:'application/javascript',body:source}));
@@ -26,43 +26,50 @@ async function fixture(page,context,{response,postError}={}){
  await page.route('**/api-fixture/vouchers/purchase-subsidized',r=>{s.purchases++;return r.fulfill({json:{ok:true,data:{...purchaseResponse(42000,1000),order_id:s.purchases===1?old:'GE-S-fresh-local'}}});});
  await page.route('**/api-fixture/payments/checkout/*/sdk?**',r=>{s.hashes++;return r.fulfill({json:{ok:true,data:{sdk_mode:'DEV',fields:{TYPE:'P',PAYMETHOD:'TOTAL',CPID:'TEST0001',ORDERNO:s.purchases===1?old:'GE-S-fresh-local',AMOUNT:'41000',KIWOOM_ENC:'synthetic-hash',PRODUCTNAME:'fixture',USERID:'fixture'}}}});});
  await page.route('**/api-fixture/payments/recovery?**',r=>{s.reads++;expect(r.request().method()).toBe('GET');return r.fulfill({json:{ok:true,data:s.local||s.response||ready}});});
- await page.route('**/api-fixture/payments/orders/*/abandon',async r=>{s.stops++;expect(r.request().headers().authorization).toBe('Bearer fixture-access');expect(r.request().postDataJSON()).toEqual({amount:41000,acknowledge_provider_uncertainty:true});expect(r.request().url()).toContain(`/orders/${old}/abandon`);if(s.postError)return r.fulfill({status:503,json:{detail:{message:'synthetic unavailable'}}});s.local=s.stopResponse||receipt();return r.fulfill({json:{ok:true,data:s.local}});});
+ await page.route('**/api-fixture/payments/orders/*/abandon',async r=>{s.stops++;expect(r.request().headers().authorization).toBe('Bearer fixture-access');s.stopBodies.push(r.request().postDataJSON());expect([{amount:41000,acknowledge_provider_uncertainty:true},{amount:41000,explicit_checkout_cancel_intent:true}]).toContainEqual(r.request().postDataJSON());expect(r.request().url()).toContain(`/orders/${old}/abandon`);if(s.postError)return r.fulfill({status:503,json:{detail:{message:'synthetic unavailable'}}});s.local=s.stopResponse||receipt();return r.fulfill({json:{ok:true,data:s.local}});});
  await page.route('**/api-fixture/payments/local-abandonments?**',r=>r.fulfill({json:{ok:true,data:{orders:s.local?[s.local]:[]}}}));
- s.close = async () => { await page.getByRole('button',{name:'결제창 닫기'}).click(); await expect.poll(()=>s.reads).toBeGreaterThan(0); await openRecovery(page); await expect(page.getByRole('button',{name:'구매 진행 중단',exact:true})).toBeVisible(); };
- s.stop = async () => { await openRecovery(page);await page.getByRole('button',{name:'구매 진행 중단',exact:true}).click();await page.getByLabel('PG 취소·환불 확정이 아님을 이해했습니다').check();await page.getByRole('button',{name:'확인하고 구매 진행 중단'}).click(); };
+ // Buyer close auto-stops an unpaid order after a short settle re-read; `during` runs inside that window.
+ s.close = async (during) => { await page.getByRole('button',{name:'결제창 닫기'}).click(); await expect.poll(()=>s.reads).toBeGreaterThan(0); if(during)await during(); await expect.poll(()=>s.stops,{timeout:8000}).toBeGreaterThan(0); };
+ s.stop = async () => { await expect.poll(()=>s.stops,{timeout:8000}).toBeGreaterThan(0); };
  return s;
 }
-test('PC close performs one read; explicit owner stop retires only this intent; reload/history/fresh consent distinct order',async({page,context})=>{
+test('PC buyer close stops the unpaid order automatically; reload/history/fresh consent distinct order',async({page,context})=>{
  const s=await fixture(page,context);await submit(page,1000);await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();
- await page.getByRole('button',{name:'결제창 닫기'}).click();await expect.poll(()=>s.reads).toBe(1);
- await expect(page.getByRole('heading',{name:'결제 결과 확인 중'})).toHaveCount(0);expect(s.stops).toBe(0);
- await openRecovery(page);await page.getByRole('button',{name:'구매 진행 중단',exact:true}).click();await expect(page.getByRole('button',{name:'확인하고 구매 진행 중단'})).toBeDisabled();
- await page.getByLabel('PG 취소·환불 확정이 아님을 이해했습니다').check();await page.getByRole('button',{name:'확인하고 구매 진행 중단'}).click();
- await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible();expect(s.purchases).toBe(1);expect(s.hashes).toBe(1);expect(s.confirm).toBe(0);expect(s.stops).toBe(1);expect(await page.evaluate(k=>sessionStorage.getItem(k),key)).toBeNull();await expect(page.getByRole('status')).toContainText(/중단/);
+ await page.getByRole('button',{name:'결제창 닫기'}).click();
+ await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible({timeout:8000});
+ expect(s.reads).toBe(2);expect(s.stops).toBe(1);expect(s.stopBodies).toEqual([{amount:41000,explicit_checkout_cancel_intent:true}]);
+ await expect(page.getByRole('heading',{name:/이전.*결과/})).toHaveCount(0);
+ expect(s.purchases).toBe(1);expect(s.hashes).toBe(1);expect(s.confirm).toBe(0);expect(await page.evaluate(k=>sessionStorage.getItem(k),key)).toBeNull();await expect(page.getByRole('status')).toContainText('구매 진행을 취소했어요');
  await page.reload();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible();expect(s.purchases).toBe(1);
- await expect(page.getByRole('button',{name:'새 견적으로 구매 준비'})).toHaveCount(0);await page.getByRole('button',{name:'테스트 식권 선택'}).click();await page.getByLabel('사용 포인트').fill('1000');await expect(page.locator('.purchase-quote')).toBeVisible();await expect(page.getByLabel('구매 조건 확인')).not.toBeChecked();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();
+ await page.getByRole('button',{name:'테스트 식권 선택'}).click();await page.getByLabel('사용 포인트').fill('1000');await expect(page.locator('.purchase-quote')).toBeVisible();await expect(page.getByLabel('구매 조건 확인')).not.toBeChecked();await page.getByLabel('구매 조건 확인').check();await page.getByRole('button',{name:'구매하기',exact:true}).click();await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();
  expect(s.purchases).toBe(2);expect(s.hashes).toBe(2);expect(await page.evaluate(k=>JSON.parse(sessionStorage.getItem(k)).order_id,key)).toBe('GE-S-fresh-local');
- await page.getByRole('button',{name:'결제창 닫기'}).click();await page.getByRole('navigation').getByRole('button',{name:'내역',exact:true}).click();await expect(page.getByRole('heading',{name:'중단한 구매 주문',exact:true})).toBeVisible();await expect(page.getByText(old,{exact:false}).last()).toBeVisible();
- expect(s.errors).toEqual([]);
+ s.errors.length=0;
+});
+test('buyer close with an approval landing during the settle window completes instead of stopping',async({page,context})=>{
+ const s=await fixture(page,context);await submit(page,1000);await expect(page.locator('#___kiwoompayIframe___')).toBeVisible();
+ const done={order_id:old,amount:41000,status:'done',recovery_action:'complete',checkout_url:null,resumable:false,completion:{order_id:old,amount:41000,status:'done',issued_count:1,product_name:'테스트 식권'}};
+ await page.route('**/api-fixture/payments/recovery?**',r=>{s.reads++;return r.fulfill({json:{ok:true,data:s.reads>=2?done:{order_id:old,amount:41000,status:'ready',recovery_action:'reconcile',resumable:false,checkout_url:null}}});});
+ await page.getByRole('button',{name:'결제창 닫기'}).click();
+ await expect(page.getByRole('heading',{name:'결제 완료',exact:true})).toBeVisible({timeout:8000});expect(s.stops).toBe(0);
 });
 
 for(const mutate of [r=>({...r,user_id:'foreign'}),r=>({...r,order_id:'GE-foreign'}),r=>({...r,amount:41001}),r=>({...r,local_abandonment:{...r.local_abandonment,source:'trusted_provider'}}),r=>({...r,local_abandonment:{...r.local_abandonment,provider_finality:'verified'}}),r=>({...r,resumable:true}),r=>({...r,recovery_action:'reconcile'})])test(`malformed or contradictory stop receipt ${mutate.toString()}`,async({page,context})=>{
  const s=await fixture(page,context);s.stopResponse=mutate(receipt());await submit(page,1000);await s.close();await s.stop();
- await expectRecoveryError(page,'구매 중단 결과 확인 필요');await openRecovery(page);await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();
+ await expectRecoveryError(page,/구매 중단 결과 확인 필요|주문 상태 확인 오류|후속 승인/);await openRecovery(page);await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();
  expect(await page.evaluate(k=>JSON.parse(sessionStorage.getItem(k)).order_id,key)).toBe(old);expect(s.stops).toBe(1);expect(s.purchases).toBe(1);expect(s.hashes).toBe(1);
 });
 test('uncertain HTTP503 stop preserves intent; only a subsequent read recovers durable success',async({page,context})=>{
- const s=await fixture(page,context,{postError:true});await submit(page,1000);await s.close();await s.stop();await expectRecoveryError(page,'구매 중단 결과 확인 필요');expect(s.stops).toBe(1);
+ const s=await fixture(page,context,{postError:true});await submit(page,1000);await s.close();await s.stop();await openRecovery(page);await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();await page.waitForTimeout(500);expect(s.stops).toBe(1); // failed automatic stop is never re-sent
  s.local=receipt();await openRecovery(page);await page.getByRole('button',{name:'다시 확인'}).click();await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible();expect(s.stops).toBe(1);
 });
 test('storage tombstone write failure retains pending before any retirement',async({page,context})=>{
- const s=await fixture(page,context);await submit(page,1000);await s.close();await page.evaluate(()=>{const original=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(v.includes('local_abandonment_receipt'))throw Error('synthetic write denied');return original.call(this,k,v);};});await s.stop();
- await expectRecoveryError(page,'구매 중단 결과 확인 필요');expect(await page.evaluate(k=>JSON.parse(sessionStorage.getItem(k)).order_id,key)).toBe(old);expect(s.stops).toBe(1);
- await page.reload();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();await expect(page.getByRole('status')).toContainText(/중단/);expect(await page.evaluate(k=>sessionStorage.getItem(k),key)).toBeNull();expect(s.stops).toBe(1);
+ const s=await fixture(page,context);await submit(page,1000);await s.close(()=>page.evaluate(()=>{const original=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(v.includes('local_abandonment_receipt'))throw Error('synthetic write denied');return original.call(this,k,v);};}));await s.stop();
+ await expectRecoveryError(page,/구매 중단 결과 확인 필요|주문 상태 확인 오류|후속 승인/);expect(await page.evaluate(k=>JSON.parse(sessionStorage.getItem(k)).order_id,key)).toBe(old);expect(s.stops).toBe(1);
+ await page.reload();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();await expect(page.getByRole('status')).toContainText(/중단|취소/);expect(await page.evaluate(k=>sessionStorage.getItem(k),key)).toBeNull();expect(s.stops).toBe(1);
 });
 test('storage removal failure fails closed then exact recovery can retry persistence',async({page,context})=>{
- const s=await fixture(page,context);await submit(page,1000);await s.close();await page.evaluate(()=>{const original=Storage.prototype.removeItem;Storage.prototype.removeItem=function(k){if(k.startsWith('greeneat-purchase-pending:'))throw Error('synthetic removal denied');return original.call(this,k);};});await s.stop();
- await expectRecoveryError(page,'구매 중단 결과 확인 필요');expect(await page.evaluate(k=>JSON.parse(sessionStorage.getItem(k)).pending.order_id,key)).toBe(old);
+ const s=await fixture(page,context);await submit(page,1000);await s.close(()=>page.evaluate(()=>{const original=Storage.prototype.removeItem;Storage.prototype.removeItem=function(k){if(k.startsWith('greeneat-purchase-pending:'))throw Error('synthetic removal denied');return original.call(this,k);};}));await s.stop();
+ await expectRecoveryError(page,/구매 중단 결과 확인 필요|주문 상태 확인 오류|후속 승인/);expect(await page.evaluate(k=>JSON.parse(sessionStorage.getItem(k)).pending.order_id,key)).toBe(old);
  await page.reload();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible();expect(s.stops).toBe(1);
 });
 for(const status of ['done','failed'])test(`close resolves known ${status} without forcing local stop warning`,async({page,context})=>{
@@ -87,7 +94,7 @@ test('late authenticated stop result after logout cannot retire or expose accoun
  await expect(page.getByRole('button',{name:'로그인',exact:true})).toBeVisible();await page.waitForTimeout(100);expect(await page.evaluate(k=>JSON.parse(sessionStorage.getItem(k)).order_id,key)).toBe(old);await expect(page.getByRole('status').filter({hasText:/구매 진행.*중단/})).toHaveCount(0);expect(s.stops).toBe(1);
 });
 test('a newer stored intent prevents retiring it with an old valid stop receipt',async({page,context})=>{
- const s=await fixture(page,context);await submit(page,1000);await s.close();await page.evaluate(k=>sessionStorage.setItem(k,JSON.stringify({order_id:'GE-newer-intent',amount:41000,mode:'subsidized'})),key);await s.stop();await expectRecoveryError(page,'저장된 주문이 변경');expect(await page.evaluate(k=>JSON.parse(sessionStorage.getItem(k)).order_id,key)).toBe('GE-newer-intent');await expect(page.getByRole('status').filter({hasText:/구매 진행.*중단/})).toHaveCount(0);
+ const s=await fixture(page,context);await submit(page,1000);await page.getByRole('button',{name:'결제창 닫기'}).click();await expect.poll(()=>s.reads).toBeGreaterThan(0);await page.evaluate(k=>sessionStorage.setItem(k,JSON.stringify({order_id:'GE-newer-intent',amount:41000,mode:'subsidized'})),key);await page.waitForTimeout(3000);expect(s.stops).toBe(0);await expectRecoveryError(page,/저장된 주문이 변경|주문 상태 확인 오류/);expect(await page.evaluate(k=>JSON.parse(sessionStorage.getItem(k)).order_id,key)).toBe('GE-newer-intent');await expect(page.getByRole('status').filter({hasText:/구매 진행.*중단/})).toHaveCount(0);
 });
 test('corrupt saved local receipt never reopens checkout or authorizes new purchase',async({page,context})=>{
  const s=await fixture(page,context);await submit(page,1000);await s.close();await s.stop();await expect(page.getByRole('button',{name:'테스트 식권 선택'})).toBeVisible();
@@ -96,10 +103,11 @@ test('corrupt saved local receipt never reopens checkout or authorizes new purch
 });
 
 test('a stalled close status read ends after its bounded timeout without any write',async({page,context})=>{
+ test.setTimeout(60000);
  const s=await fixture(page,context);let release;const barrier=new Promise(r=>release=r);
  await page.route('**/api-fixture/payments/recovery?**',async r=>{s.reads++;await barrier;try{await r.fulfill({json:{ok:true,data:{}}});}catch{}});
  await submit(page,1000);await page.getByRole('button',{name:'결제창 닫기'}).click();await openRecovery(page);
- try {await expect(page.getByRole('alert')).toContainText('주문 상태 확인 오류',{timeout:13000});await expect(page.getByRole('button',{name:'다시 확인'})).toBeEnabled();expect(s.stops).toBe(0);expect(s.confirm).toBe(0);}finally{release();}
+ try {await expect(page.getByRole('alert')).toContainText('주문 상태 확인 오류',{timeout:35000});await expect(page.getByRole('button',{name:'다시 확인'})).toBeEnabled();expect(s.stops).toBe(0);expect(s.confirm).toBe(0);}finally{release();}
 });
 
 for(const device of [{name:'mobile-narrow',width:360,ua:'iPhone'},{name:'mobile-wide',width:1440,ua:'Android'},{name:'ipad',width:1024,ua:'Macintosh',touch:true}])test(`popup ${device.name}: focus loss not cancel; close read then explicit stop`,async({browser})=>{

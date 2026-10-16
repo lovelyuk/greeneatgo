@@ -323,6 +323,10 @@ function Wallet({ supabase, apiBaseUrl, scope, userId, logout }) {
         ...(isForm ? {} : { "Content-Type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: isForm ? body : JSON.stringify(body) }),
+    }).catch((e) => {
+      if (e?.name === "TimeoutError" || e?.name === "AbortError")
+        throw Object.assign(new Error("서버 응답이 늦어요. 잠시 후 다시 확인해 주세요."), { timeout: true });
+      throw e;
     });
     const payload = response.status === 204 ? { ok: true, data: null } : await response.json();
     if (!current())

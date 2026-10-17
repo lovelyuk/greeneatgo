@@ -7,8 +7,8 @@ greeneatGo는 회사 식대 장부, 개인 식권, 지원 식권과 포인트를
 | 서비스 | 주소 |
 |---|---|
 | 관리자 웹 | https://greeneatgo.vercel.app |
-| API | https://greeneatgo-api.onrender.com/v1 |
-| API 상태 확인 | https://greeneatgo-api.onrender.com/v1/health |
+| API | https://greeneatgo-api.vercel.app/v1 |
+| API 상태 확인 | https://greeneatgo-api.vercel.app/v1/health |
 
 ## 구성
 

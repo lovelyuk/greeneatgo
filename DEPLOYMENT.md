@@ -5,7 +5,7 @@
 | 구성 | 서비스 | 운영 주소 |
 |---|---|---|
 | 관리자 웹 | Vercel | `https://greeneatgo.vercel.app` |
-| API | Render | `https://greeneatgo-api.onrender.com/v1` |
+| API | Vercel Functions (icn1, 프로젝트 `greeneatgo-api`) | `https://greeneatgo-api.vercel.app/v1` |
 | DB/Auth/Storage | Supabase | 프로젝트별 URL |
 | Android 앱 | Flutter APK/AAB | 배포 파일 |
 
@@ -14,23 +14,26 @@
 - 운영 Supabase 프로젝트와 백업 정책
 - `infra/migrations` 적용 현황
 - GitHub `main` 배포 권한
-- Render·Vercel 프로젝트 연결
+- Vercel 프로젝트 연결 (웹 `greeneatgo`, API `greeneatgo-api`)
 - 키움페이 테스트/운영 키
 - 필요 시 SendGrid와 Firebase 프로젝트
 
 비밀값은 Git, `VITE_` 환경변수, Flutter 클라이언트에 넣지 않습니다.
 
-## 2. FastAPI / Render
+## 2. FastAPI / Vercel
+
+Render에서 Vercel로 이전했다. 측정·검증 기록은 [docs/VERCEL_API_MIGRATION.md](docs/VERCEL_API_MIGRATION.md).
 
 ### 설정
 
 | 항목 | 값 |
 |---|---|
-| Root Directory | `services/api` |
-| Runtime | Python 3.12 |
-| Build Command | `pip install -e .` |
-| Start Command | `bash start.sh` |
+| Vercel 프로젝트 | `greeneatgo-api` (Git 연결, Root Directory `services/api`) |
+| Runtime | Python (FastAPI, `pyproject.toml` `[tool.vercel] entrypoint = "app.main:app"`) |
+| Region | `icn1` (`services/api/vercel.json`) |
 | Health Check | `/v1/health` |
+
+PDF는 순수 Python `fpdf2`로 생성한다(서버리스에 Pango/Cairo가 없어 WeasyPrint 불가).
 
 ### 필수 환경변수
 
@@ -42,7 +45,7 @@ KIWOOMPAY_CPID=...
 # 결제에는 불필요. 자동 취소/환불 API를 사용할 때만 키움페이 발급값 설정.
 KIWOOMPAY_AUTHORIZATION_KEY=...
 KIWOOMPAY_BASE_URL=https://apitest.kiwoompay.co.kr
-PUBLIC_API_BASE_URL=https://greeneatgo-api.onrender.com/v1
+PUBLIC_API_BASE_URL=https://greeneatgo-api.vercel.app/v1
 ADMIN_APP_URL=https://greeneatgo.vercel.app
 CORS_ALLOWED_ORIGINS=http://localhost:5173,https://greeneatgo.vercel.app
 ```
@@ -63,7 +66,7 @@ Firebase Admin 서비스 계정은 JSON 또는 Base64 중 하나만 설정합니
 ### 배포 확인
 
 ```bash
-curl -fsS https://greeneatgo-api.onrender.com/v1/health
+curl -fsS https://greeneatgo-api.vercel.app/v1/health
 ```
 
 정상 예:
@@ -89,8 +92,8 @@ curl -fsS https://greeneatgo-api.onrender.com/v1/health
 ```dotenv
 VITE_SUPABASE_URL=https://PROJECT.supabase.co
 VITE_SUPABASE_ANON_KEY=...
-VITE_API_BASE_URL=https://greeneatgo-api.onrender.com/v1
-VITE_AUTH_EMAIL_REDIRECT_TO=https://greeneatgo-api.onrender.com/v1/auth/confirmed
+VITE_API_BASE_URL=https://greeneatgo-api.vercel.app/v1
+VITE_AUTH_EMAIL_REDIRECT_TO=https://greeneatgo-api.vercel.app/v1/auth/confirmed
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY`, 키움페이 secret, SendGrid key, Firebase Admin 키는 Vercel에 넣지 않습니다.
@@ -148,8 +151,8 @@ apps\customer\build\app\outputs\flutter-apk\app-release.apk
 Supabase Authentication URL Configuration:
 
 ```text
-Site URL: https://greeneatgo-api.onrender.com
-Redirect URL: https://greeneatgo-api.onrender.com/v1/auth/confirmed
+Site URL: https://greeneatgo-api.vercel.app
+Redirect URL: https://greeneatgo-api.vercel.app/v1/auth/confirmed
 ```
 
 한글 템플릿은 [docs/SUPABASE_AUTH_EMAIL_KO.md](docs/SUPABASE_AUTH_EMAIL_KO.md)를 참고합니다.
@@ -159,7 +162,7 @@ Redirect URL: https://greeneatgo-api.onrender.com/v1/auth/confirmed
 1. DB 백업·마이그레이션 확인
 2. API 테스트
 3. Supabase 필요한 마이그레이션 적용
-4. Render 배포와 health 확인
+4. Vercel API 배포와 health 확인
 5. 관리자 웹 build
 6. Vercel 배포와 역할별 로그인 확인
 7. Flutter test/analyze/build

@@ -15,7 +15,7 @@ Authentication → URL Configuration
 운영 중인 공개 URL로 설정한다. 현재는 Render API에 인증 완료 안내 페이지를 추가했다.
 
 ```text
-https://greeneatgo-api.onrender.com
+https://greeneatgo-api.vercel.app
 ```
 
 ### Redirect URLs / Additional Redirect URLs
@@ -23,13 +23,13 @@ https://greeneatgo-api.onrender.com
 아래 주소를 추가한다.
 
 ```text
-https://greeneatgo-api.onrender.com/v1/auth/confirmed
+https://greeneatgo-api.vercel.app/v1/auth/confirmed
 ```
 
 직원 앱은 회원가입 요청 시 `emailRedirectTo`로 이 주소를 넘긴다.
 
 ```text
-https://greeneatgo-api.onrender.com/v1/auth/confirmed
+https://greeneatgo-api.vercel.app/v1/auth/confirmed
 ```
 
 인증 완료 후 브라우저에는 “이메일 인증이 완료됐어요. 이제 그린잇 앱으로 돌아가 로그인…” 안내 페이지가 표시된다.

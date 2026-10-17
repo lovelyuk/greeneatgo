@@ -47,7 +47,7 @@ cp .env.example .env
 VITE_SUPABASE_URL=https://PROJECT.supabase.co
 VITE_SUPABASE_ANON_KEY=...
 VITE_API_BASE_URL=http://localhost:8000/v1
-VITE_AUTH_EMAIL_REDIRECT_TO=https://greeneatgo-api.onrender.com/v1/auth/confirmed
+VITE_AUTH_EMAIL_REDIRECT_TO=https://greeneatgo-api.vercel.app/v1/auth/confirmed
 ```
 
 Flutter release 스크립트도 이 파일의 공개 설정을 사용합니다.
@@ -125,8 +125,8 @@ Authentication → Providers → Email
 URL Configuration:
 
 ```text
-Site URL: https://greeneatgo-api.onrender.com
-Additional Redirect URL: https://greeneatgo-api.onrender.com/v1/auth/confirmed
+Site URL: https://greeneatgo-api.vercel.app
+Additional Redirect URL: https://greeneatgo-api.vercel.app/v1/auth/confirmed
 ```
 
 ## 7. Storage

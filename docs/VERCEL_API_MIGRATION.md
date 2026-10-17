@@ -1,6 +1,26 @@
 # Vercel API 이전 (Render → Vercel)
 
-브랜치: `feat/2026-10-17-vercel-api`. 운영(Render, 앱/웹이 호출하는 주소)은 아직 바꾸지 않았다.
+브랜치: `feat/2026-10-17-vercel-api`.
+
+## 전환 상태 (2026-10-17)
+
+| 항목 | 상태 |
+|---|---|
+| 키움 결과통지 URL | `https://greeneatgo-api.vercel.app/v1/payments/notification` (사용자 변경) — 실결제 1건 Vercel에서 승인·식권 발급 확인 |
+| 관리자/구매자 웹 운영 `VITE_API_BASE_URL` | Vercel API로 변경, 재배포 완료 (번들에 onrender 참조 0) |
+| 앱 APK | `0.1.7+49`, `API_BASE_URL=https://greeneatgo-api.vercel.app/v1` |
+| Supabase Auth Site URL / Redirect URL | 대시보드에서 직접 변경 필요 (아래) |
+| Render | 아직 실행 중 (구버전 앱 대비). 안정 후 종료 |
+
+Supabase → Authentication → URL Configuration:
+
+```text
+Site URL: https://greeneatgo-api.vercel.app
+Redirect URLs: https://greeneatgo-api.vercel.app/v1/auth/confirmed, https://greeneatgo.vercel.app/shop
+```
+
+Vercel API 프로젝트 `greeneatgo-api`는 Git 연결(root `services/api`)이며, `pyproject.toml`에
+`[tool.vercel]`이 없는 브랜치(이전 커밋)는 빌드를 건너뛴다.
 
 ## 구성
 

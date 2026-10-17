@@ -1,7 +1,11 @@
 $ErrorActionPreference = 'Stop'
-Set-Location 'D:\projects\greeneatGo\apps\customer'
+# Flutter SDK: FLUTTER_BAT env var, else G:\dev\flutter, else D:\dev\flutter.
+$flutter = @($env:FLUTTER_BAT, 'G:\dev\flutter\bin\flutter.bat', 'D:\dev\flutter\bin\flutter.bat') | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if (-not $flutter) { throw 'flutter.bat not found (set FLUTTER_BAT)' }
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+Set-Location (Join-Path $root 'apps\customer')
 
-$envFile = 'D:\projects\greeneatGo\apps\admin\.env'
+$envFile = Join-Path $root 'apps\admin\.env'
 $envs = @{}
 Get-Content $envFile | ForEach-Object {
   if ($_ -match '^\s*([^#][^=]+)=(.*)$') {
@@ -13,16 +17,16 @@ if (-not $envs['VITE_API_BASE_URL']) {
   throw 'apps/admin/.env must contain VITE_API_BASE_URL'
 }
 
-& 'D:\dev\flutter\bin\flutter.bat' clean
+& $flutter clean
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& 'D:\dev\flutter\bin\flutter.bat' pub get
+& $flutter pub get
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $buildArgs = @(
   'build', 'apk',
   "--dart-define=API_BASE_URL=$($envs['VITE_API_BASE_URL'])"
 )
-$firebaseConfigPath = 'D:\projects\greeneatGo\apps\customer\android\app\google-services.json'
+$firebaseConfigPath = Join-Path $root 'apps\customer\android\app\google-services.json'
 if (Test-Path $firebaseConfigPath) {
   $firebaseConfig = Get-Content $firebaseConfigPath -Raw | ConvertFrom-Json
   $firebaseClient = $firebaseConfig.client | Where-Object { $_.client_info.android_client_info.package_name -eq 'com.greeneat.greeneatgo' } | Select-Object -First 1
@@ -44,5 +48,5 @@ foreach ($key in $firebaseKeys) {
   $buildArgs += "--dart-define=$key=$($envs[$key])"
 }
 
-& 'D:\dev\flutter\bin\flutter.bat' @buildArgs
+& $flutter @buildArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

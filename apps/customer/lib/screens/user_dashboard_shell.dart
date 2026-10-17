@@ -32,6 +32,7 @@ class UserDashboardShell extends StatefulWidget {
     this.qrPageBuilder,
     this.couponCountFuture,
     this.pointBalance,
+    this.subsidizedFuture,
   });
 
   final Map<String, dynamic> data;
@@ -54,6 +55,10 @@ class UserDashboardShell extends StatefulWidget {
   final DashboardPageBuilder? qrPageBuilder;
   final Future<int>? couponCountFuture;
   final int? pointBalance;
+
+  /// Resolves true when the server catalog says this employee buys
+  /// subsidized vouchers (purchase_mode 'subsidized'); drives the avatar.
+  final Future<bool>? subsidizedFuture;
 
   @override
   State<UserDashboardShell> createState() => _UserDashboardShellState();
@@ -124,6 +129,7 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
         pendingBanner: widget.pendingBanner,
         couponCountFuture: widget.couponCountFuture,
         pointBalance: widget.pointBalance,
+        subsidizedFuture: widget.subsidizedFuture,
         onScanQr: () => _openActionPage(
           2,
           widget.qrPageBuilder,
@@ -161,6 +167,7 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
       _HistoryTab(transactions: _transactions),
       _ProfileTab(
         data: widget.data,
+        subsidizedFuture: widget.subsidizedFuture,
         onOpenSettings: widget.onOpenSettings,
         onOpenInviteCode: widget.onOpenInviteCode,
         onBuyVoucher: () => _openActionPage(
@@ -239,6 +246,7 @@ class _HomeTab extends StatelessWidget {
     required this.pendingBanner,
     required this.couponCountFuture,
     required this.pointBalance,
+    required this.subsidizedFuture,
     required this.onScanQr,
     required this.onBuyVoucher,
     required this.onHistory,
@@ -257,6 +265,7 @@ class _HomeTab extends StatelessWidget {
   final Widget? pendingBanner;
   final Future<int>? couponCountFuture;
   final int? pointBalance;
+  final Future<bool>? subsidizedFuture;
   final Widget? todayMenuCard;
   final Widget? partnerBanner;
   final AsyncAction onScanQr;
@@ -309,6 +318,8 @@ class _HomeTab extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 96),
         children: [
           _AppHeader(
+            role: data['role'],
+            subsidizedFuture: subsidizedFuture,
             displayName: displayName,
             subtitle: [company, '돈토식당'].where((e) => e.isNotEmpty).join(' · '),
             onProfile: onProfile,
@@ -441,7 +452,11 @@ class _AppHeader extends StatelessWidget {
     required this.displayName,
     required this.subtitle,
     required this.onProfile,
+    required this.role,
+    required this.subsidizedFuture,
   });
+  final Object? role;
+  final Future<bool>? subsidizedFuture;
   final String displayName;
   final String subtitle;
   final VoidCallback onProfile;
@@ -454,21 +469,11 @@ class _AppHeader extends StatelessWidget {
             InkWell(
               onTap: onProfile,
               borderRadius: BorderRadius.circular(18),
-              child: Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.blue,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  displayName.characters.first,
-                  style: const TextStyle(
-                      color: AppColors.fg,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800),
-                ),
+              child: ProfileAvatar(
+                role: role,
+                subsidizedFuture: subsidizedFuture,
+                size: 44,
+                radius: 16,
               ),
             ),
             const SizedBox(width: 12),
@@ -670,6 +675,7 @@ class _SettlementTimeline extends StatelessWidget {
 class _ProfileTab extends StatelessWidget {
   const _ProfileTab({
     required this.data,
+    required this.subsidizedFuture,
     required this.onOpenSettings,
     required this.onOpenInviteCode,
     required this.onBuyVoucher,
@@ -681,6 +687,7 @@ class _ProfileTab extends StatelessWidget {
     required this.onSignOut,
   });
   final Map<String, dynamic> data;
+  final Future<bool>? subsidizedFuture;
   final AsyncAction onOpenSettings;
   final AsyncAction onOpenInviteCode;
   final AsyncAction onBuyVoucher;
@@ -703,19 +710,11 @@ class _ProfileTab extends StatelessWidget {
         const SizedBox(height: 24),
         Row(
           children: [
-            Container(
-              width: 56,
-              height: 56,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.blue,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(name.characters.first,
-                  style: const TextStyle(
-                      color: AppColors.fg,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800)),
+            ProfileAvatar(
+              role: data['role'],
+              subsidizedFuture: subsidizedFuture,
+              size: 56,
+              radius: 20,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -942,3 +941,65 @@ String _roleLabel(Object? raw) => switch ('$raw') {
       'customer' => '일반 사용자',
       _ => '사용자',
     };
+
+enum ProfileAvatarKind { casual, employee, subsidy }
+
+ProfileAvatarKind profileAvatarKind(Object? role, {required bool subsidized}) {
+  if (role == 'employee') {
+    return subsidized ? ProfileAvatarKind.subsidy : ProfileAvatarKind.employee;
+  }
+  return ProfileAvatarKind.casual;
+}
+
+/// Character avatar (일반 = mint casual, 회사 직원 = shirt/tie/ID badge,
+/// 보조금 업체 = ₩ subsidy paper). Same images as web `/brand/avatar_*.png`.
+class ProfileAvatar extends StatelessWidget {
+  const ProfileAvatar({
+    super.key,
+    required this.role,
+    required this.subsidizedFuture,
+    required this.size,
+    required this.radius,
+  });
+
+  final Object? role;
+  final Future<bool>? subsidizedFuture;
+  final double size;
+  final double radius;
+
+  static const _assets = {
+    ProfileAvatarKind.casual: 'assets/brand/avatar_casual.png',
+    ProfileAvatarKind.employee: 'assets/brand/avatar_employee.png',
+    ProfileAvatarKind.subsidy: 'assets/brand/avatar_subsidy.png',
+  };
+  static const _labels = {
+    ProfileAvatarKind.casual: '일반 사용자',
+    ProfileAvatarKind.employee: '회사 직원',
+    ProfileAvatarKind.subsidy: '보조금 업체 직원',
+  };
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+        future: subsidizedFuture,
+        builder: (context, snapshot) {
+          final kind = profileAvatarKind(role,
+              subsidized: snapshot.hasData && snapshot.data == true);
+          return ClipRRect(
+            key: ValueKey('profile-avatar-${kind.name}'),
+            borderRadius: BorderRadius.circular(radius),
+            child: Image.asset(
+              _assets[kind]!,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              semanticLabel: _labels[kind],
+              errorBuilder: (_, __, ___) => Container(
+                width: size,
+                height: size,
+                color: AppColors.blue,
+              ),
+            ),
+          );
+        },
+      );
+}

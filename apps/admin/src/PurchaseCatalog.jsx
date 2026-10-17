@@ -29,6 +29,7 @@ export default function PurchaseCatalog({
   recoveryTarget,
   onRecoveryNeeded,
   onRecoveryEnded,
+  onCatalog,
 }) {
   const [catalog, setCatalog] = useState(null),
     [coupons, setCoupons] = useState(null),
@@ -58,6 +59,7 @@ export default function PurchaseCatalog({
       .then(([products, wallet]) => {
         if (active && liveScope.current === accountScope) {
           setCatalog(products);
+          onCatalog?.(products);
           setCoupons(wallet);
           setSourceScope(accountScope);
         }

@@ -46,7 +46,8 @@ void main() {
       DashboardPageBuilder? purchasePageBuilder,
       DashboardPageBuilder? qrPageBuilder,
       int? couponCount,
-      int? pointBalance}) async {
+      int? pointBalance,
+      bool? subsidized}) async {
     await tester.binding.setSurfaceSize(const Size(360, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -75,12 +76,45 @@ void main() {
             couponCountFuture:
                 couponCount == null ? null : Future<int>.value(couponCount),
             pointBalance: pointBalance,
+            subsidizedFuture:
+                subsidized == null ? null : Future<bool>.value(subsidized),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
   }
+
+  test('avatar kind follows role and server subsidy mode', () {
+    expect(profileAvatarKind('customer', subsidized: false),
+        ProfileAvatarKind.casual);
+    expect(profileAvatarKind('customer', subsidized: true),
+        ProfileAvatarKind.casual);
+    expect(profileAvatarKind('employee', subsidized: false),
+        ProfileAvatarKind.employee);
+    expect(profileAvatarKind('employee', subsidized: true),
+        ProfileAvatarKind.subsidy);
+  });
+
+  testWidgets('home header shows the character avatar for each account kind',
+      (tester) async {
+    await pumpDashboard(tester, data: <String, dynamic>{
+      'display_name': '구매자',
+      'role': 'customer',
+      'account_type': 'voucher',
+      'voucher_balance': 3,
+      'voucher_use_history': const [],
+    });
+    expect(find.byKey(const ValueKey('profile-avatar-casual')), findsWidgets);
+    expect(find.text('구'), findsNothing);
+
+    await pumpDashboard(tester);
+    expect(find.byKey(const ValueKey('profile-avatar-employee')), findsWidgets);
+
+    await pumpDashboard(tester, subsidized: true);
+    expect(find.byKey(const ValueKey('profile-avatar-subsidy')), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('home matches the ticket-first layout at 360x640 and scale 1.3',
       (tester) async {

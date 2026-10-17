@@ -3,7 +3,9 @@ import {setup,submit,purchaseResponse} from './final-L1-fixture.mjs';
 const owner='11111111-1111-4111-8111-111111111111';
 const pending={order_id:'GE-history-legacy',amount:1100,mode:'subsidized',checkout_started:true};
 const ready={...pending,status:'ready',recovery_action:'reconcile',checkout_url:null,resumable:false};
-async function login(page){await page.goto('/shop');await page.getByLabel('이메일',{exact:true}).fill('fixture@example.invalid');await page.getByLabel('비밀번호',{exact:true}).fill('mocked-password-only');await page.getByRole('button',{name:'로그인',exact:true}).click();}
+// Login always lands on 홈 (user rule); a restored pending checkout is resolved
+// in the mounted catalog, so tests open 구매 the way a buyer would.
+async function login(page){await page.goto('/shop');await page.getByLabel('이메일',{exact:true}).fill('fixture@example.invalid');await page.getByLabel('비밀번호',{exact:true}).fill('mocked-password-only');await page.getByRole('button',{name:'로그인',exact:true}).click();const nav=page.getByRole('navigation',{name:'구매자 탭'});if(await nav.waitFor({state:'visible',timeout:3000}).then(()=>true).catch(()=>false))await nav.getByRole('button',{name:'구매',exact:true}).click();}
 const tab=(page,name)=>page.getByRole('navigation').getByRole('button',{name,exact:true});
 
 const receipt={...ready,user_id:owner,status:'canceled',recovery_action:'locally_abandoned',completion:null,local_abandonment:{id:'22222222-2222-4222-8222-222222222222',source:'owner_request',scope:'local_order',outcome:'abandoned',requested_by:owner,requested_at:'2026-10-15T01:02:03+09:00',provider_finality:'unknown',residual_late_approval_possible:true}};

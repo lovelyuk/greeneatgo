@@ -35,3 +35,16 @@ export function validateNewPassword(current, next, confirm) {
 export function headerSubtitle(companyName, merchantName) {
   return [companyName, merchantName].filter(v => typeof v === 'string' && v.trim()).join(' · ');
 }
+
+// Profile avatar character by account kind (user rule): 일반 구매자 = mint casual,
+// 회사 임직원 = shirt/tie/ID badge, 보조금 업체 임직원 = holding a ₩ subsidy paper.
+// Subsidy is decided by the server catalog (purchase_mode 'subsidized'), never guessed.
+export const AVATARS = {
+  casual: { src: '/brand/avatar_casual.png', label: '일반 사용자' },
+  employee: { src: '/brand/avatar_employee.png', label: '회사 직원' },
+  subsidy: { src: '/brand/avatar_subsidy.png', label: '보조금 업체 직원' },
+};
+export function avatarKind(role, purchaseMode) {
+  if (role === 'employee') return purchaseMode === 'subsidized' ? 'subsidy' : 'employee';
+  return 'casual';
+}

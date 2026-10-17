@@ -198,3 +198,21 @@
 .purchase-app .banner-dots{display:flex;justify-content:center;gap:6px;margin-top:8px}
 .purchase-app .banner-dots button{width:6px;height:6px;min-height:6px;padding:0;border-radius:99px;background:var(--fg2)}
 .purchase-app .banner-dots button[aria-current]{width:16px;background:var(--blue-soft)}
+
+/* Payment completion modal over the unchanged purchase screen. */
+.purchase-app .done-overlay{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:24px 18px;background:rgba(5,7,11,.72)}
+.purchase-app .done-dialog{width:min(100%,400px);max-height:calc(100dvh - 48px);overflow:auto;margin:0;padding:26px 22px 22px;border-radius:24px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.5);animation:done-in .18s ease-out}
+.purchase-app .done-check{display:grid;place-items:center;width:56px;height:56px;margin:0 auto 12px;border-radius:50%;background:var(--blue);color:#fff;font-size:28px;font-weight:800}
+.purchase-app .done-dialog h2{margin:0;font-size:20px}
+.purchase-app .done-sub{margin:6px 0 18px;color:var(--fg2);font-size:13px}
+.purchase-app .done-rows{background:var(--card-hi);border-radius:16px;padding:6px 16px;text-align:left}
+.purchase-app .done-row{display:flex;justify-content:space-between;gap:12px;margin:0;padding:11px 0;font-size:13px}
+.purchase-app .done-row+.done-row{border-top:1px solid var(--line)}
+.purchase-app .done-row span{color:var(--fg2);font-weight:600}
+.purchase-app .done-row b{font-weight:800;text-align:right}
+.purchase-app .done-amount b{font-size:17px;color:#fff}
+.purchase-app .done-links{display:flex;justify-content:center;gap:16px;margin:12px 0 4px}
+.purchase-app .done-links a{color:var(--blue-soft);font-size:13px;font-weight:700}
+.purchase-app .done-ok{width:100%;min-height:54px;margin-top:14px;font-size:16px}
+@keyframes done-in{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.purchase-app .done-dialog{animation:none}}

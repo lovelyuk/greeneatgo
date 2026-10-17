@@ -346,6 +346,22 @@ for (const reopen of [false]) test(`recovery done exact completion via ${reopen 
   expect(await page.evaluate(key => sessionStorage.getItem(key), recoveryStorageKey)).toBe(null);
   await expect.poll(() => context.pages().length).toBe(1);
 });
+test("completion shows as a modal dialog over the unchanged purchase screen", async ({ page }) => {
+  await restoredRecovery(page);
+  await page.route("**/api-fixture/payments/recovery?**", route => route.fulfill({ json: { ok: true, data: { ...recoveryReady, status: "done", recovery_action: "complete", checkout_url: null, completion: recoveryCompletion } } }));
+  await login(page);
+  const dialog = page.getByRole("dialog", { name: "결제 완료" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("aria-modal", "true");
+  await expect(dialog.getByText("발급 식권 11장")).toBeVisible();
+  await expect(dialog).toContainText("2026.01.01 09:00");
+  await expect(dialog).not.toContainText("T00:00:00");
+  await page.getByRole("navigation", { name: "구매자 탭" }).getByRole("button", { name: "구매", exact: true }).click({ force: true }).catch(() => {});
+  await dialog.getByRole("button", { name: "확인", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("navigation", { name: "구매자 탭" }).getByRole("button", { name: "구매", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "식권 구매" })).toBeVisible();
+});
 for (const status of ["ready", "failed", "canceled", "refund_processing", "refunded", "unknown"]) test(`recovery reconcile ${status} never releases order or offers new purchase`, async ({ page, context }) => {
   const calls = await restoredRecovery(page);
   await page.route("**/api-fixture/payments/recovery?**", route => route.fulfill({ json: { ok: true, data: { ...recoveryReady, status, recovery_action: "reconcile", checkout_url: null } } }));
@@ -464,7 +480,7 @@ test("recovery completion survives storage removal failure but refuses next purc
   await login(page);
   await expect(page.getByRole("heading", { name: "결제 완료" })).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("저장된 주문을 지우지 못했어요");
-  await expect(page.getByRole("button", { name: "다른 식권 구매" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "확인", exact: true })).toHaveCount(0);
   expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)).order_id, recoveryStorageKey)).toBe(recoveryReady.order_id);
 });
 test("recovery storage read failure remains blocked without order API", async ({ page }) => {
@@ -1414,6 +1430,7 @@ test("point-only employee order completes from authoritative issuance without fo
   await expect(page.getByRole("heading", { name: "결제 완료" })).toBeVisible();
   await expect(page.getByText("발급 식권 11장")).toBeVisible();
   expect(confirmBody).toBeUndefined();
+  await page.getByRole("dialog", { name: "결제 완료" }).getByRole("button", { name: "확인", exact: true }).click();
   await page.getByRole("navigation").getByRole("button", { name: "홈", exact: true }).click();
   await expect(page.getByText('보유 보조금 식권 11장 · 실제 결제 방식은 서버에서 확인해요.')).toBeVisible();
   await expect(page.locator(".ticket-wallet")).toContainText("0P");

@@ -37,7 +37,7 @@ for (const actual of [40000, 50000]) {
     expect(context.pages()).toHaveLength(1);
     expect(state.errors).toEqual([]);
     await expect(page.getByRole("heading", { name: "주문 상태 확인 필요" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "다른 식권 구매" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "확인", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "구매하기", exact: true })).toHaveCount(0);
   });
 }
@@ -86,7 +86,7 @@ test("FINAL-L1 unchanged point-only completion shows actual debit without discre
   await expect(page.getByRole("heading", { name: "결제 완료" })).toBeVisible();
   await expect(page.getByText("실제 사용 포인트 42,000P")).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "다른 식권 구매" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "확인", exact: true })).toBeVisible();
   expect(state.confirm).toBe(0);
 });
 

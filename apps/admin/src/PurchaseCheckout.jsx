@@ -4,6 +4,7 @@ import { verifiedOrderClosure, validLocalAbandonment } from './paymentClosure.js
 import { safeCheckoutUrl } from "./purchaseSafety.js";
 import { checkoutPresentation, loadSdk, validateSdkData, openSdkFrame } from './kiwoomSdk.js';
 import { validateReceiptUrl } from "./receiptUtils.js";
+import { formatKst } from "./purchaseExtras.js";
 
 // A failed storage write must not discard an order already returned by the server.
 // This account-scoped fallback also survives checkout remounts in this document.
@@ -637,10 +638,20 @@ export default function PurchaseCheckout({
   function presentCompletion(content) {
     return recoveryView && recoveryTarget ? createPortal(content, recoveryTarget) : content;
   }
-  if (completion)
-    return presentCompletion(
-      <section className="purchase-card">
-        <h2>결제 완료</h2>
+  // Payment completion is a modal over the unchanged purchase screen (user rule);
+  // only server-confirmed completion data is shown.
+  const closeCompletion = () => {
+    pendingMemory.delete(storageKey);
+    setCompletion(null);
+    setConsent(false);
+  };
+  const completionClosable = completion && !completion.pricing_discrepancy && !completion.storage_blocked;
+  const completionDialog = completion && (
+    <div className="done-overlay" onKeyDown={e => { if (e.key === 'Escape' && completionClosable) closeCompletion(); }}>
+      <section className="purchase-card done-dialog" role="dialog" aria-modal="true" aria-labelledby="done-title">
+        <span className="done-check" aria-hidden="true">✓</span>
+        <h2 id="done-title">결제 완료</h2>
+        <p className="done-sub">{completion.merchant_name} · {completion.product_name}</p>
         {completion.pricing_discrepancy && (
           <p role="alert">
             견적과 서버 확정 가격이 달라요. 식권은 이미 발급되었으며 아래는 실제
@@ -649,50 +660,34 @@ export default function PurchaseCheckout({
             · 견적 카드 {Number(completion.accepted_pricing.payment_amount).toLocaleString("ko-KR")}원
           </p>
         )}
-        <p>
-          {completion.merchant_name} · {completion.product_name}
-        </p>
-        <p>
-          서버 승인 금액 {Number(completion.amount).toLocaleString("ko-KR")}원
-        </p>
-        <p>
-          결제수단{" "}
-          {completion.payment?.method_label ||
-            completion.payment?.method ||
-            "정보 없음"}
-        </p>
-        <p>발급 식권 {completion.issued_count ?? "—"}장</p>
-        {Number.isSafeInteger(completion.pricing?.point_amount) && (
-          <p>실제 사용 포인트 {completion.pricing.point_amount.toLocaleString("ko-KR")}P</p>
-        )}
-        <p>승인 시각 {completion.payment?.approved_at || "정보 없음"}</p>
-        {[
-          ["sales_slip_url", "매출전표"],
-          ["cash_receipt_url", "현금영수증"],
-        ].map(([key, label]) =>
-          validateReceiptUrl(completion.receipts?.[key]) ? (
-            <a
-              key={key}
-              target="_blank"
-              rel="noopener noreferrer"
-              href={validateReceiptUrl(completion.receipts[key])}
-            >
-              {label}
-            </a>
-          ) : null,
-        )}
+        <div className="done-rows">
+          <p className="done-row done-amount"><span>결제 금액</span> <b>{Number(completion.amount).toLocaleString("ko-KR")}원</b></p>
+          <p className="done-row"><span>결제수단</span> <b>{completion.payment?.method_label || completion.payment?.method || "정보 없음"}</b></p>
+          <p className="done-row"><span>발급 식권</span> <b>{completion.issued_count ?? "—"}장</b></p>
+          {Number.isSafeInteger(completion.pricing?.point_amount) && (
+            <p className="done-row"><span>실제 사용 포인트</span> <b>{completion.pricing.point_amount.toLocaleString("ko-KR")}P</b></p>
+          )}
+          <p className="done-row"><span>승인 시각</span> <b>{formatKst(completion.payment?.approved_at)}</b></p>
+        </div>
+        <div className="done-links">
+          {[
+            ["sales_slip_url", "매출전표 보기"],
+            ["cash_receipt_url", "현금영수증 보기"],
+          ].map(([key, label]) =>
+            validateReceiptUrl(completion.receipts?.[key]) ? (
+              <a key={key} target="_blank" rel="noopener noreferrer" href={validateReceiptUrl(completion.receipts[key])}>{label}</a>
+            ) : null,
+          )}
+        </div>
         {(error || completion.storage_blocked) && <p role="alert">{error || "저장된 주문을 지우지 못했어요. 완료 결과는 유지했어요. 중복 구매하지 말고 관리자에게 확인해 주세요."}</p>}
-        {!completion.pricing_discrepancy && !completion.storage_blocked && <button
-          onClick={() => {
-            pendingMemory.delete(storageKey);
-            setCompletion(null);
-            setConsent(false);
-          }}
-        >
-          다른 식권 구매
-        </button>}
+        {completionClosable && <button className="done-ok" autoFocus onClick={closeCompletion}>확인</button>}
       </section>
-    );
+    </div>
+  );
+  // History (recovery) view and a hidden purchase tab show only the dialog;
+  // the purchase tab keeps its form underneath (rendered at the end).
+  if (completion && (recoveryView || !purchaseActive || !quote))
+    return presentCompletion(completionDialog);
   if (unknown && recoveryView)
     return recoveryTarget && createPortal((
       <section className="purchase-card">
@@ -729,6 +724,8 @@ export default function PurchaseCheckout({
     ), recoveryTarget);
   if (!purchaseActive || !quote) return null;
   return (
+    <>
+    {completionDialog}
     <section className="purchase-card">
       <h2>주문 확인</h2>
       {paymentMethod === 'BANK' && <p>계좌이체 전용 상품은 결제수단 제한을 유지하기 위해 기존 새 결제창(팝업)으로 진행해요.</p>}
@@ -753,7 +750,8 @@ export default function PurchaseCheckout({
       <button disabled={(busy && !order && !unknown) || !legalReady || !consent} onClick={purchase}>
         구매하기
       </button>
-      {error && !order && !unknown && <p role="alert">{error}</p>}
+      {error && !order && !unknown && !completion && <p role="alert">{error}</p>}
     </section>
+    </>
   );
 }

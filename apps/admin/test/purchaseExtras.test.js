@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { safeBannerLink, rewardLabel, reviewPayload, validateNewPassword, headerSubtitle, AVATARS, avatarKind } from '../src/purchaseExtras.js';
+import { safeBannerLink, rewardLabel, reviewPayload, validateNewPassword, headerSubtitle, AVATARS, avatarKind, formatKst } from '../src/purchaseExtras.js';
 import { existsSync } from 'node:fs';
 
 test('banner links open only absolute https URLs', () => {
@@ -48,4 +48,11 @@ test('avatar character follows account kind; subsidy only from server catalog mo
   assert.equal(avatarKind('employee', 'none'), 'employee');
   assert.equal(avatarKind('employee', null), 'employee');
   for (const { src } of Object.values(AVATARS)) assert.ok(existsSync(new URL(`../public${src}`, import.meta.url)), src);
+});
+
+test('completion time is shown in KST, never raw ISO', () => {
+  assert.equal(formatKst('2026-10-17T07:33:35.122681+00:00'), '2026.10.17 16:33');
+  assert.equal(formatKst('2026-12-31T15:00:00Z'), '2027.01.01 00:00');
+  assert.equal(formatKst(null), '정보 없음');
+  assert.equal(formatKst('nope'), '정보 없음');
 });

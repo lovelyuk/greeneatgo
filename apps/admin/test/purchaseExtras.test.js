@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { safeBannerLink, rewardLabel, reviewPayload, validateNewPassword, headerSubtitle } from '../src/purchaseExtras.js';
+import { safeBannerLink, rewardLabel, reviewPayload, validateNewPassword, headerSubtitle, AVATARS, avatarKind } from '../src/purchaseExtras.js';
+import { existsSync } from 'node:fs';
 
 test('banner links open only absolute https URLs', () => {
   assert.equal(safeBannerLink('https://partner.example/a?b=1'), 'https://partner.example/a?b=1');
@@ -38,4 +39,13 @@ test('purchaser header never invents a merchant name', () => {
   assert.equal(headerSubtitle('', '  '), '');
   const source = readFileSync(new URL('../src/PurchaseDashboard.jsx', import.meta.url), 'utf8');
   assert.equal(source.includes('돈토'), false);
+});
+
+test('avatar character follows account kind; subsidy only from server catalog mode', () => {
+  assert.equal(avatarKind('customer', 'voucher'), 'casual');
+  assert.equal(avatarKind('customer', null), 'casual');
+  assert.equal(avatarKind('employee', 'subsidized'), 'subsidy');
+  assert.equal(avatarKind('employee', 'none'), 'employee');
+  assert.equal(avatarKind('employee', null), 'employee');
+  for (const { src } of Object.values(AVATARS)) assert.ok(existsSync(new URL(`../public${src}`, import.meta.url)), src);
 });

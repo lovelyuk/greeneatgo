@@ -66,7 +66,17 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    // Asset images decode off the fake-async zone; wait so the golden
+    // captures the real character avatar instead of an empty box.
+    await tester.runAsync(() async {
+      for (final element in find.byType(Image).evaluate()) {
+        final image = element.widget as Image;
+        await precacheImage(image.image, element);
+      }
+    });
+    await tester.pumpAndSettle();
 
+    expect(find.byKey(const ValueKey('profile-avatar-casual')), findsOneWidget);
     expect(find.byKey(const ValueKey('ticket-balance-digit-1')), findsOneWidget);
     expect(find.text('3장'), findsOneWidget);
     expect(find.text('1,200P'), findsOneWidget);

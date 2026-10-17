@@ -1,7 +1,7 @@
 // Synthetic fixtures against the production Vite bundle. All external I/O blocked.
 import { test, expect } from '@playwright/test';
 const product = { id: 'refinement-product', name: '테스트 10+1 식권', voucher_count: 10, bonus_count: 1, total_count: 11, unit_price: 8000, sale_price: 72000, discount_rate: 10, kiwoom_pay_method: 'BANK', is_event: true };
-async function fixture(page, employee = false) {
+async function fixture(page, employee = false, { stayOnLanding = false } = {}) {
   const quotes = [];
   await page.context().route('**/*', route => new URL(route.request().url()).origin === 'http://127.0.0.1:4175' ? route.continue() : route.abort());
   const user = { id: '11111111-1111-4111-8111-111111111111', email: 'fixture@example.invalid', aud: 'authenticated', role: 'authenticated' };
@@ -24,7 +24,8 @@ async function fixture(page, employee = false) {
   await page.getByLabel('이메일', { exact: true }).fill('fixture@example.invalid');
   await page.getByLabel('비밀번호', { exact: true }).fill('mock-only-password');
   await page.getByRole('button', { name: '로그인', exact: true }).click();
-  await page.getByRole('navigation', { name: '구매자 탭' }).getByRole('button', { name: '구매', exact: true }).click();
+  if (stayOnLanding) await page.getByRole('navigation', { name: '구매자 탭' }).waitFor();
+  else await page.getByRole('navigation', { name: '구매자 탭' }).getByRole('button', { name: '구매', exact: true }).click();
   return quotes;
 }
 test('selecting a product automatically prices once without a confirmation button or order', async ({ page }, testInfo) => {
@@ -138,4 +139,16 @@ test('home wallet flip board keeps tiles, metrics and actions without 320px over
   await page.setViewportSize({ width: 320, height: 900 });
   await expect(tiles.first()).toHaveCSS('width', '52px');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('login lands on 홈 with the purchaser avatar character', async ({ page }) => {
+  await fixture(page, false, { stayOnLanding: true });
+  await expect(page.locator('.meal-ticket')).toBeVisible();
+  await expect(page.locator('.dashboard-header .avatar img')).toHaveAttribute('src', '/brand/avatar_casual.png');
+  expect(await page.locator('.dashboard-header .avatar img').evaluate(img => img.complete && img.naturalWidth > 0)).toBe(true);
+});
+test('subsidized employee gets the ₩ subsidy character', async ({ page }) => {
+  await fixture(page, true);
+  await page.getByRole('navigation').getByRole('button', { name: '홈', exact: true }).click();
+  await expect(page.locator('.dashboard-header .avatar img')).toHaveAttribute('src', '/brand/avatar_subsidy.png');
 });

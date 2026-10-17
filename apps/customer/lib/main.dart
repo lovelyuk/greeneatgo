@@ -2458,6 +2458,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   PendingPaymentLoadResult? _pendingLoad;
   late Future<TodayMenu?> _todayMenuFuture;
   late Future<int> _couponCountFuture;
+  // Employees only: the server catalog decides subsidized vs. plain employee.
+  late Future<bool> _subsidizedFuture;
 
   User get session => widget.session;
   Map<String, dynamic> get me => widget.me;
@@ -2469,6 +2471,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     _todayMenuFuture = DailyMenuClient().getTodayMenu();
     _couponCountFuture = _loadCouponCount();
+    _subsidizedFuture = _loadSubsidized();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_loadPendingPayment());
   }
@@ -2498,6 +2501,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<int> _loadCouponCount() async =>
       (await ApiClient(widget.session).getCoupons()).availableCount;
 
+  Future<bool> _loadSubsidized() async {
+    if (me['role'] != 'employee') return false;
+    try {
+      final catalog = await ApiClient(widget.session).getVoucherProducts();
+      return catalog.purchaseMode == VoucherPurchaseMode.subsidized;
+    } catch (_) {
+      return false; // Unknown mode falls back to the plain employee avatar.
+    }
+  }
+
   Future<void> _ignoreCouponError(Future<int> future) async {
     try {
       await future;
@@ -2519,6 +2532,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (oldWidget.session.uid != widget.session.uid) {
       _pendingLoad = null;
       _couponCountFuture = _loadCouponCount();
+      _subsidizedFuture = _loadSubsidized();
       unawaited(_loadPendingPayment());
     }
   }
@@ -2585,6 +2599,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return UserDashboardShell(
       data: me,
       couponCountFuture: _couponCountFuture,
+      subsidizedFuture: _subsidizedFuture,
       pointBalance: pointBalance,
       onRefresh: _refreshHome,
       todayMenuCard: FutureBuilder<TodayMenu?>(

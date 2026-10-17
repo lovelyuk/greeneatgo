@@ -6,7 +6,9 @@ const pending={order_id:'GE-S-restored-entry',amount:1100,mode:'subsidized',chec
 const ready={order_id:pending.order_id,amount:1100,status:'ready',recovery_action:'reconcile',checkout_url:null,resumable:false};
 const done={...ready,status:'done',recovery_action:'complete',completion:{order_id:pending.order_id,amount:1100,status:'done',issued_count:1,product_name:'테스트 식권'}};
 async function boot(page,context,saved=pending){const state=await setup(page,context,{gross:1100,points:0});await page.addInitScript(({key,saved})=>{if(!sessionStorage.getItem('seeded')){sessionStorage.setItem(key,typeof saved==='string'?saved:JSON.stringify(saved));sessionStorage.setItem('seeded','yes');}},{key,saved});return state;}
-async function login(page){await page.goto('/shop');await page.getByLabel('이메일',{exact:true}).fill('fixture@example.invalid');await page.getByLabel('비밀번호',{exact:true}).fill('mocked-password-only');await page.getByRole('button',{name:'로그인',exact:true}).click();}
+// Login always lands on 홈 (user rule); a restored pending checkout is resolved
+// in the mounted catalog, so tests open 구매 the way a buyer would.
+async function login(page){await page.goto('/shop');await page.getByLabel('이메일',{exact:true}).fill('fixture@example.invalid');await page.getByLabel('비밀번호',{exact:true}).fill('mocked-password-only');await page.getByRole('button',{name:'로그인',exact:true}).click();const nav=page.getByRole('navigation',{name:'구매자 탭'});if(await nav.waitFor({state:'visible',timeout:3000}).then(()=>true).catch(()=>false))await nav.getByRole('button',{name:'구매',exact:true}).click();}
 async function unknown(page){await openRecovery(page);await expect(page.getByRole('heading',{name:'이전 결제 결과를 확인하지 못했어요.'})).toBeVisible();}
 for(const width of [360,390,1440])test(`automatic restored done, loading, unknown and details screenshots ${width}`,async({page,context})=>{
  await page.setViewportSize({width,height:850});const state=await boot(page,context);let release,reads=0;const barrier=new Promise(r=>release=r);

@@ -178,3 +178,27 @@
 .purchase-app .qr-frame p{font-size:12px;color:var(--fg2)}
 .purchase-app .refresh-button{background:transparent;color:var(--fg2);font-size:12px;display:flex;margin:16px auto}
 @media(max-width:340px){.purchase-app{padding-left:14px;padding-right:14px}.purchase-app.signed-out{padding:26px}.purchase-app .ticket-top{padding-left:18px}.purchase-app .ticket-wallet{gap:6px}.purchase-app .ticket-wallet button{padding:8px;font-size:10px}.purchase-app .ticket-wallet>div{font-size:11px}.purchase-app .ticket-bottom{padding-left:18px}.purchase-app .usage-row{gap:7px}.purchase-app .usage-row strong{font-size:12px}}
+
+/* purchaser-web parity: reviews, settings, partner banner */
+.purchase-app textarea{min-height:96px;resize:vertical}
+.purchase-app .review-average{display:flex;align-items:center;gap:6px;color:#c9a227;font-weight:800}
+.purchase-app .review-stars{color:#c9a227;font-size:13px;margin-left:6px;letter-spacing:1px}
+.purchase-app .star-row{display:flex;gap:2px;margin:8px 0}
+.purchase-app .star-row button{background:transparent;color:#c9a227;padding:4px;min-height:40px}
+.purchase-app .review-files{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}
+.purchase-app .review-file{display:inline-flex;align-items:center;gap:6px;background:var(--card-hi);border-radius:10px;padding:6px 8px;font-size:12px;max-width:100%}
+.purchase-app .review-file button{background:transparent;min-height:24px;padding:0;color:var(--fg2)}
+.purchase-app label.review-file-add{display:inline-flex;align-items:center;gap:6px;margin:0;padding:10px 12px;border:1px dashed var(--line);border-radius:12px;color:var(--blue-soft);cursor:pointer}
+.purchase-app .review-actions{display:flex;gap:10px}
+.purchase-app .review-actions button{flex:1;margin-top:0}
+.purchase-app .review-images{display:flex;gap:8px;overflow-x:auto;margin:6px 0 10px}
+.purchase-app .review-images img{width:96px;height:96px;object-fit:cover;border-radius:12px;flex-shrink:0}
+.purchase-app .owner-reply{background:var(--card-hi);border-radius:12px;padding:10px 12px;color:var(--fg2);font-size:12px}
+.purchase-app .partner-banner{margin:24px 0 8px}
+.purchase-app .partner-banner-card{position:relative;display:block;width:100%;aspect-ratio:3;padding:0;border-radius:22px;overflow:hidden;background:var(--card)}
+.purchase-app .partner-banner-card img{width:100%;height:100%;object-fit:cover;display:block}
+.purchase-app .ad-badge{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:800;border-radius:6px;padding:2px 6px}
+.purchase-app .reward-chip{position:absolute;left:10px;bottom:10px;max-width:220px;background:var(--blue);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:6px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.purchase-app .banner-dots{display:flex;justify-content:center;gap:6px;margin-top:8px}
+.purchase-app .banner-dots button{width:6px;height:6px;min-height:6px;padding:0;border-radius:99px;background:var(--fg2)}
+.purchase-app .banner-dots button[aria-current]{width:16px;background:var(--blue-soft)}

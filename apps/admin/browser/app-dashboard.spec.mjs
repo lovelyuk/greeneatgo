@@ -84,7 +84,7 @@ test('native five tabs, real shortcuts and history precedence', async ({ page, c
   await expect(page.getByText('우선순위 제외')).toHaveCount(0);
   await nav.getByRole('button', { name: '내정보', exact: true }).click();
   await expect(page.getByText('이메일 (웹)')).toBeVisible();
-  expect(calls.some(c => c.path.includes('/purchase') || c.path.includes('/banners'))).toBe(false);
+  expect(calls.some(c => c.path.includes('/purchase'))).toBe(false);
   expect(errors).toEqual([]);
 });
 test('manual QR payment retries same intent after ambiguous failure, only server success completes', async ({ page, context }) => {
@@ -282,7 +282,65 @@ test('catalog back returns home without consuming request'  , async ({ page, con
   await expect(page.getByRole('navigation').getByRole('button', { name: '홈', exact: true })).toHaveAttribute('aria-current', 'page');
   expect(calls.filter(c => c.path.endsWith('/purchase') || c.path.endsWith('/scan'))).toHaveLength(0);
 });
-test('native profile notification and invite group states are truthful and not enabled' , async ({ page, context }) => {
+test('profile exposes account settings and customer-only invite code entry; push setting stays app-only', async ({ page, context }) => {
   await setup(page, context); await login(page); await page.getByRole('navigation').getByRole('button', { name: '내정보', exact: true }).click();
-  await expect(page.getByRole('button', { name: /결제 알림/ })).toBeDisabled(); await expect(page.getByRole('button', { name: /초대코드 입력/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /결제 알림/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /계정 설정/ })).toBeEnabled(); await expect(page.getByRole('button', { name: /초대코드 입력/ })).toBeEnabled();
+  await expect(page.getByText('결제 알림(푸시)은 앱에서만 받을 수 있어요.')).toBeVisible();
+});
+
+test('web parity: header has no hard-coded merchant, banner, review write, account settings, invite code', async ({ page, context }) => {
+  const { calls, errors } = await setup(page, context);
+  await page.route('**/api-fixture/coupons', route => route.fulfill({ json: { ok: true, data: { merchant: null, items: [], issued: [] } } }));
+  await page.route('**/api-fixture/banners?*', route => route.fulfill({ json: { ok: true, data: { items: [{ id: '22222222-2222-4222-8222-222222222222', title: '합성 배너', image_url: '/brand/greeneat_logo_light.png', image_alt: '합성 배너', open_mode: 'external', placement: 'home_bottom', partner_name: '합성 제휴사', reward: { type: 'point', amount: 100, available: true, label: '100P 받기' } }] } } }));
+  await page.route('**/api-fixture/banners/impressions', route => { calls.push({ path: '/banners/impressions', body: route.request().postDataJSON() }); return route.fulfill({ status: 204, body: '' }); });
+  await page.route('**/api-fixture/vouchers/reviewable-transactions', route => route.fulfill({ json: { ok: true, data: { items: [{ id: 77, amount: -8000, kind: 'spend', created_at: '2026-01-02T03:00:00Z' }] } } }));
+  const reviewBodies = [], patchBodies = [];
+  await page.route('**/api-fixture/reviews', route => {
+    if (route.request().method() === 'POST') { reviewBodies.push(route.request().postDataJSON()); return route.fulfill({ status: 201, json: { ok: true, data: { id: 'new' } } }); }
+    return route.fulfill({ json: { ok: true, data: { items: [{ id: 'r1', author_name: '합*자', rating: 4, content: '합성 리뷰 본문', image_urls: [] }], average_rating: 4, review_count: 1 } } });
+  });
+  await page.route('**/api-fixture/me', route => {
+    if (route.request().method() === 'PATCH') { patchBodies.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true, data: { display_name: '새 이름' } } }); }
+    return route.fallback();
+  });
+  const joinBodies = [];
+  await page.route('**/api-fixture/join/request', route => { joinBodies.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true, data: { status: 'pending' } } }); });
+  await login(page);
+  await expect(page.locator('.dashboard-header p')).toHaveText('');
+  await expect(page.getByText('돈토식당')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /광고, 합성 배너, 합성 제휴사, 100P 받기/ })).toBeVisible();
+  await page.locator('.partner-banner').scrollIntoViewIfNeeded();
+  await expect.poll(() => calls.filter(c => c.path === '/banners/impressions').length, { timeout: 5000 }).toBe(1);
+  // review write
+  await page.getByRole('button', { name: '리뷰', exact: true }).click();
+  await expect(page.getByText('합성 리뷰 본문')).toBeVisible();
+  await page.getByRole('button', { name: '리뷰 쓰기', exact: true }).click();
+  await page.getByRole('radio', { name: '3점' }).click();
+  await page.getByLabel('후기 내용 (선택)').fill('웹에서 작성한 리뷰');
+  await page.getByRole('button', { name: '등록하기', exact: true }).click();
+  await expect(page.getByText('리뷰를 등록했어요.')).toBeVisible();
+  expect(reviewBodies).toEqual([{ transaction_id: 77, rating: 3, content: '웹에서 작성한 리뷰', image_urls: [] }]);
+  // account settings
+  await page.getByRole('button', { name: '홈으로', exact: true }).click();
+  await page.getByRole('navigation').getByRole('button', { name: '내정보', exact: true }).click();
+  await page.getByRole('button', { name: /계정 설정/ }).click();
+  await page.getByLabel('이름', { exact: true }).fill('새 이름');
+  await page.getByRole('button', { name: '이름 저장', exact: true }).click();
+  await expect(page.getByText('이름을 변경했어요.')).toBeVisible();
+  expect(patchBodies).toEqual([{ display_name: '새 이름' }]);
+  await page.getByLabel('현재 비밀번호').fill('old-password');
+  await page.getByLabel('새 비밀번호', { exact: true }).fill('short');
+  await page.getByLabel('새 비밀번호 확인').fill('short');
+  await page.getByRole('button', { name: '비밀번호 변경', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('8자');
+  // invite code
+  await page.getByRole('button', { name: '홈으로', exact: true }).click();
+  await page.getByRole('navigation').getByRole('button', { name: '내정보', exact: true }).click();
+  await page.getByRole('button', { name: /초대코드 입력/ }).click();
+  await page.getByRole('textbox', { name: '초대코드' }).fill('SYNTH01');
+  await page.getByRole('button', { name: '가입 신청', exact: true }).click();
+  await expect(page.getByText('가입 신청을 보냈어요.', { exact: false })).toBeVisible();
+  expect(joinBodies).toEqual([{ invite_code: 'SYNTH01', display_name: '합성 구매자', phone: '01000000000' }]);
+  expect(errors).toEqual([]);
 });

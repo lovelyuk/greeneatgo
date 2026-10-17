@@ -4,6 +4,8 @@ import PurchaseCatalog, { won } from './PurchaseCatalog.jsx';
 import PurchaseHistory from './PurchaseHistory.jsx';
 import LocalAbandonmentHistory from './LocalAbandonmentHistory.jsx';
 import { dashboardTransactions, couponCount, scanIntent } from './purchaseDashboard.js';
+import { AccountSettings, InviteCodeEntry, ReviewBoard, PartnerBanner } from './PurchaseExtras.jsx';
+import { headerSubtitle } from './purchaseExtras.js';
 
 const tabs = [['홈', Home], ['구매', ShoppingBag], ['QR', ScanLine], ['내역', ReceiptText], ['내정보', UserRound]];
 function Picture({ src, alt }) {
@@ -25,7 +27,7 @@ function ReadBoard({ api, kind }) {
     api(kind === '공지사항' ? '/announcements' : '/reviews', undefined, { public: true }).then(d => { if (alive) setData(d); }).catch(e => { if (alive && !e.stale) setError(e.message); });
     return () => { alive = false; };
   }, [kind, revision]);
-  return <><h1>{kind}</h1>{kind === '리뷰' && <p className="muted">구매 인증 리뷰 · 웹에서는 읽기만 지원해요.</p>}
+  return <><h1>{kind}</h1>
     {error ? <><p role="alert">{error}</p><button onClick={() => setRevision(revision + 1)}>다시 시도</button></> : !data ? <p role="status">불러오는 중…</p> : !data.items?.length ? <p className="empty-state">등록된 {kind === '리뷰' ? '리뷰가' : '공지가'} 없어요.</p> : data.items.map(row => <article key={row.id} className="purchase-card"><h2>{row.title || `${row.rating} / 5`}</h2><p className="pre-line">{row.content}</p>{row.owner_reply && <p>사장님 답변 · {row.owner_reply}</p>}</article>)}</>;
 }
 function QrPayment({ api, refresh, userId }) {
@@ -81,7 +83,7 @@ function QrPayment({ api, refresh, userId }) {
     {pending && <p role="status">이전 요청이 저장되어 있어요. 같은 QR 요청만 다시 확인할 수 있어요.</p>}{error && <p role="alert">{error}</p>}</>}</>;
 }
 
-export default function PurchaseDashboard({ me, api, apiBaseUrl, legal, refresh, revision, logout, loading }) {
+export default function PurchaseDashboard({ me, api, supabase, apiBaseUrl, legal, refresh, revision, logout, loading }) {
   const [tab, setTab] = useState(() => {
     // Restore the catalog for a pending intent. Its mounted checkout performs
     // the bounded owner read; recovery controls render only in history.
@@ -102,7 +104,7 @@ export default function PurchaseDashboard({ me, api, apiBaseUrl, legal, refresh,
   return <div className="dashboard-shell">
     {page && <button className="back-button" onClick={() => { setPage(''); refresh(); }}><ArrowLeft size={18} />홈으로</button>}
     <div hidden={tab !== 0 || !!page}>
-      <div className="dashboard-header"><button className="avatar" aria-label="프로필 열기" onClick={() => go(4)}>{Array.from(name)[0]}</button><div><strong>{name}님</strong><p>{[me.company?.name, wallet?.merchant?.name || '돈토식당'].filter(Boolean).join(' · ')}</p></div><button className="icon-control" aria-label="내정보 메뉴" onClick={() => go(4)}><Menu /></button></div>
+      <div className="dashboard-header"><button className="avatar" aria-label="프로필 열기" onClick={() => go(4)}>{Array.from(name)[0]}</button><div><strong>{name}님</strong><p>{headerSubtitle(me.company?.name, wallet?.merchant?.name)}</p></div><button className="icon-control" aria-label="내정보 메뉴" onClick={() => go(4)}><Menu /></button></div>
       <section className={`meal-ticket ${isVoucher && me.voucher_balance === 0 ? 'empty-ticket' : ''}`} aria-label="내 지갑"><div className="ticket-top"><h2>남은 식권</h2><strong className="ticket-balance">{isVoucher ? me.voucher_balance ?? '—' : '—'}<small>{isVoucher ? '장' : ''}</small></strong><div className="ticket-wallet"><div><span>보유 쿠폰</span><strong>{couponCount(wallet) ?? '—'}장</strong></div><div><span>보유 포인트</span><strong>{me.point_balance == null ? '—' : Number(me.point_balance).toLocaleString('ko-KR') + 'P'}</strong></div>{isVoucher && <button onClick={() => go(1)}><ShoppingBag size={14} />식권 구매</button>}</div></div><div className="ticket-bottom"><div><span>이번 달 사용</span><strong>{monthUsage}</strong></div><button onClick={() => go(2)}><QrCode size={16} />QR 사용하기</button></div></section>
       <p className="wallet-caption">{isVoucher ? '보유 식권 · QR 한 번에 1장 사용' : '회사 장부 결제 · 매장 계약 단가 적용'}</p>
       {!isVoucher && me.voucher_balance != null && <p className="muted">보유 보조금 식권 {me.voucher_balance}장 · 실제 결제 방식은 서버에서 확인해요.</p>}
@@ -111,6 +113,7 @@ export default function PurchaseDashboard({ me, api, apiBaseUrl, legal, refresh,
       <section className="purchase-card today-menu"><div className="section-heading"><h2>오늘 메뉴</h2><Utensils size={18} /></div>{!menu ? <p role="status">메뉴 확인 중…</p> : menu.unavailable ? <p>메뉴를 불러오지 못했어요. 새로고침해 주세요.</p> : !menu.today_menu ? <p>오늘 등록된 메뉴가 없어요.</p> : <><Picture src={menu.today_menu.image_url} alt={menu.today_menu.title || '오늘 메뉴'} /><h3>{menu.today_menu.title}</h3><p className="pre-line">{menu.today_menu.menu_text}</p></>}</section>
       <div className="section-heading"><h2>최근 이용</h2><button onClick={() => go(3)}>전체 보기<ChevronRight size={14} /></button></div>
       <PurchaseHistory me={me} recent />
+      {tab === 0 && !page && <PartnerBanner api={api} placement="home_bottom" onCouponIssued={refresh} />}
       <button className="refresh-button" disabled={loading} onClick={refresh}>새로고침</button>
     </div>
     {/* Exactly one catalog/checkout owns admission and persisted pending state.
@@ -133,9 +136,12 @@ export default function PurchaseDashboard({ me, api, apiBaseUrl, legal, refresh,
     </div>
     <div hidden={tab !== 2}><QrPayment api={api} refresh={refresh} userId={me.user_id} /></div>
     <div hidden={tab !== 3}>{recoveryNotice && tab === 3 && <p role="status">{recoveryNotice}</p>}<div ref={setRecoveryTarget} /><PurchaseHistory me={me} />{tab === 3 && <LocalAbandonmentHistory api={api} userId={me.user_id} />}</div>
-    <div hidden={tab !== 4}><h1>내정보</h1><div className="profile-heading"><span className="avatar">{Array.from(name)[0]}</span><div><h2>{name}</h2><p>{me.company?.name || (me.role === 'employee' ? '회사 임직원' : '개인 구매자')}</p></div></div><section className="purchase-card setting-group"><p><span>휴대폰 번호</span><strong>{me.phone || '—'}</strong></p><p><span>인증수단</span><strong>이메일 (웹)</strong></p><p><span>결제수단</span><strong>{me.account_type === 'ledger' ? '회사 장부' : '식권'}</strong></p></section><section className="purchase-card setting-group" aria-label="알림 및 초대"><button disabled>결제 알림<strong>웹에서 저장 불가</strong></button><button disabled>초대코드 입력<strong>활성 계정 재등록 미지원</strong></button></section><section className="purchase-card setting-group">{[['쿠폰함', () => open('쿠폰함')], ['식권 상품', () => go(1)], ['공지사항', () => open('공지사항')], ['구매 인증 리뷰', () => open('리뷰')]].map(([label, action]) => <button key={label} onClick={action}>{label}<ChevronRight size={16} /></button>)}</section><section className="purchase-card setting-group"><a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침<ChevronRight size={16} /></a><a href="/terms.html" target="_blank" rel="noreferrer">이용약관<ChevronRight size={16} /></a><p><span>웹 버전</span><strong>구매자 웹</strong></p><button className="danger-text" onClick={logout}>로그아웃<ChevronRight size={16} /></button></section><p className="muted">결제 알림 설정은 앱에도 저장 API가 없어요. 활성 계정의 초대코드 재등록은 진행 중 결제 보호를 위해 이 웹에서 제공하지 않아요.</p></div>
+    <div hidden={tab !== 4}><h1>내정보</h1><div className="profile-heading"><span className="avatar">{Array.from(name)[0]}</span><div><h2>{name}</h2><p>{me.company?.name || (me.role === 'employee' ? '회사 임직원' : '개인 구매자')}</p></div></div><section className="purchase-card setting-group"><p><span>휴대폰 번호</span><strong>{me.phone || '—'}</strong></p><p><span>인증수단</span><strong>이메일 (웹)</strong></p><p><span>결제수단</span><strong>{me.account_type === 'ledger' ? '회사 장부' : '식권'}</strong></p></section><section className="purchase-card setting-group" aria-label="알림 및 초대"><button onClick={() => open('계정 설정')}>계정 설정<strong>이름 · 비밀번호</strong></button>{me.role === 'customer' && <button onClick={() => open('초대코드')}>초대코드 입력<ChevronRight size={16} /></button>}</section><section className="purchase-card setting-group">{[['쿠폰함', () => open('쿠폰함')], ['식권 상품', () => go(1)], ['공지사항', () => open('공지사항')], ['구매 인증 리뷰', () => open('리뷰')]].map(([label, action]) => <button key={label} onClick={action}>{label}<ChevronRight size={16} /></button>)}</section><section className="purchase-card setting-group"><a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침<ChevronRight size={16} /></a><a href="/terms.html" target="_blank" rel="noreferrer">이용약관<ChevronRight size={16} /></a><p><span>웹 버전</span><strong>구매자 웹</strong></p><button className="danger-text" onClick={logout}>로그아웃<ChevronRight size={16} /></button></section><p className="muted">결제 알림(푸시)은 앱에서만 받을 수 있어요.</p></div>
     {page === '쿠폰함' && <>{readError && <><p role="alert">{readError}</p><button onClick={refresh} disabled={loading}>다시 시도</button></>}{wallet ? <CouponWallet wallet={wallet} /> : !readError && <p role="status">쿠폰 확인 중…</p>}</>}
-    {['공지사항', '리뷰'].includes(page) && <ReadBoard key={page} kind={page} api={api} />}
+    {page === '공지사항' && <ReadBoard key={page} kind={page} api={api} />}
+    {page === '리뷰' && <ReviewBoard api={api} />}
+    {page === '계정 설정' && <AccountSettings me={me} api={api} supabase={supabase} refresh={refresh} />}
+    {page === '초대코드' && <InviteCodeEntry me={me} api={api} refresh={refresh} />}
     <nav className="app-tab-bar" aria-label="구매자 탭">{tabs.map(([label, Icon], index) => <button key={label} aria-current={tab === index && !page ? 'page' : undefined} onClick={() => go(index)}><Icon size={21} aria-hidden="true" /><span>{label}</span></button>)}</nav>
   </div>;
 }

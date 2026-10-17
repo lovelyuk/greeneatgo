@@ -83,7 +83,7 @@ test('desktop actual official SDK FRAME, no popup, single hash, persistence and 
  expect(await page.evaluate(key=>JSON.parse(sessionStorage.getItem(key)).checkout_started,pendingKey)).toBe(true);
  await page.keyboard.press('Escape');await expect(page.locator('#___kiwoompayIframe___')).toHaveCount(0);
  await openRecovery(page);await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();await page.reload();await page.getByRole('navigation').getByRole('button',{name:'구매',exact:true}).click();
- await openRecovery(page);await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();expect(state.hashes).toBe(1);expect(state.purchases).toBe(1);expect(state.scripts).toBe(1);await expect.poll(()=>state.recoveries).toBe(4); // close + history, restored entry + history
+ await openRecovery(page);await expect(page.getByRole('heading',{name:/이전.*결과/})).toBeVisible();expect(state.hashes).toBe(1);expect(state.purchases).toBe(1);expect(state.scripts).toBe(1);await expect.poll(()=>state.recoveries).toBeGreaterThanOrEqual(4); // buyer close (+settle re-read) + history, restored entry + history
 
  if(receipts)writeFileSync(`${receipts}/official-sdk-browser-trace.json`,JSON.stringify({source_sha256:createHash('sha256').update(source).digest('hex'),forms,provider_transport:false,hashes:state.hashes,purchases:state.purchases},null,2));
 });

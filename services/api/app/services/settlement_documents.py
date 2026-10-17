@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import base64
 import html
 import io
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
@@ -253,16 +251,25 @@ table {{ width:100%; border-collapse:collapse; }} th,td {{ border-bottom:1px sol
 
 
 def build_settlement_pdf(detail: dict[str, Any]) -> bytes:
-    import importlib
+    """Same content as build_settlement_html, drawn with pure-Python fpdf2.
 
-    font_path = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "NanumGothic-Regular.ttf"
-    font_data = base64.b64encode(font_path.read_bytes()).decode("ascii")
-    document = build_settlement_html(detail).replace(
-        "</style>",
-        f"@font-face {{ font-family:'Settlement Korean'; src:url(data:font/ttf;base64,{font_data}) format('truetype'); }}</style>",
-        1,
+    WeasyPrint needs OS libraries (Pango/Cairo) missing on serverless hosts.
+    """
+    from app.services.pdf_render import render_settlement_pdf, settlement_rows
+
+    supplier = detail.get("supplier_information") or {}
+    recipient = detail.get("business_information") or {}
+    rows = settlement_rows(
+        detail.get("transactions") or [],
+        date_time=_transaction_date_time, kind_label=_transaction_kind_label, text=_text, amount=_amount,
     )
-    return importlib.import_module("weasyprint").HTML(string=document).write_pdf()
+    return render_settlement_pdf(
+        period=f"{_text(detail.get('period_from'))} ~ {_text(detail.get('period_to'))}",
+        supplier=(_text(supplier.get("name")), _text(supplier.get("biz_reg_no"))),
+        recipient=(_text(recipient.get("name")), _text(recipient.get("biz_reg_no"))),
+        amounts=(_amount(detail.get("supply_amount")), _amount(detail.get("vat_amount")), _amount(detail.get("total_amount"))),
+        rows=rows,
+    )
 
 
 XLSX_MEDIA_TYPE = _XLSX_MEDIA_TYPE

@@ -112,3 +112,14 @@ def test_settlement_view_and_pdf_embed_korean_content_and_font():
     pdf = build_settlement_pdf(detail())
     assert pdf.startswith(b"%PDF-")
     assert len(pdf) > 10000
+
+
+def test_pdfs_render_without_os_libraries_and_keep_korean_text():
+    """fpdf2 + bundled font: no Pango/Cairo needed (Vercel Functions)."""
+    from app.routers.merchant_admin import _pdf_bytes
+
+    pdf = build_settlement_pdf({**detail(), "transactions": detail()["transactions"] * 40})
+    assert pdf.startswith(b"%PDF-")
+    assert pdf.count(b"/Type /Page") - pdf.count(b"/Type /Pages") >= 2  # long tables paginate
+    vendor = _pdf_bytes(["Greeneat 청구서 - 돈토식당", "정산 기간: 2026-07-01 ~ 2026-07-31", "총 청구금액: 0원", "거래 건수: 0건"])
+    assert vendor.startswith(b"%PDF-") and len(vendor) > 5000

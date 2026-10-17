@@ -123,15 +123,19 @@ test('employee point intent automatically prices; server bounds authoritative an
   await expect(page.locator('.catalog-checkout button', { hasText: '구매하기' })).toHaveCSS('height', '54px');
   await page.getByLabel('사용 포인트').fill('1000'); await expect(page.locator('.purchase-quote')).toHaveCount(0); expect(quotes).toHaveLength(1);
 });
-test('home wallet metrics and action sizing use source values without 320px overflow', async ({ page }) => {
+test('home wallet flip board keeps tiles, metrics and actions without 320px overflow', async ({ page }) => {
   await fixture(page);
   await page.getByRole('navigation').getByRole('button', { name: '홈', exact: true }).click();
-  await expect(page.locator('.ticket-wallet strong').first()).toHaveCSS('font-size', '14px');
-  await expect(page.locator('.ticket-bottom strong')).toHaveCSS('font-size', '14px');
-  await expect(page.locator('.ticket-bottom button')).toHaveCSS('height', '48px');
-  await page.setViewportSize({ width: 360, height: 900 });
-  await expect(page.locator('.ticket-wallet strong').first()).toHaveCSS('font-size', '14px');
-  await expect(page.locator('.ticket-wallet button')).toHaveCSS('width', '140px');
+  const tiles = page.locator('.meal-ticket .flip-tile');
+  await expect(tiles.first()).toHaveCSS('width', '62px');
+  await expect(tiles.first()).toHaveCSS('height', '84px');
+  await expect(tiles.first()).toHaveCSS('color', 'rgb(126, 162, 255)');
+  await expect(page.locator('.ticket-qr')).toHaveCSS('background-color', 'rgb(44, 95, 255)');
+  await expect(page.locator('.ticket-actions button').first()).toHaveCSS('height', '48px');
+  await expect(page.locator('.ticket-wallet strong').first()).toHaveCSS('font-size', '12px');
+  const [buy, qr] = await page.locator('.ticket-actions button').evaluateAll(els => els.map(e => e.getBoundingClientRect().width));
+  expect(Math.abs(buy - qr)).toBeLessThan(1);
   await page.setViewportSize({ width: 320, height: 900 });
+  await expect(tiles.first()).toHaveCSS('width', '52px');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

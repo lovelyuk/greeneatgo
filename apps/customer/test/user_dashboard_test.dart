@@ -92,7 +92,7 @@ void main() {
     expect(find.text('회사 지원금'), findsNothing);
     expect(find.text('오늘의 뷔페 메뉴'), findsOneWidget);
     expect(find.byKey(const ValueKey('buy-ticket-button')), findsNothing);
-    expect(find.text('이번 달 사용'), findsOneWidget);
+    expect(find.text('이번 달'), findsOneWidget);
     expect(find.text('56,000원'), findsOneWidget);
     expect(find.text('QR 사용하기'), findsOneWidget);
     expect(find.text('홈'), findsOneWidget);
@@ -106,11 +106,10 @@ void main() {
     final ticket = tester.getRect(find.byType(MealTicketCard));
     expect(ticket.left, 18);
     expect(ticket.right, 342);
-    expect(ticket.height, 226);
-    final usageLabel = tester.getRect(find.text('이번 달 사용'));
+    final usageLabel = tester.getRect(find.text('이번 달'));
     final qrButton =
         tester.getRect(find.byKey(const ValueKey('use-ticket-qr-button')));
-    expect(usageLabel.width, greaterThan(50));
+    expect(usageLabel.width, greaterThan(20));
     expect(qrButton.right, lessThanOrEqualTo(ticket.right));
   });
 
@@ -143,19 +142,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('100'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('0'), findsNWidgets(2));
     expect(find.text('장'), findsOneWidget);
     expect(find.text('12장 · 84,000원'), findsOneWidget);
-    expect(find.text('보유 쿠폰'), findsOneWidget);
+    expect(find.text('쿠폰'), findsOneWidget);
     expect(find.text('3장'), findsOneWidget);
-    expect(find.text('보유 포인트'), findsOneWidget);
+    expect(find.text('포인트'), findsOneWidget);
     expect(find.text('1,200P'), findsOneWidget);
     expect(find.text('식권 구매'), findsOneWidget);
     expect(find.text('QR 사용하기'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    final number =
-        tester.getRect(find.byKey(const ValueKey('ticket-balance-number')));
+    final firstDigit =
+        tester.getRect(find.byKey(const ValueKey('ticket-balance-digit-0')));
+    final lastDigit =
+        tester.getRect(find.byKey(const ValueKey('ticket-balance-digit-2')));
     final unit =
         tester.getRect(find.byKey(const ValueKey('ticket-balance-unit')));
     final buy = tester.getRect(find.byKey(const ValueKey('buy-ticket-button')));
@@ -168,20 +170,20 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('ticket-coupon-count')));
     final points =
         tester.getRect(find.byKey(const ValueKey('ticket-point-balance')));
-    final numberWidget = tester
-        .widget<Text>(find.byKey(const ValueKey('ticket-balance-number')));
-    expect((number.bottom - unit.bottom).abs(), lessThan(8));
-    expect(numberWidget.style?.fontSize, 25);
-    expect(number.top, lessThan(coupon.top));
+    // Flip tiles keep fixed proportions and sit left to right, unit after.
+    expect(firstDigit.width / firstDigit.height, closeTo(62 / 84, 0.01));
+    expect(firstDigit.right, lessThan(lastDigit.left));
+    expect(lastDigit.right, lessThan(unit.left));
+    expect(unit.right, lessThanOrEqualTo(ticket.right));
+    // Metrics below the board, actions below the metrics, side by side.
+    expect(firstDigit.bottom, lessThan(coupon.top));
     expect(coupon.right, lessThan(points.left));
-    expect(buy.width, qr.width);
-    expect(buy.height, qr.height);
-    expect(buy.width, 140);
+    expect(usage.right, lessThanOrEqualTo(ticket.right));
+    expect(usage.bottom, lessThan(buy.top));
     expect(buy.height, 48);
-    expect(buy.right, qr.right);
-    expect(buy.right, lessThanOrEqualTo(ticket.right));
-    expect(usage.width, greaterThan(100));
-    expect(usage.right, lessThan(qr.left));
+    expect(qr.height, 48);
+    expect(buy.width, qr.width);
+    expect(buy.right, lessThan(qr.left));
     expect(qr.right, lessThanOrEqualTo(ticket.right));
   });
 
@@ -229,7 +231,7 @@ void main() {
       'voucher_use_history': const [],
     });
 
-    expect(find.text('100'), findsOneWidget);
+    expect(find.byKey(const ValueKey('ticket-balance-digit-2')), findsOneWidget);
     expect(find.text('25장 · 175,000원'), findsOneWidget);
     expect(find.byKey(const ValueKey('buy-ticket-button')), findsOneWidget);
     expect(tester.takeException(), isNull);

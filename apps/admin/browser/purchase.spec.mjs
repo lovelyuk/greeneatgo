@@ -1717,6 +1717,7 @@ test("purchaser sign-in renders its own wallet, refresh and logout", async ({
   await expect(page.getByRole("heading", { name: "식권 구매" })).toBeVisible();
   await page.getByRole("navigation").getByRole("button", { name: "홈", exact: true }).click();
   await expect(page.locator(".ticket-balance")).toHaveText("3장");
+  await expect(page.locator(".ticket-balance")).toHaveAttribute("aria-label", "3장");
   await page.getByRole("button", { name: "새로고침", exact: true }).click();
   await expect.poll(() => calls.filter((c) => c.path === "/me").length).toBe(2);
   await page.getByRole("navigation").getByRole("button", { name: "내정보", exact: true }).click();

@@ -33,6 +33,13 @@ abstract final class AppColors {
   static const paperMuted = Color(0xFFD8D5CC);
   static const ticketLine = Color(0xFFCFC7B4);
   static const ticketPurchase = Color(0xFFC64F00);
+
+  // Home wallet flip board (시안 19 · 05 블루 시그널).
+  static const flipTile = Color(0xFF131A2A);
+  static const flipBorder = Color(0xFF212B3E);
+  static const flipDigit = Color(0xFF7EA2FF);
+  static const flipDim = Color(0xFF5F6F92);
+  static const flipStrong = Color(0xFFC9D6FF);
   static const timeline = Color(0xFF232D42);
   static const progressTrack = Color(0xFF202A3D);
   static const dinnerText = Color(0xFFA9B4CA);

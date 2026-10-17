@@ -45,23 +45,25 @@
 .purchase-app .dashboard-header p{color:var(--fg2);font-size:12px;margin:3px 0 0}
 .purchase-app .avatar{width:44px;height:44px;flex-shrink:0;background:var(--blue);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;padding:0}
 .purchase-app .icon-control{margin-left:auto;background:transparent;padding:8px}
-.purchase-app .meal-ticket{background:var(--paper);border-radius:22px;color:#131a2a;position:relative;overflow:hidden;margin-top:16px}
-.purchase-app .empty-ticket{background:#d8d5cc}
-.purchase-app .ticket-top{min-height:144px;padding:20px 14px 14px 22px}
-.purchase-app .ticket-top h2{font-size:10.5px;letter-spacing:2.1px;font-weight:800;color:#9b7915;margin:0 0 2px}
-.purchase-app .ticket-balance{font-size:25px;line-height:1;font-weight:800;letter-spacing:-1.25px;display:block;margin:5px 0 20px}
-.purchase-app .ticket-balance small{font-size:12px;letter-spacing:0;margin-left:3px}
-.purchase-app .ticket-wallet{display:flex;align-items:center;gap:10px}
-.purchase-app .ticket-wallet>div{display:flex;flex-direction:column;gap:2px;font-size:12px}
-.purchase-app .ticket-wallet>div+div{border-left:1px solid #cfc7b4;padding-left:10px}
-.purchase-app .ticket-wallet span,.purchase-app .ticket-bottom span{font-size:10px;color:#717986;display:block}
-.purchase-app .ticket-wallet button{background:#c64f00;margin-left:auto;font-size:11px;min-height:38px;padding:8px 10px;border-radius:12px;gap:5px}
-.purchase-app .ticket-bottom{border-top:2px dashed #cfc7b4;min-height:80px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px 18px 22px}
-.purchase-app .ticket-bottom:before,.purchase-app .ticket-bottom:after{content:'';position:absolute;width:22px;height:22px;background:var(--bg);border-radius:50%;margin-top:-80px;left:-11px}
-.purchase-app .ticket-bottom:after{left:auto;right:-11px}
-.purchase-app .ticket-bottom strong{font-size:12px;display:block}
-.purchase-app .ticket-bottom button{background:#131a2a;color:var(--paper);font-size:11px;min-height:38px;padding:8px 10px;flex-shrink:0}
-.purchase-app .ticket-bottom button svg{color:#c9a227}
+/* Home wallet: split-flap board (시안 19 · 05 블루 시그널). Mirrors Flutter MealTicketCard. */
+.purchase-app .meal-ticket{--flip-tile:#131a2a;--flip-line:#212b3e;--flip-digit:#7ea2ff;--flip-dim:#5f6f92;--flip-strong:#c9d6ff;background:var(--bg);border:1px solid var(--flip-line);border-radius:22px;padding:18px 20px;margin-top:16px;color:var(--flip-strong)}
+.purchase-app .ticket-head{display:flex;justify-content:space-between;margin:0;font-size:11px;font-weight:700;letter-spacing:3px;color:var(--flip-dim)}
+.purchase-app .ticket-balance{display:flex;align-items:flex-end;gap:6px;margin:14px 0;font-size:56px;font-weight:800;line-height:1;letter-spacing:0}
+.purchase-app .flip-tile{position:relative;display:grid;place-items:center;width:62px;height:84px;border-radius:8px;background:var(--flip-tile);border:1px solid var(--flip-line);color:var(--flip-digit);font-variant-numeric:tabular-nums}
+.purchase-app .flip-tile:after{content:'';position:absolute;left:0;right:0;top:50%;height:1px;background:var(--bg)}
+.purchase-app .ticket-balance small{font-size:16px;font-weight:700;color:var(--flip-dim);margin-left:2px}
+.purchase-app .ticket-wallet{display:flex;flex-wrap:wrap;gap:4px 14px;margin-bottom:14px}
+.purchase-app .ticket-wallet>div{display:flex;align-items:baseline;gap:3px;font-size:12px}
+.purchase-app .ticket-wallet span{font-size:12px;font-weight:600;color:var(--flip-dim)}
+.purchase-app .ticket-wallet strong{font-size:12px;font-weight:800;color:var(--flip-strong);white-space:nowrap}
+.purchase-app .ticket-actions{display:flex;gap:8px}
+.purchase-app .ticket-actions button{flex:1 1 0;min-width:0;height:48px;min-height:48px;border-radius:14px;font-size:14px;font-weight:700;gap:6px;padding:0 10px;white-space:nowrap}
+.purchase-app .ticket-buy{background:var(--flip-tile);color:var(--flip-strong);border:1px solid var(--flip-line)}
+.purchase-app .ticket-qr{background:var(--blue);color:#fff;border:1px solid var(--blue)}
+.purchase-app .empty-ticket .flip-tile{color:var(--flip-dim)}
+.purchase-app .empty-ticket .ticket-qr{background:var(--flip-tile);color:var(--flip-strong);border:1px solid var(--flip-line)}
+.purchase-app .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media(max-width:340px){.purchase-app .meal-ticket{padding:16px}.purchase-app .flip-tile{width:52px;height:72px}.purchase-app .ticket-balance{font-size:46px}.purchase-app .ticket-actions button{font-size:13px;padding:0 8px}}
 .purchase-app .wallet-caption{font-size:10px;margin:8px 3px 16px}
 .purchase-app .home-shortcuts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:12px 6px;background:var(--card);border-radius:22px;gap:4px}
 .purchase-app .home-shortcuts button{display:flex;flex-direction:column;background:transparent;font-size:12px;padding:6px 0;gap:7px}
@@ -159,14 +161,6 @@
 .purchase-app .catalog-checkout>.purchase-card>p{font-size:12px;color:var(--fg2)}
 .purchase-app .catalog-checkout>.purchase-card>button{width:100%;height:54px;margin-top:8px}
 /* dashboard_components.dart 207–293: body 14px metrics, 140×48 ticket actions. */
-.purchase-app .ticket-wallet strong,.purchase-app .ticket-bottom strong{font-size:14px;font-weight:800}
-.purchase-app .ticket-wallet button,.purchase-app .ticket-bottom button{height:48px;min-height:48px;width:140px;flex:0 0 140px;font-size:12px;font-weight:800;padding:10px;border-radius:12px}
-.purchase-app .ticket-bottom span{font-size:11px}
-.purchase-app .ticket-wallet{gap:6px}
-.purchase-app .ticket-wallet>div{flex:1;overflow:hidden}
-.purchase-app .ticket-wallet strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media(max-width:340px){.purchase-app .ticket-wallet>div+div{padding-left:6px}.purchase-app .ticket-wallet strong{font-size:12px}}
-@media(max-width:340px){.purchase-app .ticket-wallet button{width:108px;flex-basis:108px;padding:8px;font-size:11px}.purchase-app .ticket-bottom button{width:128px;flex-basis:128px}}
 .purchase-app .coupon-ticket{display:flex;align-items:stretch;border-radius:20px;min-height:154px;background:linear-gradient(120deg,#315ddb,#243b9d);overflow:hidden;margin:12px 0}
 .purchase-app .coupon-ticket.percent{background:linear-gradient(120deg,#6948ef,#315ddb)}
 .purchase-app .coupon-rail{writing-mode:vertical-rl;transform:rotate(180deg);width:60px;display:grid;place-items:center;border-left:2px dashed #ffffff40;font-size:13px;letter-spacing:3px}
@@ -177,7 +171,7 @@
 .purchase-app .qr-frame{border:1px solid var(--line);border-radius:22px;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;color:var(--blue-soft);background:var(--card)}
 .purchase-app .qr-frame p{font-size:12px;color:var(--fg2)}
 .purchase-app .refresh-button{background:transparent;color:var(--fg2);font-size:12px;display:flex;margin:16px auto}
-@media(max-width:340px){.purchase-app{padding-left:14px;padding-right:14px}.purchase-app.signed-out{padding:26px}.purchase-app .ticket-top{padding-left:18px}.purchase-app .ticket-wallet{gap:6px}.purchase-app .ticket-wallet button{padding:8px;font-size:10px}.purchase-app .ticket-wallet>div{font-size:11px}.purchase-app .ticket-bottom{padding-left:18px}.purchase-app .usage-row{gap:7px}.purchase-app .usage-row strong{font-size:12px}}
+@media(max-width:340px){.purchase-app{padding-left:14px;padding-right:14px}.purchase-app.signed-out{padding:26px}.purchase-app .usage-row{gap:7px}.purchase-app .usage-row strong{font-size:12px}}
 
 /* purchaser-web parity: reviews, settings, partner banner */
 .purchase-app textarea{min-height:96px;resize:vertical}

@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import base64
-import html
 import secrets
 from datetime import date, datetime, time, timedelta, timezone
 from io import BytesIO
-from pathlib import Path
 from urllib.parse import quote
 from uuid import UUID
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -442,24 +439,10 @@ def _xlsx_bytes(rows: list[list[str]]) -> bytes:
 
 
 def _pdf_bytes(lines: list[str]) -> bytes:
-    # Bundle the Korean font in the service so Render/containers do not depend
-    # on an OS-level CJK font package. WeasyPrint embeds this data-URI font in
-    # the generated PDF, preventing Korean glyphs from becoming boxes.
-    import importlib
+    # Pure-Python renderer with the bundled Korean font (no OS Pango/Cairo).
+    from app.services.pdf_render import render_line_document
 
-    HTML = importlib.import_module("weasyprint").HTML
-    font_path = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "NanumGothic-Regular.ttf"
-    font_data = base64.b64encode(font_path.read_bytes()).decode("ascii")
-
-    body = "".join(f"<div>{html.escape(line)}</div>" for line in lines)
-    document = f"""<!doctype html><html lang='ko'><meta charset='utf-8'><style>
-      @font-face {{ font-family: 'MealLedger Korean'; src: url(data:font/ttf;base64,{font_data}) format('truetype'); }}
-      @page {{ size: A4 landscape; margin: 18mm; }}
-      body {{ font-family: 'MealLedger Korean', sans-serif; font-size: 10px; color: #14351f; }}
-      div {{ padding: 4px 0; border-bottom: 1px solid #d9e8dc; white-space: pre-wrap; }}
-      div:nth-child(-n+4) {{ font-size: 13px; font-weight: bold; border: 0; }}
-    </style><body>{body}</body></html>"""
-    return HTML(string=document).write_pdf()
+    return render_line_document(lines)
 
 
 def _safe_filename(value: str) -> str:

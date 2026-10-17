@@ -1,0 +1,14 @@
+.venv/
+build/
+tests/
+docs/
+infra/
+scripts/
+__pycache__/
+.pytest_cache/
+.env
+.env.*
+!.env.example
+render.yaml
+start.sh
+uv.lock

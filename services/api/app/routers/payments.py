@@ -343,8 +343,8 @@ TRUSTED_LOCAL_PEERS = frozenset({"127.0.0.1", "::1", "testclient"})
 
 
 def _notification_ip(request: Request) -> str:
-    # Render and Vercel ingress both deliver the real caller as the socket peer
-    # (verified on Vercel: forged X-Forwarded-For/X-Real-IP are overwritten), so
+    # Vercel ingress delivers the real caller as the socket peer (verified:
+    # forged X-Forwarded-For/X-Real-IP/X-Vercel-Forwarded-For are overwritten), so
     # request.client.host is the authoritative, unspoofable source (the access
     # log shows the true Kiwoom IP there). X-Forwarded-For instead trails an
     # internal proxy hop (e.g. a 10.x address) that must never be mistaken for

@@ -52,8 +52,10 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
 cp .env.example .env
-bash start.sh
+uvicorn app.main:app --reload --port 8000
 ```
+
+운영 API는 Vercel Functions(`greeneatgo-api`, 서울 icn1)에서 실행됩니다.
 
 실제 비밀값은 `.env`에만 넣고 Git에 커밋하지 않습니다.
 

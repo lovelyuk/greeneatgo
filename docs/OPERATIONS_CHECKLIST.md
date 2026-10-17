@@ -21,7 +21,7 @@
 - [ ] Storage 버킷·정책과 이미지 업로드 확인
 - [ ] Auth Email provider와 Redirect URL 확인
 
-## API / Render
+## API / Vercel (`greeneatgo-api`)
 
 - [ ] `SUPABASE_URL`
 - [ ] `SUPABASE_ANON_KEY`
@@ -30,7 +30,7 @@
 - [ ] 자동 취소/환불 API를 사용할 때만 `KIWOOMPAY_AUTHORIZATION_KEY`
 - [ ] `KIWOOMPAY_BASE_URL`
 - [ ] `KIWOOMPAY_NOTIFICATION_IPS`
-- [ ] `PUBLIC_API_BASE_URL=https://greeneatgo-api.onrender.com/v1`
+- [ ] `PUBLIC_API_BASE_URL=https://greeneatgo-api.vercel.app/v1`
 - [ ] `ADMIN_APP_URL=https://greeneatgo.vercel.app`
 - [ ] `CORS_ALLOWED_ORIGINS`에 운영 웹 포함
 - [ ] SendGrid 사용 시 `SENDGRID_API_KEY`, 검증된 `INVITE_EMAIL_FROM`
@@ -41,7 +41,7 @@
 
 - [ ] `VITE_SUPABASE_URL`
 - [ ] `VITE_SUPABASE_ANON_KEY`
-- [ ] `VITE_API_BASE_URL=https://greeneatgo-api.onrender.com/v1`
+- [ ] `VITE_API_BASE_URL=https://greeneatgo-api.vercel.app/v1`
 - [ ] `VITE_AUTH_EMAIL_REDIRECT_TO`
 - [ ] production deployment `success`
 - [ ] 로그인 후 역할별 화면만 노출

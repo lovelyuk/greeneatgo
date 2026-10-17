@@ -52,7 +52,7 @@ powershell -ExecutionPolicy Bypass -File D:\projects\greeneatGo\apps\customer\bu
 
 ## 3. 서버 Firebase Admin
 
-Firebase Console에서 서비스 계정 비공개 키를 생성하고 Render 환경변수에 다음 중 하나만 설정합니다.
+Firebase Console에서 서비스 계정 비공개 키를 생성하고 Vercel API 프로젝트(`greeneatgo-api`) 환경변수에 다음 중 하나만 설정합니다.
 
 ### JSON 문자열
 
@@ -83,7 +83,7 @@ FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=...
 
 1. 운영 DB의 `0021`, `0022` 적용 확인
 2. Firebase Android 앱 package 확인
-3. Render에 Firebase Admin 키 설정
+3. Vercel API 프로젝트에 Firebase Admin 키 설정
 4. API 배포
 5. Firebase 공개 client 값이 포함된 APK 빌드
 6. 앱 설치·로그인·알림 권한 허용
@@ -112,7 +112,7 @@ FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=...
 4. APK의 `FIREBASE_ENABLED`
 5. package ID와 Firebase Android 앱 일치
 6. 로그인 후 token 등록 API 응답
-7. Render Firebase Admin 환경변수
+7. Vercel API Firebase Admin 환경변수
 8. Android 알림 권한과 배터리 제한
 
 대상 사용자가 있어도 등록 기기가 0이면 audience 쿼리보다 설치→로그인→권한→토큰 등록 흐름을 먼저 확인합니다.

@@ -14,7 +14,7 @@
 | 항목 | 확인 상태 |
 |---|---|
 | 관리자 웹 | `https://greeneatgo.vercel.app` HTTP 200 |
-| API 상태 | `https://greeneatgo-api.onrender.com/v1/health` HTTP 200 |
+| API 상태 | `https://greeneatgo-api.vercel.app/v1/health` HTTP 200 |
 | Vercel 최신 배포 | GitHub deployment `success` |
 | API 테스트 | 78개 통과 |
 | Flutter 테스트 | 4개 통과 |

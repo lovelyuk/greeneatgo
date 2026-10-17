@@ -10,7 +10,7 @@
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 현재 역할·서비스·결제·데이터 구조 |
 | [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) | 구현 완료 상태, 실제 검증, 남은 위험 |
 | [docs/OPERATIONS_CHECKLIST.md](docs/OPERATIONS_CHECKLIST.md) | 배포 전후 운영 점검표 |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Vercel·Render·Flutter 배포 |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Vercel(웹·API)·Flutter 배포 |
 | [SETUP_SUPABASE_WEB.md](SETUP_SUPABASE_WEB.md) | Supabase 환경·마이그레이션 적용 |
 | [docs/FIREBASE_PUSH_SETUP.md](docs/FIREBASE_PUSH_SETUP.md) | 앱·서버 FCM 설정과 실기기 QA |
 | [DECISIONS.md](DECISIONS.md) | 확정된 제품·권한·결제 결정 |

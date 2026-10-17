@@ -61,7 +61,7 @@ FIREBASE_SERVICE_ACCOUNT_JSON=
 FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=
 ```
 
-Firebase Admin 서비스 계정은 JSON 또는 Base64 중 하나만 설정합니다. `services/api/render.yaml`보다 `services/api/.env.example`과 `services/api/app/config.py`의 실제 요구값이 우선입니다.
+Firebase Admin 서비스 계정은 JSON 또는 Base64 중 하나만 설정합니다. `services/api/.env.example`과 `services/api/app/config.py`의 실제 요구값이 우선입니다.
 
 ### 배포 확인
 

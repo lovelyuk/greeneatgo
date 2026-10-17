@@ -12,7 +12,7 @@ Authentication → URL Configuration
 
 ### Site URL
 
-운영 중인 공개 URL로 설정한다. 현재는 Render API에 인증 완료 안내 페이지를 추가했다.
+운영 중인 공개 URL로 설정한다. 인증 완료 안내 페이지는 Vercel API(`/v1/auth/confirmed`)가 제공한다.
 
 ```text
 https://greeneatgo-api.vercel.app

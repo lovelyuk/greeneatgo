@@ -16,7 +16,7 @@ ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "production"})
 
 
 def _kiwoompay_notification_ips(raw: str | None) -> tuple[str, ...]:
-    """Keep the documented provider IPs even when Render injects a blank secret.
+    """Keep the documented provider IPs even when the host injects a blank secret.
 
     Blueprint ``sync: false`` variables can exist as an empty string. Treating
     that as an explicit empty allowlist rejects every approved payment callback.

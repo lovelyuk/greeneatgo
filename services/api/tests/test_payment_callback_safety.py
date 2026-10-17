@@ -20,7 +20,7 @@ def _request(peer: str | None, xff: str | None = None) -> Request:
 
 
 def test_notification_ip_trusts_socket_peer_over_forwarded_internal_hop():
-    # Render delivers the real caller as the socket peer, then trails its own
+    # The host ingress delivers the real caller as the socket peer, then trails its own
     # internal proxy IP at the right of X-Forwarded-For. The caller must win.
     request = _request("123.140.121.205", xff="123.140.121.205, 10.25.32.132")
     assert _notification_ip(request) == "123.140.121.205"

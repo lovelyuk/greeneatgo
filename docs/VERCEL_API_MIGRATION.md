@@ -30,8 +30,9 @@
 
 ## 전환 전 남은 일
 
-1. Vercel 환경변수 나머지 등록: 키움(`KIWOOMPAY_*`), Firebase, 팝빌, SendGrid/SOLAPI, `ADMIN_APP_URL`,
-   `CORS_ALLOWED_ORIGINS`, `ENV=production` (현재는 Supabase 키와 `ENV=development`만).
+1. ~~Vercel 환경변수 등록~~ 완료: Render 환경변수 27개를 Production/Preview에 복사, `PUBLIC_API_BASE_URL`만
+   `https://greeneatgo-api.vercel.app/v1`로 변경. Render에 없는 `SUPABASE_JWT_SECRET`은 제거(코드 미사용).
+   `ENV`는 Render와 같은 기본값(`development`). 값 원본 `services/api/.env.render`는 git 제외 대상.
 2. 키움 테스트 결제 E2E: 결제창 → 결과통지(키움 → Vercel) → 식권 발급. 키움 가맹점 설정의 결과통지 URL 변경 필요.
 3. 팝빌 테스트 발행: Vercel은 요청마다 나가는 IP가 바뀔 수 있음. 실패하면 `POPBILL_IP_RESTRICT_ON=false`.
 4. 전환: 관리자 웹 `VITE_API_BASE_URL`, 앱 `--dart-define` API 주소, Supabase Auth Redirect URL, 키움 결과통지 URL.

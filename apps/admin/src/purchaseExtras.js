@@ -48,3 +48,12 @@ export function avatarKind(role, purchaseMode) {
   if (role === 'employee') return purchaseMode === 'subsidized' ? 'subsidy' : 'employee';
   return 'casual';
 }
+
+// Server timestamps (UTC ISO) shown to buyers as KST "YYYY.MM.DD HH:mm".
+export function formatKst(iso) {
+  if (typeof iso !== 'string' || !iso) return '정보 없음';
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '정보 없음';
+  const d = new Date(t + 9 * 3600 * 1000), pad = n => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}.${pad(d.getUTCMonth() + 1)}.${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}

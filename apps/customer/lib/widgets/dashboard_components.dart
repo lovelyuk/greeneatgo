@@ -11,6 +11,9 @@ enum AmountStyle { neg, plus, muted, plain }
 
 enum MealSlot { lunch, dinner, grant, refund }
 
+/// Home wallet card: split-flap board of the remaining voucher count
+/// (design 19 "플립 전광판", color 05 "블루 시그널"). Web `/shop` mirrors it in
+/// `PurchaseDashboard.jsx` + `purchase.css` (`.meal-ticket`).
 class MealTicketCard extends StatelessWidget {
   const MealTicketCard({
     super.key,
@@ -36,176 +39,186 @@ class MealTicketCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final empty = state == TicketState.empty;
-    final paper = empty ? AppColors.paperMuted : AppColors.paper;
-    final balanceSemantics =
-        remainingCountLabel == '-' ? '해당 없음' : '$remainingCountLabel장';
+    final hasBalance = remainingCountLabel != '-';
+    final balanceSemantics = hasBalance ? '$remainingCountLabel장' : '해당 없음';
+    const label = TextStyle(
+      color: AppColors.flipDim,
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 3,
+    );
     return Semantics(
       container: true,
       label:
           '남은 식권 $balanceSemantics, 보유 쿠폰 $couponCountLabel, 보유 포인트 $pointBalanceLabel, $caption, 이번 달 사용 $monthUsage',
-      child: PhysicalShape(
-        clipper: const TicketClipper(notchY: 145),
-        color: paper,
-        elevation: 0,
-        child: Container(
-          decoration: BoxDecoration(
-            color: paper,
-            border: state == TicketState.expiring
-                ? Border.all(color: AppColors.gold, width: 2)
-                : null,
-            borderRadius: BorderRadius.circular(AppRadii.card),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          border: Border.all(
+            color: state == TicketState.expiring
+                ? AppColors.gold
+                : AppColors.flipBorder,
+            width: state == TicketState.expiring ? 2 : 1,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                height: 144,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 20, 14, 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('남은 식권', style: AppTextStyles.overline),
-                      const SizedBox(height: 2),
-                      Row(
-                        key: const ValueKey('ticket-balance-baseline'),
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          Text(
-                            remainingCountLabel,
-                            key: const ValueKey('ticket-balance-number'),
-                            style: AppTextStyles.ticketNumber.copyWith(
-                              color: empty ? AppColors.fg2 : AppColors.ink,
-                              fontSize: 25,
-                              letterSpacing: -1.25,
-                            ),
-                          ),
-                          if (remainingCountLabel != '-') ...[
-                            const SizedBox(width: 3),
-                            Text(
-                              '장',
-                              key: const ValueKey('ticket-balance-unit'),
-                              style: TextStyle(
-                                color: empty ? AppColors.fg2 : AppColors.ink,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                height: 1,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const Spacer(),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Row(
-                              children: [
-                                _TicketWalletMetric(
-                                  label: '보유 쿠폰',
-                                  value: couponCountLabel == '-'
-                                      ? '-'
-                                      : '$couponCountLabel장',
-                                  valueKey:
-                                      const ValueKey('ticket-coupon-count'),
-                                ),
-                                const SizedBox(
-                                  height: 34,
-                                  child: VerticalDivider(
-                                    width: 12,
-                                    color: AppColors.ticketLine,
-                                  ),
-                                ),
-                                _TicketWalletMetric(
-                                  label: '보유 포인트',
-                                  value: pointBalanceLabel,
-                                  valueKey:
-                                      const ValueKey('ticket-point-balance'),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (onBuyTicket != null) ...[
-                            const SizedBox(width: 10),
-                            _TicketActionButton(
-                              key: const ValueKey('buy-ticket-button'),
-                              onPressed: onBuyTicket!,
-                              backgroundColor: AppColors.ticketPurchase,
-                              foregroundColor: AppColors.fg,
-                              icon: Icons.shopping_cart_rounded,
-                              iconColor: AppColors.fg,
-                              label: '식권 구매',
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+          borderRadius: BorderRadius.circular(AppRadii.card),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const ExcludeSemantics(
+              child: Row(
+                children: [
+                  Expanded(child: Text('MEAL TICKETS', style: label)),
+                  Text('남은 식권', style: label),
+                ],
               ),
-              const SizedBox(
-                height: 2,
-                child: CustomPaint(painter: DashedLinePainter()),
-              ),
-              ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 80),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 14, 14, 18),
+            ),
+            const SizedBox(height: 14),
+            ExcludeSemantics(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
                   child: Row(
+                    key: const ValueKey('ticket-balance-baseline'),
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '이번 달 사용',
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.fg2,
-                                fontSize: 11,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              monthUsage,
-                              key: const ValueKey('ticket-month-usage'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.body.copyWith(
-                                color: AppColors.ink,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
+                      for (final (i, ch) in remainingCountLabel.characters.indexed) ...[
+                        if (i > 0) const SizedBox(width: 6),
+                        _FlipTile(
+                          key: ValueKey('ticket-balance-digit-$i'),
+                          char: ch,
+                          color: empty ? AppColors.flipDim : AppColors.flipDigit,
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      _TicketActionButton(
-                        key: const ValueKey('use-ticket-qr-button'),
-                        onPressed: onTapQr,
-                        backgroundColor: empty ? AppColors.fg2 : AppColors.ink,
-                        foregroundColor: AppColors.paper,
-                        icon: Icons.qr_code_rounded,
-                        iconColor: AppColors.gold,
-                        label: 'QR 사용하기',
-                      ),
+                      ],
+                      if (hasBalance) ...[
+                        const SizedBox(width: 8),
+                        const Text(
+                          '장',
+                          key: ValueKey('ticket-balance-unit'),
+                          textScaler: TextScaler.noScaling,
+                          style: TextStyle(
+                            color: AppColors.flipDim,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            height: 1,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 14,
+              runSpacing: 4,
+              children: [
+                _FlipMetric(
+                  label: '쿠폰',
+                  value: couponCountLabel == '-' ? '-' : '$couponCountLabel장',
+                  valueKey: const ValueKey('ticket-coupon-count'),
+                ),
+                _FlipMetric(
+                  label: '포인트',
+                  value: pointBalanceLabel,
+                  valueKey: const ValueKey('ticket-point-balance'),
+                ),
+                _FlipMetric(
+                  label: '이번 달',
+                  value: monthUsage,
+                  valueKey: const ValueKey('ticket-month-usage'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                if (onBuyTicket != null) ...[
+                  Expanded(
+                    child: _TicketActionButton(
+                      key: const ValueKey('buy-ticket-button'),
+                      onPressed: onBuyTicket!,
+                      backgroundColor: AppColors.flipTile,
+                      foregroundColor: AppColors.flipStrong,
+                      borderColor: AppColors.flipBorder,
+                      icon: Icons.shopping_bag_outlined,
+                      label: '식권 구매',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: _TicketActionButton(
+                    key: const ValueKey('use-ticket-qr-button'),
+                    onPressed: onTapQr,
+                    backgroundColor: empty ? AppColors.flipTile : AppColors.blue,
+                    foregroundColor: empty ? AppColors.flipStrong : AppColors.fg,
+                    borderColor: empty ? AppColors.flipBorder : null,
+                    icon: Icons.qr_code_rounded,
+                    label: 'QR 사용하기',
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _TicketWalletMetric extends StatelessWidget {
-  const _TicketWalletMetric({
+/// One split-flap tile. Size is fixed (not text-scaled) so the board keeps
+/// its proportions; the whole row scales down via FittedBox if needed.
+class _FlipTile extends StatelessWidget {
+  const _FlipTile({super.key, required this.char, required this.color});
+
+  final String char;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 62,
+        height: 84,
+        decoration: BoxDecoration(
+          color: AppColors.flipTile,
+          border: Border.all(color: AppColors.flipBorder),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Text(
+              char,
+              textScaler: TextScaler.noScaling,
+              style: TextStyle(
+                color: color,
+                fontSize: 56,
+                fontWeight: FontWeight.w800,
+                height: 1,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            const Positioned(
+              left: 0,
+              right: 0,
+              child: SizedBox(
+                height: 1,
+                child: ColoredBox(color: AppColors.bg),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _FlipMetric extends StatelessWidget {
+  const _FlipMetric({
     required this.label,
     required this.value,
     required this.valueKey,
@@ -216,36 +229,33 @@ class _TicketWalletMetric extends StatelessWidget {
   final Key valueKey;
 
   @override
-  Widget build(BuildContext context) => Expanded(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.fg2,
-                fontSize: 10,
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.flipDim,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 3),
+          // Wraps (never overflows) when a long month total meets large text.
+          Flexible(
+            child: Text(
+              value,
+              key: valueKey,
+              style: const TextStyle(
+                color: AppColors.flipStrong,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 2),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                value,
-                key: valueKey,
-                maxLines: 1,
-                style: AppTextStyles.body.copyWith(
-                  color: AppColors.ink,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       );
 }
 
@@ -256,38 +266,53 @@ class _TicketActionButton extends StatelessWidget {
     required this.backgroundColor,
     required this.foregroundColor,
     required this.icon,
-    required this.iconColor,
     required this.label,
+    this.borderColor,
   });
 
   final VoidCallback onPressed;
   final Color backgroundColor;
   final Color foregroundColor;
+  final Color? borderColor;
   final IconData icon;
-  final Color iconColor;
   final String label;
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 140,
         height: 48,
-        child: FilledButton.icon(
+        child: FilledButton(
           onPressed: onPressed,
           style: FilledButton.styleFrom(
             backgroundColor: backgroundColor,
             foregroundColor: foregroundColor,
-            minimumSize: const Size(140, 48),
-            maximumSize: const Size(140, 48),
+            minimumSize: const Size.fromHeight(48),
+            maximumSize: const Size.fromHeight(48),
             padding: const EdgeInsets.symmetric(horizontal: 10),
+            side: borderColor == null ? null : BorderSide(color: borderColor!),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
             ),
           ),
-          icon: Icon(icon, size: 18, color: iconColor),
-          label: Text(
-            label,
-            maxLines: 1,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+          // Label shrinks instead of overflowing at large text scales.
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: foregroundColor),
+              const SizedBox(width: 6),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       );

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>greeneatGo 홈 지갑 카드 시안 11–20</title>
+<style>
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-Regular.otf');font-weight:400}
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-SemiBold.otf');font-weight:600}
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-Bold.otf');font-weight:700}
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-ExtraBold.otf');font-weight:800}
+:root{
+  --bg:#0a0d14;--card:#131a2a;--card-hi:#1b2436;--line:#212b3e;--fg2:#8a93a6;
+  --blue:#2c5fff;--blue-soft:#5b87ff;--paper:#f4f1e9;--ink:#131a2a;--gold:#c9a227;
+  --lime:#9dbf63;--navy:#0e1c2b;--orange:#c64f00;--ticket-line:#cfc7b4;
+}
+*{box-sizing:border-box;margin:0}
+body{background:#05070b;color:#fff;font-family:P,sans-serif;padding:28px;font-synthesis:none;-webkit-font-smoothing:antialiased}
+.board{display:grid;grid-template-columns:repeat(2,390px);gap:28px;justify-content:center}
+.slot{display:flex;flex-direction:column;gap:10px}
+.tag{display:flex;align-items:baseline;gap:8px;font-size:15px;font-weight:700}
+.tag b{color:var(--lime);font-size:13px;letter-spacing:.5px}
+.tag span{color:var(--fg2);font-size:12px;font-weight:600}
+.phone{background:var(--bg);border-radius:26px;padding:22px 18px;min-height:330px;display:flex;flex-direction:column;justify-content:center}
+svg{flex-shrink:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;font:700 14px P,sans-serif;cursor:pointer;min-height:46px;border-radius:14px;padding:0 16px;white-space:nowrap}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-.04em}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* 11 펀치 카드: 남은 식권 수만큼 구멍 */
+.v11{background:var(--paper);color:var(--ink);border-radius:20px;padding:20px 22px}
+.v11 .h{display:flex;justify-content:space-between;align-items:baseline}
+.v11 .k{font-size:12px;color:#6d7380;font-weight:600}
+.v11 .n{font-size:30px;font-weight:800}
+.v11 .n small{font-size:14px;margin-left:2px;letter-spacing:0}
+.v11 .holes{display:grid;grid-template-columns:repeat(10,1fr);gap:7px;margin:14px 0 6px}
+.v11 .holes i{aspect-ratio:1;border-radius:50%;background:var(--ink)}
+.v11 .holes i.e{background:transparent;border:1.5px dashed var(--ticket-line)}
+.v11 .cap{font-size:11px;color:#8a8577;margin-bottom:14px}
+.v11 .meta{display:flex;gap:14px;font-size:12px;color:#6d7380;padding:12px 0;border-top:1px solid #e3dccb;margin-bottom:12px}
+.v11 .meta b{color:var(--ink);margin-left:3px}
+.v11 .buy{background:#e8e2d3;color:var(--ink)}
+.v11 .qr{background:var(--orange);color:#fff}
+
+/* 12 좌우 분할 */
+.v12{display:grid;grid-template-columns:1.15fr 1fr;border-radius:22px;overflow:hidden;min-height:210px}
+.v12 .l{background:var(--paper);color:var(--ink);padding:20px;display:flex;flex-direction:column;justify-content:space-between}
+.v12 .k{font-size:12px;color:#9b7915;font-weight:700;letter-spacing:1px}
+.v12 .n{font-size:64px;font-weight:800;line-height:.9}
+.v12 .n small{font-size:18px;margin-left:2px;letter-spacing:0}
+.v12 .l p.m{font-size:12px;color:#6d7380;line-height:1.7}
+.v12 .l p.m b{color:var(--ink)}
+.v12 .r{background:var(--navy);display:grid;grid-template-rows:1fr 1fr}
+.v12 .r .btn{border-radius:0;min-height:0;flex-direction:column;gap:8px;background:transparent;color:#fff;font-size:13px}
+.v12 .r .btn+.btn{border-top:1px solid #22384f}
+.v12 .r .btn.qr{background:var(--lime);color:var(--navy)}
+
+/* 13 잔액형 (교통카드 앱) */
+.v13{background:#fff;color:var(--ink);border-radius:22px;padding:22px}
+.v13 .h{display:flex;justify-content:space-between;font-size:13px;font-weight:700}
+.v13 .h span{color:#8a93a6;font-weight:600;font-size:12px}
+.v13 .n{text-align:right;font-size:54px;font-weight:800;margin:18px 0 4px;line-height:1}
+.v13 .n small{font-size:20px;margin-left:3px;letter-spacing:0}
+.v13 .sub{text-align:right;font-size:12px;color:#8a93a6}
+.v13 .chips{display:flex;gap:6px;margin:18px 0 14px}
+.v13 .chips span{font-size:12px;background:#f1f3f7;border-radius:999px;padding:6px 11px;color:#5a6274}
+.v13 .chips b{color:var(--ink);margin-left:3px}
+.v13 .buy{background:#f1f3f7;color:var(--ink)}
+.v13 .qr{background:var(--ink);color:#fff}
+
+/* 14 도장 */
+.v14{background:var(--paper);color:var(--ink);border-radius:20px;padding:22px;position:relative;overflow:hidden}
+.v14 .k{font-size:12px;color:#6d7380;font-weight:600}
+.v14 .t{font-size:20px;font-weight:800;margin-top:4px}
+.v14 .stamp{position:absolute;right:20px;top:16px;width:118px;height:118px;border-radius:50%;border:3px solid var(--orange);color:var(--orange);display:grid;place-items:center;transform:rotate(-12deg);text-align:center}
+.v14 .stamp::before{content:'';position:absolute;inset:6px;border:1.5px solid var(--orange);border-radius:50%}
+.v14 .stamp b{font-size:44px;font-weight:800;line-height:1;display:block}
+.v14 .stamp span{font-size:10px;font-weight:800;letter-spacing:2px}
+.v14 .meta{margin:46px 0 16px;font-size:12px;color:#6d7380;display:grid;gap:4px}
+.v14 .meta b{color:var(--ink);margin-left:4px}
+.v14 .buy{background:transparent;color:var(--ink);border:1.5px solid var(--ink)}
+.v14 .qr{background:var(--ink);color:var(--paper)}
+
+/* 15 식권 막대 게이지 */
+.v15{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:20px}
+.v15 .h{display:flex;justify-content:space-between;align-items:flex-end}
+.v15 .k{font-size:12px;color:var(--fg2)}
+.v15 .n{font-size:40px;font-weight:800;line-height:1.1}
+.v15 .n small{font-size:15px;color:var(--fg2);margin-left:3px;letter-spacing:0}
+.v15 .h .r{text-align:right;font-size:12px;color:var(--fg2)}
+.v15 .h .r b{display:block;color:#fff;font-size:14px}
+.v15 .bars{display:grid;grid-template-columns:repeat(20,1fr);gap:4px;margin:16px 0 8px;height:30px}
+.v15 .bars i{border-radius:3px;background:var(--lime)}
+.v15 .bars i.e{background:#22304a}
+.v15 .cap{display:flex;justify-content:space-between;font-size:11px;color:var(--fg2);margin-bottom:16px}
+.v15 .buy{background:var(--card-hi);color:#fff}
+.v15 .qr{background:var(--lime);color:var(--navy)}
+
+/* 16 겹친 지갑 카드 */
+.v16{position:relative;height:240px}
+.v16 .c{position:absolute;left:0;right:0;border-radius:20px;padding:14px 18px;display:flex;justify-content:space-between;font-size:13px;font-weight:700}
+.v16 .c b{font-size:15px}
+.v16 .c1{top:0;height:90px;background:#3a4c61}
+.v16 .c2{top:38px;height:90px;background:#9b7915;color:#fff}
+.v16 .c3{top:76px;bottom:0;background:var(--paper);color:var(--ink);padding:18px 20px;flex-direction:column;justify-content:space-between;box-shadow:0 -6px 18px rgba(0,0,0,.25)}
+.v16 .c3 .row{display:flex;justify-content:space-between;align-items:flex-end}
+.v16 .c3 .k{font-size:12px;color:#6d7380;font-weight:600}
+.v16 .c3 .n{font-size:46px;font-weight:800;line-height:1}
+.v16 .c3 .n small{font-size:16px;margin-left:2px;letter-spacing:0}
+.v16 .c3 .mo{font-size:12px;color:#6d7380;text-align:right}
+.v16 .c3 .mo b{display:block;color:var(--ink);font-size:14px}
+.v16-acts{margin-top:12px}
+.v16-acts .buy{background:var(--card-hi);color:#fff}
+.v16-acts .qr{background:var(--orange);color:#fff}
+
+/* 17 이번 달 달력 점 */
+.v17{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:20px}
+.v17 .h{display:flex;justify-content:space-between;align-items:flex-start}
+.v17 .k{font-size:12px;color:var(--fg2)}
+.v17 .n{font-size:42px;font-weight:800;line-height:1.05}
+.v17 .n small{font-size:15px;color:var(--fg2);margin-left:3px;letter-spacing:0}
+.v17 .side{font-size:12px;color:var(--fg2);text-align:right;line-height:1.8}
+.v17 .side b{color:#fff;margin-left:4px}
+.v17 .cal{display:grid;grid-template-columns:repeat(16,1fr);gap:5px;margin:16px 0 6px}
+.v17 .cal i{aspect-ratio:1;border-radius:50%;background:#22304a}
+.v17 .cal i.today{background:transparent;border:2px solid var(--blue-soft)}
+.v17 .cal i.f{background:#161e2e}
+.v17 .cap{font-size:11px;color:var(--fg2);margin-bottom:16px}
+.v17 .buy{background:var(--card-hi);color:#fff}
+.v17 .qr{background:var(--blue);color:#fff}
+
+/* 18 오렌지 풀블록 */
+.v18{background:var(--orange);border-radius:24px;padding:22px}
+.v18 .k{display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:rgba(255,255,255,.8)}
+.v18 .n{font-size:76px;font-weight:800;line-height:.95;margin:12px 0 4px}
+.v18 .n small{font-size:20px;margin-left:4px;letter-spacing:0}
+.v18 .meta{display:flex;gap:16px;font-size:12px;color:rgba(255,255,255,.8);margin-bottom:18px}
+.v18 .meta b{color:#fff;margin-left:3px}
+.v18 .buy{background:rgba(0,0,0,.18);color:#fff}
+.v18 .qr{background:#fff;color:var(--orange)}
+
+/* 19 전광판 */
+.v19{background:#0b0f0a;border:1px solid #23301c;border-radius:20px;padding:18px 20px}
+.v19 .k{font-size:11px;letter-spacing:3px;color:#6f8a4b;font-weight:700;display:flex;justify-content:space-between}
+.v19 .board19{display:flex;gap:6px;margin:14px 0}
+.v19 .board19 span{width:62px;height:84px;border-radius:8px;background:#141c12;border:1px solid #23301c;display:grid;place-items:center;font-size:56px;font-weight:800;color:var(--lime);position:relative}
+.v19 .board19 span::after{content:'';position:absolute;left:0;right:0;top:50%;height:1px;background:#0b0f0a}
+.v19 .board19 em{font-style:normal;align-self:flex-end;font-size:16px;color:#6f8a4b;font-weight:700;margin-left:4px}
+.v19 .meta{display:flex;gap:14px;font-size:12px;color:#6f8a4b;margin-bottom:14px}
+.v19 .meta b{color:#cfe3a8;margin-left:3px}
+.v19 .buy{background:#141c12;color:#cfe3a8;border:1px solid #23301c}
+.v19 .qr{background:var(--lime);color:#0b0f0a}
+
+/* 20 라이트 미니멀 */
+.v20{background:#fafaf7;color:var(--ink);border-radius:22px;padding:22px}
+.v20 .h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700}
+.v20 .h i{width:8px;height:8px;border-radius:50%;background:var(--lime)}
+.v20 .n{font-size:56px;font-weight:800;line-height:1;margin:16px 0 18px}
+.v20 .n small{font-size:18px;color:#8a93a6;margin-left:4px;letter-spacing:0}
+.v20 table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px}
+.v20 td{padding:9px 0;border-top:1px solid #ebe8df;color:#6d7380}
+.v20 td:last-child{text-align:right;color:var(--ink);font-weight:700}
+.v20 .buy{background:#fff;color:var(--ink);border:1px solid #e1ddd2}
+.v20 .qr{background:var(--navy);color:#fff}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="qr" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M15 15h2v2h-2zM19 15h2M15 19h2M19 19h2v2"/></g></symbol>
+  <symbol id="bag" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7z"/><path d="M9 7a3 3 0 0 1 6 0"/></g></symbol>
+</svg>
+<main class="board">
+
+<section class="slot" id="v11"><p class="tag"><b>11</b>펀치 카드<span>남은 식권 = 채워진 칸</span></p><div class="phone">
+  <div class="v11">
+    <div class="h"><p class="k">남은 식권</p><p class="n num">12<small>장</small></p></div>
+    <div class="holes"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i></div>
+    <p class="cap">한 칸 = 식권 1장</p>
+    <p class="meta"><span>쿠폰<b>0장</b></span><span>포인트<b>0P</b></span><span>이번 달<b>0장 · 0원</b></span></p>
+    <div class="acts"><button class="btn buy"><svg width="15" height="15"><use href="#bag"/></svg>식권 구매</button><button class="btn qr"><svg width="16" height="16"><use href="#qr"/></svg>QR 사용하기</button></div>
+  </div></div></section>
+
+<section class="slot" id="v12"><p class="tag"><b>12</b>좌우 분할<span>정보는 왼쪽, 행동은 오른쪽</span></p><div class="phone">
+  <div class="v12">
+    <div class="l"><p class="k">남은 식권</p><p class="n num">12<small>장</small></p>
+      <p class="m">쿠폰 <b>0장</b> · 포인트 <b>0P</b><br>이번 달 <b>0장 · 0원</b></p></div>
+    <div class="r"><button class="btn qr"><svg width="26" height="26"><use href="#qr"/></svg>QR 사용하기</button><button class="btn"><svg width="20" height="20"><use href="#bag"/></svg>식권 구매</button></div>
+  </div></div></section>
+
+<section class="slot" id="v13"><p class="tag"><b>13</b>잔액형 화이트<span>교통카드 앱처럼 깔끔한 잔액</span></p><div class="phone">
+  <div class="v13">
+    <p class="h">내 식권<span>그린잇</span></p>
+    <p class="n num">12<small>장</small></p>
+    <p class="sub">이번 달 0장 · 0원 사용</p>
+    <p class="chips"><span>쿠폰<b>0장</b></span><span>포인트<b>0P</b></span></p>
+    <div class="acts"><button class="btn buy"><svg width="15" height="15"><use href="#bag"/></svg>식권 구매</button><button class="btn qr"><svg width="16" height="16"><use href="#qr"/></svg>QR 사용하기</button></div>
+  </div></div></section>
+
+<section class="slot" id="v14"><p class="tag"><b>14</b>도장<span>종이 식권에 찍힌 수량 도장</span></p><div class="phone">
+  <div class="v14">
+    <p class="k">그린잇 식권</p><p class="t">남은 식권</p>
+    <div class="stamp"><div><b class="num">12</b><span>MEAL · 장</span></div></div>
+    <p class="meta"><span>보유 쿠폰<b>0장</b></span><span>보유 포인트<b>0P</b></span><span>이번 달 사용<b>0장 · 0원</b></span></p>
+    <div class="acts"><button class="btn buy"><svg width="15" height="15"><use href="#bag"/></svg>식권 구매</button><button class="btn qr"><svg width="16" height="16"><use href="#qr"/></svg>QR 사용하기</button></div>
+  </div></div></section>
+
+<section class="slot" id="v15"><p class="tag"><b>15</b>막대 게이지<span>남은 수량을 막대로 한눈에</span></p><div class="phone">
+  <div class="v15">
+    <div class="h"><div><p class="k">남은 식권</p><p class="n num">12<small>장</small></p></div><p class="r">이번 달 사용<b>0장 · 0원</b></p></div>
+    <div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i></div>
+    <p class="cap"><span>쿠폰 0장 · 포인트 0P</span><span>막대 1개 = 1장</span></p>
+    <div class="acts"><button class="btn buy"><svg width="15" height="15"><use href="#bag"/></svg>식권 구매</button><button class="btn qr"><svg width="16" height="16"><use href="#qr"/></svg>QR 사용하기</button></div>
+  </div></div></section>
+
+<section class="slot" id="v16"><p class="tag"><b>16</b>겹친 지갑<span>포인트·쿠폰·식권을 카드로 겹침</span></p><div class="phone">
+  <div class="v16">
+    <div class="c c1"><span>포인트</span><b>0P</b></div>
+    <div class="c c2"><span>쿠폰</span><b>0장</b></div>
+    <div class="c c3"><p class="k">남은 식권</p><div class="row"><p class="n num">12<small>장</small></p><p class="mo">이번 달 사용<b>0장 · 0원</b></p></div></div>
+  </div>
+  <div class="acts v16-acts"><button class="btn buy"><svg width="15" height="15"><use href="#bag"/></svg>식권 구매</button><button class="btn qr"><svg width="16" height="16"><use href="#qr"/></svg>QR 사용하기</button></div>
+</div></section>
+
+<section class="slot" id="v17"><p class="tag"><b>17</b>이번 달 달력<span>식사한 날이 점으로 채워짐</span></p><div class="phone">
+  <div class="v17">
+    <div class="h"><div><p class="k">남은 식권</p><p class="n num">12<small>장</small></p></div><p class="side">쿠폰<b>0장</b><br>포인트<b>0P</b></p></div>
+    <div class="cal"><i class="f"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="today"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <p class="cap">10월 · 식사 0일 · 0원</p>
+    <div class="acts"><button class="btn buy"><svg width="15" height="15"><use href="#bag"/></svg>식권 구매</button><button class="btn qr"><svg width="16" height="16"><use href="#qr"/></svg>QR 사용하기</button></div>
+  </div></div></section>
+
+<section class="slot" id="v18"><p class="tag"><b>18</b>오렌지 풀블록<span>현재 구매 버튼 색을 카드 전체로</span></p><div class="phone">
+  <div class="v18">
+    <p class="k"><span>남은 식권</span><span>이번 달 0장 · 0원</span></p>
+    <p class="n num">12<small>장</small></p>
+    <p class="meta"><span>쿠폰<b>0장</b></span><span>포인트<b>0P</b></span></p>
+    <div class="acts"><button class="btn buy"><svg width="15" height="15"><use href="#bag"/></svg>식권 구매</button><button class="btn qr"><svg width="16" height="16"><use href="#qr"/></svg>QR 사용하기</button></div>
+  </div></div></section>
+
+<section class="slot" id="v19"><p class="tag"><b>19</b>플립 전광판<span>숫자판이 넘어가는 레트로</span></p><div class="phone">
+  <div class="v19">
+    <p class="k"><span>MEAL TICKETS</span><span>남은 식권</span></p>
+    <div class="board19"><span>1</span><span>2</span><em>장</em></div>
+    <p class="meta"><span>쿠폰<b>0장</b></span><span>포인트<b>0P</b></span><span>이번 달<b>0장 · 0원</b></span></p>
+    <div class="acts"><button class="btn buy"><svg width="15" height="15"><use href="#bag"/></svg>식권 구매</button><button class="btn qr"><svg width="16" height="16"><use href="#qr"/></svg>QR 사용하기</button></div>
+  </div></div></section>
+
+<section class="slot" id="v20"><p class="tag"><b>20</b>라이트 미니멀<span>밝은 카드 + 표 정리</span></p><div class="phone">
+  <div class="v20">
+    <p class="h"><i></i>남은 식권</p>
+    <p class="n num">12<small>장</small></p>
+    <table><tr><td>보유 쿠폰</td><td>0장</td></tr><tr><td>보유 포인트</td><td>0P</td></tr><tr><td>이번 달 사용</td><td>0장 · 0원</td></tr></table>
+    <div class="acts"><button class="btn buy"><svg width="15" height="15"><use href="#bag"/></svg>식권 구매</button><button class="btn qr"><svg width="16" height="16"><use href="#qr"/></svg>QR 사용하기</button></div>
+  </div></div></section>
+
+</main>
+</body>
+</html>

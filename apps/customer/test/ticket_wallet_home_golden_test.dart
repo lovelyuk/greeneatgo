@@ -67,7 +67,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('10'), findsOneWidget);
+    expect(find.byKey(const ValueKey('ticket-balance-digit-1')), findsOneWidget);
     expect(find.text('3장'), findsOneWidget);
     expect(find.text('1,200P'), findsOneWidget);
     expect(find.text('식권 구매'), findsOneWidget);

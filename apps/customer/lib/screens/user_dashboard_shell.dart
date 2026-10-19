@@ -136,7 +136,9 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
                 textStyle: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w800),
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800),
               ),
               onPressed: () => Navigator.of(context).pop(true),
               child: const Text('식권 구매하기'),

@@ -173,7 +173,9 @@ class PaymentCompletionScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     // D3: current dark design + paper receipt (same paper tone as the home
     // meal ticket), blue check. Replaces the white page with olive accents.
-    return Scaffold(
+    return DefaultTextStyle.merge(
+      style: const TextStyle(fontFamily: 'Pretendard'),
+      child: Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -264,8 +266,10 @@ class PaymentCompletionScreen extends StatelessWidget {
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
-                textStyle:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                textStyle: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800),
               ),
               onPressed: onDone ?? () => Navigator.of(context).pop(true),
               child: const Text('확인'),
@@ -273,7 +277,7 @@ class PaymentCompletionScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 

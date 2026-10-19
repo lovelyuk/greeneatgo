@@ -47,6 +47,45 @@ void main() {
     expect(find.textContaining('앱 환경값이 누락됐어요'), findsOneWidget);
   });
 
+  testWidgets('error screen (E1): dark, message card, session error offers 다시 로그인',
+      (tester) async {
+    var signedOut = 0, retried = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: ErrorScreen(
+        message: '로그인이 필요해요.',
+        onRetry: () async => retried++,
+        onSignOut: () async => signedOut++,
+      ),
+    ));
+    expect(tester.widget<Scaffold>(find.byKey(const ValueKey('error-screen'))).backgroundColor,
+        AppColors.bg);
+    expect(find.byKey(const ValueKey('error-message-card')), findsOneWidget);
+    expect(find.text('로그인이 필요해요.'), findsOneWidget);
+    final relogin = tester.widget<FilledButton>(find.descendant(
+        of: find.byKey(const ValueKey('error-relogin')),
+        matching: find.byType(FilledButton)));
+    expect(relogin.style?.backgroundColor?.resolve({}), AppColors.blue);
+    await tester.tap(find.text('다시 로그인'));
+    await tester.tap(find.text('다시 시도'));
+    await tester.pump();
+    expect(signedOut, 1);
+    expect(retried, 1);
+
+    // Non-session error: 다시 시도 is the primary action, no 다시 로그인.
+    await tester.pumpWidget(MaterialApp(
+      home: ErrorScreen(
+          message: '서버에 연결할 수 없어요.',
+          onRetry: () async => retried++,
+          onSignOut: () async => signedOut++),
+    ));
+    expect(find.text('다시 로그인'), findsNothing);
+    final retry = tester.widget<FilledButton>(find.descendant(
+        of: find.byKey(const ValueKey('error-retry')),
+        matching: find.byType(FilledButton)));
+    expect(retry.style?.backgroundColor?.resolve({}), AppColors.blue);
+    expect(tester.takeException(), isNull);
+  });
+
   test('voucher product exposes package totals and savings', () {
     final product = VoucherProduct.fromJson({
       'id': 'voucher-10',

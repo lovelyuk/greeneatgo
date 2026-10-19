@@ -660,14 +660,17 @@ export default function PurchaseCheckout({
             · 견적 카드 {Number(completion.accepted_pricing.payment_amount).toLocaleString("ko-KR")}원
           </p>
         )}
-        <div className="done-rows">
-          <p className="done-row done-amount"><span>결제 금액</span> <b>{Number(completion.amount).toLocaleString("ko-KR")}원</b></p>
-          <p className="done-row"><span>결제수단</span> <b>{completion.payment?.method_label || completion.payment?.method || "정보 없음"}</b></p>
-          <p className="done-row"><span>발급 식권</span> <b>{completion.issued_count ?? "—"}장</b></p>
-          {Number.isSafeInteger(completion.pricing?.point_amount) && (
-            <p className="done-row"><span>실제 사용 포인트</span> <b>{completion.pricing.point_amount.toLocaleString("ko-KR")}P</b></p>
-          )}
-          <p className="done-row"><span>승인 시각</span> <b>{formatKst(completion.payment?.approved_at)}</b></p>
+        <div className="done-receipt">
+          <p className="done-receipt-amount"><span>결제 금액</span><b>{Number(completion.amount).toLocaleString("ko-KR")}원</b></p>
+          <div className="done-receipt-cut" aria-hidden="true" />
+          <div className="done-rows">
+            <p className="done-row"><span>결제수단</span> <b>{completion.payment?.method_label || completion.payment?.method || "정보 없음"}</b></p>
+            <p className="done-row"><span>발급 식권</span> <b>{completion.issued_count ?? "—"}장</b></p>
+            {Number.isSafeInteger(completion.pricing?.point_amount) && (
+              <p className="done-row"><span>실제 사용 포인트</span> <b>{completion.pricing.point_amount.toLocaleString("ko-KR")}P</b></p>
+            )}
+            <p className="done-row"><span>승인 시각</span> <b>{formatKst(completion.payment?.approved_at)}</b></p>
+          </div>
         </div>
         <div className="done-links">
           {[

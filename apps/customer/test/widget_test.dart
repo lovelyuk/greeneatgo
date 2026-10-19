@@ -294,6 +294,14 @@ void main() {
     expect(find.text('현금영수증 보기'), findsNothing,
         reason: 'CARD must never expose a cash receipt');
     expect(find.byType(BackButton), findsNothing);
+    // D3: dark page + paper receipt + blue check (no olive/white page).
+    expect(tester.widget<Scaffold>(find.byType(Scaffold).first).backgroundColor,
+        AppColors.bg);
+    expect(find.byKey(const ValueKey('payment-paper-receipt')), findsOneWidget);
+    final check = tester.widget<Container>(
+        find.byKey(const ValueKey('payment-done-check')));
+    expect((check.decoration! as BoxDecoration).color, AppColors.blue);
+    expect(tester.takeException(), isNull);
   });
 
   test('CARD completion hides a previously corrupted issuer prefix', () {

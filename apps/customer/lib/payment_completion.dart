@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'theme/app_colors.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 /// Normalized payment confirmation information used by the completion screen.
@@ -169,12 +171,15 @@ class PaymentCompletionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final green = Theme.of(context).colorScheme.primary;
+    // D3: current dark design + paper receipt (same paper tone as the home
+    // meal ticket), blue check. Replaces the white page with olive accents.
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.bg,
+        foregroundColor: AppColors.fg,
+        surfaceTintColor: AppColors.bg,
         centerTitle: true,
         title: const Text(
           '결제 완료',
@@ -184,71 +189,62 @@ class PaymentCompletionScreen extends StatelessWidget {
       body: SafeArea(
         bottom: false,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Center(
                 child: Container(
-                  width: 72,
-                  height: 72,
-                  decoration:
-                      BoxDecoration(color: green, shape: BoxShape.circle),
+                  key: const ValueKey('payment-done-check'),
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: AppColors.blue,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                          color: AppColors.blue.withValues(alpha: 0.18),
+                          spreadRadius: 9),
+                    ],
+                  ),
                   child: const Icon(Icons.check_rounded,
-                      color: Colors.white, size: 46),
+                      color: Colors.white, size: 38),
                 ),
               ),
               const SizedBox(height: 20),
               const Text(
                 '결제가 완료되었습니다',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                style: TextStyle(
+                    color: AppColors.fg,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               const Text(
                 '이용해 주셔서 감사합니다.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF8A8A8A), fontSize: 15),
+                style: TextStyle(color: AppColors.fg2, fontSize: 14),
               ),
-              const SizedBox(height: 36),
-              const Text('결제 금액',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF777777), fontSize: 14)),
-              const SizedBox(height: 8),
-              Text(
-                formatPaymentAmount(payment.amount),
-                textAlign: TextAlign.center,
-                style:
-                    const TextStyle(fontSize: 34, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 32),
-              const Divider(color: Color(0xFFE5E5E5)),
-              const SizedBox(height: 18),
-              _DetailRow(label: '결제수단', value: payment.displayedMethod),
-              _DetailRow(
-                  label: payment.accountLabel, value: payment.accountValue),
-              _DetailRow(label: '승인번호', value: payment.authorizationNumber),
-              _DetailRow(
-                  label: '거래일시',
-                  value: formatPaymentDateTime(payment.approvedAt)),
-              _DetailRow(label: '거래번호(TRXID)', value: payment.transactionId),
+              const SizedBox(height: 22),
+              _PaperReceipt(payment: payment),
               if (payment.showSalesSlip || payment.showCashReceipt) ...[
                 const SizedBox(height: 12),
                 if (payment.showSalesSlip)
-                  OutlinedButton(
+                  _DarkOutlineButton(
+                    label: payment.isCard ? '카드 매출전표 보기' : '계좌이체 전표 보기',
                     onPressed: () => _openReceipt(
                       context,
                       payment.isCard ? '카드 매출전표' : '계좌이체 전표',
                       payment.salesSlipUrl,
                     ),
-                    child: Text(payment.isCard ? '카드 매출전표 보기' : '계좌이체 전표 보기'),
                   ),
                 if (payment.showCashReceipt) ...[
-                  const SizedBox(height: 10),
-                  OutlinedButton(
+                  const SizedBox(height: 8),
+                  _DarkOutlineButton(
+                    label: '현금영수증 보기',
                     onPressed: () =>
                         _openReceipt(context, '현금영수증', payment.cashReceiptUrl),
-                    child: const Text('현금영수증 보기'),
                   ),
                 ],
               ],
@@ -256,41 +252,176 @@ class PaymentCompletionScreen extends StatelessWidget {
           ),
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(24, 10, 24, 16),
-        child: FilledButton(
-          onPressed: onDone ?? () => Navigator.of(context).pop(true),
-          child: const Text('확인'),
+      bottomNavigationBar: Container(
+        color: AppColors.bg,
+        child: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+          child: SizedBox(
+            height: 54,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.blue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                textStyle:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+              onPressed: onDone ?? () => Navigator.of(context).pop(true),
+              child: const Text('확인'),
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
+/// Paper meal-ticket receipt: amount on top, perforation, detail rows.
+class _PaperReceipt extends StatelessWidget {
+  const _PaperReceipt({required this.payment});
+  final PaymentCompletionData payment;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const ValueKey('payment-paper-receipt'),
+        decoration: BoxDecoration(
+          color: AppColors.paper,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+            child: Column(children: [
+              const Text('결제 금액',
+                  style: TextStyle(color: Color(0xFF6B6F78), fontSize: 13)),
+              const SizedBox(height: 4),
+              Text(
+                formatPaymentAmount(payment.amount),
+                style: const TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 36,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5),
+              ),
+            ]),
+          ),
+          const _ReceiptPerforation(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+            child: Column(children: [
+              _DetailRow(label: '결제수단', value: payment.displayedMethod),
+              _DetailRow(
+                  label: payment.accountLabel, value: payment.accountValue),
+              _DetailRow(label: '승인번호', value: payment.authorizationNumber),
+              _DetailRow(
+                  label: '거래일시',
+                  value: formatPaymentDateTime(payment.approvedAt)),
+              _DetailRow(
+                  label: '거래번호(TRXID)',
+                  value: payment.transactionId,
+                  last: true),
+            ]),
+          ),
+        ]),
+      );
+}
+
+class _ReceiptPerforation extends StatelessWidget {
+  const _ReceiptPerforation();
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 22,
+        child: Stack(clipBehavior: Clip.none, children: [
+          Positioned.fill(
+            child: LayoutBuilder(builder: (context, c) {
+              final n = (c.maxWidth / 10).floor();
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: List.generate(
+                      n > 2 ? n - 2 : 0,
+                      (_) => Container(
+                          width: 5, height: 2, color: AppColors.ticketLine)),
+                ),
+              );
+            }),
+          ),
+          Positioned(
+              left: -11,
+              top: 0,
+              child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                      color: AppColors.bg, shape: BoxShape.circle))),
+          Positioned(
+              right: -11,
+              top: 0,
+              child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                      color: AppColors.bg, shape: BoxShape.circle))),
+        ]),
+      );
+}
+
+class _DarkOutlineButton extends StatelessWidget {
+  const _DarkOutlineButton({required this.label, required this.onPressed});
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFFC9D0DE),
+          side: const BorderSide(color: AppColors.line),
+          backgroundColor: AppColors.card,
+          minimumSize: const Size.fromHeight(48),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        onPressed: onPressed,
+        child: Text(label),
+      );
+}
+
 class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.label, required this.value});
+  const _DetailRow(
+      {required this.label, required this.value, this.last = false});
 
   final String label;
   final String value;
+  final bool last;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 9),
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          border: last
+              ? null
+              : const Border(bottom: BorderSide(color: Color(0xFFE3DDCE))),
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              width: 128,
+              width: 118,
               child: Text(label,
                   style:
-                      const TextStyle(color: Color(0xFF777777), fontSize: 14)),
+                      const TextStyle(color: Color(0xFF6B6F78), fontSize: 13.5)),
             ),
             Expanded(
               child: Text(
                 value.isEmpty ? '-' : value,
                 textAlign: TextAlign.right,
-                style:
-                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800),
               ),
             ),
           ],
@@ -298,7 +429,6 @@ class _DetailRow extends StatelessWidget {
       );
 }
 
-/// Minimal reusable in-app browser for payment receipts.
 class ReceiptWebViewScreen extends StatefulWidget {
   const ReceiptWebViewScreen({
     super.key,

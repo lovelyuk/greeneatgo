@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:greeneatgo_customer/main.dart';
 import 'package:greeneatgo_customer/pending_payment.dart';
+import 'package:greeneatgo_customer/theme/app_colors.dart';
 
 class MemoryPreferences implements PendingPaymentPreferences {
   final Map<String, String> values = <String, String>{};
@@ -358,5 +359,49 @@ void main() {
     expect(stops, 0);
     expect(find.text('결제 완료'), findsOneWidget);
     expect(store.load('user-a'), isNull);
+  });
+
+  testWidgets('S1 design: dark banner and dark status screen with order card',
+      (tester) async {
+    final store = PendingPaymentStore(MemoryPreferences(),
+        now: () => DateTime.utc(2026, 7, 28, 11));
+    await store.save(payment());
+    final load = store.load('user-a')!;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+          body: PendingPaymentRecoveryBanner(load: load, onTap: () {})),
+    ));
+    final banner =
+        tester.widget<Material>(find.byKey(const ValueKey('pending-banner')));
+    expect(banner.color, AppColors.card);
+
+    final gate = Completer<Map<String, dynamic>>();
+    await tester.pumpWidget(MaterialApp(
+      home: PendingPaymentRecoveryScreen(
+        load: load,
+        store: store,
+        confirmPayment: ({required orderId, required amount}) => gate.future,
+      ),
+    ));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('pending-ring')), findsOneWidget);
+    expect(find.text('결제 승인을 확인하고 있어요'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pending-order-card')), findsOneWidget);
+    expect(find.text('72,000원'), findsOneWidget);
+    final recheck = tester.widget<FilledButton>(find.descendant(
+        of: find.byKey(const ValueKey('pending-recheck')),
+        matching: find.byType(FilledButton)));
+    expect(recheck.onPressed, isNull, reason: 'disabled while checking');
+    gate.completeError(const ApiException(
+        statusCode: 409, reason: 'PAYMENT_PENDING', message: 'pending'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('아직 승인을 기다리고 있어요'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pending-note')), findsOneWidget);
+    final recheck2 = tester.widget<FilledButton>(find.descendant(
+        of: find.byKey(const ValueKey('pending-recheck')),
+        matching: find.byType(FilledButton)));
+    expect(recheck2.style?.backgroundColor?.resolve({}), AppColors.blue);
+    await tester.pumpWidget(const SizedBox());
   });
 }

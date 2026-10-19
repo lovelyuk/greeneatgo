@@ -84,11 +84,80 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
     }
   }
 
+  /// True when the buyer has no vouchers left, so QR must not open (user rule).
+  /// Ledger employees have no voucher balance concept and are never blocked.
+  Future<bool> _walletEmpty() async {
+    final balance = widget.data['voucher_balance'];
+    if (balance is! num || balance > 0) return false;
+    if (widget.data['account_type'] == 'voucher') return true;
+    final subsidized = widget.subsidizedFuture;
+    if (widget.data['role'] != 'employee' || subsidized == null) return false;
+    try {
+      return await subsidized;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _showNoVoucherDialog() async {
+    final buy = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const ValueKey('no-voucher-dialog'),
+        backgroundColor: AppColors.card,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.card)),
+        icon: Container(
+          width: 56,
+          height: 56,
+          decoration: const BoxDecoration(
+              color: AppColors.ticketPurchase, shape: BoxShape.circle),
+          child: const Icon(Icons.priority_high_rounded,
+              color: AppColors.fg, size: 32),
+        ),
+        title: const Text('식권이 없어요',
+            style: TextStyle(
+                color: AppColors.fg,
+                fontSize: 20,
+                fontWeight: FontWeight.w800)),
+        content: const Text('식권을 구매한 뒤 QR로 사용할 수 있어요.',
+            textAlign: TextAlign.center, style: AppTextStyles.caption),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              key: const ValueKey('no-voucher-buy'),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('식권 구매하기'),
+            ),
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              key: const ValueKey('no-voucher-close'),
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('닫기',
+                  style: TextStyle(color: AppColors.fg2)),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (buy == true && mounted) {
+      await _openActionPage(1, widget.purchasePageBuilder, widget.onBuyVoucher);
+    }
+  }
+
   Future<void> _openActionPage(
     int index,
     DashboardPageBuilder? pageBuilder,
     AsyncAction fallback,
   ) async {
+    if (index == 2 && await _walletEmpty()) {
+      if (mounted) await _showNoVoucherDialog();
+      return;
+    }
     if (pageBuilder == null) {
       await _runAction(fallback);
       return;

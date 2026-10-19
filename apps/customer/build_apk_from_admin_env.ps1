@@ -8,6 +8,23 @@ if (-not $flutter) { throw 'flutter.bat not found (set FLUTTER_BAT)' }
 if ($env:USERPROFILE -match '[^\x00-\x7F]') {
   $asciiRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $flutter))
   if (-not $env:PUB_CACHE) { $env:PUB_CACHE = Join-Path $asciiRoot 'pub-cache' }
+  # The NDK/CMake toolchain under C:\Users\<non-ASCII>\AppData\Local\Android\Sdk
+  # also breaks ninja. Use an ASCII junction to the same SDK and point
+  # android/local.properties at it (local file, not committed).
+  $asciiSdk = Join-Path $asciiRoot 'android-sdk'
+  $realSdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+  if (-not (Test-Path $asciiSdk) -and (Test-Path $realSdk)) {
+    cmd /c mklink /J "$asciiSdk" "$realSdk" | Out-Null
+  }
+  if (Test-Path $asciiSdk) {
+    $env:ANDROID_HOME = $asciiSdk; $env:ANDROID_SDK_ROOT = $asciiSdk
+    $localProps = Join-Path $PSScriptRoot 'android\local.properties'
+    if (Test-Path $localProps) {
+      $sdkLine = 'sdk.dir=' + ($asciiSdk -replace '\\', '\\')
+      $lines = Get-Content $localProps -Encoding UTF8 | Where-Object { $_ -notmatch '^sdk\.dir=' }
+      Set-Content -Path $localProps -Value (@($sdkLine) + $lines) -Encoding UTF8
+    }
+  }
   if ($env:TEMP -match '[^\x00-\x7F]') {
     $env:TEMP = Join-Path $asciiRoot 'tmp'; $env:TMP = $env:TEMP
     New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null

@@ -49,9 +49,11 @@ test('counter: scanner keyboard input + Enter redeems once, shows result, ignore
   await page.getByLabel('이메일').fill('owner@example.invalid');
   await page.getByLabel('비밀번호').fill('mock-only-password');
   await page.getByRole('button', { name: '로그인' }).click();
-  await expect(page.getByRole('heading', { name: '손님 앱의 QR을 스캐너에 대 주세요' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible();
   // Input stays focused without clicking; scanner types like a keyboard.
   await expect(page.locator('#counter-code')).toBeFocused();
+  // Idle demo uses real app screenshots; all three load.
+  for (const img of await page.locator('.counter-demo img').all()) expect(await img.evaluate(i => i.complete && i.naturalWidth > 0)).toBe(true);
   await page.keyboard.type(CODE + '\n', { delay: 1 });
   await page.keyboard.type(CODE + '\n', { delay: 1 }); // double read while first is in flight
   await expect(page.getByRole('heading', { name: '식권 1장 사용 완료' })).toBeVisible();
@@ -62,7 +64,7 @@ test('counter: scanner keyboard input + Enter redeems once, shows result, ignore
   await expect(page.getByText('남은 식권 4장').first()).toBeVisible();
   expect(bodies[0]).toEqual({ code: CODE });
   expect(bodies.length).toBe(1);
-  await expect(page.getByRole('heading', { name: '손님 앱의 QR을 스캐너에 대 주세요' })).toBeVisible({ timeout: 6000 });
+  await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible({ timeout: 6000 });
   await expect(page.locator('#counter-code')).toBeFocused();
 });
 
@@ -86,4 +88,34 @@ test('counter shows clear errors: no voucher, expired, store QR scanned', async 
   await page.keyboard.type('QR-DONTO\n'); // store QR: never sent
   await page.waitForTimeout(300);
   expect(calls).toBe(2);
+});
+
+test('zero vouchers: QR tab and home QR button open a purchase popup instead of the QR', async ({ page }) => {
+  await base(page);
+  let issued = 0;
+  await page.route('**/api-fixture/**', async route => {
+    const path = new URL(route.request().url()).pathname.replace('/api-fixture', '');
+    if (path === '/transactions/member-qr') { issued++; return route.fulfill({ json: { ok: true, data: { code: CODE, expires_at: Math.floor(Date.now() / 1000) + 60, ttl: 60 } } }); }
+    if (path === '/me') return route.fulfill({ json: { ok: true, data: { user_id: user.id, role: 'customer', status: 'active', display_name: '김구매', account_type: 'voucher', voucher_balance: 0, point_balance: 0, voucher_use_history: [], recent_transactions: [] } } });
+    return route.fulfill({ json: { ok: true, data: path === '/vouchers/products' ? { purchase_mode: 'voucher', items: [] } : {} } });
+  });
+  await page.goto('/shop');
+  await page.getByLabel('이메일', { exact: true }).fill('fixture@example.invalid');
+  await page.getByLabel('비밀번호', { exact: true }).fill('mock-only-password');
+  await page.getByRole('button', { name: '로그인', exact: true }).click();
+  const nav = page.getByRole('navigation', { name: '구매자 탭' });
+  await nav.getByRole('button', { name: 'QR', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '식권이 없어요' });
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole('heading', { name: '내 식권 QR' })).toHaveCount(0);
+  expect(issued).toBe(0);
+  await dialog.getByRole('button', { name: '닫기' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.meal-ticket')).toBeVisible(); // still on 홈
+  await page.locator('.ticket-qr').click(); // home card QR button is guarded too
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: '식권 구매하기' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(nav.getByRole('button', { name: '구매', exact: true })).toHaveAttribute('aria-current', 'page');
+  expect(issued).toBe(0);
 });

@@ -47,6 +47,36 @@ function CounterLogin({ supabase }) {
   </main>;
 }
 
+// Idle screen: guidance on the left, a looping phone demo on the right that
+// replays the guest's real path (홈 → QR 탭 → 내 QR → 스캐너 → 사용 완료).
+// The demo QR is scrambled so the scanner can never read the picture.
+function ReadyGuide() {
+  return <div className="counter-ready-layout">
+    <div className="counter-guide">
+      <p className="counter-over">어서 오세요!</p>
+      <h1>QR은<br />스캐너에 대 주세요</h1>
+      <ol className="counter-steps" aria-label="사용 방법">
+        <li className="s1">앱 홈에서 <b>QR</b> 탭</li>
+        <li className="s2"><b>내 QR</b> 화면 열기</li>
+        <li className="s3">스캐너에 화면 대기</li>
+      </ol>
+      <p className="counter-down"><span aria-hidden="true">↓</span>스캐너는 화면 아래에 있어요</p>
+    </div>
+    <div className="counter-demo" aria-hidden="true">
+      <div className="demo-phone">
+        <div className="demo-screen">
+          <img className="d-home" src="/counter/demo-1-home.jpg" alt="" />
+          <img className="d-qr" src="/counter/demo-2-qr.jpg" alt="" />
+          <img className="d-used" src="/counter/demo-3-used.jpg" alt="" />
+          <span className="d-tap" />
+          <span className="d-beam" />
+        </div>
+      </div>
+      <div className="demo-scanner"><span className="demo-light" /></div>
+    </div>
+  </div>;
+}
+
 function CounterScanner({ session, apiBaseUrl, onLogout }) {
   const input = useRef(null), idle = useRef(null), resetTimer = useRef(null), inFlight = useRef(false);
   const [state, setState] = useState({ kind: 'ready' }), [history, setHistory] = useState([]), [value, setValue] = useState('');
@@ -102,7 +132,7 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
       <button type="button" onClick={onLogout}>로그아웃</button>
     </header>
     <section className="counter-stage" aria-live="assertive">
-      {state.kind === 'ready' && <><div className="counter-icon" aria-hidden="true">▣</div><h1>손님 앱의 QR을 스캐너에 대 주세요</h1><p>앱 하단 <b>QR</b> 탭 → <b>내 QR 보여주기</b></p></>}
+      {state.kind === 'ready' && <ReadyGuide />}
       {state.kind === 'busy' && <h1>확인 중…</h1>}
       {state.kind === 'success' && <><div className="counter-icon" aria-hidden="true">✓</div><h1>{state.title}</h1><p className="counter-name">{state.name}</p><p>{state.detail}</p></>}
       {state.kind === 'error' && <><div className="counter-icon" aria-hidden="true">!</div><h1>{state.title}</h1><p>{state.detail}</p>{state.code === 'UNAUTHENTICATED' && <button type="button" onClick={onLogout}>다시 로그인</button>}</>}

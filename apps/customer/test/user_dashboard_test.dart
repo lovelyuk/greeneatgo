@@ -116,6 +116,67 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('zero vouchers: QR opens a purchase popup instead of the QR page',
+      (tester) async {
+    var qrOpened = 0;
+    var buys = 0;
+    await pumpDashboard(
+      tester,
+      data: <String, dynamic>{
+        'display_name': '구매자',
+        'role': 'customer',
+        'account_type': 'voucher',
+        'voucher_balance': 0,
+        'voucher_use_history': const [],
+      },
+      onBuyVoucher: () async => buys++,
+      onScanQr: () async => qrOpened++,
+    );
+    await tester.tap(find.text('QR').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('no-voucher-dialog')), findsOneWidget);
+    expect(find.text('식권이 없어요'), findsOneWidget);
+    expect(qrOpened, 0);
+
+    await tester.tap(find.byKey(const ValueKey('no-voucher-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('no-voucher-dialog')), findsNothing);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('use-ticket-qr-button')));
+    await tester.tap(find.byKey(const ValueKey('use-ticket-qr-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('no-voucher-buy')));
+    await tester.pumpAndSettle();
+    expect(buys, 1);
+    expect(qrOpened, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('vouchers left or ledger employee: QR opens normally', (tester) async {
+    var qrOpened = 0;
+    await pumpDashboard(
+      tester,
+      data: <String, dynamic>{
+        'display_name': '구매자',
+        'role': 'customer',
+        'account_type': 'voucher',
+        'voucher_balance': 2,
+        'voucher_use_history': const [],
+      },
+      onScanQr: () async => qrOpened++,
+    );
+    await tester.tap(find.text('QR').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('no-voucher-dialog')), findsNothing);
+    expect(qrOpened, 1);
+
+    await pumpDashboard(tester, onScanQr: () async => qrOpened++); // ledger fixture
+    await tester.tap(find.text('QR').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('no-voucher-dialog')), findsNothing);
+    expect(qrOpened, 2);
+  });
+
   testWidgets('home matches the ticket-first layout at 360x640 and scale 1.3',
       (tester) async {
     await pumpDashboard(tester);

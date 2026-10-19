@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>식권 스캔 카운터 시안 10종</title>
+<style>
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-SemiBold.otf');font-weight:600}
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-ExtraBold.otf');font-weight:800}
+*{box-sizing:border-box}
+body{margin:0;background:#05070b;color:#fff;font-family:P,sans-serif;font-weight:600}
+.v{padding:28px 28px 36px;border-bottom:1px solid #1a2130}
+.v>h2{margin:0 0 4px;font-size:26px;font-weight:800}
+.v>p.desc{margin:0 0 18px;color:#8a93a6;font-size:16px}
+.pair{display:grid;grid-template-columns:960px 960px;gap:24px}
+.screen{width:960px;height:540px;position:relative;overflow:hidden;border-radius:14px;display:flex;flex-direction:column}
+.cap{position:absolute;right:12px;bottom:10px;font-size:12px;opacity:.55;letter-spacing:.06em;z-index:5}
+.hd{display:flex;justify-content:space-between;align-items:center;padding:18px 28px;font-size:17px}
+.hd small{display:block;font-size:12px;opacity:.6;font-weight:600}
+.btn{border:1px solid currentColor;opacity:.6;border-radius:10px;padding:7px 12px;font-size:13px}
+@keyframes sweep{0%{top:8%}50%{top:88%}100%{top:8%}}
+@keyframes pulse{0%{transform:scale(.6);opacity:.7}100%{transform:scale(1.6);opacity:0}}
+@keyframes blink{50%{opacity:.25}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+
+/* ---------- 01 블루 시그널 플립 (홈 전광판과 통일) ---------- */
+.v1 .screen{background:#0a0d14}
+.v1 .hd{border-bottom:1px solid #1c2538}
+.v1 .main{flex:1;display:grid;grid-template-columns:1.1fr 1fr;align-items:center;padding:0 56px;gap:40px}
+.v1 .over{color:#5b87ff;font-size:14px;letter-spacing:.3em}
+.v1 h1{font-size:50px;line-height:1.15;margin:10px 0 14px;letter-spacing:-.02em;font-weight:800}
+.v1 .sub{color:#9aa3b5;font-size:20px}
+.v1 .sub b{color:#fff}
+.v1 .flip{display:flex;gap:10px;justify-content:center}
+.v1 .fd{width:118px;height:168px;border-radius:14px;background:linear-gradient(#18213a 50%,#121a2e 50%);display:grid;place-items:center;font-size:128px;font-weight:800;position:relative;box-shadow:inset 0 0 0 1px #26324d}
+.v1 .fd:after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:#0a0d14}
+.v1 .colon{font-size:90px;color:#5b87ff;align-self:center;animation:blink 1s steps(1) infinite}
+.v1 .fl{text-align:center;color:#5b87ff;font-size:14px;letter-spacing:.3em;margin-top:14px}
+.v1 .ok{background:#0a0d14}
+.v1 .ok .fd{background:linear-gradient(#2c5fff 50%,#2654e6 50%);box-shadow:none}
+.v1 .ok .fd:after{background:#1d43bf}
+.v1 .ok h1{color:#fff}
+.v1 .ok .over{color:#7fe0b0}
+
+/* ---------- 02 스캔 프레임 + 레이저 ---------- */
+.v2 .screen{background:radial-gradient(120% 90% at 50% 0%,#14213f 0%,#080b12 60%)}
+.v2 .main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px}
+.v2 .frame{width:230px;height:230px;position:relative}
+.v2 .frame i{position:absolute;width:56px;height:56px;border:6px solid #5b87ff}
+.v2 .frame i:nth-child(1){left:0;top:0;border-right:0;border-bottom:0;border-radius:18px 0 0 0}
+.v2 .frame i:nth-child(2){right:0;top:0;border-left:0;border-bottom:0;border-radius:0 18px 0 0}
+.v2 .frame i:nth-child(3){left:0;bottom:0;border-right:0;border-top:0;border-radius:0 0 0 18px}
+.v2 .frame i:nth-child(4){right:0;bottom:0;border-left:0;border-top:0;border-radius:0 0 18px 0}
+.v2 .laser{position:absolute;left:10%;right:10%;height:3px;background:#ff3b5c;box-shadow:0 0 18px 4px rgba(255,59,92,.6);animation:sweep 2.4s ease-in-out infinite;top:50%}
+.v2 h1{font-size:46px;margin:0;font-weight:800}
+.v2 .sub{color:#9aa3b5;font-size:19px}
+.v2 .ok{background:radial-gradient(120% 90% at 50% 0%,#0f4a33 0%,#06140e 65%)}
+.v2 .ok .frame i{border-color:#2bd98a}
+.v2 .ok .check{position:absolute;inset:0;display:grid;place-items:center;font-size:120px;color:#2bd98a;font-weight:800}
+.v2 .ok .remain{font-size:22px;color:#c8f5de}
+.v2 .ok .remain b{font-size:30px;color:#fff}
+
+/* ---------- 03 스플릿: 안내 + 오늘 기록 ---------- */
+.v3 .screen{background:#0b0f18;flex-direction:row}
+.v3 .left{flex:1.55;display:flex;flex-direction:column}
+.v3 .left .hd{padding:22px 34px}
+.v3 .body{flex:1;display:grid;grid-template-columns:auto 1fr;gap:38px;align-items:center;padding:0 40px}
+.v3 .phone{width:150px;height:290px;border-radius:30px;background:#1a2133;border:3px solid #2b3550;padding:14px 12px;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;transform:rotate(-8deg)}
+.v3 .qr{width:112px;height:112px;background:#fff;border-radius:10px;padding:10px;background-image:repeating-conic-gradient(#0b0f18 0 25%,#fff 0 50%);background-size:18px 18px;background-clip:content-box;outline:10px solid #fff;outline-offset:-10px}
+.v3 .phone span{font-size:12px;color:#8a93a6}
+.v3 h1{font-size:42px;line-height:1.2;margin:0 0 18px;font-weight:800}
+.v3 ol{margin:0;padding:0;list-style:none;display:grid;gap:12px;font-size:18px;color:#c9d0de;counter-reset:s}
+.v3 ol li{display:flex;gap:12px;align-items:center;counter-increment:s}
+.v3 ol li:before{content:counter(s);width:30px;height:30px;border-radius:50%;background:#2c5fff;display:grid;place-items:center;font-size:15px;font-weight:800;color:#fff}
+.v3 .right{flex:1;background:#121827;border-left:1px solid #1f2840;padding:24px 26px;display:flex;flex-direction:column}
+.v3 .right h3{margin:0;font-size:15px;color:#8a93a6;font-weight:600}
+.v3 .count{font-size:64px;font-weight:800;margin:4px 0 18px}
+.v3 .count small{font-size:20px;color:#8a93a6;margin-left:6px}
+.v3 .log{display:grid;gap:10px;font-size:15px}
+.v3 .log div{display:grid;grid-template-columns:62px 1fr auto;gap:10px;padding:10px 12px;background:#182036;border-radius:12px}
+.v3 .log time{color:#8a93a6}.v3 .log em{font-style:normal;color:#7fe0b0}
+.v3 .ok .left{background:#0b3a26}
+.v3 .ok .big{width:140px;height:140px;border-radius:50%;background:#18b26b;display:grid;place-items:center;font-size:84px;font-weight:800}
+.v3 .ok .log div:first-child{background:#165a3a;outline:2px solid #2bd98a}
+
+/* ---------- 04 라이트 미니멀 ---------- */
+.v4 .screen{background:#f6f5f1;color:#0c0f14}
+.v4 .hd{color:#0c0f14}
+.v4 .main{flex:1;display:flex;flex-direction:column;justify-content:flex-end;padding:0 56px 56px}
+.v4 .tag{display:inline-block;background:#0c0f14;color:#f6f5f1;padding:6px 12px;border-radius:999px;font-size:14px;align-self:flex-start;margin-bottom:22px}
+.v4 h1{font-size:76px;line-height:1.05;margin:0;letter-spacing:-.04em;font-weight:800}
+.v4 h1 em{font-style:normal;color:#2c5fff}
+.v4 .line{height:2px;background:#0c0f14;margin:28px 0 16px}
+.v4 .row{display:flex;justify-content:space-between;font-size:18px;color:#4a5160}
+.v4 .ok{background:#18b26b;color:#fff}
+.v4 .ok .hd{color:#fff}
+.v4 .ok .tag{background:#fff;color:#0c7a47}
+.v4 .ok h1 em{color:#0b3a26}
+.v4 .ok .line{background:#fff}
+.v4 .ok .row{color:#eafff3}
+
+/* ---------- 05 그린잇 민트 브랜드 ---------- */
+.v5 .screen{background:#062a24;color:#eafff8}
+.v5 .hd img{height:26px}
+.v5 .main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.v5 .blob{width:200px;height:200px;border-radius:44% 56% 52% 48%/48% 44% 56% 52%;background:#2ee6b0;display:grid;place-items:center;box-shadow:0 0 0 18px rgba(46,230,176,.12),0 0 0 36px rgba(46,230,176,.06)}
+.v5 .blob span{width:88px;height:88px;border:9px solid #062a24;border-radius:16px;position:relative}
+.v5 .blob span:after{content:"";position:absolute;inset:16px;background:#062a24;border-radius:4px}
+.v5 h1{font-size:46px;margin:14px 0 0;font-weight:800}
+.v5 .sub{font-size:19px;color:#9fe9d2}
+.v5 .ok{background:#2ee6b0;color:#062a24}
+.v5 .ok .blob{background:#062a24;box-shadow:0 0 0 18px rgba(6,42,36,.12),0 0 0 36px rgba(6,42,36,.06)}
+.v5 .ok .blob b{font-size:110px;color:#2ee6b0}
+.v5 .ok .sub{color:#0d4d40}
+
+/* ---------- 06 식권 티켓 ---------- */
+.v6 .screen{background:#13161d}
+.v6 .main{flex:1;display:grid;place-items:center}
+.v6 .ticket{width:720px;height:280px;display:grid;grid-template-columns:1fr 210px;background:#f4f1e9;color:#141821;border-radius:20px;position:relative;
+  -webkit-mask:radial-gradient(circle 18px at 510px 0,#0000 98%,#000) top/100% 51% no-repeat,radial-gradient(circle 18px at 510px 100%,#0000 98%,#000) bottom/100% 51% no-repeat}
+.v6 .tl{padding:34px 40px;display:flex;flex-direction:column;justify-content:space-between}
+.v6 .tl .over{font-size:13px;letter-spacing:.3em;color:#7a7f8c}
+.v6 .tl h1{font-size:42px;margin:0;line-height:1.15;font-weight:800}
+.v6 .tl .sub{font-size:17px;color:#4a5160}
+.v6 .tr{border-left:3px dashed #c9c3b3;display:grid;place-items:center;text-align:center;font-size:15px;color:#4a5160}
+.v6 .tr .ic{width:110px;height:110px;border-radius:18px;border:8px solid #141821;position:relative;margin:0 auto 10px}
+.v6 .tr .ic:after{content:"";position:absolute;inset:20px;background:#141821;border-radius:4px}
+.v6 .ok .ticket{background:#2c5fff;color:#fff}
+.v6 .ok .tl .over,.v6 .ok .tl .sub{color:#d6e0ff}
+.v6 .ok .tr{border-color:#7f9dff;color:#fff}
+.v6 .stamp{width:150px;height:150px;border:6px solid #fff;border-radius:50%;display:grid;place-items:center;transform:rotate(-14deg);font-size:28px;font-weight:800;line-height:1.1}
+
+/* ---------- 07 LED 전광판 ---------- */
+.v7 .screen{background:#0a0a0a}
+.v7 .board{margin:22px 28px;flex:1;background:#111;border-radius:12px;border:2px solid #222;display:flex;flex-direction:column;justify-content:center;padding:0 44px;gap:18px;
+  background-image:radial-gradient(#1c1c1c 1.2px,transparent 1.4px);background-size:7px 7px}
+.v7 .led{font-family:"Courier New",monospace;font-weight:800;color:#ffb21e;text-shadow:0 0 8px rgba(255,178,30,.7);letter-spacing:.06em}
+.v7 .l1{font-size:22px;display:flex;justify-content:space-between}
+.v7 .l2{font-family:P,sans-serif;font-size:54px;font-weight:800;color:#ffb21e;text-shadow:0 0 10px rgba(255,178,30,.6)}
+.v7 .l3{font-family:P,sans-serif;font-size:20px;color:#a87515}
+.v7 .marquee{border-top:2px solid #2a2a2a;padding-top:14px;font-size:18px;color:#ffb21e;animation:blink 1.6s steps(1) infinite}
+.v7 .ok .led,.v7 .ok .l2{color:#3dff8c;text-shadow:0 0 10px rgba(61,255,140,.6)}
+.v7 .ok .l3{color:#1fa356}
+.v7 .ok .marquee{color:#3dff8c;animation:none}
+
+/* ---------- 08 대형 시계 키오스크 ---------- */
+.v8 .screen{background:linear-gradient(180deg,#0d1424 0%,#0a0d14 100%)}
+.v8 .clock{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v8 .t{font-size:180px;font-weight:800;letter-spacing:-.04em;line-height:1;font-variant-numeric:tabular-nums}
+.v8 .d{font-size:22px;color:#8a93a6;margin-top:8px}
+.v8 .bar{margin:0 28px 28px;background:#2c5fff;border-radius:22px;padding:22px 30px;display:flex;align-items:center;justify-content:space-between}
+.v8 .bar h1{margin:0;font-size:32px;font-weight:800}
+.v8 .bar .arr{font-size:44px;animation:blink 1.2s ease-in-out infinite}
+.v8 .ok .bar{background:#18b26b}
+.v8 .ok .t{font-size:150px;color:#2bd98a}
+
+/* ---------- 09 레이더 펄스 + 스캐너 위치 ---------- */
+.v9 .screen{background:#090c13}
+.v9 .main{flex:1;display:grid;grid-template-columns:1fr 1fr;align-items:center;padding:0 50px}
+.v9 .radar{width:320px;height:320px;position:relative;display:grid;place-items:center;justify-self:center}
+.v9 .radar i{position:absolute;inset:0;border-radius:50%;border:3px solid #2c5fff;animation:pulse 2.4s ease-out infinite}
+.v9 .radar i:nth-child(2){animation-delay:.8s}.v9 .radar i:nth-child(3){animation-delay:1.6s}
+.v9 .core{width:150px;height:150px;border-radius:50%;background:#2c5fff;display:grid;place-items:center;font-size:20px;font-weight:800;text-align:center;line-height:1.25;box-shadow:0 0 60px rgba(44,95,255,.6)}
+.v9 h1{font-size:48px;line-height:1.15;margin:0 0 16px;font-weight:800}
+.v9 .sub{font-size:19px;color:#9aa3b5}
+.v9 .hint{margin-top:26px;display:inline-flex;gap:10px;align-items:center;padding:10px 16px;background:#141b2b;border-radius:12px;color:#c9d0de;font-size:16px}
+.v9 .ok .radar i{border-color:#2bd98a}
+.v9 .ok .core{background:#18b26b;box-shadow:0 0 60px rgba(24,178,107,.6);font-size:76px}
+
+/* ---------- 10 운영 대시보드형 ---------- */
+.v10 .screen{background:#0a0d14;padding:20px;gap:14px}
+.v10 .top{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:14px}
+.v10 .tile{background:#131a2a;border:1px solid #212b3e;border-radius:16px;padding:14px 18px}
+.v10 .tile small{display:block;color:#8a93a6;font-size:13px}
+.v10 .tile b{font-size:30px;font-weight:800}
+.v10 .tile.store b{font-size:20px}
+.v10 .mid{flex:1;display:grid;grid-template-columns:1.6fr 1fr;gap:14px}
+.v10 .stage{border-radius:20px;background:#2c5fff;display:flex;flex-direction:column;justify-content:center;padding:0 40px;position:relative;overflow:hidden}
+.v10 .stage:before{content:"";position:absolute;right:-60px;top:-60px;width:260px;height:260px;border-radius:50%;border:30px solid rgba(255,255,255,.08)}
+.v10 .stage h1{font-size:40px;margin:0 0 10px;font-weight:800;line-height:1.15}
+.v10 .stage p{margin:0;font-size:18px;color:#dbe4ff}
+.v10 .feed{background:#131a2a;border:1px solid #212b3e;border-radius:20px;padding:16px;display:grid;gap:8px;align-content:start;font-size:15px}
+.v10 .feed h3{margin:0 0 4px;font-size:14px;color:#8a93a6;font-weight:600}
+.v10 .feed div{display:grid;grid-template-columns:58px 1fr auto;gap:8px;padding:8px 10px;border-radius:10px;background:#1b2436}
+.v10 .feed time{color:#8a93a6}.v10 .feed em{font-style:normal;color:#7fe0b0}
+.v10 .ok .stage{background:#18b26b}
+.v10 .ok .feed div:first-child{background:#165a3a}
+</style>
+</head>
+<body>
+
+<!-- 01 -->
+<section class="v v1" id="v1"><h2>01 블루 시그널 플립</h2><p class="desc">손님 앱 홈의 플립 전광판과 같은 언어. 대기 중엔 현재 시각, 사용 완료 땐 남은 식권이 플립 숫자로.</p>
+<div class="pair">
+ <div class="screen"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="btn">로그아웃</span></div>
+  <div class="main"><div><div class="over">READY TO SCAN</div><h1>QR을 스캐너에<br>대 주세요</h1><div class="sub">앱 하단 <b>QR</b> 탭 → <b>내 QR</b></div></div>
+  <div><div class="flip"><div class="fd">1</div><div class="fd">1</div><span class="colon">:</span><div class="fd">4</div><div class="fd">2</div></div><div class="fl">NOW</div></div></div>
+  <span class="cap">대기</span></div>
+ <div class="screen ok"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="btn">로그아웃</span></div>
+  <div class="main"><div><div class="over">✓ 사용 완료</div><h1>김그린님<br>식권 1장 사용</h1><div class="sub">맛있게 드세요</div></div>
+  <div><div class="flip"><div class="fd">0</div><div class="fd">4</div></div><div class="fl">남은 식권</div></div></div>
+  <span class="cap">사용 완료</span></div>
+</div></section>
+
+<!-- 02 -->
+<section class="v v2" id="v2"><h2>02 스캔 프레임 + 레이저</h2><p class="desc">QR 모서리 프레임과 움직이는 스캔 라인. “여기에 QR” 이 한눈에 보이는 가장 직관적인 형태.</p>
+<div class="pair">
+ <div class="screen"><div class="hd"><div>그린잇 구내식당</div><span class="btn">로그아웃</span></div>
+  <div class="main"><div class="frame"><i></i><i></i><i></i><i></i><span class="laser"></span></div><h1>QR을 스캐너에 대 주세요</h1><div class="sub">앱 → QR 탭 → 내 QR</div></div><span class="cap">대기</span></div>
+ <div class="screen ok"><div class="hd"><div>그린잇 구내식당</div><span class="btn">로그아웃</span></div>
+  <div class="main"><div class="frame"><i></i><i></i><i></i><i></i><span class="check">✓</span></div><h1>김그린님, 사용 완료</h1><div class="remain">남은 식권 <b>4</b>장</div></div><span class="cap">사용 완료</span></div>
+</div></section>
+
+<!-- 03 -->
+<section class="v v3" id="v3"><h2>03 스플릿 · 안내 + 오늘 기록</h2><p class="desc">왼쪽은 손님용 큰 안내, 오른쪽은 직원용 오늘 처리 건수와 최근 기록. 카운터 직원이 확인하기 좋음.</p>
+<div class="pair">
+ <div class="screen"><div class="left"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div></div>
+  <div class="body"><div class="phone"><div class="qr"></div><span>내 식권 QR</span></div><div><h1>QR을 스캐너에<br>대 주세요</h1><ol><li>앱 하단 QR 탭</li><li>내 QR 보여주기</li><li>스캐너에 화면 대기</li></ol></div></div></div>
+  <div class="right"><h3>오늘 처리</h3><div class="count">37<small>건</small></div><h3>최근</h3><div class="log" style="margin-top:8px"><div><time>11:41</time><span>박민트</span><em>남은 2장</em></div><div><time>11:39</time><span>이그린</span><em>남은 9장</em></div><div><time>11:38</time><span>최식권</span><em>남은 0장</em></div></div></div><span class="cap">대기</span></div>
+ <div class="screen ok"><div class="left"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div></div>
+  <div class="body"><div class="big">✓</div><div><h1>김그린님<br>사용 완료</h1><p style="margin:0;font-size:22px;color:#c8f5de">식권 1장 사용 · 남은 식권 <b style="color:#fff">4장</b></p></div></div></div>
+  <div class="right"><h3>오늘 처리</h3><div class="count">38<small>건</small></div><h3>최근</h3><div class="log" style="margin-top:8px"><div><time>11:42</time><span>김그린</span><em>남은 4장</em></div><div><time>11:41</time><span>박민트</span><em>남은 2장</em></div><div><time>11:39</time><span>이그린</span><em>남은 9장</em></div></div></div><span class="cap">사용 완료</span></div>
+</div></section>
+
+<!-- 04 -->
+<section class="v v4" id="v4"><h2>04 라이트 미니멀</h2><p class="desc">밝은 매장에 어울리는 흰 바탕 + 아주 큰 글씨. 완료되면 화면 전체가 초록으로 바뀌어 멀리서도 확인.</p>
+<div class="pair">
+ <div class="screen"><div class="hd"><div>그린잇 구내식당</div><span>11:42</span></div>
+  <div class="main"><span class="tag">● 스캔 대기 중</span><h1>QR을<br><em>스캐너</em>에 대 주세요</h1><div class="line"></div><div class="row"><span>앱 하단 QR 탭 → 내 QR</span><span>오늘 37건</span></div></div><span class="cap">대기</span></div>
+ <div class="screen ok"><div class="hd"><div>그린잇 구내식당</div><span>11:42</span></div>
+  <div class="main"><span class="tag">✓ 사용 완료</span><h1>김그린님<br><em>식권 1장</em> 사용</h1><div class="line"></div><div class="row"><span>남은 식권 4장</span><span>오늘 38건</span></div></div><span class="cap">사용 완료</span></div>
+</div></section>
+
+<!-- 05 -->
+<section class="v v5" id="v5"><h2>05 그린잇 민트</h2><p class="desc">브랜드 민트 그린 톤. 부드러운 곡선 아이콘으로 식당 분위기에 맞춘 친근한 버전.</p>
+<div class="pair">
+ <div class="screen"><div class="hd"><img src="../../apps/admin/public/brand/greeneat_logo_light.png" alt="greeneat"><span class="btn">로그아웃</span></div>
+  <div class="main"><div class="blob"><span></span></div><h1>QR을 스캐너에 대 주세요</h1><div class="sub">앱 → QR 탭 → 내 QR</div></div><span class="cap">대기</span></div>
+ <div class="screen ok"><div class="hd"><img src="../../apps/admin/public/brand/greeneat_logo.png" alt="greeneat"><span class="btn">로그아웃</span></div>
+  <div class="main"><div class="blob"><b>✓</b></div><h1>김그린님, 맛있게 드세요!</h1><div class="sub">식권 1장 사용 · 남은 식권 4장</div></div><span class="cap">사용 완료</span></div>
+</div></section>
+
+<!-- 06 -->
+<section class="v v6" id="v6"><h2>06 식권 티켓</h2><p class="desc">종이 식권 모양. 완료되면 티켓이 파랗게 바뀌고 “사용” 도장이 찍힘.</p>
+<div class="pair">
+ <div class="screen"><div class="hd"><div>그린잇 구내식당</div><span class="btn">로그아웃</span></div>
+  <div class="main"><div class="ticket"><div class="tl"><span class="over">MEAL TICKET</span><h1>QR을 스캐너에<br>대 주세요</h1><span class="sub">앱 하단 QR 탭 → 내 QR</span></div><div class="tr"><div><div class="ic"></div>스캔 대기</div></div></div></div><span class="cap">대기</span></div>
+ <div class="screen ok"><div class="hd"><div>그린잇 구내식당</div><span class="btn">로그아웃</span></div>
+  <div class="main"><div class="ticket"><div class="tl"><span class="over">MEAL TICKET · 11:42</span><h1>김그린님<br>식권 1장 사용</h1><span class="sub">남은 식권 4장</span></div><div class="tr"><div class="stamp">사용<br>완료</div></div></div></div><span class="cap">사용 완료</span></div>
+</div></section>
+
+<!-- 07 -->
+<section class="v v7" id="v7"><h2>07 LED 전광판</h2><p class="desc">역 전광판 같은 도트 LED. 대기는 앰버, 완료는 초록. 레트로하고 눈에 잘 띔.</p>
+<div class="pair">
+ <div class="screen"><div class="board"><div class="led l1"><span>GREENEAT 구내식당</span><span>11:42</span></div><div class="l2">QR을 스캐너에 대 주세요</div><div class="l3">앱 하단 QR 탭 → 내 QR</div><div class="led marquee">▶ SCAN READY ▶ 오늘 37건</div></div><span class="cap">대기</span></div>
+ <div class="screen ok"><div class="board"><div class="led l1"><span>GREENEAT 구내식당</span><span>11:42</span></div><div class="l2">김그린님 · 사용 완료</div><div class="l3">식권 1장 사용 / 남은 식권 4장</div><div class="led marquee">✓ OK ✓ 오늘 38건</div></div><span class="cap">사용 완료</span></div>
+</div></section>
+
+<!-- 08 -->
+<section class="v v8" id="v8"><h2>08 대형 시계 키오스크</h2><p class="desc">평소엔 큰 시계 화면(식당 시계 겸용), 아래 안내 바가 스캐너 쪽을 가리킴.</p>
+<div class="pair">
+ <div class="screen"><div class="hd"><div>그린잇 구내식당</div><span class="btn">로그아웃</span></div>
+  <div class="clock"><div class="t">11:42</div><div class="d">10월 19일 월요일 · 점심</div></div>
+  <div class="bar"><h1>QR을 스캐너에 대 주세요</h1><span class="arr">↓</span></div><span class="cap">대기</span></div>
+ <div class="screen ok"><div class="hd"><div>그린잇 구내식당</div><span class="btn">로그아웃</span></div>
+  <div class="clock"><div class="t">✓ 4장</div><div class="d">남은 식권</div></div>
+  <div class="bar"><h1>김그린님, 식권 1장 사용 완료</h1><span class="arr" style="animation:none">✓</span></div><span class="cap">사용 완료</span></div>
+</div></section>
+
+<!-- 09 -->
+<section class="v v9" id="v9"><h2>09 레이더 펄스</h2><p class="desc">퍼져나가는 원으로 “지금 스캔 대기 중”을 표현. 화면이 살아있어 보여서 꺼진 줄 오해하지 않음.</p>
+<div class="pair">
+ <div class="screen"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="btn">로그아웃</span></div>
+  <div class="main"><div class="radar"><i></i><i></i><i></i><div class="core">스캔<br>대기 중</div></div><div><h1>QR을<br>스캐너에<br>대 주세요</h1><div class="sub">앱 하단 QR 탭 → 내 QR</div><div class="hint">QR이 안 읽히면 폰 밝기를 올려 주세요</div></div></div><span class="cap">대기</span></div>
+ <div class="screen ok"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="btn">로그아웃</span></div>
+  <div class="main"><div class="radar"><i></i><div class="core">✓</div></div><div><h1>김그린님<br>사용 완료</h1><div class="sub">식권 1장 사용 · 남은 식권 4장</div></div></div><span class="cap">사용 완료</span></div>
+</div></section>
+
+<!-- 10 -->
+<section class="v v10" id="v10"><h2>10 운영 대시보드형</h2><p class="desc">위에 오늘 처리 건수·시각, 가운데 큰 상태판, 오른쪽 실시간 기록. 매니저가 보기 좋은 정보형.</p>
+<div class="pair">
+ <div class="screen"><div class="top"><div class="tile store"><small>식권 스캔 카운터</small><b>그린잇 구내식당</b></div><div class="tile"><small>오늘 처리</small><b>37건</b></div><div class="tile"><small>마지막 스캔</small><b>11:41</b></div><div class="tile"><small>현재 시각</small><b>11:42</b></div></div>
+  <div class="mid"><div class="stage"><h1>QR을 스캐너에<br>대 주세요</h1><p>앱 하단 QR 탭 → 내 QR</p></div><div class="feed"><h3>최근 사용</h3><div><time>11:41</time><span>박민트</span><em>남은 2장</em></div><div><time>11:39</time><span>이그린</span><em>남은 9장</em></div><div><time>11:38</time><span>최식권</span><em>남은 0장</em></div><div><time>11:36</time><span>정점심</span><em>남은 5장</em></div></div></div><span class="cap">대기</span></div>
+ <div class="screen ok"><div class="top"><div class="tile store"><small>식권 스캔 카운터</small><b>그린잇 구내식당</b></div><div class="tile"><small>오늘 처리</small><b>38건</b></div><div class="tile"><small>마지막 스캔</small><b>11:42</b></div><div class="tile"><small>현재 시각</small><b>11:42</b></div></div>
+  <div class="mid"><div class="stage"><h1>✓ 김그린님<br>식권 1장 사용 완료</h1><p>남은 식권 4장</p></div><div class="feed"><h3>최근 사용</h3><div><time>11:42</time><span>김그린</span><em>남은 4장</em></div><div><time>11:41</time><span>박민트</span><em>남은 2장</em></div><div><time>11:39</time><span>이그린</span><em>남은 9장</em></div><div><time>11:38</time><span>최식권</span><em>남은 0장</em></div></div></div><span class="cap">사용 완료</span></div>
+</div></section>
+
+</body>
+</html>

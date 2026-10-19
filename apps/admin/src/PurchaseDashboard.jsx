@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Home, ShoppingBag, ScanLine, ReceiptText, UserRound, Ticket, PartyPopper, Megaphone, MessageSquare, Menu, ChevronRight, Utensils, QrCode, ArrowLeft } from 'lucide-react';
 import PurchaseCatalog, { won } from './PurchaseCatalog.jsx';
+import MemberQr from './MemberQr.jsx';
 import PurchaseHistory from './PurchaseHistory.jsx';
 import LocalAbandonmentHistory from './LocalAbandonmentHistory.jsx';
 import { dashboardTransactions, couponCount, scanIntent } from './purchaseDashboard.js';
@@ -30,6 +31,20 @@ function ReadBoard({ api, kind }) {
   return <><h1>{kind}</h1>
     {error ? <><p role="alert">{error}</p><button onClick={() => setRevision(revision + 1)}>다시 시도</button></> : !data ? <p role="status">불러오는 중…</p> : !data.items?.length ? <p className="empty-state">등록된 {kind === '리뷰' ? '리뷰가' : '공지가'} 없어요.</p> : data.items.map(row => <article key={row.id} className="purchase-card"><h2>{row.title || `${row.rating} / 5`}</h2><p className="pre-line">{row.content}</p>{row.owner_reply && <p>사장님 답변 · {row.owner_reply}</p>}</article>)}</>;
 }
+// QR tab: default = member QR for the counter scanner; fallback = scan the store QR.
+function QrTab({ api, refresh, me, active }) {
+  const [mode, setMode] = useState('member');
+  const canShowMemberQr = me.account_type === 'voucher' || me.role === 'employee';
+  return <>
+    {canShowMemberQr && <div className="qr-mode" role="tablist" aria-label="QR 결제 방식">
+      <button role="tab" aria-selected={mode === 'member'} className={mode === 'member' ? 'active' : ''} onClick={() => setMode('member')}>내 QR 보여주기</button>
+      <button role="tab" aria-selected={mode === 'store'} className={mode === 'store' ? 'active' : ''} onClick={() => setMode('store')}>매장 QR로 결제</button>
+    </div>}
+    {canShowMemberQr && mode === 'member' ? (active ? <><h1>내 식권 QR</h1><MemberQr api={api} refresh={refresh} balance={me.voucher_balance} /></> : null)
+      : <QrPayment api={api} refresh={refresh} userId={me.user_id} />}
+  </>;
+}
+
 function QrPayment({ api, refresh, userId }) {
   const storageKey = `greeneat-scan-pending:${userId}`;
   const [qr, setQr] = useState(''), [pending, setPending] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [done, setDone] = useState(null), [blocked, setBlocked] = useState(false);
@@ -134,7 +149,7 @@ export default function PurchaseDashboard({ me, api, supabase, apiBaseUrl, legal
         legal={legal} refresh={refresh} eventsOnly={page === '이벤트'}
       />
     </div>
-    <div hidden={tab !== 2}><QrPayment api={api} refresh={refresh} userId={me.user_id} /></div>
+    <div hidden={tab !== 2}><QrTab api={api} refresh={refresh} me={me} active={tab === 2} /></div>
     <div hidden={tab !== 3}>{recoveryNotice && tab === 3 && <p role="status">{recoveryNotice}</p>}<div ref={setRecoveryTarget} /><PurchaseHistory me={me} />{tab === 3 && <LocalAbandonmentHistory api={api} userId={me.user_id} />}</div>
     <div hidden={tab !== 4}><h1>내정보</h1><div className="profile-heading"><span className="avatar"><img src={avatar.src} alt={avatar.label} /></span><div><h2>{name}</h2><p>{me.company?.name || (me.role === 'employee' ? '회사 임직원' : '개인 구매자')}</p></div></div><section className="purchase-card setting-group"><p><span>휴대폰 번호</span><strong>{me.phone || '—'}</strong></p><p><span>인증수단</span><strong>이메일 (웹)</strong></p><p><span>결제수단</span><strong>{me.account_type === 'ledger' ? '회사 장부' : '식권'}</strong></p></section><section className="purchase-card setting-group" aria-label="알림 및 초대"><button onClick={() => open('계정 설정')}>계정 설정<strong>이름 · 비밀번호</strong></button>{me.role === 'customer' && <button onClick={() => open('초대코드')}>초대코드 입력<ChevronRight size={16} /></button>}</section><section className="purchase-card setting-group">{[['쿠폰함', () => open('쿠폰함')], ['식권 상품', () => go(1)], ['공지사항', () => open('공지사항')], ['구매 인증 리뷰', () => open('리뷰')]].map(([label, action]) => <button key={label} onClick={action}>{label}<ChevronRight size={16} /></button>)}</section><section className="purchase-card setting-group"><a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침<ChevronRight size={16} /></a><a href="/terms.html" target="_blank" rel="noreferrer">이용약관<ChevronRight size={16} /></a><p><span>웹 버전</span><strong>구매자 웹</strong></p><button className="danger-text" onClick={logout}>로그아웃<ChevronRight size={16} /></button></section><p className="muted">결제 알림(푸시)은 앱에서만 받을 수 있어요.</p></div>
     {page === '쿠폰함' && <>{readError && <><p role="alert">{readError}</p><button onClick={refresh} disabled={loading}>다시 시도</button></>}{wallet ? <CouponWallet wallet={wallet} /> : !readError && <p role="status">쿠폰 확인 중…</p>}</>}

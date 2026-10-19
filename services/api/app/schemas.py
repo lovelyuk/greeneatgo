@@ -386,6 +386,11 @@ class MerchantRefundRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class MemberQrRedeemRequest(BaseModel):
+    code: str = Field(min_length=20, max_length=300)
+    model_config = {"extra": "forbid"}
+
+
 class TransactionScanRequest(BaseModel):
     qr_data: str = Field(min_length=1, max_length=500)
     idempotency_key: str = Field(min_length=8, max_length=120)

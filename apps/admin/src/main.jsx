@@ -7,6 +7,7 @@ import './style.css';
 import { PaymentHistoryDashboard } from './PaymentFeatures.jsx';
 import SettlementDemoPanel from './SettlementDemoPanel.jsx';
 const PurchaseApp = React.lazy(() => import('./PurchaseApp.jsx'));
+const CounterScanApp = React.lazy(() => import('./CounterScanApp.jsx'));
 import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
 import { PREPURCHASE_MAX_QUANTITY, PREPURCHASE_MAX_UNIT_PRICE, prepurchaseChargeInvalid, prepurchaseChargePayload, prepurchaseChargeTotal, prepurchaseItems } from './prepurchase.js';
 import { captureGeneration, generationIsCurrent } from './generationGuard.js';
@@ -3720,4 +3721,8 @@ function App() {
   return <Dashboard session={session} onLogout={logout} />;
 }
 
-createRoot(document.getElementById('root')).render(window.location.pathname === '/shop' || window.location.pathname === '/shop/' ? <React.Suspense fallback={<main className="loading" role="status">구매 화면 불러오는 중…</main>}><PurchaseApp supabase={supabase} apiBaseUrl={apiBaseUrl} /></React.Suspense> : <App />);
+const routePath = window.location.pathname.replace(/\/+$/, '') || '/';
+createRoot(document.getElementById('root')).render(
+  routePath === '/shop' ? <React.Suspense fallback={<main className="loading" role="status">구매 화면 불러오는 중…</main>}><PurchaseApp supabase={supabase} apiBaseUrl={apiBaseUrl} /></React.Suspense>
+  : routePath === '/counter' ? <React.Suspense fallback={<main className="loading" role="status">카운터 화면 불러오는 중…</main>}><CounterScanApp supabase={supabase} apiBaseUrl={apiBaseUrl} /></React.Suspense>
+  : <App />);

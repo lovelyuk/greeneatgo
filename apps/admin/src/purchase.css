@@ -216,3 +216,14 @@
 .purchase-app .done-ok{width:100%;min-height:54px;margin-top:14px;font-size:16px}
 @keyframes done-in{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.purchase-app .done-dialog{animation:none}}
+
+/* Member QR for the counter scanner */
+.purchase-app .qr-mode{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--card);border-radius:14px;padding:4px;margin:4px 0 14px}
+.purchase-app .qr-mode button{min-height:42px;background:transparent;color:var(--fg2);border-radius:10px;font-size:14px}
+.purchase-app .qr-mode button.active{background:var(--blue);color:#fff}
+.purchase-app .member-qr{text-align:center;display:grid;gap:8px;justify-items:center}
+.purchase-app .member-qr-code{width:min(78vw,280px);aspect-ratio:1;background:#fff;border-radius:18px;padding:6px}
+.purchase-app .member-qr-code svg{width:100%;height:100%;display:block}
+.purchase-app .member-qr-help{margin:8px 0 0;font-size:16px;font-weight:800}
+.purchase-app .member-qr-timer{margin:0;color:var(--blue-soft);font-size:13px}
+.purchase-app .member-qr-used h2{margin:6px 0 0}

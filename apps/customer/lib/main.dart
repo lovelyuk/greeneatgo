@@ -2283,12 +2283,18 @@ class PendingPaymentRecoveryScreen extends StatefulWidget {
     required this.load,
     required this.store,
     required this.confirmPayment,
+    this.readRecovery,
+    this.abandon,
     this.retryDelay = const Duration(seconds: 30),
   });
 
   final PendingPaymentLoadResult load;
   final PendingPaymentStore store;
   final PaymentConfirmer confirmPayment;
+
+  /// Server order read + owner stop, used by "결제창에서 취소했어요".
+  final PendingRecoveryReader? readRecovery;
+  final PendingOrderAbandoner? abandon;
   final Duration retryDelay;
 
   @override
@@ -2300,6 +2306,7 @@ class _PendingPaymentRecoveryScreenState
     extends State<PendingPaymentRecoveryScreen> with WidgetsBindingObserver {
   Timer? _retryTimer;
   bool _confirming = false;
+  bool _cancelling = false;
   int _confirmationAttempt = 0;
   PaymentCompletionData? _completion;
   String? _error;
@@ -2365,12 +2372,40 @@ class _PendingPaymentRecoveryScreenState
     }
   }
 
-  void _leavePendingPaymentRecovery() {
-    if (_confirming) return;
+  Future<void> _leavePendingPaymentRecovery() async {
+    if (_confirming || _cancelling) return;
     _retryTimer?.cancel();
-    // A local declaration is not authoritative provider cancellation. Preserve
-    // the record so a delayed approval can still be recovered from Home.
-    if (mounted) Navigator.of(context).pop(false);
+    final payment = widget.load.payment;
+    final read = widget.readRecovery, stop = widget.abandon;
+    if (payment == null || read == null || stop == null) {
+      // No server path: keep the record (a local claim is not proof).
+      if (mounted) Navigator.of(context).pop(false);
+      return;
+    }
+    // The buyer says they did not pay. Ask the server: a paid order is
+    // confirmed instead; an unpaid one gets an owner stop and the record is
+    // removed; anything uncertain keeps the record and says so.
+    setState(() {
+      _cancelling = true;
+      _error = null;
+    });
+    final outcome = await settleClosedCheckout(
+      payment: payment,
+      store: widget.store,
+      readRecovery: read,
+      abandon: stop,
+    );
+    if (!mounted) return;
+    setState(() => _cancelling = false);
+    switch (outcome) {
+      case PendingSettleOutcome.cleared:
+        Navigator.of(context).pop(false);
+      case PendingSettleOutcome.paid:
+        await _confirm();
+      case PendingSettleOutcome.unknown:
+        setState(() => _error =
+            '주문을 취소하지 못했어요. 결제가 진행됐을 수 있어 기록은 남겨 두었어요. 잠시 후 다시 시도해 주세요.');
+    }
   }
 
   @override
@@ -2441,8 +2476,11 @@ class _PendingPaymentRecoveryScreenState
             ),
             const SizedBox(height: 8),
             TextButton(
-              onPressed: _confirming ? null : _leavePendingPaymentRecovery,
-              child: const Text('결제창에서 취소했어요'),
+              key: const ValueKey('pending-cancel'),
+              onPressed: _confirming || _cancelling
+                  ? null
+                  : () => unawaited(_leavePendingPaymentRecovery()),
+              child: Text(_cancelling ? '주문 취소 확인 중…' : '결제창에서 취소했어요'),
             ),
           ]),
         ),
@@ -2604,6 +2642,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         confirmPayment: ({required orderId, required amount}) =>
             ApiClient(widget.session)
                 .confirmPayment(orderId: orderId, amount: amount),
+        readRecovery: ApiClient(widget.session).getPaymentRecovery,
+        abandon: ApiClient(widget.session).abandonCheckout,
       ),
     ));
     if (!mounted) return;

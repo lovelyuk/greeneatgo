@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>식권 스캔 카운터 · 일러스트 시안 10종</title>
+<style>
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-SemiBold.otf');font-weight:600}
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-ExtraBold.otf');font-weight:800}
+*{box-sizing:border-box}
+body{margin:0;background:#05070b;font-family:P,sans-serif;font-weight:600;color:#fff}
+.s{width:1280px;height:720px;position:relative;overflow:hidden;background-size:cover;background-position:center right}
+.hd{position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:center;padding:26px 44px;font-size:18px;z-index:3}
+.hd small{display:block;font-size:13px;opacity:.7}
+.hd .out{font-size:14px;padding:8px 14px;border-radius:10px;border:1px solid currentColor;opacity:.55}
+.tx{position:absolute;left:64px;top:50%;transform:translateY(-50%);width:560px;z-index:3}
+.over{font-size:15px;letter-spacing:.28em;margin-bottom:16px}
+h1{font-size:64px;line-height:1.12;margin:0 0 22px;font-weight:800;letter-spacing:-.025em}
+.sub{font-size:22px;line-height:1.5}
+.steps{display:flex;gap:10px;margin-top:28px;flex-wrap:wrap}
+.steps span{padding:10px 16px;border-radius:999px;font-size:17px}
+.toast{position:absolute;right:40px;bottom:36px;z-index:4;display:flex;gap:14px;align-items:center;padding:16px 22px;border-radius:20px;font-size:18px}
+.toast b{font-size:22px}
+.toast i{font-style:normal;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:26px;font-weight:800}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:10px;animation:bl 1.4s infinite}
+@keyframes bl{50%{opacity:.25}}
+.label{position:absolute;left:16px;bottom:12px;font-size:12px;opacity:.5;z-index:5}
+
+/* 01 */
+.a1{background-image:url(counter-art/01-scanner-3d.png);background-color:#0a0d14}
+.a1 .over{color:#5b87ff}.a1 .sub{color:#a9b2c4}.a1 .steps span{background:#16203a;color:#cfd8ff}
+.a1 .dot{background:#5b87ff}
+/* 02 */
+.a2{background:#2c5fff}
+.a2 .art{position:absolute;right:-40px;bottom:0;height:100%;}
+.a2 .over{color:#cfe0ff}.a2 .sub{color:#e3ebff}.a2 .steps span{background:rgba(255,255,255,.16)}
+.a2 .dot{background:#2ee6b0}
+/* 03 */
+.a3 .out{background:#062a24;color:#eafff8;opacity:.9}
+.a3{background-image:url(counter-art/03-tray.png);color:#062a24}
+.a3 .over{color:#0d6b55}.a3 .sub{color:#0d4d40}.a3 .steps span{background:#062a24;color:#d6fff1}
+.a3 .dot{background:#062a24}
+.a3 .toast{background:#062a24;color:#eafff8}.a3 .toast i{background:#2ee6b0;color:#062a24}
+/* 04 */
+.a4{background-image:url(counter-art/04-cafeteria.png);background-position:center}
+.a4:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,255,255,.97) 0%,rgba(255,255,255,.93) 40%,rgba(255,255,255,0) 66%)}
+.a4{color:#0c0f14}.a4 .over{color:#2c5fff}.a4 .sub{color:#4a5160}.a4 .steps span{background:#2c5fff;color:#fff}
+.a4 .dot{background:#18b26b}
+/* 05 */
+.a5{background-image:url(counter-art/05-check.png);background-color:#06311f}
+.a5 .over{color:#7fe0b0}.a5 h1 em{font-style:normal;color:#7fe0b0}.a5 .sub{color:#c8f5de}
+.a5 .remain{display:inline-flex;align-items:baseline;gap:10px;margin-top:26px;padding:14px 22px;border-radius:18px;background:rgba(255,255,255,.08);font-size:20px}
+.a5 .remain b{font-size:44px}
+/* 06 */
+.a6{background:#0a0d14}
+.a6 .art{position:absolute;right:20px;bottom:-30px;height:105%}
+.a6 .over{color:#2ee6b0}.a6 .sub{color:#a9b2c4}
+.a6 .arrow{position:absolute;left:64px;bottom:40px;z-index:3;display:flex;align-items:center;gap:14px;font-size:20px;color:#2ee6b0}
+.a6 .arrow span{font-size:40px;animation:bl 1.2s infinite}
+/* 07 */
+.a7{background-image:url(counter-art/07-ticket.png);background-color:#121212}
+.a7 .over{color:#e0a46a}.a7 .sub{color:#c9b9a6}
+.a7 h1{font-size:70px}
+.a7 .stampbox{display:inline-flex;align-items:center;gap:14px;margin-top:26px;padding:12px 18px;border:3px solid #d6453c;border-radius:12px;color:#ff8f86;font-size:20px;transform:rotate(-3deg)}
+/* 08 */
+.a8{background-image:url(counter-art/08-hand.png);background-position:center}
+.a8:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(4,8,20,.15) 0%,rgba(4,8,20,.0) 30%,rgba(4,8,20,.85) 62%,rgba(4,8,20,.95) 100%)}
+.a8 .tx{left:auto;right:56px;width:520px;text-align:left}
+.a8 .over{color:#ff6b80}.a8 .sub{color:#b9c3dd}.a8 .steps span{background:rgba(255,255,255,.1)}
+.a8 .dot{background:#ff3b5c}
+/* 09 */
+.a9{background-image:url(counter-art/09-queue.png);background-color:#2c5fff}
+.a9 .over{color:#cfe0ff}.a9 .sub{color:#e3ebff}
+.a9 .toast{background:#fff;color:#0c0f14;box-shadow:0 20px 50px rgba(0,0,0,.25)}.a9 .toast i{background:#18b26b;color:#fff}
+.a9 .toast small{display:block;color:#6a7282;font-size:14px}
+/* 10 */
+.a10{background-image:url(counter-art/10-bowl.png);color:#0c0f14}
+.a10 .over{color:#2c5fff}.a10 h1{font-size:76px;letter-spacing:-.04em}.a10 h1 em{font-style:normal;color:#2c5fff}
+.a10 .sub{color:#4a5160}
+.a10 .rule{height:2px;background:#0c0f14;margin:26px 0 14px;width:520px}
+.a10 .meta{display:flex;justify-content:space-between;width:520px;font-size:17px;color:#4a5160}
+</style>
+</head>
+<body>
+
+<section class="s a1" id="a1"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="out">로그아웃</span></div>
+ <div class="tx"><div class="over"><span class="dot"></span>READY TO SCAN</div><h1>QR을 스캐너에<br>대 주세요</h1><div class="sub">한 번 찍으면 식권 1장이 사용돼요</div>
+ <div class="steps"><span>① 앱 QR 탭</span><span>② 내 QR</span><span>③ 스캐너에 대기</span></div></div><span class="label">01 3D 스캐너</span></section>
+
+<section class="s a2" id="a2"><img class="art" src="counter-art/02-mint-guy.png" alt=""><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="out">로그아웃</span></div>
+ <div class="tx"><div class="over"><span class="dot"></span>스캔 대기 중</div><h1>폰 화면을<br>스캐너에 대 주세요</h1><div class="sub">앱 하단 <b>QR</b> 탭 → <b>내 QR</b></div>
+ <div class="steps"><span>폰 밝기를 올리면 더 잘 읽혀요</span></div></div><span class="label">02 캐릭터 안내</span></section>
+
+<section class="s a3" id="a3"><div class="hd"><div>그린잇 구내식당<small>오늘의 점심 · 11:30 ~ 13:30</small></div><span class="out">로그아웃</span></div>
+ <div class="tx" style="width:500px"><div class="over"><span class="dot"></span>LUNCH TIME</div><h1>QR 찍고<br>맛있게 드세요</h1><div class="sub">앱 하단 QR 탭 → 내 QR을 스캐너에</div></div>
+ <div class="toast"><i>✓</i><div>김그린님 사용 완료 · <b>남은 4장</b></div></div><span class="label">03 식판 (완료 알림 예시)</span></section>
+
+<section class="s a4" id="a4"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="out">로그아웃</span></div>
+ <div class="tx" style="width:500px"><div class="over"><span class="dot"></span>스캔 대기 중</div><h1>QR을 스캐너에<br>대 주세요</h1><div class="sub">앱 하단 QR 탭 → 내 QR</div>
+ <div class="steps"><span>오늘 37건 처리</span></div></div><span class="label">04 밝은 식당 일러스트</span></section>
+
+<section class="s a5" id="a5"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="out">로그아웃</span></div>
+ <div class="tx"><div class="over">✓ 사용 완료</div><h1>김그린님<br><em>식권 1장</em> 사용</h1><div class="sub">맛있게 드세요!</div>
+ <div class="remain">남은 식권 <b>4</b>장</div></div><span class="label">05 완료 화면 (체크 배지)</span></section>
+
+<section class="s a6" id="a6"><img class="art" src="counter-art/06-chef.png" alt=""><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="out">로그아웃</span></div>
+ <div class="tx" style="width:520px"><div class="over">어서 오세요!</div><h1>QR은<br>스캐너에 대 주세요</h1><div class="sub">앱 하단 QR 탭 → 내 QR</div></div>
+ <div class="arrow"><span>↓</span>스캐너는 화면 아래에 있어요</div><span class="label">06 셰프 마스코트</span></section>
+
+<section class="s a7" id="a7"><div class="hd" style="color:#e9dccb"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="out">로그아웃</span></div>
+ <div class="tx" style="width:520px;color:#f4ece0"><div class="over">MEAL TICKET</div><h1>오늘의<br>식권 도장</h1><div class="sub">QR을 스캐너에 대면 식권 1장에<br>도장이 찍혀요</div>
+ <div class="stampbox">● 스캔 대기 중</div></div><span class="label">07 빈티지 식권</span></section>
+
+<section class="s a8" id="a8"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="out">로그아웃</span></div>
+ <div class="tx"><div class="over"><span class="dot"></span>SCANNER READY</div><h1>QR을 대면<br>바로 결제돼요</h1><div class="sub">앱 하단 QR 탭 → 내 QR</div>
+ <div class="steps"><span>1초면 끝</span><span>식권 1장 사용</span></div></div><span class="label">08 시네마틱 사진풍</span></section>
+
+<section class="s a9" id="a9"><div class="hd"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span class="out">로그아웃</span></div>
+ <div class="tx" style="width:480px"><div class="over"><span class="dot" style="background:#2ee6b0"></span>줄 서지 말고 바로</div><h1>QR 준비하고<br>기다려 주세요</h1><div class="sub">앱 하단 QR 탭 → 내 QR</div></div>
+ <div class="toast"><i>✓</i><div><small>방금 · 11:42</small><b>김그린님</b> 사용 완료 · 남은 4장</div></div><span class="label">09 줄 선 사람들 (완료 알림 예시)</span></section>
+
+<section class="s a10" id="a10"><div class="hd" style="color:#0c0f14"><div>그린잇 구내식당<small>식권 스캔 카운터</small></div><span>11:42</span></div>
+ <div class="tx"><div class="over"><span class="dot" style="background:#2c5fff"></span>스캔 대기 중</div><h1>밥 먹을 땐<br><em>QR</em> 한 번</h1>
+ <div class="rule"></div><div class="meta"><span>앱 하단 QR 탭 → 내 QR</span><span>오늘 37건</span></div></div><span class="label">10 라인 일러스트 · 라이트</span></section>
+
+</body>
+</html>

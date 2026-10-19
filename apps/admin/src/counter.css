@@ -1,0 +1,27 @@
+@font-face{font-family:CounterPretendard;src:url('/fonts/Pretendard-SemiBold.otf') format('opentype');font-weight:600;font-display:swap}
+@font-face{font-family:CounterPretendard;src:url('/fonts/Pretendard-ExtraBold.otf') format('opentype');font-weight:800;font-display:swap}
+.counter-app{--bg:#0a0d14;--card:#131a2a;--line:#212b3e;--fg2:#8a93a6;--blue:#2c5fff;--ok:#18b26b;--err:#e5484d;min-height:100dvh;background:var(--bg);color:#fff;font-family:CounterPretendard,sans-serif;font-weight:600;display:flex;flex-direction:column;transition:background .2s}
+.counter-center{align-items:center;justify-content:center;padding:24px}
+.counter-head strong{color:#fff}
+.counter-head{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--line);font-size:18px}
+.counter-head button,.counter-stage button{background:var(--card);color:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 16px;font:inherit;cursor:pointer}
+.counter-stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:10px}
+.counter-stage h1{color:#fff;margin:0;font-size:clamp(28px,5vw,52px);font-weight:800;letter-spacing:-.02em}
+.counter-stage p{margin:0;font-size:clamp(17px,2.4vw,26px);color:#c9d0de}
+.counter-stage .counter-name{font-size:clamp(22px,3.4vw,36px);color:#fff;font-weight:800}
+.counter-icon{width:clamp(96px,14vw,150px);height:clamp(96px,14vw,150px);border-radius:50%;display:grid;place-items:center;font-size:clamp(52px,8vw,84px);font-weight:800;background:var(--card);margin-bottom:12px}
+.counter-success{background:#06311f}.counter-success .counter-icon{background:var(--ok)}
+.counter-error{background:#3a0d10}.counter-error .counter-icon{background:var(--err)}
+.counter-ready .counter-icon{background:var(--blue)}
+.counter-input{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.counter-history{list-style:none;margin:0;padding:12px 24px 20px;display:grid;gap:6px;border-top:1px solid var(--line);font-size:15px;color:var(--fg2)}
+.counter-history li{display:grid;grid-template-columns:90px 1fr auto;gap:12px}
+.counter-history span:first-of-type{color:#fff}
+.counter-login{width:min(100%,380px);display:grid;gap:12px;background:var(--card);padding:28px;border-radius:20px}
+.counter-login img{height:32px;justify-self:start}
+.counter-login h1{color:#fff;margin:4px 0 0;font-size:24px}
+.counter-login p{margin:0;color:var(--fg2)}
+.counter-login label{display:grid;gap:6px;font-size:14px;color:var(--fg2)}
+.counter-login input{font:inherit;font-size:16px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:#fff}
+.counter-login button{font:inherit;font-weight:800;font-size:16px;padding:14px;border:0;border-radius:14px;background:var(--blue);color:#fff;cursor:pointer}
+@media(prefers-reduced-motion:reduce){.counter-app{transition:none}}

@@ -37,6 +37,12 @@ async function login(page) {
   await page.getByRole('button', { name: '로그인', exact: true }).click();
   await expect(page.getByRole('navigation', { name: '구매자 탭' })).toBeVisible();
 }
+// QR tab now defaults to the member QR (counter scanner); the store-QR flow is the second tab.
+async function openStoreQr(page) {
+  const tab = page.getByRole('tab', { name: '매장 QR로 결제' });
+  if (await tab.count()) await tab.click();
+}
+
 test('inactive purchaser can sign out without admin navigation', async ({ page, context }) => {
   await setup(page, context);
   await page.route('**/api-fixture/me', route => route.fulfill({ json: { ok: true, data: { role: 'customer', status: 'suspended' } } }));
@@ -94,7 +100,7 @@ test('manual QR payment retries same intent after ambiguous failure, only server
     return bodies.length === 1 ? route.abort('failed') : route.fulfill({ json: { result: 'success', pay_type: 'voucher', remaining: 11, transaction: { id: 'synthetic-scan', amount: 8000 } } });
   });
   await login(page);
-  await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click();
+  await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click(); await openStoreQr(page);
   await page.getByLabel('매장 QR 내용').fill('QR-SYNTHETIC');
   await page.getByRole('button', { name: 'QR 결제 확인', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('같은 요청');
@@ -162,11 +168,11 @@ for (const rejection of [
     bodies.push(route.request().postDataJSON());
     return bodies.length === 1 ? route.fulfill(rejection) : route.fulfill({ json: { result: 'success', pay_type: 'voucher', remaining: 11, transaction: { id: 'synthetic-consume' } } });
   });
-  await login(page); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click();
+  await login(page); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click(); await openStoreQr(page);
   await page.getByLabel('매장 QR 내용').fill('wrong-qr'); await page.getByRole('button', { name: 'QR 결제 확인', exact: true }).click();
   await expect(page.getByRole('alert')).toBeVisible(); await expect(page.getByLabel('매장 QR 내용')).toBeEnabled();
   expect(await page.evaluate(() => sessionStorage.getItem('greeneat-scan-pending:11111111-1111-4111-8111-111111111111'))).toBeNull();
-  await page.reload(); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click();
+  await page.reload(); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click(); await openStoreQr(page);
   await expect(page.getByLabel('매장 QR 내용')).toBeEnabled();
   await page.getByLabel('매장 QR 내용').fill('corrected-qr'); await page.getByRole('button', { name: 'QR 결제 확인', exact: true }).click();
   await expect(page.getByRole('heading', { name: '사용 완료' })).toBeVisible();
@@ -184,10 +190,10 @@ for (const response of [
 ]) test(`uncertain ${response.name} retains exact intent after reload`, async ({ page, context }) => {
   await setup(page, context); const bodies = [];
   await page.route('**/api-fixture/transactions/scan', route => { bodies.push(route.request().postDataJSON()); return route.fulfill(response); });
-  await login(page); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click();
+  await login(page); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click(); await openStoreQr(page);
   await page.getByLabel('매장 QR 내용').fill('synthetic-qr'); await page.getByRole('button', { name: 'QR 결제 확인', exact: true }).click();
   await expect(page.getByRole('alert')).toBeVisible(); await expect(page.getByLabel('매장 QR 내용')).toBeDisabled();
-  await page.reload(); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click();
+  await page.reload(); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click(); await openStoreQr(page);
   await expect(page.getByLabel('매장 QR 내용')).toHaveValue('synthetic-qr');
   await page.getByRole('button', { name: '같은 요청으로 다시 확인', exact: true }).click(); await expect.poll(() => bodies.length).toBe(2);
   expect(bodies[1]).toEqual(bodies[0]);
@@ -195,7 +201,7 @@ for (const response of [
 test('scan storage write failure never sends consuming request', async ({ page, context }) => {
   const { calls } = await setup(page, context); await login(page);
   await page.evaluate(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function(k,v) { if (k.startsWith('greeneat-scan-pending:')) throw new Error('synthetic storage unavailable'); return original.call(this,k,v); }; });
-  await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click();
+  await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click(); await openStoreQr(page);
   await page.getByLabel('매장 QR 내용').fill('synthetic-qr'); await page.getByRole('button', { name: 'QR 결제 확인', exact: true }).click();
   await expect(page.getByRole('alert')).toBeVisible(); expect(calls.filter(c => c.path === '/transactions/scan')).toHaveLength(0);
 });
@@ -208,7 +214,7 @@ test('scan safe rejection storage removal failure keeps intent and blocks new re
   await page.route('**/api-fixture/transactions/scan', route => { bodies.push(route.request().postDataJSON()); return route.fulfill({ status: 400, json: { detail: { code: 'INVALID_QR' } } }); });
   await login(page);
   await page.evaluate(() => { const original = Storage.prototype.removeItem; Storage.prototype.removeItem = function(k) { if (k.startsWith('greeneat-scan-pending:')) throw new Error('synthetic remove failure'); return original.call(this,k); }; });
-  await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click();
+  await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click(); await openStoreQr(page);
   await page.getByLabel('매장 QR 내용').fill('synthetic-qr'); await page.getByRole('button', { name: 'QR 결제 확인', exact: true }).click();
   await expect(page.getByText('저장된 QR 요청을 확인할 수 없어요. 관리자에게 거래 확인을 요청해 주세요.')).toBeVisible();
   expect(bodies).toHaveLength(1);
@@ -218,7 +224,7 @@ test('late scan response after logout cannot clear another account or first save
   await setup(page, context); let held, body;
   await page.route('**/api-fixture/transactions/scan', route => { held = route; body = route.request().postDataJSON(); });
   await page.route('**/auth-fixture/auth/v1/logout', route => route.fulfill({ status: 204 }));
-  await login(page); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click();
+  await login(page); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click(); await openStoreQr(page);
   await page.getByLabel('매장 QR 내용').fill('first-account-qr'); await page.getByRole('button', { name: 'QR 결제 확인', exact: true }).click();
   await expect.poll(() => !!held).toBe(true);
   await page.getByRole('navigation').getByRole('button', { name: '내정보', exact: true }).click();
@@ -229,7 +235,7 @@ test('late scan response after logout cannot clear another account or first save
   const user = { id: '22222222-2222-4222-8222-222222222222', email: 'synthetic@example.invalid', aud: 'authenticated', role: 'authenticated' };
   await page.route('**/auth-fixture/auth/v1/token**', route => route.fulfill({ json: { access_token: 'second-synthetic', refresh_token: 'second-refresh', expires_in: 3600, token_type: 'bearer', user } }));
   await page.route('**/api-fixture/me', route => route.fulfill({ json: { ok: true, data: { user_id: user.id, role: 'customer', status: 'active', account_type: 'voucher', display_name: '다른 합성 구매자' } } }));
-  await login(page); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click();
+  await login(page); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click(); await openStoreQr(page);
   await held.fulfill({ status: 400, json: { detail: { code: 'INVALID_QR' } } });
   await expect(page.getByLabel('매장 QR 내용')).toBeEnabled(); await expect(page.getByLabel('매장 QR 내용')).toHaveValue('');
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('greeneat-scan-pending:11111111-1111-4111-8111-111111111111')))).toEqual(body);
@@ -260,7 +266,7 @@ test('quote and consent survive native tab switch without making order', async (
 for (const pay_type of ['voucher', 'subsidized', 'ledger']) test(`real scan ${pay_type} root contract completes and clears intent`, async ({ page, context }) => {
   await setup(page, context);
   await page.route('**/api-fixture/transactions/scan', route => route.fulfill({ json: { result: 'success', pay_type, remaining: pay_type === 'ledger' ? null : 11, transaction: { id: 'synthetic-consume', amount: 8000 } } }));
-  await login(page); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click();
+  await login(page); await page.getByRole('navigation').getByRole('button', { name: 'QR', exact: true }).click(); await openStoreQr(page);
   await page.getByLabel('매장 QR 내용').fill('synthetic-qr'); await page.getByRole('button', { name: 'QR 결제 확인', exact: true }).click();
   await expect(page.getByRole('heading', { name: '사용 완료' })).toBeVisible();
   expect(await page.evaluate(() => sessionStorage.getItem('greeneat-scan-pending:11111111-1111-4111-8111-111111111111'))).toBeNull();

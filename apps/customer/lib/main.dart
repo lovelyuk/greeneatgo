@@ -26,6 +26,7 @@ import 'join_request.dart';
 import 'push_notifications.dart';
 import 'screens/coupon_wallet.dart';
 import 'screens/invite_code_entry_screen.dart';
+import 'screens/member_qr_screen.dart';
 import 'screens/user_dashboard_shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -336,6 +337,9 @@ class ApiClient {
 
   Future<Map<String, dynamic>> cancelSubsidizedVoucherOrder(String orderId) =>
       _request('/vouchers/subsidized-orders/$orderId/cancel', method: 'POST');
+
+  Future<Map<String, dynamic>> getMemberQr() =>
+      _request('/transactions/member-qr');
 
   Future<Map<String, dynamic>> scanTransaction(
       {required String qrData, required String idempotencyKey}) {
@@ -2631,11 +2635,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onClose: close,
         onPurchaseCompleted: _refreshHome,
       ),
-      qrPageBuilder: (close) => UnifiedQrScanScreen(
-        session: session,
-        isConsumer: isConsumer,
-        onClose: close,
-      ),
+      // QR tab: show my QR to the counter scanner first; scanning the store
+      // QR stays available as a fallback (scanner down / ledger employees).
+      qrPageBuilder: (close) => me['account_type'] == 'ledger'
+          ? UnifiedQrScanScreen(
+              session: session,
+              isConsumer: isConsumer,
+              onClose: close,
+            )
+          : MemberQrScreen(
+              loadCode: () => ApiClient(session).getMemberQr(),
+              readBalance: () async =>
+                  ((await ApiClient(session).getMe())['voucher_balance']
+                          as num?)
+                      ?.round(),
+              onClose: close,
+              onScanStoreQr: () async {
+                await Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => UnifiedQrScanScreen(
+                          session: session,
+                          isConsumer: isConsumer,
+                        )));
+                await onRefresh();
+              },
+            ),
       onScanQr: () async {
         await Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => UnifiedQrScanScreen(

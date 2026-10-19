@@ -10,6 +10,8 @@ test('Vercel serves purchaser deep links without rewriting admin or static asset
     { source: '/payment-return', destination: '/payment-return/index.html' },
     { source: '/shop', destination: '/index.html' },
     { source: '/shop/', destination: '/index.html' },
+    { source: '/counter', destination: '/index.html' },
+    { source: '/counter/', destination: '/index.html' },
   ]);
   for (const path of ['/', '/terms.html', '/privacy.html', '/assets/app.js', '/invite']) {
     assert.equal(config.rewrites.some((rule) => rule.source === path), false);

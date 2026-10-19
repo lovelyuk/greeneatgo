@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:greeneatgo_customer/theme/app_colors.dart';
 import 'package:greeneatgo_customer/screens/user_dashboard_shell.dart';
 import 'package:greeneatgo_customer/widgets/dashboard_components.dart';
 
@@ -136,6 +137,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('no-voucher-dialog')), findsOneWidget);
     expect(find.text('식권이 없어요'), findsOneWidget);
+    final buyButton = tester
+        .widget<FilledButton>(find.byKey(const ValueKey('no-voucher-buy')));
+    expect(buyButton.style?.backgroundColor?.resolve({}), AppColors.blue);
     expect(qrOpened, 0);
 
     await tester.tap(find.byKey(const ValueKey('no-voucher-close')));

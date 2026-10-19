@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>오류 화면(잠깐, 문제가 생겼어요) 시안</title>
+<style>
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-SemiBold.otf');font-weight:600}
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-ExtraBold.otf');font-weight:800}
+*{box-sizing:border-box;margin:0}
+:root{--bg:#0A0D14;--card:#131A2A;--hi:#1B2436;--line:#212B3E;--blue:#2C5FFF;--bs:#5B87FF;--fg2:#8A93A6;--flip:#7EA2FF;--danger:#FF7A7A;--paper:#F4F1E9}
+body{background:#1c2130;font-family:P,sans-serif;font-weight:600;color:#fff;padding:24px}
+.row{display:flex;gap:26px;flex-wrap:wrap}
+.wrap{width:390px;padding-top:58px;position:relative}
+.cap{position:absolute;top:0;left:4px;right:0;font-size:15px;font-weight:800;line-height:1.35}
+.cap small{display:block;font-size:12.5px;font-weight:600;color:#a9b2c4}
+.ph{width:390px;height:780px;border-radius:40px;overflow:hidden;position:relative;background:var(--bg);box-shadow:0 0 0 9px #05070b,0 20px 50px rgba(0,0,0,.4);display:flex;flex-direction:column}
+.sb{height:40px;display:flex;justify-content:space-between;align-items:center;padding:0 24px;font-size:13px}
+.ab{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 18px}
+.ab img{height:22px}
+.ab .x{width:36px;height:36px;border-radius:12px;background:var(--card);display:grid;place-items:center;color:var(--fg2)}
+.body{flex:1;display:flex;flex-direction:column;padding:8px 22px 24px}
+h1{font-size:28px;font-weight:800;line-height:1.2}
+.sub{color:var(--fg2);font-size:15px;margin-top:8px;line-height:1.5}
+.btn{height:54px;border-radius:16px;display:grid;place-items:center;font-size:16px;font-weight:800;background:var(--blue)}
+.btn2{height:50px;border-radius:16px;display:grid;place-items:center;font-size:15px;font-weight:800;background:var(--hi);color:#c9d0de;border:1px solid var(--line)}
+.bottom{margin-top:auto;display:grid;gap:8px}
+.code{font-size:12px;color:#5f6779;text-align:center;margin-top:10px}
+svg{display:block}
+/* E1 */
+.e1 .msg{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-top:26px}
+.e1 .msg i{flex:0 0 auto;width:34px;height:34px;border-radius:50%;background:rgba(255,122,122,.14);color:var(--danger);display:grid;place-items:center;font-style:normal;font-weight:800}
+.e1 .msg b{display:block;font-size:15px}.e1 .msg span{display:block;color:var(--fg2);font-size:13px;margin-top:3px}
+/* E2 center illustration */
+.e2 .body{align-items:center;text-align:center;justify-content:center}
+.e2 .ill{width:150px;height:150px;border-radius:50%;background:radial-gradient(circle,#1b2a55 0%,#131A2A 70%);display:grid;place-items:center;margin-bottom:26px;box-shadow:0 0 0 14px rgba(44,95,255,.06)}
+.e2 .ill svg{width:74px;height:74px;color:var(--bs)}
+.e2 .bottom{width:100%;margin-top:34px}
+/* E3 flip board status */
+.e3 .board{display:flex;gap:4px;margin:26px 0 8px}
+.e3 .board i{font-style:normal;width:40px;height:54px;border-radius:8px;background:var(--hi);display:grid;place-items:center;font-size:30px;font-weight:800;color:var(--flip);position:relative}
+.e3 .board i:after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:var(--bg)}
+.e3 .board i.r{color:var(--danger)}
+.e3 .chk{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:6px 16px;margin-top:18px}
+.e3 .chk div{display:flex;justify-content:space-between;align-items:center;padding:12px 0;font-size:14px}
+.e3 .chk div+div{border-top:1px solid var(--line)}
+.e3 .chk span{color:var(--fg2)}
+.e3 .ok{color:#7fe0b0}.e3 .no{color:var(--danger)}
+/* E4 session expired (401 전용) */
+.e4 .body{justify-content:center}
+.e4 .lock{width:72px;height:72px;border-radius:22px;background:var(--blue);display:grid;place-items:center;margin-bottom:22px;box-shadow:0 12px 30px rgba(44,95,255,.35)}
+.e4 .lock svg{width:36px;height:36px;color:#fff}
+.e4 .info{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin-top:24px;font-size:13.5px;color:#c9d0de;line-height:1.55}
+.e4 .info b{color:#fff}
+.e4 .bottom{margin-top:30px}
+</style>
+</head>
+<body>
+<div class="row" id="root"></div>
+<script>
+const sb='<div class="sb"><span>3:27</span><span>100</span></div>';
+const ab='<div class="ab"><img src="../../apps/admin/public/brand/greeneat_logo_light.png" alt=""><span class="x">⇥</span></div>';
+const wifi='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/><path d="M3 3l18 18" stroke="#FF7A7A"/></svg>';
+const lock='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="10" width="14" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>';
+const V=[
+ ['e1','E1 기본 (지금 구조, 다크로)','제목·안내 그대로. 오류 내용은 카드로, 버튼은 아래 고정. 로그인 문제면 “다시 로그인”이 주 버튼.',
+  `${sb}${ab}<div class="body"><h1>잠깐, 문제가 생겼어요</h1><p class="sub">네트워크와 계정 상태를 확인해 주세요.</p><div class="msg"><i>!</i><div><b>로그인이 필요해요</b><span>로그인 정보가 만료됐어요. 다시 로그인해 주세요.</span></div></div><div class="bottom"><div class="btn">다시 로그인</div><div class="btn2">다시 시도</div></div></div>`],
+ ['e2','E2 가운데 일러스트','아이콘을 크게 가운데에. 인터넷 끊김 같은 일반 오류용.',
+  `${sb}${ab}<div class="body"><div class="ill">${wifi}</div><h1>연결이 원활하지 않아요</h1><p class="sub">인터넷 연결을 확인하고<br>다시 시도해 주세요.</p><div class="bottom"><div class="btn">다시 시도</div><div class="btn2">로그아웃</div></div><p class="code">오류 코드 NETWORK</p></div>`],
+ ['e3','E3 상태 점검표','무엇이 문제인지 항목별로 보여줌. 홈 플립 숫자로 “ERROR”.',
+  `${sb}${ab}<div class="body"><div class="board">${'ERROR'.split('').map(c=>`<i class="r">${c}</i>`).join('')}</div><h1>잠깐, 문제가 생겼어요</h1><p class="sub">아래 항목을 확인해 주세요.</p><div class="chk"><div><span>인터넷 연결</span><b class="ok">정상</b></div><div><span>로그인 상태</span><b class="no">만료됨</b></div><div><span>서버</span><b class="ok">정상</b></div></div><div class="bottom"><div class="btn">다시 로그인</div><div class="btn2">다시 시도</div></div></div>`],
+ ['e4','E4 로그인 만료 전용','“로그인이 필요해요”일 때는 오류가 아니라 안내로. 다시 시도는 빼고 로그인만.',
+  `${sb}${ab}<div class="body"><div class="lock">${lock}</div><h1>다시 로그인해 주세요</h1><p class="sub">안전을 위해 로그인 정보가 만료됐어요.</p><div class="info"><b>식권과 결제 내역은 그대로</b> 남아 있어요.<br>전화번호로 다시 로그인하면 바로 이어서 쓸 수 있어요.</div><div class="bottom"><div class="btn">전화번호로 로그인</div></div></div>`],
+];
+document.getElementById('root').innerHTML=V.map(([c,t,d,b])=>`<div class="wrap ${c}"><span class="cap">${t}<small>${d}</small></span><div class="ph">${b}</div></div>`).join('');
+</script>
+</body>
+</html>

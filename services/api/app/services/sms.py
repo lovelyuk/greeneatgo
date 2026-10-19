@@ -98,6 +98,34 @@ def _has_invalid_or_positive_counter(container: dict[str, Any], keys: tuple[str,
     return False
 
 
+def _log_failure(reason: str, **fields: Any) -> None:
+    """Log why Solapi refused, without key/secret, phone number or OTP code."""
+    logger.warning("Solapi SMS send failed reason=%s %s", reason,
+                   " ".join(f"{k}={v}" for k, v in fields.items()))
+
+
+def _provider_error(exc: HTTPError) -> str:
+    try:
+        body = json.loads(exc.read(4096).decode("utf-8", "replace"))
+    except Exception:  # noqa: BLE001 - diagnostics only
+        return "unparsed"
+    if not isinstance(body, dict):
+        return "unparsed"
+    code = str(body.get("errorCode") or "")[:80]
+    message = str(body.get("errorMessage") or "")[:200]
+    return f"{code}:{message}"
+
+
+def _failed_reasons(failed: Any) -> str:
+    if not isinstance(failed, list):
+        return "missing_failed_list"
+    reasons = []
+    for entry in failed[:3]:
+        if isinstance(entry, dict):
+            reasons.append(f"{str(entry.get('statusCode') or '')[:10]}:{str(entry.get('statusMessage') or '')[:120]}")
+    return ";".join(reasons) or "none"
+
+
 class SolapiSmsService:
     def __init__(
         self,
@@ -126,6 +154,7 @@ class SolapiSmsService:
                 self.settings.solapi_sender,
             )
         ):
+            _log_failure("not_configured")
             raise SmsDeliveryError()
 
         date = _utc_iso8601(self.clock())
@@ -163,18 +192,25 @@ class SolapiSmsService:
             with self.urlopen(request, timeout=SMS_TIMEOUT_SECONDS) as response:
                 raw_response = response.read(MAX_RESPONSE_BYTES + 1)
                 if len(raw_response) > MAX_RESPONSE_BYTES:
+                    _log_failure("oversized_response")
                     raise SmsDeliveryError()
                 payload = json.loads(raw_response.decode("utf-8"))
         except SmsDeliveryError:
             raise
-        except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError):
+        except HTTPError as exc:
+            _log_failure("http_error", status=exc.code, provider=_provider_error(exc))
+            raise SmsDeliveryError() from None
+        except (URLError, TimeoutError, OSError, ValueError, UnicodeError) as exc:
+            _log_failure("transport_error", detail=type(exc).__name__)
             raise SmsDeliveryError() from None
 
         if not isinstance(payload, dict):
+            _log_failure("non_object_response")
             raise SmsDeliveryError()
         failed = payload.get("failedMessageList")
         group_info = payload.get("groupInfo")
         if not isinstance(group_info, dict) or not isinstance(failed, list) or bool(failed):
+            _log_failure("rejected_message", provider=_failed_reasons(failed))
             raise SmsDeliveryError()
 
         # Provider registration failures can be reported only in groupInfo.

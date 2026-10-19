@@ -219,6 +219,32 @@ def test_transport_and_timeout_exceptions_are_sanitized(failure):
     assert API_SECRET not in rendered
 
 
+def test_provider_rejection_logs_reason_without_secrets_phone_or_code(caplog):
+    body = json.dumps({"errorCode": "ValidationError", "errorMessage": "apiKey length must be 16"}).encode()
+
+    def fail(*_args, **_kwargs):
+        raise HTTPError(SOLAPI_SEND_URL, 400, "bad", {}, BytesIO(body))
+
+    with caplog.at_level(logging.WARNING, logger="app.services.sms"):
+        with pytest.raises(SmsDeliveryError):
+            SolapiSmsService(settings(), urlopen_fn=fail).send_verification_code(PHONE, CODE)
+
+    assert "reason=http_error" in caplog.text
+    assert "status=400" in caplog.text
+    assert "ValidationError:apiKey length must be 16" in caplog.text
+    for secret in (PHONE, CODE, API_KEY, API_SECRET):
+        assert secret not in caplog.text
+
+
+def test_failed_message_list_logs_status_only(caplog):
+    payload = {"groupInfo": {"groupId": "G"}, "failedMessageList": [{"to": PHONE, "statusCode": "1062", "statusMessage": "발신번호 미등록"}]}
+    with caplog.at_level(logging.WARNING, logger="app.services.sms"):
+        with pytest.raises(SmsDeliveryError):
+            SolapiSmsService(settings(), urlopen_fn=lambda *_a, **_k: Response(payload)).send_verification_code(PHONE, CODE)
+    assert "1062:발신번호 미등록" in caplog.text
+    assert PHONE not in caplog.text and CODE not in caplog.text
+
+
 def test_dry_run_logs_only_masked_phone_and_code_in_nonproduction(caplog):
     service = SolapiSmsService(settings(sms_dry_run=True, solapi_api_key="", solapi_api_secret=""))
 

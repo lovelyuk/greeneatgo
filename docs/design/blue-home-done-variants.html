@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>블루·네이비 홈 / 결제완료 시안</title>
+<style>
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-SemiBold.otf');font-weight:600}
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-ExtraBold.otf');font-weight:800}
+*{box-sizing:border-box;margin:0}
+body{background:#d9dee8;font-family:P,sans-serif;font-weight:600;padding:24px}
+.v{display:flex;gap:28px;align-items:flex-start;padding:24px 28px 32px;background:#eef1f6;border-radius:24px;margin-bottom:24px;width:max-content}
+.v .info{width:250px;padding-top:8px}
+.v .info h2{font-size:24px;font-weight:800;color:#0b1f4b}
+.v .info p{margin-top:10px;color:#4a5878;font-size:15px;line-height:1.55}
+.v .info .sw{display:flex;gap:6px;margin-top:14px}
+.v .info .sw i{width:28px;height:28px;border-radius:8px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.ph{width:390px;height:844px;border-radius:44px;overflow:hidden;position:relative;box-shadow:0 0 0 10px #10141c,0 24px 60px rgba(10,20,40,.25);display:flex;flex-direction:column}
+.cap{position:absolute;top:-34px;left:4px;font-size:13px;color:#4a5878}
+.wrap{position:relative;margin-top:30px}
+.sb{height:44px;flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;padding:0 26px;font-size:14px}
+.scroll{flex:1;overflow:hidden;padding:4px 18px 0}
+.tb{position:absolute;left:14px;right:14px;bottom:14px;height:68px;border-radius:24px;display:grid;grid-template-columns:repeat(5,1fr);align-items:center;text-align:center;font-size:11px}
+.tb span{display:grid;justify-items:center;gap:4px}
+.tb svg{width:22px;height:22px}
+.hd{display:flex;align-items:center;gap:10px;margin:6px 0 14px}
+.hd img{width:40px;height:40px;border-radius:14px}
+.hd b{font-size:17px;font-weight:800}.hd small{display:block;font-size:12px;opacity:.6;font-weight:600}
+.hd .bell{margin-left:auto;width:36px;height:36px;border-radius:12px;display:grid;place-items:center}
+.wallet{border-radius:24px;padding:18px 18px 16px;position:relative;overflow:hidden}
+.wl{display:flex;justify-content:space-between;font-size:12px;letter-spacing:.06em}
+.big{display:flex;align-items:flex-end;gap:8px;margin:10px 0 14px}
+.big b{font-size:56px;font-weight:800;line-height:1;letter-spacing:-.03em}
+.big span{font-size:18px;padding-bottom:6px}
+.flip{display:flex;gap:6px}
+.flip i{font-style:normal;width:52px;height:70px;border-radius:10px;display:grid;place-items:center;font-size:48px;font-weight:800;position:relative}
+.flip i:after{content:"";position:absolute;left:0;right:0;top:50%;height:2px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);border-radius:16px;padding:10px 4px;text-align:center;font-size:11px}
+.stats b{display:block;font-size:16px;font-weight:800;margin-top:2px}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.acts span{height:46px;border-radius:14px;display:grid;place-items:center;font-size:15px;font-weight:800}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0}
+.quick span{display:grid;justify-items:center;gap:6px;font-size:12px;padding:12px 0;border-radius:16px}
+.quick i{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-style:normal;font-size:16px}
+.menu{border-radius:20px;padding:14px 16px}
+.menu .t{display:flex;justify-content:space-between;font-size:12px;letter-spacing:.06em}
+.menu p{font-size:14px;margin-top:8px}
+.sec{display:flex;justify-content:space-between;font-size:15px;font-weight:800;margin:16px 2px 8px}
+.sec small{font-size:12px;font-weight:600;opacity:.6}
+.row{display:flex;align-items:center;gap:12px;border-radius:16px;padding:12px 14px;font-size:14px}
+.row i{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;font-style:normal}
+.row div{flex:1}.row small{display:block;font-size:12px;opacity:.6}
+.row b{font-weight:800}
+/* done */
+.done{flex:1;display:flex;flex-direction:column;padding:0 22px 22px}
+.done .top{text-align:center;font-size:16px;font-weight:800;padding:6px 0 0}
+.ck{width:76px;height:76px;border-radius:50%;display:grid;place-items:center;margin:34px auto 18px}
+.ck svg{width:38px;height:38px}
+.done h1{font-size:25px;text-align:center;font-weight:800}
+.done .s{text-align:center;font-size:14px;margin-top:6px;opacity:.7}
+.amt{text-align:center;margin:26px 0 22px}
+.amt small{font-size:13px;opacity:.65}
+.amt b{display:block;font-size:40px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
+.det{border-radius:20px;padding:6px 16px}
+.det div{display:flex;justify-content:space-between;padding:11px 0;font-size:14px}
+.det div+div{border-top:1px solid var(--dl)}
+.det span{opacity:.65}.det b{font-weight:800}
+.gain{display:flex;align-items:center;gap:10px;border-radius:16px;padding:12px 14px;margin-top:12px;font-size:14px}
+.gain b{margin-left:auto;font-weight:800}
+.btns{margin-top:auto;display:grid;grid-template-columns:1fr 1.6fr;gap:8px}
+.btns span{height:54px;border-radius:16px;display:grid;place-items:center;font-size:16px;font-weight:800}
+
+/* ===== 01 SOL 라이트 ===== */
+.a1 .ph{background:#f3f5f9;color:#14213d}
+.a1 .hd .bell{background:#fff}
+.a1 .wallet{background:#0046ff;color:#fff}
+.a1 .wallet:before{content:"";position:absolute;right:-50px;top:-60px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.08)}
+.a1 .wl{color:#cfdcff}
+.a1 .stats{background:rgba(255,255,255,.12);color:#dbe5ff}.a1 .stats b{color:#fff}
+.a1 .acts span:first-child{background:rgba(255,255,255,.18);color:#fff}.a1 .acts span:last-child{background:#fff;color:#0046ff}
+.a1 .quick span{background:#fff;color:#3b4763}.a1 .quick i{background:#eaf0ff;color:#0046ff}
+.a1 .menu{background:#fff}.a1 .menu .t{color:#0046ff}.a1 .menu p{color:#6b7896}
+.a1 .row{background:#fff}.a1 .row i{background:#eaf0ff;color:#0046ff}
+.a1 .tb{background:#fff;color:#9aa5bd;box-shadow:0 8px 30px rgba(20,40,90,.12)}.a1 .tb .on{color:#0046ff}
+.a1 .done-ph{background:#fff;color:#14213d;--dl:#eef1f6}
+.a1 .ck{background:#0046ff;color:#fff;box-shadow:0 0 0 10px #e6edff}
+.a1 .det{background:#f5f7fb}.a1 .gain{background:#eaf0ff;color:#0046ff}
+.a1 .btns span:first-child{background:#eef1f6;color:#3b4763}.a1 .btns span:last-child{background:#0046ff;color:#fff}
+
+/* ===== 02 네이비 헤더 ===== */
+.a2 .ph{background:#f2f4f8;color:#14213d}
+.a2 .navy{background:#0b1f4b;color:#fff;margin:-4px -18px 0;padding:4px 18px 22px;border-radius:0 0 30px 30px}
+.a2 .sbn{background:#0b1f4b;color:#fff}
+.a2 .hd .bell{background:rgba(255,255,255,.1)}
+.a2 .wallet{background:transparent;padding:6px 2px 0;color:#fff}
+.a2 .wl{color:#8fa6dc}
+.a2 .flip i{background:#13306e;color:#fff}.a2 .flip i:after{background:#0b1f4b}
+.a2 .stats{background:rgba(255,255,255,.07);color:#a9badf;margin-top:14px}.a2 .stats b{color:#fff}
+.a2 .acts span:first-child{background:rgba(255,255,255,.1);color:#fff}.a2 .acts span:last-child{background:#2f6bff;color:#fff}
+.a2 .quick{background:#fff;border-radius:20px;padding:6px;margin-top:14px}
+.a2 .quick span{color:#3b4763}.a2 .quick i{background:#eef2fb;color:#0b1f4b}
+.a2 .menu{background:#fff}.a2 .menu .t{color:#2f6bff}.a2 .menu p{color:#6b7896}
+.a2 .row{background:#fff}.a2 .row i{background:#eef2fb;color:#0b1f4b}
+.a2 .tb{background:#0b1f4b;color:#7d90bd}.a2 .tb .on{color:#fff}
+.a2 .done-ph{background:#f2f4f8;color:#14213d;--dl:#e7ebf2}
+.a2 .done-head{background:#0b1f4b;color:#fff;margin:0 -22px;padding:0 22px 30px;border-radius:0 0 30px 30px}
+.a2 .done-head .ck{background:#2f6bff;color:#fff;box-shadow:0 0 0 10px rgba(47,107,255,.2)}
+.a2 .done-head .s{opacity:.7}
+.a2 .done-head .amt{margin:18px 0 0}
+.a2 .det{background:#fff;margin-top:18px}.a2 .gain{background:#e6edff;color:#0b1f4b}
+.a2 .btns span:first-child{background:#e2e7f0;color:#3b4763}.a2 .btns span:last-child{background:#0b1f4b;color:#fff}
+
+/* ===== 03 블루 플립 (현재 구조 유지) ===== */
+.a3 .ph{background:#eef2fa;color:#14213d}
+.a3 .hd .bell{background:#fff}
+.a3 .wallet{background:linear-gradient(160deg,#1b5cff 0%,#0037c9 100%);color:#fff}
+.a3 .wl{color:#cfdcff}
+.a3 .flip i{background:#fff;color:#0037c9;box-shadow:0 4px 0 rgba(0,0,0,.12)}.a3 .flip i:after{background:#dfe6f7}
+.a3 .stats{background:rgba(0,0,0,.14);color:#cfdcff;margin-top:14px}.a3 .stats b{color:#fff}
+.a3 .acts span:first-child{background:rgba(255,255,255,.18);color:#fff}.a3 .acts span:last-child{background:#fff;color:#0037c9}
+.a3 .quick span{background:#fff;color:#3b4763}.a3 .quick i{background:#0046ff;color:#fff}
+.a3 .menu{background:#0b1f4b;color:#fff}.a3 .menu .t{color:#7ea2ff}.a3 .menu p{color:#a9badf}
+.a3 .row{background:#fff}.a3 .row i{background:#0046ff;color:#fff}
+.a3 .tb{background:#fff;color:#9aa5bd;box-shadow:0 8px 30px rgba(20,40,90,.12)}.a3 .tb .on{color:#0046ff}
+.a3 .done-ph{background:linear-gradient(180deg,#1b5cff 0 330px,#eef2fa 330px);color:#14213d;--dl:#eef1f6}
+.a3 .done .top,.a3 .done h1,.a3 .done .s{color:#fff}
+.a3 .ck{background:#fff;color:#0046ff;box-shadow:0 0 0 10px rgba(255,255,255,.18)}
+.a3 .amtc{background:#fff;border-radius:24px;padding:4px 16px 8px;margin-top:22px;box-shadow:0 10px 30px rgba(20,40,90,.12)}
+.a3 .amtc .amt{margin:18px 0 12px}.a3 .amtc .det{padding:0}
+.a3 .gain{background:#fff;color:#0046ff}
+.a3 .btns span:first-child{background:#dfe6f7;color:#3b4763}.a3 .btns span:last-child{background:#0046ff;color:#fff}
+
+/* ===== 04 카드형 지갑 ===== */
+.a4 .ph{background:#f5f6f8;color:#14213d}
+.a4 .hd .bell{background:#fff}
+.a4 .card{aspect-ratio:1.586;border-radius:20px;background:#0a2a88;color:#fff;padding:18px;position:relative;overflow:hidden;box-shadow:0 18px 30px rgba(10,42,136,.3)}
+.a4 .card:before{content:"";position:absolute;inset:auto -40px -90px auto;width:260px;height:260px;border-radius:50%;background:#0046ff}
+.a4 .card:after{content:"";position:absolute;right:70px;bottom:-120px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.08)}
+.a4 .card>*{position:relative;z-index:1}
+.a4 .chip{width:38px;height:28px;border-radius:6px;background:linear-gradient(135deg,#e9edf5,#a8b3c9);margin:12px 0 10px}
+.a4 .card .big{margin:4px 0 0}
+.a4 .card .no{font-size:13px;letter-spacing:.2em;color:#a9badf;margin-top:6px}
+.a4 .stats{background:#fff;color:#6b7896;margin-top:14px}.a4 .stats b{color:#14213d}
+.a4 .acts span:first-child{background:#fff;color:#0a2a88;box-shadow:inset 0 0 0 1.5px #0a2a88}.a4 .acts span:last-child{background:#0046ff;color:#fff}
+.a4 .quick span{color:#3b4763}.a4 .quick i{background:#fff;color:#0046ff;box-shadow:0 2px 8px rgba(20,40,90,.08)}
+.a4 .menu{background:#fff}.a4 .menu .t{color:#0046ff}.a4 .menu p{color:#6b7896}
+.a4 .row{background:#fff}.a4 .row i{background:#eaf0ff;color:#0046ff}
+.a4 .tb{background:#fff;color:#9aa5bd;box-shadow:0 8px 30px rgba(20,40,90,.12)}.a4 .tb .on{color:#0a2a88}
+.a4 .done-ph{background:#fff;color:#14213d;--dl:#eef1f6}
+.a4 .rcpt{background:#f5f6f8;border-radius:22px;padding:0 18px 10px;margin-top:20px;position:relative}
+.a4 .rcpt:before{content:"";position:absolute;left:18px;right:18px;top:96px;border-top:2px dashed #d7dce6}
+.a4 .rcpt .amt{margin:0;padding:22px 0 24px}
+.a4 .ck{background:#0a2a88;color:#fff}
+.a4 .det{padding:6px 0}.a4 .gain{background:#eaf0ff;color:#0a2a88}
+.a4 .btns span:first-child{background:#f0f2f6;color:#3b4763}.a4 .btns span:last-child{background:#0a2a88;color:#fff}
+
+/* ===== 05 다크 네이비 (지금 톤, 초록 제거) ===== */
+.a5 .ph{background:#0a1430;color:#fff}
+.a5 .hd .bell{background:#14214a}
+.a5 .wallet{background:#14214a;box-shadow:inset 0 0 0 1px #22336a}
+.a5 .wl{color:#7d90bd}
+.a5 .flip i{background:#0a1430;color:#7ea2ff;box-shadow:inset 0 0 0 1px #22336a}.a5 .flip i:after{background:#14214a}
+.a5 .stats{background:#0f1a3c;color:#7d90bd;margin-top:14px}
+.a5 .acts span:first-child{background:#1d2c5e;color:#fff}.a5 .acts span:last-child{background:#2f6bff;color:#fff}
+.a5 .quick span{background:#14214a;color:#a9badf}.a5 .quick i{background:#1d2c5e;color:#7ea2ff}
+.a5 .menu{background:#2f6bff}.a5 .menu .t{color:#cfdcff}.a5 .menu p{color:#fff}
+.a5 .row{background:#14214a}.a5 .row i{background:#1d2c5e;color:#7ea2ff}
+.a5 .tb{background:#14214a;color:#6b7fae;box-shadow:inset 0 0 0 1px #22336a}.a5 .tb .on{color:#fff}
+.a5 .done-ph{background:#0a1430;color:#fff;--dl:#22336a}
+.a5 .ck{background:#2f6bff;color:#fff;box-shadow:0 0 0 10px rgba(47,107,255,.18),0 0 60px rgba(47,107,255,.5)}
+.a5 .det{background:#14214a}.a5 .gain{background:#1d2c5e;color:#cfdcff}
+.a5 .btns span:first-child{background:#14214a;color:#a9badf}.a5 .btns span:last-child{background:#2f6bff;color:#fff}
+
+/* ===== 06 화이트 미니멀 + 블루 포인트 ===== */
+.a6 .ph{background:#fff;color:#111827}
+.a6 .hd .bell{background:#f3f5f9}
+.a6 .wallet{padding:6px 2px 0}
+.a6 .wl{color:#6b7896}
+.a6 .big b{font-size:72px;color:#0046ff}
+.a6 .bar{height:8px;border-radius:8px;background:#eef1f6;overflow:hidden;margin:-2px 0 10px}.a6 .bar i{display:block;height:100%;width:8%;background:#0046ff}
+.a6 .stats{background:#f6f8fb;color:#6b7896}.a6 .stats b{color:#111827}
+.a6 .acts span:first-child{background:#f3f5f9;color:#111827}.a6 .acts span:last-child{background:#0046ff;color:#fff}
+.a6 .quick{border-top:1px solid #eef1f6;border-bottom:1px solid #eef1f6;padding:6px 0}
+.a6 .quick span{color:#3b4763}.a6 .quick i{color:#0046ff;background:none;font-size:20px}
+.a6 .menu{background:#f6f8fb}.a6 .menu .t{color:#0046ff}.a6 .menu p{color:#6b7896}
+.a6 .row{padding:12px 2px;border-bottom:1px solid #eef1f6;border-radius:0}.a6 .row i{background:#eaf0ff;color:#0046ff}
+.a6 .tb{left:0;right:0;bottom:0;border-radius:0;height:84px;padding-bottom:16px;background:#fff;border-top:1px solid #eef1f6;color:#9aa5bd}.a6 .tb .on{color:#0046ff}
+.a6 .done-ph{background:#fff;color:#111827;--dl:#eef1f6}
+.a6 .done{justify-content:flex-start}
+.a6 .ck{background:#fff;color:#0046ff;border:3px solid #0046ff;margin:44px 0 18px}
+.a6 .done h1,.a6 .done .s{text-align:left}
+.a6 .done h1{font-size:28px;line-height:1.3}
+.a6 .amt{text-align:left;margin:22px 0}
+.a6 .amt b{color:#0046ff;font-size:44px}
+.a6 .det{padding:0;border-top:2px solid #111827;border-radius:0}
+.a6 .gain{background:#f6f8fb;color:#111827}
+.a6 .btns span:first-child{background:#f3f5f9;color:#3b4763}.a6 .btns span:last-child{background:#0046ff;color:#fff}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const ico = {
+  home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></svg>',
+  bag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2"/></svg>',
+  qr:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5M8 12h8"/></svg>',
+  list:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg>',
+  me:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+};
+const tabbar = `<nav class="tb"><span class="on">${ico.home}홈</span><span>${ico.bag}구매</span><span>${ico.qr}QR</span><span>${ico.list}내역</span><span>${ico.me}내정보</span></nav>`;
+const hd = `<div class="hd"><img src="../../apps/admin/public/brand/avatar_casual.png"><div><b>김그린님</b><small>오늘도 맛있는 점심 되세요</small></div><span class="bell">🔔</span></div>`;
+const stats = `<div class="stats"><span>쿠폰<b>0장</b></span><span>포인트<b>0P</b></span><span>이번 달<b>1장</b></span></div>`;
+const acts = `<div class="acts"><span>식권 구매</span><span>QR 사용하기</span></div>`;
+const quick = `<div class="quick"><span><i>🎟</i>쿠폰함</span><span><i>🎁</i>이벤트</span><span><i>📢</i>공지사항</span><span><i>✎</i>리뷰</span></div>`;
+const menu = `<div class="menu"><div class="t"><span>TODAY BUFFET</span><span>중식</span></div><p>오늘 등록된 뷔페 메뉴가 없어요.</p></div>`;
+const recent = `<div class="sec">최근 이용<small>전체 보기 ›</small></div><div class="row"><i>🍱</i><div>그린잇 식권 사용<small>중식 · 10월 19일 11:27</small></div><b>-1장</b></div>`;
+const flipW = `<div class="wl"><span>MEAL TICKETS</span><span>남은 식권</span></div><div class="big"><div class="flip"><i>0</i><i>3</i></div><span>장</span></div>`;
+const plainW = `<div class="wl"><span>MEAL TICKETS</span><span>남은 식권</span></div><div class="big"><b>3</b><span>장</span></div>`;
+const sb = (cls='') => `<div class="sb ${cls}"><span>11:25</span><span>●●● 100</span></div>`;
+
+const homes = {
+  1: `${sb()}<div class="scroll">${hd}<div class="wallet">${plainW}${stats}${acts}</div>${quick}${menu}${recent}</div>${tabbar}`,
+  2: `${sb('sbn')}<div class="scroll"><div class="navy">${hd}<div class="wallet">${flipW}${stats}${acts}</div></div>${quick}${menu}${recent}</div>${tabbar}`,
+  3: `${sb()}<div class="scroll">${hd}<div class="wallet">${flipW}${stats}${acts}</div>${quick}${menu}${recent}</div>${tabbar}`,
+  4: `${sb()}<div class="scroll">${hd}<div class="card"><div class="wl" style="color:#a9badf"><span>GREENEAT MEAL CARD</span><span>남은 식권</span></div><div class="chip"></div><div class="big"><b>3</b><span>장</span></div><div class="no">KIM GREEN · 0042</div></div>${stats}${acts}${quick}${menu}${recent}</div>${tabbar}`,
+  5: `${sb()}<div class="scroll">${hd}<div class="wallet">${flipW}${stats}${acts}</div>${quick}${menu}${recent}</div>${tabbar}`,
+  6: `${sb()}<div class="scroll">${hd}<div class="wallet">${plainW}<div class="bar"><i></i></div>${stats}${acts}</div>${quick}${menu}${recent}</div>${tabbar}`,
+};
+const det = `<div class="det"><div><span>결제수단</span><b>네이버페이</b></div><div><span>카드번호</span><b>****-****-****-1602</b></div><div><span>승인번호</span><b>00398892</b></div><div><span>거래일시</span><b>2026.10.19 11:24:35</b></div></div>`;
+const gain = `<div class="gain">🎟 식권 1장이 지갑에 들어왔어요<b>보유 3장</b></div>`;
+const btns = `<div class="btns"><span>홈으로</span><span>QR 사용하기</span></div>`;
+const amt = `<div class="amt"><small>결제 금액</small><b>100원</b></div>`;
+const head = `<div class="top">결제 완료</div><div class="ck">${ico.check}</div><h1>결제가 완료되었습니다</h1><p class="s">이용해 주셔서 감사합니다.</p>`;
+const dones = {
+  1: `${sb()}<div class="done">${head}${amt}${det}${gain}${btns}</div>`,
+  2: `${sb('sbn')}<div class="done"><div class="done-head">${head}${amt}</div>${det}${gain}${btns}</div>`,
+  3: `${sb()}<div class="done" style="color:#fff">${head}<div class="amtc" style="color:#14213d">${amt}${det}</div>${gain}${btns}</div>`,
+  4: `${sb()}<div class="done">${head}<div class="rcpt">${amt}${det}</div>${gain}${btns}</div>`,
+  5: `${sb()}<div class="done">${head}${amt}${det}${gain}${btns}</div>`,
+  6: `${sb()}<div class="done"><div class="ck">${ico.check}</div><h1>100원<br>결제가 완료되었어요</h1><p class="s">식권 1장이 지갑에 들어왔어요.</p><div style="height:26px"></div>${det}${gain}${btns}</div>`,
+};
+const info = {
+  1:['01 SOL 라이트','밝은 회색 바탕 + 흰 카드, 지갑 카드만 진한 블루. 은행 앱에서 가장 익숙한 형태.',['#f3f5f9','#ffffff','#0046ff','#14213d']],
+  2:['02 네이비 헤더','상단을 네이비로 감싸 지갑을 강조하고 아래는 밝게. 네비 바도 네이비.',['#0b1f4b','#2f6bff','#f2f4f8','#ffffff']],
+  3:['03 블루 플립','지금 구조(플립 숫자)를 그대로 두고 색만 블루로. 오늘 메뉴는 네이비 카드.',['#1b5cff','#0037c9','#0b1f4b','#eef2fa']],
+  4:['04 카드형 지갑','식권을 체크카드 모양으로. 결제완료는 영수증(절취선) 형태.',['#0a2a88','#0046ff','#f5f6f8','#ffffff']],
+  5:['05 다크 네이비','지금처럼 어두운 화면 유지, 초록 대신 블루·네이비로만.',['#0a1430','#14214a','#2f6bff','#7ea2ff']],
+  6:['06 화이트 미니멀','흰 바탕 + 블루 숫자 하나로 집중. 가장 깔끔하고 정보 위주.',['#ffffff','#0046ff','#f6f8fb','#111827']],
+};
+document.getElementById('root').innerHTML = Object.keys(info).map(k => `
+<section class="v a${k}" id="v${k}"><div class="info"><h2>${info[k][0]}</h2><p>${info[k][1]}</p><div class="sw">${info[k][2].map(c=>`<i style="background:${c}"></i>`).join('')}</div></div>
+<div class="wrap"><span class="cap">홈</span><div class="ph">${homes[k]}</div></div>
+<div class="wrap"><span class="cap">결제 완료</span><div class="ph done-ph">${dones[k]}</div></div></section>`).join('');
+</script>
+</body>
+</html>

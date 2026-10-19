@@ -3171,88 +3171,73 @@ class _TodayMenuCard extends StatelessWidget {
             : hasMenu
                 ? todayMenu!.menuText
                 : '식당관리자가 오늘 메뉴를 등록하면 여기에 표시돼요.';
+    // B1: same dark card as the rest of home + blue TODAY BUFFET tag
+    // (replaces the olive/lime card).
     return Container(
-      padding: const EdgeInsets.all(22),
+      key: const ValueKey('today-buffet-card'),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
       decoration: BoxDecoration(
-        color: kOrange,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: kOrange, width: 1),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x2421382C), blurRadius: 20, offset: Offset(0, 10))
-        ],
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.line),
       ),
-      child: Stack(children: [
-        if (monthUsed != null)
-          Positioned(
-            right: 0,
-            top: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(18)),
-              child:
-                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                const Text('이번달 사용',
-                    style: TextStyle(
-                        color: Color(0xFFEAFBF0),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900)),
-                Text(won(monthUsed),
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900)),
-              ]),
+                  color: AppColors.blue.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(999)),
+              child: const Text('TODAY BUFFET',
+                  style: TextStyle(
+                      color: AppColors.blueSoft,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                      fontSize: 11))),
+          const Spacer(),
+          if (monthUsed != null)
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                  color: AppColors.cardHi,
+                  borderRadius: BorderRadius.circular(999)),
+              child: Text('이번달 ${won(monthUsed)}',
+                  style: const TextStyle(
+                      color: AppColors.fg2,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800)),
+            ),
+        ]),
+        const SizedBox(height: 12),
+        if (hasMenu && (todayMenu!.imageUrl?.trim().isNotEmpty ?? false)) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Image.network(
+              todayMenu!.imageUrl!,
+              height: 130,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             ),
           ),
-        Padding(
-          padding: EdgeInsets.only(right: monthUsed == null ? 0 : 118),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(999)),
-                child: const Text('TODAY BUFFET',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12))),
-            const SizedBox(height: 18),
-            if (hasMenu &&
-                (todayMenu!.imageUrl?.trim().isNotEmpty ?? false)) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Image.network(
-                  todayMenu!.imageUrl!,
-                  height: 130,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                ),
-              ),
-              const SizedBox(height: 14),
-            ],
-            Text(title,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900)),
-            if (body.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(body,
-                  style: const TextStyle(
-                      color: Color(0xFFEAFBF0),
-                      fontSize: 15,
-                      height: 1.45,
-                      fontWeight: FontWeight.w800)),
-            ],
-          ]),
-        ),
+          const SizedBox(height: 12),
+        ],
+        Text(title,
+            style: const TextStyle(
+                color: AppColors.fg,
+                fontSize: 19,
+                height: 1.3,
+                fontWeight: FontWeight.w900)),
+        if (body.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(body,
+              style: TextStyle(
+                  color: hasMenu ? const Color(0xFFC9D0DE) : AppColors.fg2,
+                  fontSize: 14,
+                  height: 1.5,
+                  fontWeight: FontWeight.w700)),
+        ],
       ]),
     );
   }

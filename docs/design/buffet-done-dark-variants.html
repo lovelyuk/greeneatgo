@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>오늘 뷔페 카드 · 결제완료 화면 (현재 다크 디자인 맞춤)</title>
+<style>
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-SemiBold.otf');font-weight:600}
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-ExtraBold.otf');font-weight:800}
+*{box-sizing:border-box;margin:0}
+:root{--bg:#0A0D14;--card:#131A2A;--hi:#1B2436;--line:#212B3E;--blue:#2C5FFF;--bs:#5B87FF;--fg2:#8A93A6;--flip:#7EA2FF;--ticket:#C64F00;--paper:#F4F1E9}
+body{background:#1c2130;font-family:P,sans-serif;font-weight:600;padding:24px;color:#fff}
+h2.group{font-size:26px;font-weight:800;margin:6px 0 4px}
+p.gdesc{color:#a9b2c4;margin-bottom:18px;font-size:15px}
+.row{display:flex;gap:26px;flex-wrap:wrap;margin-bottom:40px}
+.wrap{position:relative;padding-top:58px;width:390px}
+.cap{position:absolute;top:0;left:4px;right:0;font-size:15px;font-weight:800;color:#fff;line-height:1.35}
+.cap small{display:block;font-size:12.5px;font-weight:600;color:#a9b2c4}
+.ph{width:390px;height:780px;border-radius:40px;overflow:hidden;position:relative;background:var(--bg);box-shadow:0 0 0 9px #05070b,0 20px 50px rgba(0,0,0,.4);display:flex;flex-direction:column}
+.sb{height:40px;flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;padding:0 24px;font-size:13px;color:#fff}
+.sc{flex:1;overflow:hidden;padding:0 16px}
+/* current home pieces (실측: 스샷 기준) */
+.wallet{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:16px}
+.big{display:flex;align-items:flex-end;gap:6px}
+.big i{font-style:normal;width:66px;height:84px;border-radius:10px;background:var(--hi);display:grid;place-items:center;font-size:62px;font-weight:800;color:var(--flip);position:relative}
+.big i:after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:var(--card)}
+.big span{color:var(--fg2);font-size:18px}
+.stat{display:flex;gap:16px;margin:12px 0;font-size:13px;color:var(--fg2)}.stat b{color:#fff}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.acts span{height:48px;border-radius:14px;background:var(--hi);border:1px solid var(--line);display:grid;place-items:center;font-size:15px;font-weight:800}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);background:var(--card);border:1px solid var(--line);border-radius:22px;margin:12px 0;padding:14px 4px}
+.quick span{display:grid;justify-items:center;gap:6px;font-size:12px;color:#c9d0de}
+.quick i{width:40px;height:40px;border-radius:12px;background:var(--hi);display:grid;place-items:center}
+.quick svg{width:20px;height:20px;color:var(--bs)}
+.sec{display:flex;justify-content:space-between;font-size:16px;font-weight:800;margin:16px 2px 8px}.sec small{font-size:12px;color:var(--fg2);font-weight:600}
+.recent{display:flex;align-items:center;gap:12px;padding:6px 2px;font-size:14px}
+.recent i{font-style:normal;width:36px;height:36px;border-radius:12px;background:var(--hi);display:grid;place-items:center;color:#f5c04a;font-size:13px}
+.recent div{flex:1}.recent small{display:block;color:var(--fg2);font-size:12px}.recent b{color:#ff6b6b}
+.tb{position:absolute;left:12px;right:12px;bottom:12px;height:64px;border-radius:22px;background:var(--card);border:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);align-items:center;text-align:center;font-size:11px;color:var(--fg2)}
+.tb span{display:grid;justify-items:center;gap:3px}.tb svg{width:21px;height:21px}.tb .on{color:var(--blue)}
+
+/* ===== 오늘 뷔페 카드 4안 ===== */
+.bf{border-radius:22px;padding:16px 18px;position:relative;overflow:hidden}
+.bf .tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:.08em;padding:5px 10px;border-radius:999px}
+.bf h3{font-size:19px;font-weight:800;margin:12px 0 6px;line-height:1.3}
+.bf p{font-size:13px;line-height:1.5}
+/* B1 다크 카드 + 블루 태그 */
+.b1{background:var(--card);border:1px solid var(--line)}
+.b1 .tag{background:rgba(44,95,255,.16);color:var(--bs)}
+.b1 p{color:var(--fg2)}
+.b1 .meal{position:absolute;right:16px;top:16px;font-size:12px;color:var(--fg2);background:var(--hi);padding:5px 10px;border-radius:999px}
+/* B2 블루 카드 (포인트 블루) */
+.b2{background:var(--blue)}
+.b2 .tag{background:rgba(255,255,255,.18);color:#fff}
+.b2 p{color:#dbe4ff}
+.b2:after{content:"";position:absolute;right:-40px;bottom:-60px;width:170px;height:170px;border-radius:50%;border:26px solid rgba(255,255,255,.08)}
+/* B3 플립 보드 (전광판 연장) */
+.b3{background:var(--card);border:1px solid var(--line)}
+.b3 .tag{background:var(--hi);color:var(--flip)}
+.b3 .board{display:flex;gap:4px;margin-top:12px}
+.b3 .board i{font-style:normal;width:28px;height:36px;border-radius:6px;background:var(--hi);display:grid;place-items:center;font-size:18px;font-weight:800;color:var(--flip);position:relative}
+.b3 .board i:after{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:var(--card)}
+.b3 .board i.sp{background:none}
+.b3 p{color:var(--fg2);margin-top:10px}
+/* B4 사진 자리 + 메뉴 칩 (메뉴 있을 때) */
+.b4{background:var(--card);border:1px solid var(--line);padding:0}
+.b4 .img{height:120px;background:linear-gradient(135deg,#1d2c5e,#2c5fff);display:flex;align-items:flex-end;padding:12px 16px}
+.b4 .img .tag{background:rgba(10,13,20,.55);color:#fff}
+.b4 .in{padding:14px 18px 16px}
+.b4 h3{margin-top:0}
+.b4 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.b4 .chips span{font-size:12px;padding:5px 10px;border-radius:999px;background:var(--hi);color:#c9d0de}
+.b4 .time{display:flex;justify-content:space-between;margin-top:12px;font-size:12px;color:var(--fg2)}
+.b4 .time b{color:var(--bs)}
+
+/* ===== 결제완료 4안 (현재 다크 톤) ===== */
+.done{flex:1;display:flex;flex-direction:column;padding:0 20px 20px}
+.done .top{text-align:center;font-size:16px;font-weight:800;padding:6px 0}
+.ck{width:76px;height:76px;border-radius:50%;display:grid;place-items:center;margin:30px auto 18px;background:var(--blue);box-shadow:0 0 0 10px rgba(44,95,255,.16)}
+.ck svg{width:38px;height:38px;color:#fff}
+.done h1{font-size:24px;text-align:center;font-weight:800}
+.done .s{text-align:center;font-size:14px;margin-top:6px;color:var(--fg2)}
+.amt{text-align:center;margin:22px 0 18px}
+.amt small{font-size:13px;color:var(--fg2)}
+.amt b{display:block;font-size:40px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
+.det{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:4px 16px}
+.det div{display:flex;justify-content:space-between;padding:10px 0;font-size:13.5px}
+.det div+div{border-top:1px solid var(--line)}
+.det span{color:var(--fg2)}.det b{font-weight:800}
+.gain{display:flex;align-items:center;gap:10px;border-radius:16px;padding:12px 14px;margin-top:10px;font-size:14px;background:rgba(44,95,255,.14);color:#cfdcff}
+.gain b{margin-left:auto;color:#fff}
+.btns{margin-top:auto;display:grid;gap:8px}
+.btns.two{grid-template-columns:1fr 1.6fr}
+.btns span{height:54px;border-radius:16px;display:grid;place-items:center;font-size:16px;font-weight:800;background:var(--blue)}
+.btns span.sec2{background:var(--hi);color:#c9d0de;border:1px solid var(--line)}
+/* D2 플립 숫자 강조 */
+.d2 .flipamt{display:flex;justify-content:center;gap:5px;margin:20px 0 6px}
+.d2 .flipamt i{font-style:normal;width:46px;height:62px;border-radius:9px;background:var(--hi);display:grid;place-items:center;font-size:42px;font-weight:800;color:var(--flip);position:relative}
+.d2 .flipamt i:after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:var(--bg)}
+.d2 .flipamt em{font-style:normal;align-self:flex-end;font-size:20px;color:var(--fg2);padding:0 0 6px 4px}
+/* D3 종이 영수증 (홈 식권 paper 톤) */
+.d3 .rc{background:var(--paper);color:#131A2A;border-radius:20px;padding:18px 18px 8px;margin-top:18px;position:relative}
+.d3 .rc:before,.d3 .rc:after{content:"";position:absolute;top:92px;width:22px;height:22px;border-radius:50%;background:var(--bg)}
+.d3 .rc:before{left:-11px}.d3 .rc:after{right:-11px}
+.d3 .rc .amt{margin:0 0 18px}
+.d3 .rc .amt small{color:#6b6f78}
+.d3 .rc .cut{border-top:2px dashed #cfc7b4;margin:0 -4px 6px}
+.d3 .rc .det{background:none;border:0;padding:0}
+.d3 .rc .det div+div{border-top:1px solid #e3ddce}
+.d3 .rc .det span{color:#6b6f78}
+.d3 .ck{width:60px;height:60px;margin:22px auto 12px}
+.d3 .ck svg{width:30px;height:30px}
+/* D4 바텀시트 팝업 (구매창 위에) */
+.d4 .under{flex:1;padding:0 16px;opacity:.35;filter:blur(1px)}
+.d4 .under .wallet{height:150px}.d4 .under .quick{height:90px}
+.d4 .dim{position:absolute;inset:0;background:rgba(5,7,11,.6)}
+.d4 .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);border-radius:28px 28px 0 0;padding:10px 20px 22px}
+.d4 .grab{width:40px;height:5px;border-radius:5px;background:var(--line);margin:0 auto 10px}
+.d4 .sheet .hrow{display:flex;align-items:center;gap:14px;margin:8px 0 14px}
+.d4 .sheet .ck{margin:0;width:54px;height:54px;flex:0 0 auto}
+.d4 .sheet .ck svg{width:28px;height:28px}
+.d4 .sheet h1{text-align:left;font-size:21px}
+.d4 .sheet .s{text-align:left;margin-top:2px}
+.d4 .sheet .det{background:var(--bg)}
+.d4 .sheet .btns{margin-top:14px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const I={
+ home:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></svg>',
+ bag:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2h-2V6a1 1 0 0 0-2 0v2z"/></svg>',
+ qr:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5M8 12h8"/></svg>',
+ list:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg>',
+ me:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6z"/></svg>',
+ tk:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4z"/></svg>',
+ ev:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="m4 20 5-13 8 8zM14 4l1 3M19 6l-3 2M20 11h-3"/></svg>',
+ no:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4h3l7 4V6L6 10zM16 9a4 4 0 0 1 0 6"/></svg>',
+ rv:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v12H8l-4 4z"/></svg>',
+ ck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+ cal:'<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M5 5h14v15H5zM8 3v4M16 3v4"/></svg>',
+};
+const sb='<div class="sb"><span>11:25</span><span>100</span></div>';
+const tb=`<nav class="tb"><span class="on">${I.home}홈</span><span>${I.bag}구매</span><span>${I.qr}QR</span><span>${I.list}내역</span><span>${I.me}내정보</span></nav>`;
+const homeTop=`<div class="wallet"><div class="big"><i>0</i><span>장</span></div><div class="stat">쿠폰 <b>0장</b> 포인트 <b>0P</b> 이번 달 <b>1장 · 100원</b></div><div class="acts"><span>식권 구매</span><span>QR 사용하기</span></div></div>
+<div class="quick"><span><i>${I.tk}</i>쿠폰함</span><span><i>${I.ev}</i>이벤트</span><span><i>${I.no}</i>공지사항</span><span><i>${I.rv}</i>리뷰</span></div>`;
+const recent=`<div class="sec">최근 이용<small>전체보기 ›</small></div><div class="recent"><i>중</i><div>그린잇 식권 사용<small>중식 · 10월 19일 11:27</small></div><b>-1장</b></div>`;
+const emptyTitle='오늘 등록된 뷔페 메뉴가 없어요', emptyBody='식당관리자가 오늘 메뉴를 등록하면 여기에 표시돼요.';
+const buffets={
+ 'B1':['다크 카드 + 블루 태그','다른 카드와 같은 색. 가장 자연스럽게 섞임.',
+   `<div class="bf b1"><span class="tag">TODAY BUFFET</span><span class="meal">중식</span><h3>${emptyTitle}</h3><p>${emptyBody}</p></div>`],
+ 'B2':['블루 카드','초록 자리를 포인트 블루로. 눈에 띄는 건 유지.',
+   `<div class="bf b2"><span class="tag">TODAY BUFFET</span><h3>${emptyTitle}</h3><p>${emptyBody}</p></div>`],
+ 'B3':['플립 전광판','위 식권 플립 숫자와 같은 언어로 “TODAY” 표시.',
+   `<div class="bf b3"><span class="tag">${I.cal} 10.19 MON · 중식</span><div class="board">${'TODAY'.split('').map(c=>`<i>${c}</i>`).join('')}<i class="sp"></i>${'BUFFET'.split('').map(c=>`<i>${c}</i>`).join('')}</div><p>${emptyTitle}. ${emptyBody}</p></div>`],
+ 'B4':['메뉴 있을 때 (사진 + 메뉴 칩)','B1 카드에 사진·메뉴가 등록된 경우 예시.',
+   `<div class="bf b4"><div class="img"><span class="tag">TODAY BUFFET · 중식</span></div><div class="in"><h3>제육볶음 정식</h3><div class="chips"><span>잡곡밥</span><span>된장찌개</span><span>제육볶음</span><span>계란말이</span><span>김치</span></div><div class="time"><span>배식 11:30 ~ 13:30</span><b>메뉴 자세히 ›</b></div></div></div>`],
+};
+const det=`<div class="det"><div><span>결제수단</span><b>네이버페이</b></div><div><span>카드번호</span><b>****-****-****-1602</b></div><div><span>승인번호</span><b>00398892</b></div><div><span>거래일시</span><b>2026.10.19 11:24:35</b></div><div><span>거래번호(TRXID)</span><b>VTS261019112926…</b></div></div>`;
+const gain=`<div class="gain">🎟 식권 1장이 지갑에 들어왔어요<b>보유 1장</b></div>`;
+const head=`<div class="top">결제 완료</div><div class="ck">${I.ck}</div><h1>결제가 완료되었습니다</h1><p class="s">이용해 주셔서 감사합니다.</p>`;
+const dones={
+ 'D1':['기본 (지금 구조 그대로, 색만 다크)','흰 바탕·올리브 → 다크 바탕·블루. 버튼은 확인 하나.',
+   `${sb}<div class="done">${head}<div class="amt"><small>결제 금액</small><b>100원</b></div>${det}<div class="btns" style="margin-top:auto"><span>확인</span></div></div>`],
+ 'D2':['플립 숫자 금액','금액을 홈 전광판 숫자로. 식권 지급 안내 + 버튼 2개.',
+   `${sb}<div class="done d2"><div class="top">결제 완료</div><div class="ck">${I.ck}</div><h1>결제가 완료되었습니다</h1><div class="flipamt"><i>1</i><i>0</i><i>0</i><em>원</em></div>${det}${gain}<div class="btns two" style="margin-top:auto"><span class="sec2">홈으로</span><span>QR 사용하기</span></div></div>`],
+ 'D3':['식권 영수증','홈 식권 카드의 종이(paper) 톤으로 영수증. 절취선.',
+   `${sb}<div class="done d3"><div class="top">결제 완료</div><div class="ck">${I.ck}</div><h1>결제가 완료되었습니다</h1><div class="rc"><div class="amt"><small>결제 금액</small><b>100원</b></div><div class="cut"></div>${det}</div>${gain}<div class="btns two" style="margin-top:auto"><span class="sec2">홈으로</span><span>QR 사용하기</span></div></div>`],
+ 'D4':['구매창 위 팝업 (바텀시트)','구매 화면은 그대로 두고 아래에서 올라오는 팝업.',
+   `${sb}<div class="done d4" style="padding:0"><div class="under">${homeTop}</div><div class="dim"></div><div class="sheet"><div class="grab"></div><div class="hrow"><div class="ck">${I.ck}</div><div><h1>100원 결제 완료</h1><p class="s">식권 1장이 지갑에 들어왔어요</p></div></div>${det}<div class="btns two"><span class="sec2">계속 구매</span><span>QR 사용하기</span></div></div></div>`],
+};
+let html=`<h2 class="group">① 오늘 뷔페 카드</h2><p class="gdesc">홈 화면은 그대로 두고, 연두색 TODAY BUFFET 카드만 바꾼 4안 (지금 다크 디자인 색만 사용)</p><div class="row">`;
+for(const [k,[t,d,card]] of Object.entries(buffets)) html+=`<div class="wrap" id="${k}"><span class="cap">${k} ${t}<small>${d}</small></span><div class="ph">${sb}<div class="sc" style="margin-top:-150px">${homeTop}${card}${recent}</div>${tb}</div></div>`;
+html+=`</div><h2 class="group">② 결제 완료 화면</h2><p class="gdesc">흰 바탕 + 올리브 초록 → 지금 앱과 같은 다크 바탕 + 블루</p><div class="row">`;
+for(const [k,[t,d,body]] of Object.entries(dones)) html+=`<div class="wrap" id="${k}"><span class="cap">${k} ${t}<small>${d}</small></span><div class="ph">${body}</div></div>`;
+html+='</div>';
+document.getElementById('root').innerHTML=html;
+</script>
+</body>
+</html>

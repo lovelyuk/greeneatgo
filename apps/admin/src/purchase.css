@@ -229,3 +229,22 @@
 .purchase-app .member-qr-used h2{margin:6px 0 0}
 .purchase-app .no-voucher-icon{background:#c64f00}
 .purchase-app .no-voucher-close{width:100%;min-height:48px;margin-top:8px;background:transparent;color:var(--fg2)}
+
+/* B1 today buffet card */
+.purchase-app .buffet-head{display:flex;justify-content:space-between;align-items:center;margin:0 0 10px;color:var(--fg2)}
+.purchase-app .buffet-tag{display:inline-block;padding:5px 10px;border-radius:999px;background:rgba(44,95,255,.16);color:var(--blue-soft);font-size:11px;font-weight:800;letter-spacing:.08em}
+.purchase-app .today-menu h3{margin:0 0 6px;font-size:18px;line-height:1.3}
+.purchase-app .today-menu p{margin:0}
+/* D3 paper receipt in the completion dialog */
+.purchase-app .done-dialog:not(:has(.no-voucher-icon)) .done-check{width:64px;height:64px;font-size:32px;box-shadow:0 0 0 9px rgba(44,95,255,.18);margin-bottom:18px}
+.purchase-app .done-receipt{background:var(--paper);color:#131a2a;border-radius:18px;text-align:left;position:relative}
+.purchase-app .done-receipt-amount{display:grid;justify-items:center;gap:2px;margin:0;padding:18px 16px 14px}
+.purchase-app .done-receipt-amount span{color:#6b6f78;font-size:13px;font-weight:600}
+.purchase-app .done-receipt-amount b{font-size:32px;font-weight:800;letter-spacing:-.02em;color:#131a2a}
+.purchase-app .done-receipt-cut{position:relative;height:0;border-top:2px dashed #cfc7b4;margin:0 16px}
+.purchase-app .done-receipt-cut:before,.purchase-app .done-receipt-cut:after{content:"";position:absolute;top:-12px;width:22px;height:22px;border-radius:50%;background:var(--card)}
+.purchase-app .done-receipt-cut:before{left:-27px}.purchase-app .done-receipt-cut:after{right:-27px}
+.purchase-app .done-receipt .done-rows{background:none;padding:4px 16px 6px}
+.purchase-app .done-receipt .done-row+.done-row{border-top:1px solid #e3ddce}
+.purchase-app .done-receipt .done-row span{color:#6b6f78}
+.purchase-app .done-receipt .done-row b{color:#131a2a}

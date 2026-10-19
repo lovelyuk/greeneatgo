@@ -354,6 +354,8 @@ test("completion shows as a modal dialog over the unchanged purchase screen", as
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveAttribute("aria-modal", "true");
   await expect(dialog.getByText("발급 식권 11장")).toBeVisible();
+  await expect(dialog.locator(".done-receipt")).toBeVisible();
+  await expect(dialog.locator(".done-receipt")).toHaveCSS("background-color", "rgb(244, 241, 233)");
   await expect(dialog).toContainText("2026.01.01 09:00");
   await expect(dialog).not.toContainText("T00:00:00");
   await page.getByRole("navigation", { name: "구매자 탭" }).getByRole("button", { name: "구매", exact: true }).click({ force: true }).catch(() => {});

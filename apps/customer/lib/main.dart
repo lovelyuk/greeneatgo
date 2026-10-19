@@ -374,6 +374,16 @@ class ApiClient {
     });
   }
 
+  Future<Map<String, dynamic>> getPaymentRecovery(
+          String orderId, int amount) =>
+      _request('/payments/recovery?order_id=${Uri.encodeQueryComponent(orderId)}'
+          '&amount=$amount');
+
+  Future<Map<String, dynamic>> abandonCheckout(String orderId, int amount) =>
+      _request('/payments/orders/${Uri.encodeComponent(orderId)}/abandon',
+          method: 'POST',
+          body: {'amount': amount, 'explicit_checkout_cancel_intent': true});
+
   Future<Map<String, dynamic>> confirmPayment(
       {required String orderId, required int amount}) {
     return _request('/payments/confirm',
@@ -2557,6 +2567,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     final result = store.load(expectedUid);
     if (!mounted || widget.session.uid != expectedUid) return;
+    final payment = result?.payment;
+    if (result != null &&
+        payment != null &&
+        result.validity != PendingPaymentValidity.malformed) {
+      // Checkout closed earlier (app killed, back button…): ask the server
+      // before showing "결제 승인을 확인하고 있어요". Only a server-recorded
+      // stop removes it; a paid/uncertain order keeps the banner. A record
+      // newer than 2 minutes may still be mid-approval, so it is only read.
+      final api = ApiClient(widget.session);
+      final age = DateTime.now().toUtc().difference(payment.createdAt);
+      final outcome = await settleClosedCheckout(
+        payment: payment,
+        store: store,
+        readRecovery: api.getPaymentRecovery,
+        abandon: api.abandonCheckout,
+        allowAbandon: age > const Duration(minutes: 2),
+      );
+      if (!mounted || widget.session.uid != expectedUid) return;
+      if (outcome == PendingSettleOutcome.cleared) {
+        setState(() => _pendingLoad = null);
+        return;
+      }
+    }
     setState(() => _pendingLoad = result);
   }
 
@@ -4457,6 +4490,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   Timer? _confirmationTimer;
   PendingPaymentStore? _pendingStore;
   PendingPayment? _pendingPayment;
+  bool _settleStarted = false;
 
   @override
   void initState() {
@@ -4534,6 +4568,10 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       checkoutStarted: _checkoutStarted,
     )) {
       unawaited(_releaseReservation());
+    }
+    // Back/close from the checkout WebView (not an external payment app hop).
+    if (_checkoutStarted && !_completed && !_externalAppOpened) {
+      _settleAfterClose();
     }
     super.dispose();
   }
@@ -4812,10 +4850,30 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     _confirmationTimer?.cancel();
     _externalAppOpened = false;
     _approvalPending = false;
-    // Do not clear the pending record or cancel the reservation here. A local
-    // exit is not proof that the provider rejected payment; delayed approval
-    // remains recoverable from Home.
+    // A local exit is not proof that the provider rejected payment, so the
+    // record is only retired after the server confirms an owner stop (same
+    // rule as web /shop). A paid or uncertain order keeps the Home banner.
+    _settleAfterClose();
     if (mounted) Navigator.of(context).pop(false);
+  }
+
+  /// Buyer closed the checkout without a success redirect: ask the server and
+  /// retire the pending record when it records the stop. Best effort; runs
+  /// after this screen is gone, so it must not touch widget state.
+  void _settleAfterClose() {
+    final pending = _pendingPayment;
+    if (pending == null || _completed || _settleStarted) return;
+    _settleStarted = true;
+    final api = ApiClient(widget.session);
+    unawaited(() async {
+      final store = _pendingStore ??= await PendingPaymentStore.create();
+      await settleClosedCheckout(
+        payment: pending,
+        store: store,
+        readRecovery: api.getPaymentRecovery,
+        abandon: api.abandonCheckout,
+      );
+    }());
   }
 
   Future<void> _terminateCheckout(String message) async {

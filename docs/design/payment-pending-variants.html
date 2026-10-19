@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>결제 상태 확인 시안 (홈 배너 · 확인 중 · 결과)</title>
+<style>
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-SemiBold.otf');font-weight:600}
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-ExtraBold.otf');font-weight:800}
+*{box-sizing:border-box;margin:0}
+:root{--bg:#0A0D14;--card:#131A2A;--hi:#1B2436;--line:#212B3E;--blue:#2C5FFF;--bs:#5B87FF;--fg2:#8A93A6;--flip:#7EA2FF;--amber:#F5B544;--paper:#F4F1E9}
+body{background:#1c2130;font-family:P,sans-serif;font-weight:600;color:#fff;padding:24px}
+h2.g{font-size:24px;font-weight:800;margin:4px 0 4px}
+p.gd{color:#a9b2c4;font-size:14.5px;margin-bottom:16px}
+.row{display:flex;gap:26px;margin-bottom:40px}
+.wrap{width:390px;padding-top:30px;position:relative}
+.cap{position:absolute;top:0;left:4px;font-size:14px;font-weight:800;color:#c9d0de}
+.ph{width:390px;height:760px;border-radius:40px;overflow:hidden;position:relative;background:var(--bg);box-shadow:0 0 0 9px #05070b,0 20px 50px rgba(0,0,0,.4);display:flex;flex-direction:column}
+.sb{height:40px;flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;padding:0 24px;font-size:13px}
+.ab{height:52px;display:flex;align-items:center;gap:12px;padding:0 16px;font-size:17px;font-weight:800}
+.ab i{font-style:normal;width:36px;height:36px;border-radius:12px;background:var(--card);display:grid;place-items:center;color:var(--fg2)}
+.sc{padding:0 16px}
+/* home */
+.hd{display:flex;align-items:center;gap:10px;margin:4px 0 14px}
+.hd img{width:44px;height:44px;border-radius:14px}
+.hd b{font-size:17px}.hd small{display:block;color:var(--fg2);font-size:12px}
+.hd .m{margin-left:auto;color:#fff;font-size:22px}
+.wallet{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:16px}
+.wl{display:flex;justify-content:space-between;font-size:12px;letter-spacing:.2em;color:var(--bs)}
+.big{display:flex;align-items:flex-end;gap:6px;margin:12px 0}
+.big i{font-style:normal;width:62px;height:80px;border-radius:10px;background:var(--hi);display:grid;place-items:center;font-size:58px;font-weight:800;color:var(--flip);position:relative}
+.big i:after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:var(--card)}
+.big span{color:var(--fg2)}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.acts span{height:46px;border-radius:14px;background:var(--hi);border:1px solid var(--line);display:grid;place-items:center;font-weight:800}
+/* banners */
+.bn{border-radius:18px;padding:14px 14px;display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.bn b{display:block;font-size:15px;font-weight:800}.bn small{display:block;font-size:12.5px;margin-top:2px}
+.bn .chev{margin-left:auto;font-size:20px}
+.spin{width:34px;height:34px;border-radius:50%;flex:0 0 auto;position:relative}
+.spin:before{content:"";position:absolute;inset:0;border-radius:50%;border:3px solid currentColor;opacity:.22}
+.spin:after{content:"";position:absolute;inset:0;border-radius:50%;border:3px solid transparent;border-top-color:currentColor;animation:r 1s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}
+.b1{background:var(--card);border:1px solid var(--line)}.b1 .spin{color:var(--bs)}.b1 small{color:var(--fg2)}.b1 .chev{color:var(--fg2)}
+.b2{background:rgba(245,181,68,.10);border:1px solid rgba(245,181,68,.35)}.b2 .spin{color:var(--amber)}.b2 b{color:#ffd58a}.b2 small{color:#c9b48a}.b2 .chev{color:#ffd58a}
+.b3{background:var(--blue)}.b3 .spin{color:#fff}.b3 small{color:#dbe4ff}
+.b3 .pill{margin-left:auto;background:rgba(255,255,255,.18);border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800}
+/* status screens */
+.st{flex:1;display:flex;flex-direction:column;padding:8px 20px 20px}
+.st h1{font-size:23px;font-weight:800;text-align:center;margin-top:16px;line-height:1.3}
+.st .s{color:var(--fg2);font-size:14px;text-align:center;margin-top:8px;line-height:1.5}
+.ring{width:96px;height:96px;margin:36px auto 6px;position:relative;color:var(--bs)}
+.ring:before{content:"";position:absolute;inset:0;border-radius:50%;border:5px solid currentColor;opacity:.16}
+.ring:after{content:"";position:absolute;inset:0;border-radius:50%;border:5px solid transparent;border-top-color:currentColor;border-right-color:currentColor;animation:r 1.1s linear infinite}
+.ring b{position:absolute;inset:0;display:grid;place-items:center;font-size:30px}
+.ord{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:4px 16px;margin-top:22px}
+.ord div{display:flex;justify-content:space-between;padding:11px 0;font-size:13.5px}
+.ord div+div{border-top:1px solid var(--line)}.ord span{color:var(--fg2)}
+.note{display:flex;gap:10px;background:rgba(44,95,255,.12);color:#cfdcff;border-radius:14px;padding:12px 14px;margin-top:12px;font-size:13px;line-height:1.5}
+.note.am{background:rgba(245,181,68,.10);color:#ffd58a}
+.cd{font-variant-numeric:tabular-nums;color:#fff}
+.btm{margin-top:auto;display:grid;gap:8px}
+.bp{height:54px;border-radius:16px;background:var(--blue);display:grid;place-items:center;font-size:16px;font-weight:800}
+.bp.dis{background:var(--hi);color:#5f6779}
+.bs2{height:50px;border-radius:16px;background:var(--hi);border:1px solid var(--line);display:grid;place-items:center;font-size:15px;font-weight:800;color:#c9d0de}
+.tip{text-align:center;color:#5f6779;font-size:12px;margin-top:4px}
+/* V2 steps */
+.steps{margin-top:26px;display:grid;gap:0}
+.steps div{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start;padding-bottom:18px;position:relative}
+.steps div:not(:last-child):before{content:"";position:absolute;left:14px;top:30px;bottom:0;width:2px;background:var(--line)}
+.steps i{font-style:normal;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:800;background:var(--hi);color:var(--fg2)}
+.steps .ok i{background:var(--blue);color:#fff}
+.steps .now i{background:transparent;border:3px solid var(--amber);color:var(--amber)}
+.steps b{display:block;font-size:15px}.steps small{display:block;color:var(--fg2);font-size:12.5px;margin-top:2px}
+.steps .now b{color:#ffd58a}
+/* V3 flip countdown */
+.fc{display:flex;justify-content:center;gap:5px;margin:30px 0 4px}
+.fc i{font-style:normal;width:54px;height:72px;border-radius:10px;background:var(--hi);display:grid;place-items:center;font-size:50px;font-weight:800;color:var(--flip);position:relative}
+.fc i:after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:var(--bg)}
+.fc em{font-style:normal;align-self:flex-end;color:var(--fg2);padding-bottom:8px}
+.fcl{text-align:center;color:var(--fg2);font-size:12px;letter-spacing:.2em}
+.rc{background:var(--paper);color:#131A2A;border-radius:18px;padding:14px 16px;margin-top:20px}
+.rc div{display:flex;justify-content:space-between;padding:8px 0;font-size:13.5px}
+.rc div+div{border-top:1px solid #e3ddce}.rc span{color:#6b6f78}
+.rc .st2{color:#C64F00;font-weight:800}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const sb='<div class="sb"><span>3:43</span><span>100</span></div>';
+const home=(banner)=>`${sb}<div class="sc"><div class="hd"><img src="../../apps/admin/public/brand/avatar_casual.png"><div><b>빵빵이님</b><small>돈토식당</small></div><span class="m">≡</span></div>${banner}<div class="wallet"><div class="wl"><span>MEAL TICKETS</span><span>남은 식권</span></div><div class="big"><i>0</i><span>장</span></div><div class="acts"><span>식권 구매</span><span>QR 사용하기</span></div></div></div>`;
+const ab='<div class="ab"><i>←</i>결제 상태 확인</div>';
+const ord='<div class="ord"><div><span>상품</span><b>돈토식권 1장</b></div><div><span>결제 금액</span><b>100원</b></div><div><span>주문 시각</span><b>오늘 15:41</b></div></div>';
+const V=[
+ ['S1 다크 카드 (차분)','홈과 같은 다크 카드 + 파란 로딩. 가장 자연스럽게 섞임. 결과 화면엔 주문 정보와 다음 확인까지 남은 시간.',
+  `<div class="bn b1"><span class="spin"></span><div><b>결제 승인을 확인하고 있어요</b><small>눌러서 결제 상태를 확인해 주세요</small></div><span class="chev">›</span></div>`,
+  `${sb}${ab}<div class="st"><div class="ring"></div><h1>결제 승인을 확인하고 있어요</h1><p class="s">결제 회사에 승인 결과를 묻는 중이에요.<br>잠시만 기다려 주세요.</p>${ord}<div class="btm"><div class="bp dis">확인 중…</div></div></div>`,
+  `${sb}${ab}<div class="st"><div class="ring" style="color:#5f6779"><b>⏱</b></div><h1>아직 승인을 기다리고 있어요</h1><p class="s">결제를 마쳤다면 곧 확인돼요.</p>${ord}<div class="note">ⓘ <span><span class="cd">28초</span> 뒤 자동으로 다시 확인해요.</span></div><div class="btm"><div class="bp">지금 다시 확인</div><div class="bs2">결제하지 않았어요 (주문 취소)</div><p class="tip">결제하지 않았다면 눌러 주세요. 결제된 주문은 취소되지 않아요.</p></div></div>`],
+ ['S2 진행 단계 (앰버 경고)','“확인 필요”를 앰버로 구분. 결과 화면은 주문 → 결제창 → 승인 확인 단계로 어디서 멈췄는지 보여줌.',
+  `<div class="bn b2"><span class="spin"></span><div><b>확인이 필요한 결제가 있어요</b><small>결제 승인 여부를 확인하는 중이에요</small></div><span class="chev">›</span></div>`,
+  `${sb}${ab}<div class="st"><div class="steps"><div class="ok"><i>✓</i><span><b>주문 생성</b><small>돈토식권 1장 · 100원</small></span></div><div class="ok"><i>✓</i><span><b>결제창 열림</b><small>오늘 15:41</small></span></div><div class="now"><i>3</i><span><b>승인 확인 중…</b><small>결제 회사 응답을 기다리고 있어요</small></span></div><div><i>4</i><span><b>식권 발급</b><small>승인되면 바로 지갑에 들어가요</small></span></div></div><div class="btm"><div class="bp dis">확인 중…</div></div></div>`,
+  `${sb}${ab}<div class="st"><div class="steps"><div class="ok"><i>✓</i><span><b>주문 생성</b><small>돈토식권 1장 · 100원</small></span></div><div class="ok"><i>✓</i><span><b>결제창 열림</b><small>오늘 15:41</small></span></div><div class="now"><i>!</i><span><b>승인 대기 중</b><small>결제를 마쳤다면 곧 확인돼요</small></span></div><div><i>4</i><span><b>식권 발급</b><small>승인되면 바로 지갑에 들어가요</small></span></div></div><div class="note am">⏱ <span><span class="cd">28초</span> 뒤 자동으로 다시 확인해요.</span></div><div class="btm"><div class="bp">지금 다시 확인</div><div class="bs2">결제하지 않았어요 (주문 취소)</div></div></div>`],
+ ['S3 블루 + 플립 카운트다운','배너는 파란 강조 + “확인” 버튼. 결과 화면은 홈 전광판 숫자로 다음 확인까지 남은 초, 종이 영수증으로 주문 정보.',
+  `<div class="bn b3"><span class="spin"></span><div><b>결제 확인 중</b><small>100원 · 돈토식권 1장</small></div><span class="pill">확인하기</span></div>`,
+  `${sb}${ab}<div class="st"><div class="ring"></div><h1>결제 승인을 확인하고 있어요</h1><p class="s">잠시만 기다려 주세요.</p><div class="rc"><div><span>상품</span><b>돈토식권 1장</b></div><div><span>결제 금액</span><b>100원</b></div><div><span>상태</span><b class="st2">승인 확인 중</b></div></div><div class="btm"><div class="bp dis">확인 중…</div></div></div>`,
+  `${sb}${ab}<div class="st"><h1 style="margin-top:12px">아직 승인을 기다리고 있어요</h1><div class="fc"><i>2</i><i>8</i><em>초</em></div><p class="fcl">다음 자동 확인까지</p><div class="rc"><div><span>상품</span><b>돈토식권 1장</b></div><div><span>결제 금액</span><b>100원</b></div><div><span>상태</span><b class="st2">승인 대기</b></div></div><div class="btm"><div class="bp">지금 다시 확인</div><div class="bs2">결제하지 않았어요 (주문 취소)</div></div></div>`],
+];
+let h='';
+V.forEach(([t,d,banner,checking,result],i)=>{
+ h+=`<section id="s${i+1}"><h2 class="g">${t}</h2><p class="gd">${d}</p><div class="row"><div class="wrap"><span class="cap">① 홈 배너</span><div class="ph">${home(banner)}</div></div><div class="wrap"><span class="cap">② 확인 중</span><div class="ph">${checking}</div></div><div class="wrap"><span class="cap">③ 확인 결과 (승인 대기)</span><div class="ph">${result}</div></div></div></section>`;
+});
+document.getElementById('root').innerHTML=h;
+</script>
+</body>
+</html>

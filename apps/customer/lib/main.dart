@@ -23,6 +23,7 @@ import 'pending_payment.dart';
 import 'phone_auth.dart';
 import 'phone_login_screen.dart' as phone_login;
 import 'join_request.dart';
+import 'load_error.dart';
 import 'push_notifications.dart';
 import 'screens/coupon_wallet.dart';
 import 'screens/invite_code_entry_screen.dart';
@@ -30,6 +31,8 @@ import 'screens/member_qr_screen.dart';
 import 'screens/user_dashboard_shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
+
+export 'load_error.dart' show friendlyLoadError, networkErrorMessage;
 import 'widgets/dashboard_components.dart';
 import 'widgets/dashboard_components.dart' as dashboard;
 import 'widgets/partner_banner_slot.dart';
@@ -374,6 +377,16 @@ class ApiClient {
     });
   }
 
+  Future<Map<String, dynamic>> getPaymentRecovery(
+          String orderId, int amount) =>
+      _request('/payments/recovery?order_id=${Uri.encodeQueryComponent(orderId)}'
+          '&amount=$amount');
+
+  Future<Map<String, dynamic>> abandonCheckout(String orderId, int amount) =>
+      _request('/payments/orders/${Uri.encodeComponent(orderId)}/abandon',
+          method: 'POST',
+          body: {'amount': amount, 'explicit_checkout_cancel_intent': true});
+
   Future<Map<String, dynamic>> confirmPayment(
       {required String orderId, required int amount}) {
     return _request('/payments/confirm',
@@ -391,8 +404,17 @@ class ApiClient {
       request.headers['Authorization'] = 'Bearer ${await _freshIdToken()}';
     }
     if (body != null) request.body = jsonEncode(body);
-    final streamed = await request.send();
-    final text = await streamed.stream.bytesToString();
+    final http.StreamedResponse streamed;
+    final String text;
+    try {
+      streamed = await request.send();
+      text = await streamed.stream.bytesToString();
+    } on http.ClientException {
+      // No connection / DNS failure (e.g. "Failed host lookup"): never show the
+      // raw socket text to buyers.
+      throw const ApiException(
+          statusCode: 0, reason: 'NETWORK', message: networkErrorMessage);
+    }
     Map<String, dynamic> decoded;
     try {
       decoded = text.isEmpty
@@ -420,10 +442,11 @@ class ApiClient {
   }
 }
 
-class ApiException implements Exception {
+class ApiException implements Exception, LoadErrorMessage {
   const ApiException(
       {required this.statusCode, required this.message, this.reason});
   final int statusCode;
+  @override
   final String message;
   final String? reason;
 
@@ -432,6 +455,8 @@ class ApiException implements Exception {
 
   bool get isPaymentPending =>
       statusCode == 409 && reason?.toUpperCase() == 'PAYMENT_PENDING';
+
+  bool get isNetwork => reason == 'NETWORK';
 
   @override
   String toString() => message;
@@ -834,7 +859,7 @@ class _AppGateState extends State<AppGate> {
       }
     } catch (error) {
       if (!_isCurrentLoad(generation, uid)) return;
-      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+      setState(() => _error = friendlyLoadError(error));
     } finally {
       if (_isCurrentLoad(generation, uid)) {
         setState(() => _loading = false);
@@ -1453,7 +1478,7 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
       if (!mounted) return;
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+      setState(() => _error = friendlyLoadError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1473,7 +1498,7 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
       if (!mounted) return;
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+      setState(() => _error = friendlyLoadError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -2224,16 +2249,32 @@ class PendingPaymentRecoveryBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final malformed = load.validity == PendingPaymentValidity.malformed;
     final stale = load.validity == PendingPaymentValidity.stale;
+    // S1: same dark card as home, blue spinner.
     return Material(
-      color: const Color(0xFFFFF1C7),
-      borderRadius: BorderRadius.circular(20),
+      key: const ValueKey('pending-banner'),
+      color: AppColors.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: AppColors.line),
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(14),
           child: Row(children: [
-            const Icon(Icons.sync_rounded, color: Color(0xFF9A6410)),
+            SizedBox(
+              width: 34,
+              height: 34,
+              child: malformed
+                  ? const Icon(Icons.info_outline_rounded,
+                      color: AppColors.blueSoft, size: 30)
+                  : const CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: AppColors.blueSoft,
+                      backgroundColor: Color(0x385B87FF),
+                    ),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -2241,25 +2282,30 @@ class PendingPaymentRecoveryBanner extends StatelessWidget {
                 children: [
                   Text(
                     malformed ? '확인이 필요한 결제 기록이 있어요' : '결제 승인을 확인하고 있어요',
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+                    style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        color: AppColors.fg,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     malformed
                         ? '기록을 삭제하지 않았어요. 눌러서 안내를 확인해 주세요.'
                         : stale
                             ? '오래된 기록이지만 결제 여부를 다시 안전하게 확인할 수 있어요.'
-                            : '눌러서 결제 상태를 바로 확인해 주세요.',
+                            : '눌러서 결제 상태를 확인해 주세요.',
                     style: const TextStyle(
-                      color: Color(0xFF6D5528),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Pretendard',
+                      color: AppColors.fg2,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.fg2),
           ]),
         ),
       ),
@@ -2273,12 +2319,18 @@ class PendingPaymentRecoveryScreen extends StatefulWidget {
     required this.load,
     required this.store,
     required this.confirmPayment,
+    this.readRecovery,
+    this.abandon,
     this.retryDelay = const Duration(seconds: 30),
   });
 
   final PendingPaymentLoadResult load;
   final PendingPaymentStore store;
   final PaymentConfirmer confirmPayment;
+
+  /// Server order read + owner stop, used by "결제창에서 취소했어요".
+  final PendingRecoveryReader? readRecovery;
+  final PendingOrderAbandoner? abandon;
   final Duration retryDelay;
 
   @override
@@ -2290,6 +2342,7 @@ class _PendingPaymentRecoveryScreenState
     extends State<PendingPaymentRecoveryScreen> with WidgetsBindingObserver {
   Timer? _retryTimer;
   bool _confirming = false;
+  bool _cancelling = false;
   int _confirmationAttempt = 0;
   PaymentCompletionData? _completion;
   String? _error;
@@ -2349,18 +2402,46 @@ class _PendingPaymentRecoveryScreenState
         setState(() => _error = error.message);
       }
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = friendlyLoadError(error));
     } finally {
       _confirming = false;
     }
   }
 
-  void _leavePendingPaymentRecovery() {
-    if (_confirming) return;
+  Future<void> _leavePendingPaymentRecovery() async {
+    if (_confirming || _cancelling) return;
     _retryTimer?.cancel();
-    // A local declaration is not authoritative provider cancellation. Preserve
-    // the record so a delayed approval can still be recovered from Home.
-    if (mounted) Navigator.of(context).pop(false);
+    final payment = widget.load.payment;
+    final read = widget.readRecovery, stop = widget.abandon;
+    if (payment == null || read == null || stop == null) {
+      // No server path: keep the record (a local claim is not proof).
+      if (mounted) Navigator.of(context).pop(false);
+      return;
+    }
+    // The buyer says they did not pay. Ask the server: a paid order is
+    // confirmed instead; an unpaid one gets an owner stop and the record is
+    // removed; anything uncertain keeps the record and says so.
+    setState(() {
+      _cancelling = true;
+      _error = null;
+    });
+    final outcome = await settleClosedCheckout(
+      payment: payment,
+      store: widget.store,
+      readRecovery: read,
+      abandon: stop,
+    );
+    if (!mounted) return;
+    setState(() => _cancelling = false);
+    switch (outcome) {
+      case PendingSettleOutcome.cleared:
+        Navigator.of(context).pop(false);
+      case PendingSettleOutcome.paid:
+        await _confirm();
+      case PendingSettleOutcome.unknown:
+        setState(() => _error =
+            '주문을 취소하지 못했어요. 결제가 진행됐을 수 있어 기록은 남겨 두었어요. 잠시 후 다시 시도해 주세요.');
+    }
   }
 
   @override
@@ -2380,65 +2461,272 @@ class _PendingPaymentRecoveryScreenState
       );
     }
     if (widget.load.validity == PendingPaymentValidity.malformed) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('결제 기록 확인')),
-        body: const SafeArea(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: BrandPanel(children: [
-              Icon(Icons.info_outline_rounded, size: 56, color: kCocoa),
-              SizedBox(height: 12),
-              Text('저장된 결제 기록을 안전하게 읽을 수 없어요.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              SizedBox(height: 10),
-              Text(
-                '결제가 진행됐을 수 있어 기록은 삭제하지 않았습니다. 고객센터에 결제 확인을 요청해 주세요.',
-                textAlign: TextAlign.center,
-              ),
-            ]),
-          ),
-        ),
+      return const _PendingDarkScaffold(
+        title: '결제 기록 확인',
+        children: [
+          SizedBox(height: 36),
+          _PendingIconCircle(icon: Icons.info_outline_rounded),
+          SizedBox(height: 16),
+          _PendingHeading('저장된 결제 기록을 안전하게 읽을 수 없어요'),
+          SizedBox(height: 8),
+          _PendingSub('결제가 진행됐을 수 있어 기록은 삭제하지 않았어요. 고객센터에 결제 확인을 요청해 주세요.'),
+        ],
       );
     }
     final stale = widget.load.validity == PendingPaymentValidity.stale;
-    return Scaffold(
-      appBar: AppBar(title: const Text('결제 상태 확인')),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: BrandPanel(children: [
-            if (_confirming) const CircularProgressIndicator(),
-            const SizedBox(height: 18),
-            Text(
-              _confirming ? '결제 승인을 확인하고 있어요' : '결제 확인이 아직 끝나지 않았어요',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-            if (stale) ...[
-              const SizedBox(height: 10),
-              const Text('오래된 기록도 삭제하지 않고 서버에서 결제 여부를 확인합니다.',
-                  textAlign: TextAlign.center),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 14),
-              BrandNotice(text: _error!, kind: NoticeKind.success),
-            ],
-            const SizedBox(height: 18),
-            FilledButton(
-              onPressed: _confirming ? null : _confirm,
-              child: const Text('지금 다시 확인'),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: _confirming ? null : _leavePendingPaymentRecovery,
-              child: const Text('결제창에서 취소했어요'),
-            ),
-          ]),
+    final payment = widget.load.payment;
+    final busy = _confirming || _cancelling;
+    // S1: dark page, blue progress ring, order card, note, pinned actions.
+    return _PendingDarkScaffold(
+      title: '결제 상태 확인',
+      bottom: [
+        _PendingButton(
+          key: const ValueKey('pending-recheck'),
+          label: _confirming ? '확인 중…' : '지금 다시 확인',
+          primary: true,
+          onPressed: busy ? null : () => unawaited(_confirm()),
         ),
-      ),
+        _PendingButton(
+          key: const ValueKey('pending-cancel'),
+          label: _cancelling ? '주문 취소 확인 중…' : '결제하지 않았어요 (주문 취소)',
+          primary: false,
+          onPressed:
+              busy ? null : () => unawaited(_leavePendingPaymentRecovery()),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 2),
+          child: Text('결제하지 않았다면 눌러 주세요. 결제된 주문은 취소되지 않아요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF5F6779), fontSize: 12)),
+        ),
+      ],
+      children: [
+        const SizedBox(height: 30),
+        Center(
+          child: SizedBox(
+            width: 96,
+            height: 96,
+            child: _confirming
+                ? const CircularProgressIndicator(
+                    key: ValueKey('pending-ring'),
+                    strokeWidth: 5,
+                    color: AppColors.blueSoft,
+                    backgroundColor: Color(0x295B87FF),
+                  )
+                : const _PendingIconCircle(icon: Icons.schedule_rounded),
+          ),
+        ),
+        const SizedBox(height: 18),
+        _PendingHeading(
+            _confirming ? '결제 승인을 확인하고 있어요' : '아직 승인을 기다리고 있어요'),
+        const SizedBox(height: 8),
+        _PendingSub(_confirming
+            ? '결제 회사에 승인 결과를 묻는 중이에요.\n잠시만 기다려 주세요.'
+            : '결제를 마쳤다면 곧 확인돼요.'),
+        if (payment != null) ...[
+          const SizedBox(height: 22),
+          Container(
+            key: const ValueKey('pending-order-card'),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.line),
+            ),
+            child: Column(children: [
+              _PendingRow('결제 금액', formatPaymentAmount(payment.amount)),
+              _PendingRow('주문 시각',
+                  formatPaymentDateTime(payment.createdAt.toIso8601String())),
+              _PendingRow('주문번호', payment.orderId, last: true),
+            ]),
+          ),
+        ],
+        if (stale) ...[
+          const SizedBox(height: 12),
+          const _PendingNote('오래된 기록도 삭제하지 않고 서버에서 결제 여부를 확인해요.'),
+        ],
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          _PendingNote(_error!),
+        ],
+      ],
     );
   }
+}
+
+class _PendingDarkScaffold extends StatelessWidget {
+  const _PendingDarkScaffold(
+      {required this.title, required this.children, this.bottom = const []});
+  final String title;
+  final List<Widget> children;
+  final List<Widget> bottom;
+
+  @override
+  Widget build(BuildContext context) => DefaultTextStyle.merge(
+        style: const TextStyle(fontFamily: 'Pretendard'),
+        child: Scaffold(
+          backgroundColor: AppColors.bg,
+          appBar: AppBar(
+            backgroundColor: AppColors.bg,
+            surfaceTintColor: AppColors.bg,
+            foregroundColor: AppColors.fg,
+            titleSpacing: 4,
+            title: Text(title,
+                style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800)),
+          ),
+          body: SafeArea(
+            top: false,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              children: children,
+            ),
+          ),
+          bottomNavigationBar: bottom.isEmpty
+              ? null
+              : Container(
+                  color: AppColors.bg,
+                  child: SafeArea(
+                    minimum: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      for (var i = 0; i < bottom.length; i++) ...[
+                        if (i > 0) const SizedBox(height: 8),
+                        bottom[i],
+                      ],
+                    ]),
+                  ),
+                ),
+        ),
+      );
+}
+
+class _PendingIconCircle extends StatelessWidget {
+  const _PendingIconCircle({required this.icon});
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Container(
+          width: 96,
+          height: 96,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: AppColors.line, width: 5),
+          ),
+          child: Icon(icon, color: AppColors.fg2, size: 40),
+        ),
+      );
+}
+
+class _PendingHeading extends StatelessWidget {
+  const _PendingHeading(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Text(text,
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+          color: AppColors.fg,
+          fontSize: 23,
+          height: 1.3,
+          fontWeight: FontWeight.w900));
+}
+
+class _PendingSub extends StatelessWidget {
+  const _PendingSub(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Text(text,
+      textAlign: TextAlign.center,
+      style: const TextStyle(color: AppColors.fg2, fontSize: 14, height: 1.5));
+}
+
+class _PendingRow extends StatelessWidget {
+  const _PendingRow(this.label, this.value, {this.last = false});
+  final String label;
+  final String value;
+  final bool last;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+            border: last
+                ? null
+                : const Border(bottom: BorderSide(color: AppColors.line))),
+        child: Row(children: [
+          Text(label,
+              style: const TextStyle(color: AppColors.fg2, fontSize: 13.5)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(value,
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: AppColors.fg,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800)),
+          ),
+        ]),
+      );
+}
+
+class _PendingNote extends StatelessWidget {
+  const _PendingNote(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const ValueKey('pending-note'),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.blue.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Icon(Icons.info_outline_rounded,
+              size: 17, color: Color(0xFFCFDCFF)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text,
+                style: const TextStyle(
+                    color: Color(0xFFCFDCFF), fontSize: 13, height: 1.5)),
+          ),
+        ]),
+      );
+}
+
+class _PendingButton extends StatelessWidget {
+  const _PendingButton(
+      {super.key,
+      required this.label,
+      required this.primary,
+      required this.onPressed});
+  final String label;
+  final bool primary;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: double.infinity,
+        height: primary ? 54 : 50,
+        child: FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: primary ? AppColors.blue : AppColors.cardHi,
+            foregroundColor: primary ? Colors.white : const Color(0xFFC9D0DE),
+            disabledBackgroundColor: AppColors.cardHi,
+            disabledForegroundColor: const Color(0xFF5F6779),
+            side: primary ? null : const BorderSide(color: AppColors.line),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            textStyle: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: primary ? 16 : 15,
+                fontWeight: FontWeight.w800),
+          ),
+          onPressed: onPressed,
+          child: Text(label),
+        ),
+      );
 }
 
 class HomeScreen extends StatefulWidget {
@@ -2557,6 +2845,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     final result = store.load(expectedUid);
     if (!mounted || widget.session.uid != expectedUid) return;
+    final payment = result?.payment;
+    if (result != null &&
+        payment != null &&
+        result.validity != PendingPaymentValidity.malformed) {
+      // Checkout closed earlier (app killed, back button…): ask the server
+      // before showing "결제 승인을 확인하고 있어요". Only a server-recorded
+      // stop removes it; a paid/uncertain order keeps the banner. A record
+      // newer than 2 minutes may still be mid-approval, so it is only read.
+      final api = ApiClient(widget.session);
+      final age = DateTime.now().toUtc().difference(payment.createdAt);
+      final outcome = await settleClosedCheckout(
+        payment: payment,
+        store: store,
+        readRecovery: api.getPaymentRecovery,
+        abandon: api.abandonCheckout,
+        allowAbandon: age > const Duration(minutes: 2),
+      );
+      if (!mounted || widget.session.uid != expectedUid) return;
+      if (outcome == PendingSettleOutcome.cleared) {
+        setState(() => _pendingLoad = null);
+        return;
+      }
+    }
     setState(() => _pendingLoad = result);
   }
 
@@ -2571,6 +2882,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         confirmPayment: ({required orderId, required amount}) =>
             ApiClient(widget.session)
                 .confirmPayment(orderId: orderId, amount: amount),
+        readRecovery: ApiClient(widget.session).getPaymentRecovery,
+        abandon: ApiClient(widget.session).abandonCheckout,
       ),
     ));
     if (!mounted) return;
@@ -2613,7 +2926,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           monthUsed: null,
           loading: snapshot.connectionState != ConnectionState.done,
           error: snapshot.hasError
-              ? snapshot.error.toString().replaceFirst('Exception: ', '')
+              ? friendlyLoadError(snapshot.error!)
               : null,
         ),
       ),
@@ -2779,7 +3092,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             monthUsed: isConsumer ? null : monthUsed,
             loading: snapshot.connectionState != ConnectionState.done,
             error: snapshot.hasError
-                ? snapshot.error.toString().replaceFirst('Exception: ', '')
+                ? friendlyLoadError(snapshot.error!)
                 : null,
           ),
         ),
@@ -3129,6 +3442,7 @@ class ErrorScreen extends StatelessWidget {
   /// so the primary action becomes "다시 로그인" (signs out to the phone login).
   bool get _isSessionProblem =>
       message.contains('로그인이 필요') || message.contains('계정이 변경');
+  bool get _isNetwork => message == networkErrorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -3136,7 +3450,9 @@ class ErrorScreen extends StatelessWidget {
     // actions are pinned to the bottom (no more olive light theme).
     final detail = _isSessionProblem
         ? '로그인 정보가 만료됐어요. 다시 로그인해 주세요.'
-        : '잠시 후 다시 시도해 주세요. 계속되면 고객센터에 문의해 주세요.';
+        : _isNetwork
+            ? '와이파이나 모바일 데이터를 확인한 뒤 다시 시도해 주세요.'
+            : '잠시 후 다시 시도해 주세요. 계속되면 고객센터에 문의해 주세요.';
     final primaryIsLogin = _isSessionProblem && onSignOut != null;
     final buttons = <Widget>[
       if (primaryIsLogin)
@@ -3190,60 +3506,7 @@ class ErrorScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
           children: [
-            const Text('잠깐, 문제가 생겼어요',
-                style: TextStyle(
-                    color: AppColors.fg,
-                    fontSize: 28,
-                    height: 1.2,
-                    fontWeight: FontWeight.w900)),
-            const SizedBox(height: 8),
-            const Text('네트워크와 계정 상태를 확인해 주세요.',
-                style: TextStyle(
-                    color: AppColors.fg2, fontSize: 15, height: 1.5)),
-            const SizedBox(height: 26),
-            Container(
-              key: const ValueKey('error-message-card'),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.line),
-              ),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                      color: AppColors.danger.withValues(alpha: 0.14),
-                      shape: BoxShape.circle),
-                  alignment: Alignment.center,
-                  child: const Text('!',
-                      style: TextStyle(
-                          color: AppColors.danger,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900)),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(message,
-                            style: const TextStyle(
-                                color: AppColors.fg,
-                                fontSize: 15,
-                                height: 1.4,
-                                fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 3),
-                        Text(detail,
-                            style: const TextStyle(
-                                color: AppColors.fg2,
-                                fontSize: 13,
-                                height: 1.45)),
-                      ]),
-                ),
-              ]),
-            ),
+            AppErrorPanel(message: message, detail: detail),
           ],
         ),
       ),
@@ -3262,6 +3525,115 @@ class ErrorScreen extends StatelessWidget {
               ),
             ),
     ));
+  }
+}
+
+/// E1 error body (title, subtitle, message card). Shared by the full-screen
+/// [ErrorScreen] and in-tab load errors so both look the same.
+class AppErrorPanel extends StatelessWidget {
+  const AppErrorPanel({super.key, required this.message, required this.detail});
+  final String message;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('잠깐, 문제가 생겼어요',
+              style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  color: AppColors.fg,
+                  fontSize: 28,
+                  height: 1.2,
+                  fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          const Text('네트워크와 계정 상태를 확인해 주세요.',
+              style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  color: AppColors.fg2,
+                  fontSize: 15,
+                  height: 1.5)),
+          const SizedBox(height: 26),
+          Container(
+            key: const ValueKey('error-message-card'),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.line),
+            ),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                    color: AppColors.danger.withValues(alpha: 0.14),
+                    shape: BoxShape.circle),
+                alignment: Alignment.center,
+                child: const Text('!',
+                    style: TextStyle(
+                        color: AppColors.danger,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(message,
+                          style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              color: AppColors.fg,
+                              fontSize: 15,
+                              height: 1.4,
+                              fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 3),
+                      Text(detail,
+                          style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              color: AppColors.fg2,
+                              fontSize: 13,
+                              height: 1.45)),
+                    ]),
+              ),
+            ]),
+          ),
+        ],
+      );
+}
+
+/// In-tab load error with the same look as [ErrorScreen] (E1) and a blue
+/// 다시 시도 button pinned to the bottom.
+class AppErrorView extends StatelessWidget {
+  const AppErrorView({super.key, required this.error, required this.onRetry});
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = friendlyLoadError(error);
+    final detail = message == networkErrorMessage
+        ? '와이파이나 모바일 데이터를 확인한 뒤 다시 시도해 주세요.'
+        : '잠시 후 다시 시도해 주세요. 계속되면 고객센터에 문의해 주세요.';
+    return Column(key: const ValueKey('app-error-view'), children: [
+      Expanded(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
+          children: [AppErrorPanel(message: message, detail: detail)],
+        ),
+      ),
+      SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(22, 8, 22, 16),
+        child: _ErrorButton(
+          key: const ValueKey('error-retry'),
+          label: '다시 시도',
+          primary: true,
+          onPressed: () async => onRetry(),
+        ),
+      ),
+    ]);
   }
 }
 
@@ -3686,7 +4058,7 @@ class _UnifiedPaymentResultScreenState
     } catch (error) {
       if (mounted) {
         setState(
-            () => _error = error.toString().replaceFirst('Exception: ', ''));
+            () => _error = friendlyLoadError(error));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -3865,21 +4237,7 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
                     child: CircularProgressIndicator(color: AppColors.blue));
               }
               if (snapshot.hasError) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: DarkCard(
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Text(snapshot.error.toString(),
-                            textAlign: TextAlign.center,
-                            style: AppTextStyles.caption),
-                        const SizedBox(height: 12),
-                        OutlinedButton(
-                            onPressed: _reload, child: const Text('다시 불러오기')),
-                      ]),
-                    ),
-                  ),
-                );
+                return AppErrorView(error: snapshot.error!, onRetry: _reload);
               }
               final catalog = snapshot.data ??
                   const VoucherCatalog(
@@ -4457,6 +4815,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
   Timer? _confirmationTimer;
   PendingPaymentStore? _pendingStore;
   PendingPayment? _pendingPayment;
+  bool _settleStarted = false;
 
   @override
   void initState() {
@@ -4534,6 +4893,10 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       checkoutStarted: _checkoutStarted,
     )) {
       unawaited(_releaseReservation());
+    }
+    // Back/close from the checkout WebView (not an external payment app hop).
+    if (_checkoutStarted && !_completed && !_externalAppOpened) {
+      _settleAfterClose();
     }
     super.dispose();
   }
@@ -4720,7 +5083,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = error.toString();
+          _error = friendlyLoadError(error);
         });
       }
     }
@@ -4812,10 +5175,30 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
     _confirmationTimer?.cancel();
     _externalAppOpened = false;
     _approvalPending = false;
-    // Do not clear the pending record or cancel the reservation here. A local
-    // exit is not proof that the provider rejected payment; delayed approval
-    // remains recoverable from Home.
+    // A local exit is not proof that the provider rejected payment, so the
+    // record is only retired after the server confirms an owner stop (same
+    // rule as web /shop). A paid or uncertain order keeps the Home banner.
+    _settleAfterClose();
     if (mounted) Navigator.of(context).pop(false);
+  }
+
+  /// Buyer closed the checkout without a success redirect: ask the server and
+  /// retire the pending record when it records the stop. Best effort; runs
+  /// after this screen is gone, so it must not touch widget state.
+  void _settleAfterClose() {
+    final pending = _pendingPayment;
+    if (pending == null || _completed || _settleStarted) return;
+    _settleStarted = true;
+    final api = ApiClient(widget.session);
+    unawaited(() async {
+      final store = _pendingStore ??= await PendingPaymentStore.create();
+      await settleClosedCheckout(
+        payment: pending,
+        store: store,
+        readRecovery: api.getPaymentRecovery,
+        abandon: api.abandonCheckout,
+      );
+    }());
   }
 
   Future<void> _terminateCheckout(String message) async {
@@ -4894,7 +5277,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       if (mounted && !_checkoutTerminated) {
         setState(() {
           _loading = false;
-          _error = error.toString();
+          _error = friendlyLoadError(error);
         });
       }
     } finally {

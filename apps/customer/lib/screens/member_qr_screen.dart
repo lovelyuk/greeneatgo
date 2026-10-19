@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../load_error.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 
@@ -103,7 +104,7 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
       if (!mounted) return;
       setState(() => _error = error is FormatException
           ? error.message
-          : error.toString().replaceFirst('Exception: ', ''));
+          : friendlyLoadError(error));
     }
   }
 

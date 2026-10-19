@@ -182,3 +182,73 @@ class PendingPaymentStore {
     return preferences.remove(key);
   }
 }
+
+
+/// Reads `GET /payments/recovery?order_id&amount` (server order state).
+typedef PendingRecoveryReader = Future<Map<String, dynamic>> Function(
+    String orderId, int amount);
+
+/// Calls `POST /payments/orders/{id}/abandon` with
+/// `explicit_checkout_cancel_intent: true` (owner stopped the checkout).
+typedef PendingOrderAbandoner = Future<Map<String, dynamic>> Function(
+    String orderId, int amount);
+
+enum PendingSettleOutcome {
+  /// Server holds an owner stop receipt / verified closure → record removed.
+  cleared,
+
+  /// Server says the order was paid → keep the record so Home confirms it.
+  paid,
+
+  /// Could not prove either way → keep the record (banner stays).
+  unknown,
+}
+
+/// After the buyer closes the Kiwoom checkout without paying, retire the local
+/// "결제 승인을 확인하고 있어요" record the same way web /shop does:
+/// read the server order, give a just-finished approval a moment to land,
+/// then record an explicit owner stop. The record is removed only when the
+/// server returns a stop receipt (`locally_abandoned`) or a verified closure
+/// (`closed`); a paid order, a late-approval contradiction or any error keeps
+/// it so a real charge can never be hidden.
+Future<PendingSettleOutcome> settleClosedCheckout({
+  required PendingPayment payment,
+  required PendingPaymentStore store,
+  required PendingRecoveryReader readRecovery,
+  required PendingOrderAbandoner abandon,
+  bool allowAbandon = true,
+  Duration settleDelay = const Duration(seconds: 2),
+  Future<void> Function(Duration)? sleep,
+}) async {
+  final wait = sleep ?? (d) => Future<void>.delayed(d);
+  bool retired(Map<String, dynamic> r) {
+    final action = r['recovery_action'];
+    return r['checkout_url'] == null &&
+        r['completion'] == null &&
+        r['status'] != 'done' &&
+        (action == 'locally_abandoned' ||
+            (action == 'closed' && r['closure'] is Map));
+  }
+
+  try {
+    var result = await readRecovery(payment.orderId, payment.amount);
+    if (result['status'] == 'ready' && result['local_abandonment'] == null) {
+      await wait(settleDelay);
+      result = await readRecovery(payment.orderId, payment.amount);
+    }
+    if (result['status'] == 'done') return PendingSettleOutcome.paid;
+    if (!retired(result)) {
+      final stoppable = result['local_abandonment'] == null &&
+          {'ready', 'failed', 'canceled'}.contains(result['status']) &&
+          result['recovery_action'] == 'reconcile';
+      if (!allowAbandon || !stoppable) return PendingSettleOutcome.unknown;
+      result = await abandon(payment.orderId, payment.amount);
+      if (result['status'] == 'done') return PendingSettleOutcome.paid;
+      if (!retired(result)) return PendingSettleOutcome.unknown;
+    }
+    await store.clear(payment);
+    return PendingSettleOutcome.cleared;
+  } catch (_) {
+    return PendingSettleOutcome.unknown;
+  }
+}

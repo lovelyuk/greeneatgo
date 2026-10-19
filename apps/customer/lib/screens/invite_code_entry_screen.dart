@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../load_error.dart';
 import '../theme/app_colors.dart';
 
 typedef InviteJoinSubmit = Future<void> Function({
@@ -78,7 +79,7 @@ class _InviteCodeEntryScreenState extends State<InviteCodeEntryScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = error.toString().replaceFirst('Exception: ', '');
+        _error = friendlyLoadError(error);
       });
     } finally {
       if (mounted) setState(() => _submitting = false);

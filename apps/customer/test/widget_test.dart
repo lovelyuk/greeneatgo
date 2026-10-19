@@ -47,6 +47,54 @@ void main() {
     expect(find.textContaining('앱 환경값이 누락됐어요'), findsOneWidget);
   });
 
+  test('network failures show a friendly message, never socket text', () {
+    expect(
+        friendlyLoadError(Exception(
+            "ClientException with SocketException: Failed host lookup: 'greeneatgo-api.vercel.app'")),
+        networkErrorMessage);
+    expect(
+        friendlyLoadError(const ApiException(
+            statusCode: 0, reason: 'NETWORK', message: networkErrorMessage)),
+        networkErrorMessage);
+    expect(friendlyLoadError(const ApiException(statusCode: 404, message: '없어요')),
+        '없어요');
+  });
+
+  testWidgets('in-tab load error uses the same E1 screen with 다시 시도',
+      (tester) async {
+    var retried = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: AppErrorView(
+          error: Exception(
+              "ClientException with SocketException: Failed host lookup: 'greeneatgo-api.vercel.app'"),
+          onRetry: () => retried++,
+        ),
+      ),
+    ));
+    expect(find.text('잠깐, 문제가 생겼어요'), findsOneWidget);
+    expect(find.byKey(const ValueKey('error-message-card')), findsOneWidget);
+    expect(find.text(networkErrorMessage), findsOneWidget);
+    expect(find.textContaining('SocketException'), findsNothing);
+    expect(find.textContaining('vercel.app'), findsNothing);
+    expect(find.text('다시 불러오기'), findsNothing);
+    await tester.tap(find.text('다시 시도'));
+    await tester.pump();
+    expect(retried, 1);
+  });
+
+  testWidgets('full error screen hides socket text too', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: ErrorScreen(
+          message: friendlyLoadError(Exception(
+              "ClientException with SocketException: Failed host lookup: 'x'")),
+          onRetry: () async {}),
+    ));
+    expect(find.text(networkErrorMessage), findsOneWidget);
+    expect(find.textContaining('와이파이나 모바일 데이터'), findsOneWidget);
+    expect(find.textContaining('SocketException'), findsNothing);
+  });
+
   testWidgets('error screen (E1): dark, message card, session error offers 다시 로그인',
       (tester) async {
     var signedOut = 0, retried = 0;

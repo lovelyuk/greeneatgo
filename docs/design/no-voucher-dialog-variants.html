@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>식권 없음 팝업 시안</title>
+<style>
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-SemiBold.otf');font-weight:600}
+@font-face{font-family:P;src:url('../../apps/admin/public/fonts/Pretendard-ExtraBold.otf');font-weight:800}
+*{box-sizing:border-box;margin:0}
+:root{--bg:#0A0D14;--card:#131A2A;--hi:#1B2436;--line:#212B3E;--blue:#2C5FFF;--bs:#5B87FF;--fg2:#8A93A6;--flip:#7EA2FF;--orange:#C64F00;--paper:#F4F1E9}
+body{background:#1c2130;font-family:P,sans-serif;font-weight:600;color:#fff;padding:24px}
+.row{display:flex;gap:26px;flex-wrap:wrap}
+.wrap{width:390px;padding-top:58px;position:relative}
+.cap{position:absolute;top:0;left:4px;right:0;font-size:15px;font-weight:800;line-height:1.35}
+.cap small{display:block;font-size:12.5px;font-weight:600;color:#a9b2c4}
+.ph{width:390px;height:780px;border-radius:40px;overflow:hidden;position:relative;background:var(--bg);box-shadow:0 0 0 9px #05070b,0 20px 50px rgba(0,0,0,.4)}
+/* purchase screen underneath (실제 앱 식권 구매 화면 모사) */
+.under{padding:20px 18px}
+.under .t{display:flex;gap:14px;align-items:center;font-size:20px;margin:6px 0 18px}
+.tk{height:170px;border-radius:18px;background:linear-gradient(135deg,#2a3fd6,#1b2bb0);margin-bottom:14px;padding:18px 22px 18px 54px;position:relative}
+.tk small{font-size:12px;color:#c9d2ff}.tk b{display:block;font-size:34px;font-weight:800;margin:6px 0 4px}.tk span{font-size:15px}
+.tk:before{content:"TICKET";position:absolute;left:14px;top:50%;transform:rotate(-90deg) translateX(-50%);transform-origin:left top;font-size:10px;letter-spacing:.3em;color:#9aa8ff}
+.dim{position:absolute;inset:0;background:rgba(5,7,11,.66)}
+/* dialogs */
+.dlg{position:absolute;left:22px;right:22px;top:50%;transform:translateY(-50%);background:var(--card);border:1px solid var(--line);border-radius:26px;padding:28px 22px 18px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+.ic{width:60px;height:60px;border-radius:50%;display:grid;place-items:center;margin:0 auto 16px;font-size:30px;font-weight:800}
+.dlg h2{font-size:22px;font-weight:800}
+.dlg p{color:var(--fg2);font-size:14px;margin-top:8px;line-height:1.5}
+.btn{height:54px;border-radius:16px;display:grid;place-items:center;font-size:16px;font-weight:800;margin-top:22px}
+.ghost{height:46px;display:grid;place-items:center;color:var(--fg2);font-size:15px;margin-top:4px}
+/* V1 */
+.v1 .ic{background:var(--orange)}
+.v1 .btn{background:var(--blue)}
+/* V2 */
+.v2 .ic{background:rgba(44,95,255,.16);color:var(--bs);box-shadow:0 0 0 8px rgba(44,95,255,.08)}
+.v2 .ic svg{width:30px;height:30px}
+.v2 .btn{background:var(--blue)}
+/* V3 empty ticket */
+.v3 .mini{width:210px;height:96px;margin:0 auto 18px;border-radius:14px;background:var(--paper);color:#131A2A;display:grid;grid-template-columns:1fr 64px;position:relative;
+  -webkit-mask:radial-gradient(circle 9px at 146px 0,#0000 98%,#000) top/100% 51% no-repeat,radial-gradient(circle 9px at 146px 100%,#0000 98%,#000) bottom/100% 51% no-repeat}
+.v3 .mini .l{padding:12px 14px;text-align:left}
+.v3 .mini .l small{font-size:10px;letter-spacing:.2em;color:#7a7f8c}
+.v3 .mini .l b{display:block;font-size:34px;font-weight:800;line-height:1.1;margin-top:4px}
+.v3 .mini .l b em{font-style:normal;font-size:15px;color:#6b6f78;margin-left:3px}
+.v3 .mini .r{border-left:2px dashed #cfc7b4;display:grid;place-items:center;font-size:11px;color:#c64f00;font-weight:800}
+.v3 .btn{background:var(--blue)}
+/* V4 bottom sheet + quick buy */
+.v4 .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);border-radius:28px 28px 0 0;padding:10px 20px 24px}
+.v4 .grab{width:40px;height:5px;border-radius:5px;background:var(--line);margin:0 auto 16px}
+.v4 .hrow{display:flex;gap:14px;align-items:center;text-align:left}
+.v4 .hrow .ic{margin:0;flex:0 0 auto;width:52px;height:52px;background:var(--orange);font-size:26px}
+.v4 h2{font-size:20px;font-weight:800}.v4 .hrow p{color:var(--fg2);font-size:13.5px;margin-top:3px}
+.v4 .opt{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-radius:16px;background:var(--hi);border:1px solid var(--line);margin-top:10px;font-size:15px}
+.v4 .opt.sel{border-color:var(--blue);background:rgba(44,95,255,.12)}
+.v4 .opt b{font-weight:800}.v4 .opt small{display:block;color:var(--fg2);font-size:12px}
+.v4 .opt .pr{font-size:17px;font-weight:800}
+.v4 .lbl{font-size:13px;color:var(--fg2);margin:20px 2px 0}
+.v4 .btn{background:var(--blue);margin-top:16px}
+/* V5 orange accent */
+.v5 .ic{background:var(--orange)}
+.v5 .btn{background:var(--orange)}
+/* V6 flip zero */
+.v6 .fz{display:flex;justify-content:center;gap:6px;margin:0 auto 16px}
+.v6 .fz i{font-style:normal;width:52px;height:70px;border-radius:10px;background:var(--hi);display:grid;place-items:center;font-size:48px;font-weight:800;color:var(--flip);position:relative}
+.v6 .fz i:after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:var(--card)}
+.v6 .fz em{font-style:normal;align-self:flex-end;color:var(--fg2);font-size:16px;padding-bottom:6px}
+.v6 .btns{display:grid;grid-template-columns:1fr 1.6fr;gap:8px;margin-top:22px}
+.v6 .btns span{height:54px;border-radius:16px;display:grid;place-items:center;font-size:16px;font-weight:800}
+.v6 .btns span:first-child{background:var(--hi);color:#c9d0de;border:1px solid var(--line)}
+.v6 .btns span:last-child{background:var(--blue)}
+</style>
+</head>
+<body>
+<div class="row" id="root"></div>
+<script>
+const under=`<div class="under"><div class="t">← 식권 구매</div><div class="tk"><small>1장 식권</small><b>8,000원</b><span>돈토식권</span></div><div class="tk"><small>10장 식권</small><b>75,000원</b><span>돈토식권</span></div><div class="tk"><small>1장 식권</small><b>100원</b><span>테스트식권</span></div></div><div class="dim"></div>`;
+const ticketSvg='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4z"/></svg>';
+const msg='<h2>식권이 없어요</h2><p>식권을 구매한 뒤 QR로 사용할 수 있어요.</p>';
+const V=[
+ ['v1','N1 블루 버튼 (웹과 동일)','주황 ! 아이콘은 두고 버튼만 파랑. 지금 웹 /shop과 같은 모양.',
+  `<div class="dlg"><div class="ic">!</div>${msg}<div class="btn">식권 구매하기</div><div class="ghost">닫기</div></div>`],
+ ['v2','N2 올 블루','경고 대신 식권 아이콘 + 파랑. 덜 무섭고 차분함.',
+  `<div class="dlg"><div class="ic">${ticketSvg}</div>${msg}<div class="btn">식권 구매하기</div><div class="ghost">닫기</div></div>`],
+ ['v3','N3 빈 식권 카드','홈 식권(종이) 모양에 0장. 무슨 상황인지 바로 보임.',
+  `<div class="dlg"><div class="mini"><div class="l"><small>MEAL TICKET</small><b>0<em>장</em></b></div><div class="r">EMPTY</div></div>${msg}<div class="btn">식권 구매하기</div><div class="ghost">닫기</div></div>`],
+ ['v4','N4 바텀시트 + 바로 구매','팝업 안에서 식권을 골라 바로 결제로. 한 단계 줄어듦.',
+  `<div class="sheet"><div class="grab"></div><div class="hrow"><div class="ic">!</div><div><h2>식권이 없어요</h2><p>식권을 구매한 뒤 QR로 사용할 수 있어요.</p></div></div><div class="lbl">바로 구매</div><div class="opt sel"><div><b>1장 식권</b><small>돈토식권</small></div><span class="pr">8,000원</span></div><div class="opt"><div><b>10장 식권</b><small>돈토식권</small></div><span class="pr">75,000원</span></div><div class="btn">8,000원 결제하기</div></div>`],
+ ['v5','N5 주황 강조','아이콘과 버튼을 같은 주황(식권 구매 색)으로 통일.',
+  `<div class="dlg"><div class="ic">!</div>${msg}<div class="btn">식권 구매하기</div><div class="ghost">닫기</div></div>`],
+ ['v6','N6 플립 0장','홈 전광판 숫자로 “00장”. 버튼 2개(닫기 / 구매).',
+  `<div class="dlg"><div class="fz"><i>0</i><i>0</i><em>장</em></div>${msg}<div class="btns"><span>닫기</span><span>식권 구매하기</span></div></div>`],
+];
+document.getElementById('root').innerHTML=V.map(([c,t,d,b])=>`<div class="wrap ${c}" id="${c}"><span class="cap">${t}<small>${d}</small></span><div class="ph">${under}${b}</div></div>`).join('');
+</script>
+</body>
+</html>

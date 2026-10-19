@@ -126,8 +126,20 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
         actions: [
           SizedBox(
             width: double.infinity,
+            height: 54,
             child: FilledButton(
               key: const ValueKey('no-voucher-buy'),
+              // N1: explicit blue (the app-wide theme primary is still olive).
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.blue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                textStyle: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800),
+              ),
               onPressed: () => Navigator.of(context).pop(true),
               child: const Text('식권 구매하기'),
             ),

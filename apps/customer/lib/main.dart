@@ -3125,22 +3125,176 @@ class ErrorScreen extends StatelessWidget {
   final Future<void> Function()? onRetry;
   final Future<void> Function()? onSignOut;
 
+  /// Session problems (expired / account switched) cannot be fixed by retrying,
+  /// so the primary action becomes "다시 로그인" (signs out to the phone login).
+  bool get _isSessionProblem =>
+      message.contains('로그인이 필요') || message.contains('계정이 변경');
+
   @override
   Widget build(BuildContext context) {
-    return AppScaffold(
-      title: '잠깐, 문제가 생겼어요',
-      subtitle: '네트워크와 계정 상태를 확인해 주세요.',
-      onSignOut: onSignOut,
-      child: BrandPanel(children: [
-        BrandNotice(text: message, kind: NoticeKind.error),
-        if (onRetry != null)
-          Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: OutlinedButton(
-                  onPressed: onRetry, child: const Text('다시 시도'))),
-      ]),
-    );
+    // E1: current dark design. Same title/subtitle; the message is a card,
+    // actions are pinned to the bottom (no more olive light theme).
+    final detail = _isSessionProblem
+        ? '로그인 정보가 만료됐어요. 다시 로그인해 주세요.'
+        : '잠시 후 다시 시도해 주세요. 계속되면 고객센터에 문의해 주세요.';
+    final primaryIsLogin = _isSessionProblem && onSignOut != null;
+    final buttons = <Widget>[
+      if (primaryIsLogin)
+        _ErrorButton(
+            key: const ValueKey('error-relogin'),
+            label: '다시 로그인',
+            primary: true,
+            onPressed: onSignOut!),
+      if (onRetry != null)
+        _ErrorButton(
+            key: const ValueKey('error-retry'),
+            label: '다시 시도',
+            primary: !primaryIsLogin,
+            onPressed: onRetry!),
+    ];
+    return DefaultTextStyle.merge(
+      style: const TextStyle(fontFamily: 'Pretendard'),
+      child: Scaffold(
+      key: const ValueKey('error-screen'),
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        backgroundColor: AppColors.bg,
+        surfaceTintColor: AppColors.bg,
+        foregroundColor: AppColors.fg,
+        automaticallyImplyLeading: false,
+        titleSpacing: 20,
+        title: Image.asset('assets/brand/greeneat_logo_light.png',
+            height: 22,
+            errorBuilder: (_, __, ___) => const Text('그린잇',
+                style: TextStyle(
+                    color: AppColors.fg, fontWeight: FontWeight.w900))),
+        actions: [
+          if (onSignOut != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: IconButton(
+                tooltip: '로그아웃',
+                style: IconButton.styleFrom(
+                    backgroundColor: AppColors.card,
+                    foregroundColor: AppColors.fg2,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
+                onPressed: onSignOut,
+                icon: const Icon(Icons.logout_rounded, size: 20),
+              ),
+            ),
+        ],
+      ),
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
+          children: [
+            const Text('잠깐, 문제가 생겼어요',
+                style: TextStyle(
+                    color: AppColors.fg,
+                    fontSize: 28,
+                    height: 1.2,
+                    fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            const Text('네트워크와 계정 상태를 확인해 주세요.',
+                style: TextStyle(
+                    color: AppColors.fg2, fontSize: 15, height: 1.5)),
+            const SizedBox(height: 26),
+            Container(
+              key: const ValueKey('error-message-card'),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.line),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                      color: AppColors.danger.withValues(alpha: 0.14),
+                      shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child: const Text('!',
+                      style: TextStyle(
+                          color: AppColors.danger,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(message,
+                            style: const TextStyle(
+                                color: AppColors.fg,
+                                fontSize: 15,
+                                height: 1.4,
+                                fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 3),
+                        Text(detail,
+                            style: const TextStyle(
+                                color: AppColors.fg2,
+                                fontSize: 13,
+                                height: 1.45)),
+                      ]),
+                ),
+              ]),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: buttons.isEmpty
+          ? null
+          : Container(
+              color: AppColors.bg,
+              child: SafeArea(
+                minimum: const EdgeInsets.fromLTRB(22, 8, 22, 16),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  for (var i = 0; i < buttons.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    buttons[i],
+                  ],
+                ]),
+              ),
+            ),
+    ));
   }
+}
+
+class _ErrorButton extends StatelessWidget {
+  const _ErrorButton(
+      {super.key,
+      required this.label,
+      required this.primary,
+      required this.onPressed});
+  final String label;
+  final bool primary;
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: double.infinity,
+        height: primary ? 54 : 50,
+        child: FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: primary ? AppColors.blue : AppColors.cardHi,
+            foregroundColor: primary ? Colors.white : const Color(0xFFC9D0DE),
+            side: primary ? null : const BorderSide(color: AppColors.line),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            textStyle: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: primary ? 16 : 15,
+                fontWeight: FontWeight.w800),
+          ),
+          onPressed: () => unawaited(onPressed()),
+          child: Text(label),
+        ),
+      );
 }
 
 class _TodayMenuCard extends StatelessWidget {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../load_error.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 
@@ -523,7 +524,7 @@ class _CheckoutOptionsScreenState extends State<CheckoutOptionsScreen> {
       if (mounted && generation == _generation) setState(() => _quote = quote);
     } catch (error) {
       if (mounted && generation == _generation) {
-        setState(() => _error = error.toString());
+        setState(() => _error = friendlyLoadError(error));
       }
     } finally {
       if (mounted && generation == _generation) {
@@ -767,7 +768,7 @@ class _LoadError extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text(error.toString(),
+            Text(friendlyLoadError(error ?? ''),
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: AppColors.danger)),
             const SizedBox(height: 14),

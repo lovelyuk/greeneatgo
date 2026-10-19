@@ -23,6 +23,7 @@ import 'pending_payment.dart';
 import 'phone_auth.dart';
 import 'phone_login_screen.dart' as phone_login;
 import 'join_request.dart';
+import 'load_error.dart';
 import 'push_notifications.dart';
 import 'screens/coupon_wallet.dart';
 import 'screens/invite_code_entry_screen.dart';
@@ -30,6 +31,8 @@ import 'screens/member_qr_screen.dart';
 import 'screens/user_dashboard_shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
+
+export 'load_error.dart' show friendlyLoadError, networkErrorMessage;
 import 'widgets/dashboard_components.dart';
 import 'widgets/dashboard_components.dart' as dashboard;
 import 'widgets/partner_banner_slot.dart';
@@ -401,8 +404,17 @@ class ApiClient {
       request.headers['Authorization'] = 'Bearer ${await _freshIdToken()}';
     }
     if (body != null) request.body = jsonEncode(body);
-    final streamed = await request.send();
-    final text = await streamed.stream.bytesToString();
+    final http.StreamedResponse streamed;
+    final String text;
+    try {
+      streamed = await request.send();
+      text = await streamed.stream.bytesToString();
+    } on http.ClientException {
+      // No connection / DNS failure (e.g. "Failed host lookup"): never show the
+      // raw socket text to buyers.
+      throw const ApiException(
+          statusCode: 0, reason: 'NETWORK', message: networkErrorMessage);
+    }
     Map<String, dynamic> decoded;
     try {
       decoded = text.isEmpty
@@ -430,10 +442,11 @@ class ApiClient {
   }
 }
 
-class ApiException implements Exception {
+class ApiException implements Exception, LoadErrorMessage {
   const ApiException(
       {required this.statusCode, required this.message, this.reason});
   final int statusCode;
+  @override
   final String message;
   final String? reason;
 
@@ -442,6 +455,8 @@ class ApiException implements Exception {
 
   bool get isPaymentPending =>
       statusCode == 409 && reason?.toUpperCase() == 'PAYMENT_PENDING';
+
+  bool get isNetwork => reason == 'NETWORK';
 
   @override
   String toString() => message;
@@ -844,7 +859,7 @@ class _AppGateState extends State<AppGate> {
       }
     } catch (error) {
       if (!_isCurrentLoad(generation, uid)) return;
-      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+      setState(() => _error = friendlyLoadError(error));
     } finally {
       if (_isCurrentLoad(generation, uid)) {
         setState(() => _loading = false);
@@ -1463,7 +1478,7 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
       if (!mounted) return;
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+      setState(() => _error = friendlyLoadError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1483,7 +1498,7 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
       if (!mounted) return;
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+      setState(() => _error = friendlyLoadError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -2387,7 +2402,7 @@ class _PendingPaymentRecoveryScreenState
         setState(() => _error = error.message);
       }
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = friendlyLoadError(error));
     } finally {
       _confirming = false;
     }
@@ -2911,7 +2926,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           monthUsed: null,
           loading: snapshot.connectionState != ConnectionState.done,
           error: snapshot.hasError
-              ? snapshot.error.toString().replaceFirst('Exception: ', '')
+              ? friendlyLoadError(snapshot.error!)
               : null,
         ),
       ),
@@ -3077,7 +3092,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             monthUsed: isConsumer ? null : monthUsed,
             loading: snapshot.connectionState != ConnectionState.done,
             error: snapshot.hasError
-                ? snapshot.error.toString().replaceFirst('Exception: ', '')
+                ? friendlyLoadError(snapshot.error!)
                 : null,
           ),
         ),
@@ -3427,6 +3442,7 @@ class ErrorScreen extends StatelessWidget {
   /// so the primary action becomes "다시 로그인" (signs out to the phone login).
   bool get _isSessionProblem =>
       message.contains('로그인이 필요') || message.contains('계정이 변경');
+  bool get _isNetwork => message == networkErrorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -3434,7 +3450,9 @@ class ErrorScreen extends StatelessWidget {
     // actions are pinned to the bottom (no more olive light theme).
     final detail = _isSessionProblem
         ? '로그인 정보가 만료됐어요. 다시 로그인해 주세요.'
-        : '잠시 후 다시 시도해 주세요. 계속되면 고객센터에 문의해 주세요.';
+        : _isNetwork
+            ? '와이파이나 모바일 데이터를 확인한 뒤 다시 시도해 주세요.'
+            : '잠시 후 다시 시도해 주세요. 계속되면 고객센터에 문의해 주세요.';
     final primaryIsLogin = _isSessionProblem && onSignOut != null;
     final buttons = <Widget>[
       if (primaryIsLogin)
@@ -3488,60 +3506,7 @@ class ErrorScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
           children: [
-            const Text('잠깐, 문제가 생겼어요',
-                style: TextStyle(
-                    color: AppColors.fg,
-                    fontSize: 28,
-                    height: 1.2,
-                    fontWeight: FontWeight.w900)),
-            const SizedBox(height: 8),
-            const Text('네트워크와 계정 상태를 확인해 주세요.',
-                style: TextStyle(
-                    color: AppColors.fg2, fontSize: 15, height: 1.5)),
-            const SizedBox(height: 26),
-            Container(
-              key: const ValueKey('error-message-card'),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.line),
-              ),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                      color: AppColors.danger.withValues(alpha: 0.14),
-                      shape: BoxShape.circle),
-                  alignment: Alignment.center,
-                  child: const Text('!',
-                      style: TextStyle(
-                          color: AppColors.danger,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900)),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(message,
-                            style: const TextStyle(
-                                color: AppColors.fg,
-                                fontSize: 15,
-                                height: 1.4,
-                                fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 3),
-                        Text(detail,
-                            style: const TextStyle(
-                                color: AppColors.fg2,
-                                fontSize: 13,
-                                height: 1.45)),
-                      ]),
-                ),
-              ]),
-            ),
+            AppErrorPanel(message: message, detail: detail),
           ],
         ),
       ),
@@ -3560,6 +3525,115 @@ class ErrorScreen extends StatelessWidget {
               ),
             ),
     ));
+  }
+}
+
+/// E1 error body (title, subtitle, message card). Shared by the full-screen
+/// [ErrorScreen] and in-tab load errors so both look the same.
+class AppErrorPanel extends StatelessWidget {
+  const AppErrorPanel({super.key, required this.message, required this.detail});
+  final String message;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('잠깐, 문제가 생겼어요',
+              style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  color: AppColors.fg,
+                  fontSize: 28,
+                  height: 1.2,
+                  fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          const Text('네트워크와 계정 상태를 확인해 주세요.',
+              style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  color: AppColors.fg2,
+                  fontSize: 15,
+                  height: 1.5)),
+          const SizedBox(height: 26),
+          Container(
+            key: const ValueKey('error-message-card'),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.line),
+            ),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                    color: AppColors.danger.withValues(alpha: 0.14),
+                    shape: BoxShape.circle),
+                alignment: Alignment.center,
+                child: const Text('!',
+                    style: TextStyle(
+                        color: AppColors.danger,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(message,
+                          style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              color: AppColors.fg,
+                              fontSize: 15,
+                              height: 1.4,
+                              fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 3),
+                      Text(detail,
+                          style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              color: AppColors.fg2,
+                              fontSize: 13,
+                              height: 1.45)),
+                    ]),
+              ),
+            ]),
+          ),
+        ],
+      );
+}
+
+/// In-tab load error with the same look as [ErrorScreen] (E1) and a blue
+/// 다시 시도 button pinned to the bottom.
+class AppErrorView extends StatelessWidget {
+  const AppErrorView({super.key, required this.error, required this.onRetry});
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = friendlyLoadError(error);
+    final detail = message == networkErrorMessage
+        ? '와이파이나 모바일 데이터를 확인한 뒤 다시 시도해 주세요.'
+        : '잠시 후 다시 시도해 주세요. 계속되면 고객센터에 문의해 주세요.';
+    return Column(key: const ValueKey('app-error-view'), children: [
+      Expanded(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
+          children: [AppErrorPanel(message: message, detail: detail)],
+        ),
+      ),
+      SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(22, 8, 22, 16),
+        child: _ErrorButton(
+          key: const ValueKey('error-retry'),
+          label: '다시 시도',
+          primary: true,
+          onPressed: () async => onRetry(),
+        ),
+      ),
+    ]);
   }
 }
 
@@ -3984,7 +4058,7 @@ class _UnifiedPaymentResultScreenState
     } catch (error) {
       if (mounted) {
         setState(
-            () => _error = error.toString().replaceFirst('Exception: ', ''));
+            () => _error = friendlyLoadError(error));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -4163,21 +4237,7 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
                     child: CircularProgressIndicator(color: AppColors.blue));
               }
               if (snapshot.hasError) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: DarkCard(
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Text(snapshot.error.toString(),
-                            textAlign: TextAlign.center,
-                            style: AppTextStyles.caption),
-                        const SizedBox(height: 12),
-                        OutlinedButton(
-                            onPressed: _reload, child: const Text('다시 불러오기')),
-                      ]),
-                    ),
-                  ),
-                );
+                return AppErrorView(error: snapshot.error!, onRetry: _reload);
               }
               final catalog = snapshot.data ??
                   const VoucherCatalog(
@@ -5023,7 +5083,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = error.toString();
+          _error = friendlyLoadError(error);
         });
       }
     }
@@ -5217,7 +5277,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       if (mounted && !_checkoutTerminated) {
         setState(() {
           _loading = false;
-          _error = error.toString();
+          _error = friendlyLoadError(error);
         });
       }
     } finally {

@@ -227,3 +227,5 @@
 .purchase-app .member-qr-help{margin:8px 0 0;font-size:16px;font-weight:800}
 .purchase-app .member-qr-timer{margin:0;color:var(--blue-soft);font-size:13px}
 .purchase-app .member-qr-used h2{margin:6px 0 0}
+.purchase-app .no-voucher-icon{background:#c64f00}
+.purchase-app .no-voucher-close{width:100%;min-height:48px;margin-top:8px;background:transparent;color:var(--fg2)}

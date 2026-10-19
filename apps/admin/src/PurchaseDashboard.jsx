@@ -112,7 +112,14 @@ export default function PurchaseDashboard({ me, api, supabase, apiBaseUrl, legal
     return () => { alive = false; };
   }, [revision]);
   const [recoveryTarget, setRecoveryTarget] = useState(null), [recoveryNotice, setRecoveryNotice] = useState('');
-  function go(index) { setPage(''); setTab(index); setRecoveryNotice(''); }
+  // No vouchers left → don't open QR; offer purchase instead (user rule).
+  // Ledger employees (no voucher balance concept) are never blocked.
+  const [noVoucherOpen, setNoVoucherOpen] = useState(false);
+  const walletEmpty = me.voucher_balance === 0 && (isVoucher || (me.role === 'employee' && purchaseMode === 'subsidized'));
+  function go(index) {
+    if (index === 2 && walletEmpty) { setNoVoucherOpen(true); return; }
+    setPage(''); setTab(index); setRecoveryNotice('');
+  }
   function open(destination) { setPage(destination); setTab(0); }
   const monthUsage = isVoucher ? me.voucher_month_used_count != null ? `${me.voucher_month_used_count}장 · ${won(me.voucher_month_used_amount ?? 0)}` : '정보 없음' : me.month_used != null ? won(me.month_used) : '사용 정보 없음';
   return <div className="dashboard-shell">
@@ -157,6 +164,15 @@ export default function PurchaseDashboard({ me, api, supabase, apiBaseUrl, legal
     {page === '리뷰' && <ReviewBoard api={api} />}
     {page === '계정 설정' && <AccountSettings me={me} api={api} supabase={supabase} refresh={refresh} />}
     {page === '초대코드' && <InviteCodeEntry me={me} api={api} refresh={refresh} />}
+    {noVoucherOpen && <div className="done-overlay" onKeyDown={e => { if (e.key === 'Escape') setNoVoucherOpen(false); }}>
+      <section className="purchase-card done-dialog" role="dialog" aria-modal="true" aria-labelledby="no-voucher-title">
+        <span className="done-check no-voucher-icon" aria-hidden="true">!</span>
+        <h2 id="no-voucher-title">식권이 없어요</h2>
+        <p className="done-sub">식권을 구매한 뒤 QR로 사용할 수 있어요.</p>
+        <button className="done-ok" autoFocus onClick={() => { setNoVoucherOpen(false); go(1); }}>식권 구매하기</button>
+        <button className="no-voucher-close" onClick={() => setNoVoucherOpen(false)}>닫기</button>
+      </section>
+    </div>}
     <nav className="app-tab-bar" aria-label="구매자 탭">{tabs.map(([label, Icon], index) => <button key={label} aria-current={tab === index && !page ? 'page' : undefined} onClick={() => go(index)}><Icon size={21} aria-hidden="true" /><span>{label}</span></button>)}</nav>
   </div>;
 }

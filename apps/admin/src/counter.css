@@ -60,3 +60,16 @@
 .counter-login input{font:inherit;font-size:16px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:#fff}
 .counter-login button{font:inherit;font-weight:800;font-size:16px;padding:14px;border:0;border-radius:14px;background:var(--blue);color:#fff;cursor:pointer}
 @media(prefers-reduced-motion:reduce){.counter-app{transition:none}.counter-app *{animation:none!important}.d-home,.d-used,.d-tap,.d-beam{opacity:0}.d-qr{opacity:1}}
+
+/* Kiosk (Android tablet) */
+.counter-head-right{display:flex;align-items:center;gap:10px}
+.counter-net{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--fg2);padding:6px 10px;border-radius:999px;background:var(--card);border:1px solid var(--line)}
+.counter-net i{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.counter-net.off{color:#ffb4b4;border-color:#5a2328}.counter-net.off i{background:var(--err)}
+.counter-net.warn{color:#ffd58a;border-color:#5a4520}
+.counter-hold{position:relative;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
+.counter-hold-fill{position:absolute;inset:0;width:0;background:rgba(229,72,77,.35);z-index:0}
+.counter-hold.holding .counter-hold-fill{width:100%;transition:width var(--hold-ms) linear}
+.counter-banner{display:block;width:100%;margin:0;border:0;padding:12px 24px;font:inherit;font-size:16px;text-align:center}
+.counter-banner.offline{background:#3a0d10;color:#ffd2d2}
+button.counter-banner.sound{background:#2a2410;color:#ffd58a;cursor:pointer}

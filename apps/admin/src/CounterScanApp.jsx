@@ -7,6 +7,7 @@
 // charges twice.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { counterResultView, extractMemberCode } from './counterScan.js';
+import { installCounterManifest, keepScreenAwake, unlockAudio, LOGOUT_HOLD_MS } from './counterKiosk.js';
 import './counter.css';
 
 const RESET_AFTER_MS = 4000;
@@ -14,6 +15,8 @@ const IDLE_SUBMIT_MS = 120;
 
 export default function CounterScanApp({ supabase, apiBaseUrl }) {
   const [session, setSession] = useState(null), [booting, setBooting] = useState(true);
+  // Installable full-screen app (Android: Chrome → 홈 화면에 추가 / 앱 설치).
+  useEffect(() => installCounterManifest(), []);
   useEffect(() => {
     if (!supabase) { setBooting(false); return undefined; }
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setBooting(false); });
@@ -45,6 +48,20 @@ function CounterLogin({ supabase }) {
       <button disabled={busy}>로그인</button>
     </form>
   </main>;
+}
+
+// Press and hold (1.5 s) so a stray tap at the counter cannot log out.
+function HoldButton({ onHold, label, hint }) {
+  const timer = useRef(null), [holding, setHolding] = useState(false);
+  const start = e => { e.preventDefault(); setHolding(true); timer.current = setTimeout(() => { setHolding(false); onHold(); }, LOGOUT_HOLD_MS); };
+  const stop = () => { clearTimeout(timer.current); setHolding(false); };
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return <button type="button" className={`counter-hold ${holding ? 'holding' : ''}`} aria-label={hint} title={hint}
+    onPointerDown={start} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop}
+    onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) start(e); }} onKeyUp={stop}
+    style={{ '--hold-ms': `${LOGOUT_HOLD_MS}ms` }}>
+    <span className="counter-hold-fill" aria-hidden="true" />{label}
+  </button>;
 }
 
 // Idle screen: guidance on the left, a looping phone demo on the right that
@@ -81,6 +98,23 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
   const input = useRef(null), idle = useRef(null), resetTimer = useRef(null), inFlight = useRef(false);
   const [state, setState] = useState({ kind: 'ready' }), [history, setHistory] = useState([]), [value, setValue] = useState('');
   const chime = useRef(typeof Audio !== 'undefined' ? new Audio('/audio/payment-success.mp3') : null);
+  const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine !== false);
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  const [wake, setWake] = useState('pending');
+
+  // Kiosk: keep the tablet screen on, watch the connection, check the chime.
+  useEffect(() => keepScreenAwake({ onChange: setWake }), []);
+  useEffect(() => {
+    const up = () => setOnline(true), down = () => setOnline(false);
+    window.addEventListener('online', up); window.addEventListener('offline', down);
+    return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down); };
+  }, []);
+  useEffect(() => { unlockAudio(chime.current).then(ok => setSoundBlocked(!ok)); }, []);
+  async function enableSound() {
+    const ok = await unlockAudio(chime.current);
+    setSoundBlocked(!ok);
+    focus();
+  }
 
   const focus = useCallback(() => { if (document.activeElement !== input.current) input.current?.focus({ preventScroll: true }); }, []);
   useEffect(() => {
@@ -105,13 +139,15 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
       });
       const payload = await response.json().catch(() => ({}));
       view = counterResultView(response.ok, payload);
+      setOnline(true);
     } catch {
+      setOnline(navigator.onLine !== false);
       view = counterResultView(false, { detail: { code: 'NETWORK', message: '인터넷 연결을 확인하고 다시 찍어 주세요.' } });
     }
     inFlight.current = false;
     setState(view);
     if (view.kind === 'success') {
-      try { chime.current.currentTime = 0; await chime.current.play(); } catch { /* browser may block audio until first click */ }
+      try { chime.current.currentTime = 0; await chime.current.play(); setSoundBlocked(false); } catch { setSoundBlocked(true); }
       setHistory(h => [{ at: new Date(), name: view.name, remaining: view.remaining, duplicate: view.duplicate }, ...h].slice(0, 8));
     }
     if (view.code === 'UNAUTHENTICATED') return;
@@ -129,8 +165,14 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
   return <main className={`counter-app counter-${state.kind}`}>
     <header className="counter-head">
       <strong>식권 스캔 카운터</strong>
-      <button type="button" onClick={onLogout}>로그아웃</button>
+      <div className="counter-head-right">
+        <span className={`counter-net ${online ? 'on' : 'off'}`} role="status" aria-label={online ? '인터넷 연결됨' : '인터넷 연결 끊김'}><i aria-hidden="true" />{online ? '연결됨' : '연결 끊김'}</span>
+        {wake === 'off' && <span className="counter-net warn" title="화면 꺼짐 방지가 해제됐어요">화면 꺼짐 주의</span>}
+        <HoldButton onHold={onLogout} label="로그아웃" hint="길게 눌러 로그아웃" />
+      </div>
     </header>
+    {!online && <div className="counter-banner offline" role="alert">인터넷 연결이 끊겼어요. 와이파이를 확인해 주세요. 연결되면 자동으로 다시 찍을 수 있어요.</div>}
+    {online && soundBlocked && <button type="button" className="counter-banner sound" onClick={enableSound}>🔈 효과음이 꺼져 있어요. 눌러서 소리 켜기</button>}
     <section className="counter-stage" aria-live="assertive">
       {state.kind === 'ready' && <ReadyGuide />}
       {state.kind === 'busy' && <h1>확인 중…</h1>}

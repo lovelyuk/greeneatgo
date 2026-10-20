@@ -56,12 +56,11 @@ class KioskReceiptServiceTests(unittest.TestCase):
         self.assertTrue(ctx.check_hostname)
 
     def test_result_codes(self):
-        with self.assertRaises(kiosk_receipt.KioskReceiptError) as nf:
-            kiosk_receipt.verify(RECEIPT, base_url=BASE, opener=_opener(1000))
-        self.assertEqual(nf.exception.code, "KIOSK_RECEIPT_NOT_FOUND")
-        with self.assertRaises(kiosk_receipt.KioskReceiptError) as bad:
-            kiosk_receipt.verify(RECEIPT, base_url=BASE, opener=_opener(1))
-        self.assertEqual((bad.exception.code, bad.exception.provider_result), ("KIOSK_RECEIPT_INVALID", 1))
+        for code in (1, 1000, 2, -1):
+            with self.assertRaises(kiosk_receipt.KioskReceiptError) as bad:
+                kiosk_receipt.verify(RECEIPT, base_url=BASE, opener=_opener(code))
+            self.assertEqual((bad.exception.code, bad.exception.message, bad.exception.provider_result),
+                             ("KIOSK_RECEIPT_INVALID", "사용할 수 없는 영수증이에요", code))
         for weird in (None, "0", True):
             with self.assertRaises(kiosk_receipt.KioskReceiptError) as e:
                 kiosk_receipt.verify(RECEIPT, base_url=BASE, opener=_opener(weird))
@@ -125,7 +124,7 @@ class RedeemKioskReceiptTests(unittest.TestCase):
         with patch("app.services.kiosk_receipt.urlopen", _opener(1000)):
             with self.assertRaises(HTTPException) as e:
                 redeem_kiosk_receipt(KioskReceiptRedeemRequest(code=RECEIPT), "bearer")
-        self.assertEqual(e.exception.detail["code"], "KIOSK_RECEIPT_NOT_FOUND")
+        self.assertEqual(e.exception.detail["code"], "KIOSK_RECEIPT_INVALID")
         repo.client.rest_post.assert_not_called()
 
     def test_kiosk_down_or_bad_certificate_is_not_recorded(self, repo_class, _settings):

@@ -17,7 +17,6 @@ from urllib.request import Request, urlopen
 # 24 hex chars; scanners may add an AIM prefix (e.g. "]Q1") and CR/LF.
 RECEIPT_RE = re.compile(r"^(?:\][A-Za-z]\d)?([0-9a-fA-F]{24})$")
 SUCCESS = 0
-NOT_FOUND = 1000
 
 
 class KioskReceiptError(Exception):
@@ -63,6 +62,5 @@ def verify(receipt_id: str, *, base_url: str, timeout: float = 4.0, opener=None)
         raise KioskReceiptError("KIOSK_UNAVAILABLE", "키오스크 영수증 응답을 확인하지 못했어요", 503)
     if result == SUCCESS:
         return VerifiedReceipt(receipt_id=receipt_id, provider_result=result)
-    if result == NOT_FOUND:
-        raise KioskReceiptError("KIOSK_RECEIPT_NOT_FOUND", "등록되지 않은 영수증이에요", 400, result)
+    # Only 0 is success; every other code (1000 not found, 1, …) is one message.
     raise KioskReceiptError("KIOSK_RECEIPT_INVALID", "사용할 수 없는 영수증이에요", 400, result)

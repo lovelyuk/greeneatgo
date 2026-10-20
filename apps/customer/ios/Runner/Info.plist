@@ -26,6 +26,62 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>mpocket.online.ansimclick</string>
+		<string>ansimclickscard</string>
+		<string>tswansimclick</string>
+		<string>ansimclickipcollect</string>
+		<string>vguardstart</string>
+		<string>samsungpay</string>
+		<string>scardcertiapp</string>
+		<string>monimopay</string>
+		<string>monimopayauth</string>
+		<string>shinhan-sr-ansimclick</string>
+		<string>smshinhanansimclick</string>
+		<string>hdcardappcardansimclick</string>
+		<string>smhyundaiansimclick</string>
+		<string>cloudpay</string>
+		<string>hanawalletmembers</string>
+		<string>lotteappcard</string>
+		<string>lottesmartpay</string>
+		<string>citicardappkr</string>
+		<string>citispay</string>
+		<string>citimobileapp</string>
+		<string>kb-acp</string>
+		<string>newliiv</string>
+		<string>kbbank</string>
+		<string>com.wooricard.wcard</string>
+		<string>wooripay</string>
+		<string>NewSmartPib</string>
+		<string>nhappcardansimclick</string>
+		<string>nhallonepayansimclick</string>
+		<string>nonghyupcardansimclick</string>
+		<string>kakaotalk</string>
+		<string>kakaopay</string>
+		<string>naversearchapp</string>
+		<string>naversearchthirdlogin</string>
+		<string>naverpayapp</string>
+		<string>lpayapp</string>
+		<string>lmslpay</string>
+		<string>ispmobile</string>
+		<string>payco</string>
+		<string>shinsegaeeasypayment</string>
+		<string>supertoss</string>
+		<string>callonlinepay</string>
+		<string>smilepayapp</string>
+		<string>tmoneypay</string>
+		<string>chai</string>
+		<string>lguthepay</string>
+		<string>lguthepay-xpay</string>
+		<string>kftc-bankpay</string>
+		<string>bankwallet</string>
+		<string>smartxpay-transfer</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>매장 QR 스캔에 카메라를 사용해요</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>리뷰 사진을 올릴 때 사진을 선택해요</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

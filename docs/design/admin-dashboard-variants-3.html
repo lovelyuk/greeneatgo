@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>관리자 대시보드 시안 3 · GreenEat Go</title>
+<style>
+@font-face{font-family:Pretendard;font-weight:400;src:url(../../apps/admin/public/fonts/Pretendard-Regular.otf)}
+@font-face{font-family:Pretendard;font-weight:600;src:url(../../apps/admin/public/fonts/Pretendard-SemiBold.otf)}
+@font-face{font-family:Pretendard;font-weight:700;src:url(../../apps/admin/public/fonts/Pretendard-Bold.otf)}
+@font-face{font-family:Pretendard;font-weight:800;src:url(../../apps/admin/public/fonts/Pretendard-ExtraBold.otf)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Pretendard,sans-serif;background:#d9dde5;padding:40px;color:#111;-webkit-font-smoothing:antialiased}
+.slot{margin:0 auto 56px;width:1440px}
+.slot>h2{font-size:22px;font-weight:800;margin-bottom:4px}
+.slot>p{font-size:14px;color:#4a5263;margin-bottom:14px}
+.frame{width:1440px;height:900px;overflow:hidden;border-radius:14px;box-shadow:0 20px 50px rgba(15,23,42,.18);position:relative;display:flex}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+svg.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.logo{height:34px;display:block}
+
+/* ---------- shared sidebar shapes ---------- */
+.side{width:232px;flex:none;display:flex;flex-direction:column;padding:26px 16px 20px}
+.side .logo-wrap{padding:0 10px 26px}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border-radius:9px;font-size:14.5px;font-weight:600;text-decoration:none;color:inherit}
+.nav .grp{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:18px 12px 6px;opacity:.5}
+.side .foot{margin-top:auto;font-size:11.5px;opacity:.55;padding:0 12px;line-height:1.7}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{height:72px;display:flex;align-items:center;gap:16px;padding:0 32px;flex:none}
+.top h1{font-size:20px;font-weight:800;letter-spacing:-.02em}
+.top .sp{flex:1}
+.range{display:flex;align-items:center;gap:6px;height:38px;padding:0 12px;border-radius:9px;font-size:13.5px;font-weight:600}
+.btn{height:38px;padding:0 16px;border-radius:9px;font-size:13.5px;font-weight:700;display:inline-flex;align-items:center;gap:6px;border:0}
+.seg{display:flex;padding:3px;border-radius:10px;gap:2px}
+.seg span{height:32px;padding:0 12px;display:flex;align-items:center;font-size:13px;font-weight:600;border-radius:7px}
+.content{flex:1;padding:4px 32px 28px;display:grid;gap:16px;min-height:0}
+.card{border-radius:14px;padding:20px 22px;min-width:0}
+.card h3{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:8px}
+.card h3 small{margin-left:auto;font-size:12px;font-weight:500;opacity:.55}
+.kpi .lab{font-size:13px;font-weight:600;opacity:.7}
+.kpi .val{font-size:30px;font-weight:800;margin-top:8px}
+.kpi .val em{font-style:normal;font-size:17px;font-weight:700;margin-left:2px;opacity:.75}
+.delta{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:700;margin-top:8px}
+.delta i{font-style:normal;font-weight:500;opacity:.7}
+.rank{margin-top:12px;display:flex;flex-direction:column}
+.rank .r{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:10px;padding:9px 0;font-size:13.5px}
+.rank .r b{font-weight:800;font-size:12.5px;opacity:.6}
+.rank .r .nm{font-weight:600}
+.rank .bar{grid-column:2/4;height:5px;border-radius:3px;margin-top:-4px}
+.rank .bar i{display:block;height:100%;border-radius:3px}
+.chart{width:100%;display:block}
+.legend{display:flex;gap:14px;font-size:12px;font-weight:600}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend span:before{content:"";width:10px;height:10px;border-radius:3px;background:var(--c)}
+.feed .row{display:grid;grid-template-columns:56px 1fr auto;gap:10px;align-items:center;padding:10px 0;font-size:13.5px}
+.feed .row .t{font-weight:700;opacity:.6;font-size:12.5px}
+.feed .row .who{font-weight:600}
+.feed .row .who small{display:block;font-size:12px;font-weight:500;opacity:.6;margin-top:2px}
+.pill{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:6px}
+.donut{display:flex;align-items:center;gap:20px;margin-top:14px}
+.donut .lg{flex:1;display:flex;flex-direction:column;gap:10px;font-size:13.5px}
+.donut .lg div{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.donut .lg div:before{content:"";width:9px;height:9px;border-radius:50%;background:var(--c)}
+.donut .lg b{margin-left:auto;font-weight:800}
+.donut .lg i{font-style:normal;opacity:.55;font-size:12.5px;width:72px;text-align:right}
+
+
+/* icon rail */
+.rail{width:76px;flex:none;display:flex;flex-direction:column;align-items:center;padding:22px 0 18px;gap:6px}
+.rail .mark{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:18px;margin-bottom:18px}
+.rail a{width:44px;height:44px;border-radius:12px;display:grid;place-items:center}
+.rail a svg.ic{width:20px;height:20px}
+.rail .sp{flex:1}
+
+/* ---------- V7 Bento ---------- */
+.v7{background:#eef1f6;color:#131a2a}
+.v7 .rail{background:#fff;border-right:1px solid #e3e7ef}
+.v7 .rail .mark{background:#2c5fff;color:#fff}
+.v7 .rail a{color:#8a93a6}.v7 .rail a.on{background:#eef3ff;color:#2c5fff}
+.v7 .range{background:#fff}
+.v7 .seg{background:#e3e7ef}.v7 .seg span.on{background:#fff}
+.v7 .content{grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,1fr)}
+.v7 .tile{border-radius:20px;background:#fff;padding:22px 24px;min-width:0;min-height:0;overflow:hidden;position:relative}
+.v7 .tile h3{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:8px}
+.v7 .tile h3 small{margin-left:auto;font-size:12px;font-weight:500;opacity:.55}
+.v7 .tile.blue{background:#2c5fff;color:#fff}
+.v7 .tile.ink{background:#131a2a;color:#fff}
+.v7 .delta{color:#0f9d58}
+.v7 .tile.blue .delta{color:#dfe7ff}
+.v7 .rank .r{border-bottom:1px solid #f0f2f6}.v7 .rank .bar{background:#eef1f7}.v7 .rank .bar i{background:#2c5fff}
+
+/* ---------- V8 Calendar ---------- */
+.v8{background:#f6f7fb;color:#131a2a}
+.v8 .side{background:#fff;border-right:1px solid #e8ebf2}
+.v8 .nav a{color:#4a5263}.v8 .nav a.on{background:#eef3ff;color:#2c5fff}
+.v8 .range{background:#fff;border:1px solid #e1e5ee}
+.v8 .btn.p{background:#2c5fff;color:#fff}
+.v8 .card{background:#fff;border:1px solid #e8ebf2}
+.v8 .content{grid-template-columns:1fr 360px;grid-template-rows:auto 1fr auto}
+.v8 .kline{grid-column:1/3;display:flex;gap:44px;align-items:flex-end;padding:2px 4px 4px}
+.v8 .kline .val{font-size:28px}
+.v8 .delta{color:#2c5fff}
+.v8 .rank .r{border-bottom:1px solid #f0f2f6}.v8 .rank .bar{background:#eef1f7}.v8 .rank .bar i{background:#2c5fff}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:14px}
+.cal .dow{font-size:12px;font-weight:700;color:#8a93a6;padding-left:4px}
+.cal .d{height:94px;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;justify-content:space-between;font-size:12.5px;font-weight:600}
+.cal .d b{font-size:22px;font-weight:800}
+.cal .d.off{background:#f3f4f7;color:#a2a9b8}
+.cal .d.fut{border:1px dashed #e3e6ee;color:#c3c8d2}
+.cal .d.today{outline:2.5px solid #131a2a;outline-offset:2px}
+.scale{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8a93a6;font-weight:600}
+.scale i{width:18px;height:10px;border-radius:3px;display:block}
+
+/* ---------- V9 Flip Board ---------- */
+.v9{background:#f4f6fa;color:#131a2a}
+.v9 .side{background:#fff;border-right:1px solid #e8ebf2}
+.v9 .nav a{color:#4a5263}.v9 .nav a.on{background:#131a2a;color:#fff}
+.v9 .range{background:#fff;border:1px solid #e1e5ee}
+.v9 .btn.p{background:#2c5fff;color:#fff}
+.v9 .card{background:#fff;border:1px solid #e8ebf2}
+.v9 .content{grid-template-columns:repeat(12,1fr);grid-template-rows:auto 1fr}
+.v9 .hero{grid-column:1/13;background:#0a0d14;color:#fff;border-radius:18px;padding:26px 32px;display:grid;grid-template-columns:auto auto 1fr;gap:56px;align-items:center}
+.v9 .hero .lab{font-size:13px;font-weight:600;color:#8a93a6}
+.v9 .delta{color:#5b87ff}
+.v9 .card .delta{color:#2c5fff}
+.v9 .rank .r{border-bottom:1px solid #f0f2f6}.v9 .rank .bar{background:#eef1f7}.v9 .rank .bar i{background:#131a2a}
+.flip{display:flex;gap:6px;margin-top:10px;align-items:flex-end}
+.flip .t{width:54px;height:76px;border-radius:9px;background:#1b2436;position:relative;display:grid;place-items:center;font-size:48px;font-weight:800;color:#f4f1e9}
+.flip .t:after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:#0a0d14}
+.flip .c{font-size:40px;font-weight:800;color:#5b87ff;width:12px;text-align:center;line-height:1}
+.flip .u{font-size:20px;font-weight:700;color:#8a93a6;margin-left:6px;margin-bottom:6px}
+.flip.sm .t{width:36px;height:52px;font-size:32px;border-radius:7px}
+.flip.sm .c{font-size:26px;width:8px}
+.split{height:12px;border-radius:6px;display:flex;overflow:hidden;margin-top:12px;background:#1b2436}
+.split i{display:block;height:100%}
+
+/* ---------- V10 Report Paper ---------- */
+.v10{background:#e8e5dc;color:#1d2230}
+.v10 .rail{background:#0a0d14}
+.v10 .rail .mark{background:#2c5fff;color:#fff}
+.v10 .rail a{color:#6b7489}.v10 .rail a.on{background:#1b2436;color:#fff}
+.v10 .main{padding:30px 44px}
+.paper{flex:1;background:#f4f1e9;border-radius:4px;box-shadow:0 1px 0 #d8d2c2,0 18px 40px rgba(40,34,20,.14);padding:34px 46px 30px;display:grid;grid-template-columns:1.05fr 1fr;grid-template-rows:auto 1fr;column-gap:52px;min-height:0}
+.paper .hd{grid-column:1/3;display:flex;align-items:flex-end;gap:16px;padding-bottom:18px;border-bottom:3px double #cfc7b4;margin-bottom:8px}
+.paper .hd small{font-size:11.5px;font-weight:800;letter-spacing:.18em;color:#8b8371}
+.paper .hd h1{font-size:30px;font-weight:800;letter-spacing:-.03em;margin-top:4px}
+.paper .hd p{font-size:13px;color:#7a7364;margin-top:6px}
+.paper .hd .sp{flex:1}
+.v10 .seg{background:#e8e2d3}.v10 .seg span.on{background:#f4f1e9;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.lead{display:flex;align-items:baseline;gap:10px;padding:11px 0;font-size:15px;font-weight:600}
+.lead .dots{flex:1;border-bottom:2px dotted #cfc7b4;transform:translateY(-4px)}
+.lead b{font-weight:800}
+.lead.big{font-size:17px}.lead.big b{font-size:30px;letter-spacing:-.03em}
+.ptbl{width:100%;border-collapse:collapse;font-size:14px;margin-top:10px}
+.ptbl th{font-size:12px;color:#8b8371;font-weight:700;text-align:left;padding:8px 6px;border-bottom:1.5px solid #1d2230}
+.ptbl td{padding:12px 6px;border-bottom:1px solid #ddd5c3;font-weight:600}
+.ptbl .n{text-align:right}
+.ptbl tr.tot td{border-top:3px double #1d2230;border-bottom:0;font-weight:800}
+.ph{font-size:13px;font-weight:800;letter-spacing:.06em;color:#8b8371;margin-top:16px}
+
+/* ---------- V11 Split Stage ---------- */
+.v11{background:#f5f7fb;color:#131a2a}
+.v11 .rail{background:#fff;border-right:1px solid #e6e9f0}
+.v11 .rail .mark{background:#0a0d14;color:#fff}
+.v11 .rail a{color:#8a93a6}.v11 .rail a.on{background:#eef3ff;color:#2c5fff}
+.stage{width:420px;flex:none;background:#0a0d14;color:#fff;padding:30px 32px;display:flex;flex-direction:column}
+.stage .live{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:#7fa2ff;background:rgba(44,95,255,.16);padding:5px 11px;border-radius:999px;align-self:flex-start}
+.stage .live:before{content:"";width:7px;height:7px;border-radius:50%;background:#5b87ff;box-shadow:0 0 0 4px rgba(91,135,255,.25)}
+.stage .feed .row{border-bottom:1px solid #1b2436}
+.v11 .range{background:#fff;border:1px solid #e1e5ee}
+.v11 .seg{background:#e9ecf2}.v11 .seg span.on{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.v11 .card{background:#fff;border:1px solid #e8ebf2}
+.v11 .content{grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto 1fr}
+.v11 .delta{color:#2c5fff}
+.v11 .rank .r{border-bottom:1px solid #f0f2f6}.v11 .rank .bar{background:#eef1f7}.v11 .rank .bar i{background:#2c5fff}
+
+/* ---------- V12 Compact Table ---------- */
+.v12{background:#fff;color:#16181d}
+.v12 .side{background:#fafafa;border-right:1px solid #ececef;width:216px;padding-top:22px}
+.v12 .logo{height:28px}
+.v12 .nav a{color:#5b5f6a;height:34px;font-size:13.5px}.v12 .nav a.on{background:#ececf0;color:#16181d}
+.v12 .top{border-bottom:1px solid #ececef;height:60px;padding:0 28px}
+.v12 .top h1{font-size:16px}
+.v12 .crumb{font-size:13px;color:#8b8f99;font-weight:600}
+.v12 .range{border:1px solid #e3e3e8;height:34px}
+.v12 .seg{background:#f3f3f5}.v12 .seg span{height:28px}.v12 .seg span.on{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.chips{display:flex;border-bottom:1px solid #ececef}
+.chips>div{flex:1;padding:18px 28px;border-right:1px solid #ececef}
+.chips>div:last-child{border-right:0}
+.chips .lab{font-size:12px;color:#7b7f8a;font-weight:600}
+.chips .val{font-size:24px;font-weight:800;margin-top:6px}
+.chips .val em{font-style:normal;font-size:14px;margin-left:2px;color:#7b7f8a}
+.v12 .delta{color:#2c5fff;margin-top:4px;font-size:12px}
+.v12 .sec{padding:20px 28px 8px}
+.v12 .sec h3{font-size:14px;font-weight:700;display:flex;gap:8px;align-items:center}
+.v12 .sec h3 small{margin-left:auto;font-size:12px;color:#8b8f99;font-weight:500}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+.tbl th{font-size:12px;color:#7b7f8a;font-weight:600;text-align:left;padding:9px 12px;border-bottom:1px solid #ececef;background:#fafafa}
+.tbl td{padding:11px 12px;border-bottom:1px solid #f2f2f4;font-weight:500}
+.tbl .n{text-align:right}
+.share{display:flex;align-items:center;gap:10px}.share span{flex:1;height:6px;border-radius:3px;background:#f0f0f3;overflow:hidden}.share i{display:block;height:100%;background:#2c5fff;border-radius:3px}
+
+/* ---------- V13 Briefing ---------- */
+.v13{background:#fff;color:#131a2a}
+.v13 .side{background:#f7f8fb;border-right:1px solid #eceff4}
+.v13 .nav a{color:#4a5263}.v13 .nav a.on{background:#fff;color:#2c5fff;box-shadow:0 1px 2px rgba(16,24,40,.06)}
+.v13 .range{background:#f3f5f9}
+.brief{padding:34px 48px 30px;display:grid;grid-template-columns:1.15fr 1fr;gap:44px;flex:1;min-height:0}
+.brief .hello{font-size:14px;color:#8a93a6;font-weight:600}
+.brief h1{font-size:34px;font-weight:800;letter-spacing:-.035em;line-height:1.32;margin-top:8px}
+.brief h1 em{font-style:normal;color:#2c5fff}
+.brief .para{margin-top:26px;display:flex;flex-direction:column}
+.brief .line{display:grid;grid-template-columns:34px 1fr;gap:12px;padding:16px 0;border-top:1px solid #eef0f4;font-size:16px;line-height:1.6;font-weight:500}
+.brief .line b{font-weight:800}
+.brief .line .ix{width:30px;height:30px;border-radius:9px;background:#eef3ff;color:#2c5fff;display:grid;place-items:center}
+.brief .line .up{color:#2c5fff;font-weight:800}
+.brief .rt{display:flex;flex-direction:column;gap:16px;min-height:0}
+.brief .box{border:1px solid #eceff4;border-radius:16px;padding:20px 22px}
+.brief .box h3{font-size:14.5px;font-weight:700;display:flex}
+.brief .box h3 small{margin-left:auto;font-size:12px;color:#8a93a6;font-weight:500}
+.v13 .rank .r{border-bottom:1px solid #f0f2f6}.v13 .rank .bar{background:#eef1f7}.v13 .rank .bar i{background:#2c5fff}
+
+/* ---------- V14 Podium ---------- */
+.v14{background:#0a0d14;color:#e9edf5}
+.v14 .side{background:#0a0d14;border-right:1px solid #1b2436}
+.v14 .nav a{color:#8a93a6}.v14 .nav a.on{background:#1b2436;color:#fff}
+.v14 .range{background:#131a2a;border:1px solid #212b3e}
+.v14 .seg{background:#131a2a}.v14 .seg span{color:#8a93a6}.v14 .seg span.on{background:#2c5fff;color:#fff}
+.v14 .card{background:#131a2a;border:1px solid #212b3e}
+.v14 .content{grid-template-columns:repeat(12,1fr);grid-template-rows:auto 1fr}
+.v14 .delta{color:#5b87ff}
+.podium{display:flex;align-items:flex-end;justify-content:center;gap:14px;height:100%;padding-top:10px}
+.podium .p{width:190px;display:flex;flex-direction:column;align-items:center}
+.podium .who{text-align:center;margin-bottom:14px}
+.podium .who .nm{font-size:18px;font-weight:800}
+.podium .who .am{font-size:14px;color:#8a93a6;font-weight:600;margin-top:4px}
+.podium .blk{width:100%;border-radius:14px 14px 0 0;display:flex;flex-direction:column;align-items:center;padding-top:16px;font-weight:800}
+.podium .blk b{font-size:44px;line-height:1}
+.podium .blk span{font-size:13px;font-weight:600;opacity:.75;margin-top:8px}
+.medal{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:18px;margin-bottom:10px;color:#0a0d14}
+.v14 .rest .r{display:grid;grid-template-columns:28px 1fr auto auto;gap:14px;padding:14px 0;border-bottom:1px solid #1b2436;font-size:14px;align-items:center}
+
+/* ---------- V15 Treemap ---------- */
+.v15{background:#f4f6fa;color:#131a2a}
+.v15 .side{background:#fff;border-right:1px solid #e8ebf2}
+.v15 .nav a{color:#4a5263}.v15 .nav a.on{background:#eef3ff;color:#2c5fff}
+.v15 .range{background:#fff;border:1px solid #e1e5ee}
+.v15 .btn.p{background:#2c5fff;color:#fff}
+.v15 .card{background:#fff;border:1px solid #e8ebf2}
+.v15 .content{grid-template-columns:1fr 330px;grid-template-rows:1fr auto}
+.v15 .delta{color:#2c5fff}
+.tm{position:relative;margin-top:14px;height:600px;border-radius:12px;overflow:hidden}
+.tm .cell{position:absolute;padding:16px 18px;color:#fff;display:flex;flex-direction:column;border:3px solid #fff;border-radius:12px}
+.tm .cell .nm{font-size:15px;font-weight:700}
+.tm .cell .pc{font-size:34px;font-weight:800;letter-spacing:-.03em;margin-top:auto}
+.tm .cell .am{font-size:13px;font-weight:600;opacity:.8;margin-top:2px}
+
+/* ---------- V16 Ticket Stubs ---------- */
+.v16{background:#0a0d14;color:#e9edf5}
+.v16 .rail{background:#0a0d14;border-right:1px solid #1b2436}
+.v16 .rail .mark{background:#2c5fff;color:#fff}
+.v16 .rail a{color:#6b7489}.v16 .rail a.on{background:#1b2436;color:#fff}
+.v16 .seg{background:#131a2a}.v16 .seg span{color:#8a93a6}.v16 .seg span.on{background:#f4f1e9;color:#131a2a}
+.v16 .range{background:#131a2a;border:1px solid #212b3e}
+.v16 .content{grid-template-columns:repeat(3,1fr);grid-template-rows:auto 1fr 1fr}
+.tk{background:#f4f1e9;color:#131a2a;border-radius:14px;display:grid;grid-template-columns:1fr 112px;position:relative;min-height:0}
+.tk:before,.tk:after{content:"";position:absolute;right:102px;width:20px;height:20px;border-radius:50%;background:#0a0d14}
+.tk:before{top:-10px}.tk:after{bottom:-10px}
+.tk .l{padding:18px 20px;display:flex;flex-direction:column}
+.tk .l small{font-size:11px;font-weight:800;letter-spacing:.14em;color:#8b8371}
+.tk .l .nm{font-size:19px;font-weight:800;margin-top:6px}
+.tk .l .am{font-size:26px;font-weight:800;letter-spacing:-.03em;margin-top:auto}
+.tk .l .am em{font-style:normal;font-size:14px;color:#7a7364;margin-left:2px}
+.tk .r{border-left:2px dashed #cfc7b4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.tk .r b{font-size:30px;font-weight:800}
+.tk .r span{font-size:12px;font-weight:700;color:#7a7364}
+.tk.hero{grid-column:1/4;grid-template-columns:1fr 220px;background:#2c5fff;color:#fff}
+.tk.hero:before,.tk.hero:after{right:210px}
+.tk.hero .l small{color:#cfdaff}.tk.hero .r{border-left-color:rgba(255,255,255,.4)}.tk.hero .r span{color:#cfdaff}
+.tk.hero .l .am em{color:#cfdaff}
+
+/* ---------- V17 Week Heatmap ---------- */
+.v17{background:#f6f7fb;color:#131a2a}
+.v17 .side{background:#131a2a;color:#c9d0de}
+.v17 .nav a{color:#8a93a6}.v17 .nav a.on{background:#2c5fff;color:#fff}
+.v17 .range{background:#fff;border:1px solid #e1e5ee}
+.v17 .btn.p{background:#131a2a;color:#fff}
+.v17 .card{background:#fff;border:1px solid #e8ebf2}
+.v17 .content{grid-template-columns:1.5fr 1fr;grid-template-rows:auto 1fr}
+.v17 .delta{color:#2c5fff}
+.hm{display:grid;grid-template-columns:70px repeat(7,1fr);gap:8px;margin-top:16px}
+.hm .h{font-size:12.5px;font-weight:700;color:#8a93a6;text-align:center}
+.hm .wk{font-size:12.5px;font-weight:700;color:#4a5263;display:flex;align-items:center}
+.hm .c{height:92px;border-radius:12px;display:flex;flex-direction:column;justify-content:space-between;padding:10px 12px;font-size:12px;font-weight:600}
+.hm .c b{font-size:24px;font-weight:800}
+.hm .c.off{background:#eef0f4;color:#a2a9b8}
+.hm .c.none{background:transparent;border:1px dashed #e1e5ee}
+.wd .r{display:grid;grid-template-columns:44px 1fr 60px;gap:12px;align-items:center;padding:11px 0;font-size:14px;font-weight:600}
+.wd .bar{height:14px;border-radius:7px;background:#eef1f7;overflow:hidden}.wd .bar i{display:block;height:100%;background:#c9d6ff;border-radius:7px}
+.wd .r.top .bar i{background:#2c5fff}
+
+/* ---------- V18 Mobile ---------- */
+.v18{background:linear-gradient(180deg,#eef2fb,#e2e8f6);justify-content:center;align-items:center;gap:44px}
+.ph{width:350px;height:760px;border-radius:46px;background:#0a0d14;padding:12px;box-shadow:0 30px 60px rgba(15,23,42,.25)}
+.ph .sc{width:100%;height:100%;border-radius:36px;overflow:hidden;background:#f5f7fb;color:#131a2a;display:flex;flex-direction:column;position:relative}
+.ph .sb{height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font-size:13px;font-weight:700}
+.ph .hd{padding:6px 20px 12px;display:flex;align-items:center;gap:8px}
+.ph .hd h4{font-size:20px;font-weight:800}
+.ph .bd{flex:1;padding:0 16px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+.ph .cd{background:#fff;border-radius:18px;padding:16px 18px}
+.ph .cd.ink{background:#131a2a;color:#fff}
+.ph .tb{height:70px;background:#fff;border-top:1px solid #e8ebf2;display:flex;justify-content:space-around;align-items:center;padding-bottom:10px;font-size:11px;font-weight:600;color:#8a93a6}
+.ph .tb div{display:flex;flex-direction:column;align-items:center;gap:4px}
+.ph .tb .on{color:#2c5fff}
+.ph .feed .row{border-bottom:1px solid #f0f2f6;grid-template-columns:48px 1fr auto}
+.ph .rank .r{border-bottom:1px solid #f0f2f6}.ph .rank .bar{background:#eef1f7}.ph .rank .bar i{background:#2c5fff}
+.cap{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:13px;color:#4a5263;font-weight:600}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-live" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></symbol>
+  <symbol id="i-biz" viewBox="0 0 24 24"><path d="M4 21V7l8-4 8 4v14M9 21v-5h6v5M8 10h.01M12 10h.01M16 10h.01"/></symbol>
+  <symbol id="i-settle" viewBox="0 0 24 24"><path d="M4 6h16v12H4zM4 10h16M8 15h3"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"/></symbol>
+  <symbol id="i-cup" viewBox="0 0 24 24"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM17 10h1.5a2.5 2.5 0 0 1 0 5H17M8 3v3M12 3v3"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.4 19.6l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.5 14H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.4 7.4l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 3.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.6 1.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.6 1.6 0 0 0 20.5 10H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M7 14l5-5 5 5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></symbol>
+</svg>
+
+<div id="board"></div>
+
+<script>
+// Same sample numbers as the current dashboard capture (2026-10-01 ~ 10-20).
+const DAYS = Array.from({length:20},(_,i)=>i+1);
+// 10/1(목)~10/20(화). 주말·개천절·한글날은 휴무(0건). 합계 1,423건 × 7,000원 = 9,961,000원.
+const CLOSED = new Set([3,4,9,10,11,17,18]);
+const OPEN_COUNTS = [108,96,112,118,121,114,110,117,124,98,105,112,88];
+const COUNTS = (()=>{let k=0; return DAYS.map(d=> CLOSED.has(d) ? 0 : OPEN_COUNTS[k++]);})();
+const AMOUNTS = COUNTS.map(c=>c*7000);
+const TOTAL_AMOUNT = 9961000, TOTAL_COUNT = 1423;
+const BY_AMOUNT = [['한빛테크',3150000],['초록물산',2471000],['대성정밀',1890000],['미래로직스',1120000],['개인 구매',980000]];
+const BY_COUNT = [['한빛테크',450],['초록물산',353],['대성정밀',270],['미래로직스',160],['개인 구매',140]];
+const MEAL = [['중식',78,1110,7770000],['석식',22,313,2191000]];
+const FEED = [['12:50','김민준','한빛테크','식권'],['12:46','이서연','초록물산','장부'],['12:42','박도윤','대성정밀','식권'],['12:38','최하은','한빛테크','식권'],['12:34','정우진','초록물산','장부'],['12:30','강지우','대성정밀','식권'],['12:26','김민준','한빛테크','식권']];
+const won = n => n.toLocaleString('ko-KR');
+const ic = id => `<svg class="ic"><use href="#i-${id}"/></svg>`;
+
+const NAV = [['home','대시보드'],['live','실시간 매출'],null,['biz','업체 정보'],['settle','매출 정산'],['doc','증빙 내역'],null,['cup','식당 관리'],['gear','공급자 정보']];
+function sideNav(groups){
+  let g=0, out='';
+  NAV.forEach((n,i)=>{
+    if(!n){ out+= groups ? `<div class="grp">${groups[++g]}</div>` : '<div style="height:14px"></div>'; return; }
+    out+=`<a class="${i===0?'on':''}">${ic(n[0])}${n[1]}</a>`;
+  });
+  return (groups?`<div class="grp" style="padding-top:0">${groups[0]}</div>`:'')+out;
+}
+function side(logo, groups){
+  return `<aside class="side"><div class="logo-wrap"><img class="logo" src="../../apps/admin/public/brand/${logo}" alt="그린잇"></div>
+  <nav class="nav">${sideNav(groups)}</nav>
+  <div class="foot"><div style="display:flex;gap:10px;margin-bottom:10px;opacity:1">${ic('refresh')}새로고침</div><div style="display:flex;gap:10px;margin-bottom:14px">${ic('out')}로그아웃</div>개인정보 처리방침 · 이용약관</div></aside>`;
+}
+function delta(v, txt='전 기간 대비'){ return `<div class="delta">${ic('up')}${v}% <i>${txt}</i></div>`; }
+
+// Charts ---------------------------------------------------------------
+function area(w,h,vals,{stroke,fill,grid='#eef0f5',axis='#8a93a6',pad=[14,8,22,40],bars=null,barFill=null,labelsEvery=3,fmt=v=>v}={}){
+  const [t,r,b,l]=pad, W=w-l-r, H=h-t-b, max=Math.max(...vals)*1.12;
+  const x=i=>l+ (vals.length===1?0: i*(W/(vals.length-1))), y=v=>t+H-(v/max)*H;
+  let g='';
+  for(let k=0;k<=3;k++){const yy=t+H*k/3; g+=`<line x1="${l}" x2="${w-r}" y1="${yy}" y2="${yy}" stroke="${grid}"/><text x="${l-8}" y="${yy+4}" font-size="10.5" text-anchor="end" fill="${axis}">${fmt(Math.round(max*(1-k/3)))}</text>`;}
+  let lbl=''; vals.forEach((_,i)=>{ if(i%labelsEvery===0) lbl+=`<text x="${x(i)}" y="${h-4}" font-size="10.5" text-anchor="middle" fill="${axis}">10.${String(i+1).padStart(2,'0')}</text>`;});
+  let barsSvg='';
+  if(bars){ const bw=W/vals.length*0.56, bmax=Math.max(...bars)*1.12; bars.forEach((v,i)=>{const bh=(v/bmax)*H; barsSvg+=`<rect x="${x(i)-bw/2}" y="${t+H-bh}" width="${bw}" height="${bh}" rx="3" fill="${barFill}"/>`;}); }
+  const pts=vals.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
+  const id='g'+Math.random().toString(36).slice(2,7);
+  return `<svg class="chart" viewBox="0 0 ${w} ${h}" height="${h}"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${fill}" stop-opacity=".28"/><stop offset="1" stop-color="${fill}" stop-opacity="0"/></linearGradient></defs>${g}${barsSvg}
+   ${fill?`<polygon points="${l},${t+H} ${pts} ${x(vals.length-1)},${t+H}" fill="url(#${id})"/>`:''}
+   <polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>${lbl}</svg>`;
+}
+function bars(w,h,vals,{fill,today='#2c5fff',closed='#c3c8d2',grid='#eef0f5',axis='#8a93a6',pad=[14,6,24,44],fmt=v=>v,every=2,line=null,lineColor='#14b8a6',radius=4}={}){
+  const [t,r,b,l]=pad, W=w-l-r, H=h-t-b, max=Math.max(...vals)*1.15, n=vals.length, slot=W/n, bw=Math.min(28,slot*0.62);
+  let g='';
+  for(let k=0;k<=3;k++){const yy=t+H*k/3; g+=`<line x1="${l}" x2="${w-r}" y1="${yy}" y2="${yy}" stroke="${grid}"/><text x="${l-8}" y="${yy+4}" font-size="10.5" text-anchor="end" fill="${axis}">${fmt(Math.round(max*(1-k/3)))}</text>`;}
+  let out='';
+  vals.forEach((v,i)=>{
+    const cx=l+slot*i+slot/2, d=i+1;
+    if(v===0){ out+=`<text x="${cx}" y="${t+H-6}" font-size="10" text-anchor="middle" fill="${closed}">휴무</text>`; }
+    else { const bh=(v/max)*H; out+=`<rect x="${cx-bw/2}" y="${t+H-bh}" width="${bw}" height="${bh}" rx="${radius}" fill="${i===n-1?today:fill}"/>`; }
+    if((i%every===0 && i<n-2) || i===n-1) out+=`<text x="${cx}" y="${h-6}" font-size="10.5" text-anchor="middle" fill="${i===n-1?today:axis}" font-weight="${i===n-1?700:400}">${i===n-1?'오늘':'10.'+String(d).padStart(2,'0')}</text>`;
+  });
+  if(line){ const lm=Math.max(...line)*1.15; const pts=line.map((v,i)=>v?`${l+slot*i+slot/2},${t+H-(v/lm)*H}`:null).filter(Boolean).join(' ');
+    out+=`<polyline points="${pts}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round" stroke-dasharray="0"/>`; }
+  return `<svg class="chart" viewBox="0 0 ${w} ${h}" height="${h}">${g}${out}</svg>`;
+}
+function spark(vals,color,w=120,h=36){
+  const max=Math.max(...vals), x=i=>i*(w/(vals.length-1)), y=v=>h-2-(v/max)*(h-4);
+  const bw=w/vals.length*0.6;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${vals.map((v,i)=>v?`<rect x="${i*(w/vals.length)}" y="${h-(v/max)*(h-2)}" width="${bw}" height="${(v/max)*(h-2)}" rx="1.5" fill="${color}" opacity="${i===vals.length-1?1:.45}"/>`:'').join('')}</svg>`;
+}
+function donut(size,colors,track){
+  const r=size/2-10, c=2*Math.PI*r, a=MEAL[0][1]/100*c;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="transform:rotate(-90deg)"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${track}" stroke-width="14"/>
+   <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${colors[1]}" stroke-width="14" stroke-dasharray="${c} ${c}"/>
+   <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${colors[0]}" stroke-width="14" stroke-dasharray="${a} ${c}" stroke-linecap="butt"/></svg>`;
+}
+function mealList(colors){ return `<div class="lg">${MEAL.map((m,i)=>`<div style="--c:${colors[i]}">${m[0]}<i class="num">${won(m[2])}건</i><b class="num">${m[1]}%</b></div>`).join('')}</div>`; }
+function rank(rows,unit,max){ return `<div class="rank">${rows.map((r,i)=>`<div class="r"><b class="num">${i+1}</b><span class="nm">${r[0]}</span><span class="num" style="font-weight:700">${won(r[1])}${unit}</span><div class="bar"><i style="width:${r[1]/max*100}%"></i></div></div>`).join('')}</div>`; }
+const kfmt = v => v>=1e6 ? (v/1e6).toFixed(1)+'M' : v>=1e3 ? Math.round(v/1e3)+'K' : v;
+
+
+const COMP = BY_AMOUNT.map(([n,a])=>({n,a,c:(BY_COUNT.find(x=>x[0]===n)||[0,0])[1]}));
+const OPEN_DAYS = COUNTS.filter(Boolean).length, AVG = Math.round(TOTAL_COUNT/OPEN_DAYS);
+const RAIL = ['home','live','biz','settle','doc','cup','gear'];
+function rail(mark){ return `<aside class="rail"><div class="mark">${mark}</div>${RAIL.map((r,i)=>`<a class="${i===0?'on':''}" title="${NAV.filter(Boolean)[i][1]}">${ic(r)}</a>`).join('')}<div class="sp"></div><a>${ic('out')}</a></aside>`; }
+function flip(str, unit, cls=''){ return `<div class="flip ${cls}">${[...str].map(ch=>/\d/.test(ch)?`<span class="t num">${ch}</span>`:`<span class="c">${ch}</span>`).join('')}<span class="u">${unit}</span></div>`; }
+function feed(rows,{dark=false}={}){ return `<div class="feed">${rows.map(f=>`<div class="row"><span class="t num">${f[0]}</span><span class="who">${f[1]}<small>${f[2]}</small></span><span class="pill" style="background:${dark?(f[3]==='식권'?'rgba(44,95,255,.2)':'#1b2436'):(f[3]==='식권'?'#eef3ff':'#f1f2f5')};color:${dark?(f[3]==='식권'?'#9db6ff':'#aab2c2'):(f[3]==='식권'?'#2c5fff':'#4a5263')}">${f[3]}</span></div>`).join('')}</div>`; }
+function calendar(){
+  const dows=['일','월','화','수','목','금','토'];
+  let h=dows.map((d,i)=>`<div class="dow" style="${i===0?'color:#e5484d':''}">${d}</div>`).join('');
+  for(let k=0;k<4;k++) h+='<div></div>';
+  for(let d=1;d<=31;d++){
+    if(d>20){h+=`<div class="d fut"><span>${d}</span></div>`;continue;}
+    const c=COUNTS[d-1];
+    if(!c){h+=`<div class="d off"><span>${d}</span><span>휴무</span></div>`;continue;}
+    const r=(c-80)/(124-80), al=0.14+0.78*r, fg=al>0.55?'#fff':'#131a2a';
+    h+=`<div class="d${d===20?' today':''}" style="background:rgba(44,95,255,${al.toFixed(2)});color:${fg}"><span>${d}${d===20?' · 오늘':''}</span><b class="num">${c}<small style="font-size:12px;font-weight:600;margin-left:2px">건</small></b></div>`;
+  }
+  return `<div class="cal">${h}</div>`;
+}
+const SEG = (on=2)=>['오늘','이번 주','이번 달','직접 선택'].map((t,i)=>`<span class="${i===on?'on':''}">${t}</span>`).join('');
+
+
+const DOW = d => (4 + d - 1) % 7; // 10/1 = 목(4)
+const WEEKDAY_NAMES = ['일','월','화','수','목','금','토'];
+const wdStats = [1,2,3,4,5].map(w=>{ const days=DAYS.filter(d=>DOW(d)===w && COUNTS[d-1]>0); const sum=days.reduce((a,d)=>a+COUNTS[d-1],0); return {w, n:WEEKDAY_NAMES[w], avg: days.length?Math.round(sum/days.length):0}; });
+const BEST = wdStats.reduce((a,b)=>b.avg>a.avg?b:a);
+const BEST_DAY = DAYS.reduce((a,d)=>COUNTS[d-1]>COUNTS[a-1]?d:a,1);
+const OTHERS_AMOUNT = TOTAL_AMOUNT - COMP.reduce((a,r)=>a+r.a,0);
+const tabbar = on => `<div class="tb">${[['home','홈'],['live','실시간'],['biz','거래처'],['settle','정산']].map((t,i)=>`<div class="${i===on?'on':''}">${ic(t[0])}${t[1]}</div>`).join('')}</div>`;
+const sbar = `<div class="sb"><span class="num">12:51</span><span>●●● ▮</span></div>`;
+
+function treemap(items,W,H){
+  // slice-and-dice, alternating direction, largest first
+  const out=[]; let x=0,y=0,w=W,h=H, rest=items.slice(), total=rest.reduce((a,i)=>a+i.v,0), horiz=true;
+  while(rest.length){
+    const it=rest.shift();
+    if(!rest.length){ out.push({...it,x,y,w,h}); break; }
+    const f=it.v/total;
+    if(horiz){ const ww=w*f; out.push({...it,x,y,w:ww,h}); x+=ww; w-=ww; }
+    else { const hh=h*f; out.push({...it,x,y,w,h:hh}); y+=hh; h-=hh; }
+    total-=it.v; horiz=!horiz;
+  }
+  return out;
+}
+
+const V = [];
+
+V.push({id:'v13', name:'13 Briefing', note:'숫자를 문장으로 — "이번 달 1,423명이 식사했어요"처럼 사장님에게 보고하듯, 그래프는 오른쪽에 보조로', html:`
+<div class="frame v13">${side('greeneat_logo.png')}
+<div class="main"><div class="top" style="border-bottom:1px solid #eef0f4"><h1 style="font-size:16px;color:#8a93a6">대시보드</h1><div class="sp"></div><div class="seg" style="background:#f3f5f9">${SEG()}</div><div class="range">${ic('cal')}<span class="num">10.01 – 10.20</span></div></div>
+<div class="brief">
+ <div>
+  <div class="hello">김사장님, 10월 20일 12:50 기준이에요</div>
+  <h1>이번 달 <em class="num">${won(TOTAL_COUNT)}명</em>이 식사했고<br>매출은 <em class="num">${won(TOTAL_AMOUNT)}원</em>이에요</h1>
+  <div class="para">
+   <div class="line"><span class="ix">${ic('up')}</span><span>9월 같은 기간보다 매출이 <span class="up num">12.4%</span>, 식사 수가 <span class="up num">8.1%</span> 늘었어요.</span></div>
+   <div class="line"><span class="ix">${ic('cal')}</span><span>가장 바쁜 요일은 <b>${BEST.n}요일</b>이에요. 평균 <b class="num">${BEST.avg}건</b>, 가장 많았던 날은 <b class="num">10월 ${BEST_DAY}일 (${COUNTS[BEST_DAY-1]}건)</b>이에요.</span></div>
+   <div class="line"><span class="ix">${ic('biz')}</span><span><b>${COMP[0].n}</b>이 매출의 <b class="num">${(COMP[0].a/TOTAL_AMOUNT*100).toFixed(1)}%</b>를 차지해요. 상위 3곳이 <b class="num">${(COMP.slice(0,3).reduce((a,r)=>a+r.a,0)/TOTAL_AMOUNT*100).toFixed(0)}%</b>예요.</span></div>
+   <div class="line"><span class="ix">${ic('cup')}</span><span>오늘은 지금까지 <b class="num">88건</b>이에요. 지난주 화요일보다 <span class="up num">6건</span> 많아요. 석식은 17:30에 시작해요.</span></div>
+  </div>
+ </div>
+ <div class="rt">
+  <div class="box"><h3>일별 식사<small>파란 막대 = 오늘</small></h3><div style="margin-top:10px">${bars(500,330,COUNTS,{fill:'#dbe4ff',today:'#2c5fff'})}</div></div>
+  <div class="box" style="flex:1"><h3>거래처별 매출<small>원</small></h3>${rank(BY_AMOUNT,'',BY_AMOUNT[0][1])}</div>
+ </div>
+</div></div></div>`});
+
+const podiumOrder=[1,0,2], heights=[300,380,240], medal=['#e0b84a','#c9d1de','#c98a5a'];
+V.push({id:'v14', name:'14 Podium', note:'거래처 순위를 시상대로 — 어느 회사가 가장 많이 먹었는지 한눈에, 다크 톤 + 금·은·동', html:`
+<div class="frame v14">${side('greeneat_logo_light.png')}
+<div class="main"><div class="top"><h1>대시보드</h1><div class="sp"></div><div class="seg">${SEG()}</div><div class="range">${ic('cal')}<span class="num">10.01 – 10.20</span></div></div>
+<div class="content">
+ <div class="card kpi" style="grid-column:1/4"><div class="lab">총 매출</div><div class="val num">${won(TOTAL_AMOUNT)}<em>원</em></div>${delta(12.4)}</div>
+ <div class="card kpi" style="grid-column:4/7"><div class="lab">총 수량</div><div class="val num">${won(TOTAL_COUNT)}<em>건</em></div>${delta(8.1)}</div>
+ <div class="card kpi" style="grid-column:7/10"><div class="lab">거래처</div><div class="val num">${COMP.length-1}<em>곳</em></div><div class="delta" style="color:#8a93a6">+ 개인 구매</div></div>
+ <div class="card kpi" style="grid-column:10/13"><div class="lab">하루 평균</div><div class="val num">${AVG}<em>건</em></div><div class="delta" style="color:#8a93a6">영업일 ${OPEN_DAYS}일</div></div>
+ <div class="card" style="grid-column:1/9;display:flex;flex-direction:column"><h3>이번 달 거래처 순위<small>매출 기준</small></h3>
+  <div class="podium">${podiumOrder.map((k,j)=>{const r=COMP[k];return `<div class="p"><div class="medal" style="background:${medal[k]}">${k+1}</div><div class="who"><div class="nm">${r.n}</div><div class="am num">${won(r.a)}원</div></div>
+   <div class="blk" style="height:${heights[j]}px;background:${k===0?'#2c5fff':'#1b2436'}"><b class="num">${won(r.c)}</b><span>건 · ${(r.a/TOTAL_AMOUNT*100).toFixed(1)}%</span></div></div>`;}).join('')}</div></div>
+ <div class="card rest" style="grid-column:9/13"><h3>4위 이하</h3>
+  ${COMP.slice(3).map((r,i)=>`<div class="r"><b class="num" style="color:#8a93a6">${i+4}</b><span style="font-weight:700">${r.n}</span><span class="num" style="color:#8a93a6">${won(r.c)}건</span><span class="num" style="font-weight:700">${won(r.a)}원</span></div>`).join('')}
+  <div class="r"><b></b><span style="color:#8a93a6">기타</span><span></span><span class="num" style="color:#8a93a6">${won(OTHERS_AMOUNT)}원</span></div>
+  <h3 style="margin-top:26px">식사 구분</h3><div class="donut" style="margin-top:12px">${donut(88,['#2c5fff','#3d4a66'],'#1b2436')}${mealList(['#2c5fff','#3d4a66'])}</div>
+ </div>
+</div></div></div>`});
+
+const tmItems=[...COMP.map(r=>({n:r.n,v:r.a,c:r.c})),{n:'기타',v:OTHERS_AMOUNT,c:TOTAL_COUNT-COMP.reduce((a,r)=>a+r.c,0)}];
+const tmColors=['#2c5fff','#4d78ff','#6f91ff','#93adff','#b4c6ff','#cdd8f2'];
+V.push({id:'v15', name:'15 Treemap', note:'매출 비중을 면적으로 — 큰 칸일수록 매출이 큰 거래처, 의존도가 한눈에 보여서 영업 판단에 좋음', html:`
+<div class="frame v15">${side('greeneat_logo.png')}
+<div class="main"><div class="top"><h1>대시보드</h1><div class="sp"></div><div class="range">${ic('cal')}<span class="num">2026.10.01 – 2026.10.20</span></div><button class="btn p">조회</button></div>
+<div class="content">
+ <div class="card" style="grid-row:1/3"><h3>거래처별 매출 비중<small>면적 = 매출 · 총 ${won(TOTAL_AMOUNT)}원</small></h3>
+  <div class="tm">${treemap(tmItems,820,600).map((c,i)=>`<div class="cell" style="left:${c.x}px;top:${c.y}px;width:${c.w}px;height:${c.h}px;background:${tmColors[i]};color:${i>=3?'#131a2a':'#fff'}"><span class="nm">${c.n}</span><span class="pc num">${(c.v/TOTAL_AMOUNT*100).toFixed(1)}%</span><span class="am num">${won(c.v)}원 · ${won(c.c)}건</span></div>`).join('')}</div>
+  <div style="display:flex;gap:30px;margin-top:18px;font-size:13.5px;color:#4a5263;font-weight:600"><span>상위 1곳 <b class="num" style="color:#131a2a">${(COMP[0].a/TOTAL_AMOUNT*100).toFixed(1)}%</b></span><span>상위 3곳 <b class="num" style="color:#131a2a">${(COMP.slice(0,3).reduce((a,r)=>a+r.a,0)/TOTAL_AMOUNT*100).toFixed(1)}%</b></span><span>개인 구매 <b class="num" style="color:#131a2a">${(COMP[4].a/TOTAL_AMOUNT*100).toFixed(1)}%</b></span></div></div>
+ <div class="card kpi"><div class="lab">총 매출</div><div class="val num">${won(TOTAL_AMOUNT)}<em>원</em></div>${delta(12.4)}
+   <div style="height:1px;background:#eef0f4;margin:18px 0"></div><div class="lab">총 수량</div><div class="val num">${won(TOTAL_COUNT)}<em>건</em></div>${delta(8.1)}
+   <div style="height:1px;background:#eef0f4;margin:18px 0"></div><div class="lab">식사 구분</div><div class="donut" style="margin-top:12px">${donut(84,['#2c5fff','#a9bfff'],'#eef1f7')}${mealList(['#2c5fff','#a9bfff'])}</div></div>
+ <div class="card"><h3>일별 매출<small>원</small></h3><div style="margin-top:8px">${bars(290,170,AMOUNTS,{fill:'#c9d6ff',today:'#2c5fff',fmt:kfmt,pad:[10,2,22,40],every:6})}</div></div>
+</div></div></div>`});
+
+V.push({id:'v16', name:'16 Ticket Stubs', note:'거래처마다 식권 한 장 — 앱의 종이 식권/영수증 모양을 그대로, 오른쪽 절취선 칸에 식사 건수', html:`
+<div class="frame v16">${rail('G')}
+<div class="main"><div class="top"><h1>대시보드</h1><span style="font-size:13px;color:#8a93a6;font-weight:600">돈토 구내식당</span><div class="sp"></div><div class="seg">${SEG()}</div><div class="range">${ic('cal')}<span class="num">10.01 – 10.20</span></div></div>
+<div class="content">
+ <div class="tk hero"><div class="l" style="padding:24px 28px"><small>OCTOBER · TOTAL</small><div class="nm" style="font-size:16px;font-weight:600;opacity:.85">이번 달 총 매출</div><div class="am num" style="font-size:52px;margin-top:10px">${won(TOTAL_AMOUNT)}<em style="font-size:22px">원</em></div>
+   <div style="display:flex;gap:22px;margin-top:10px;font-size:13.5px;font-weight:600;color:#dfe7ff"><span>매출 +12.4%</span><span>수량 +8.1%</span><span>중식 ${MEAL[0][1]}% · 석식 ${MEAL[1][1]}%</span></div></div>
+   <div class="r"><b class="num" style="font-size:46px">${won(TOTAL_COUNT)}</b><span>식사 (건)</span></div></div>
+ ${COMP.map((r,i)=>`<div class="tk"><div class="l"><small>NO.${i+1} · ${(r.a/TOTAL_AMOUNT*100).toFixed(1)}%</small><div class="nm">${r.n}</div>
+   <div style="margin-top:auto;height:8px;border-radius:4px;background:#e4ddcc;overflow:hidden"><i style="display:block;height:100%;width:${(r.a/COMP[0].a*100).toFixed(0)}%;background:${i===0?'#2c5fff':'#131a2a'}"></i></div>
+   <div class="am num" style="margin-top:12px">${won(r.a)}<em>원</em></div></div><div class="r"><b class="num">${won(r.c)}</b><span>건</span></div></div>`).join('')}
+ <div class="tk" style="background:#131a2a;color:#e9edf5;border:1px dashed #3d4a66"><div class="l"><small style="color:#8a93a6">TODAY · 10.20</small><div class="nm">오늘</div><div class="am num">616,000<em style="color:#8a93a6">원</em></div></div><div class="r" style="border-left-color:#3d4a66"><b class="num">88</b><span style="color:#8a93a6">건</span></div></div>
+</div></div></div>`});
+
+const weeks=[[1,2,3,4],[5,6,7,8,9,10,11],[12,13,14,15,16,17,18],[19,20]];
+function heatmap(){
+  const order=[1,2,3,4,5,6,0];
+  let h='<div></div>'+order.map(w=>`<div class="h" style="${w===0?'color:#e5484d':''}">${WEEKDAY_NAMES[w]}</div>`).join('');
+  weeks.forEach((wk,i)=>{
+    h+=`<div class="wk">${i+1}주차</div>`;
+    order.forEach(w=>{
+      const d=wk.find(x=>DOW(x)===w);
+      if(!d){h+='<div class="c none"></div>';return;}
+      const c=COUNTS[d-1];
+      if(!c){h+=`<div class="c off"><span>${d}일</span><span>휴무</span></div>`;return;}
+      const r=(c-80)/(124-80), al=0.14+0.8*r;
+      h+=`<div class="c" style="background:rgba(44,95,255,${al.toFixed(2)});color:${al>0.55?'#fff':'#131a2a'};${d===20?'outline:2.5px solid #131a2a;outline-offset:2px':''}"><span>${d===20?'오늘':d+'일'}</span><b class="num">${c}</b></div>`;
+    });
+  });
+  return `<div class="hm">${h}</div>`;
+}
+const wdMax=Math.max(...wdStats.map(x=>x.avg));
+V.push({id:'v17', name:'17 Week Heatmap', note:'요일 × 주차 격자 — "무슨 요일에 많이 오는지"가 보여서 식재료·인력 계획에 바로 쓰는 화면', html:`
+<div class="frame v17">${side('greeneat_logo_light.png')}
+<div class="main"><div class="top"><h1>대시보드</h1><div class="sp"></div><div class="range">${ic('cal')}<span class="num">2026.10.01 – 2026.10.20</span></div><button class="btn p">조회</button></div>
+<div class="content">
+ <div class="card" style="grid-column:1/3;display:flex;gap:56px;align-items:flex-end;padding:20px 26px">
+  <div class="kpi"><div class="lab">총 매출</div><div class="val num">${won(TOTAL_AMOUNT)}<em>원</em></div>${delta(12.4)}</div>
+  <div class="kpi"><div class="lab">총 수량</div><div class="val num">${won(TOTAL_COUNT)}<em>건</em></div>${delta(8.1)}</div>
+  <div class="kpi"><div class="lab">가장 바쁜 요일</div><div class="val">${BEST.n}요일</div><div class="delta">평균 ${BEST.avg}건</div></div>
+  <div class="kpi"><div class="lab">식사 구분</div><div class="val num">${MEAL[0][1]}<em>%</em> <span style="opacity:.3">/</span> ${MEAL[1][1]}<em>%</em></div><div class="delta" style="color:#8a93a6">중식 / 석식</div></div>
+ </div>
+ <div class="card"><h3>요일별 식사<small>진할수록 많음 · 건</small></h3>${heatmap()}</div>
+ <div class="card wd"><h3>요일 평균<small>영업일 기준 · 건</small></h3><div style="margin-top:12px">
+  ${wdStats.map(x=>`<div class="r ${x===BEST?'top':''}"><span>${x.n}요일</span><div class="bar"><i style="width:${x.avg/wdMax*100}%"></i></div><b class="num" style="text-align:right">${x.avg}건</b></div>`).join('')}</div>
+  <div style="margin-top:22px;padding:16px 18px;border-radius:12px;background:#eef3ff;font-size:14px;line-height:1.6;color:#1d3a99;font-weight:600">${BEST.n}요일엔 평균보다 <b class="num">${BEST.avg-AVG}건</b> 더 와요.<br>식재료를 조금 더 준비해 두세요.</div>
+  <h3 style="margin-top:24px">거래처 TOP 3<small>매출</small></h3>${rank(BY_AMOUNT.slice(0,3),'',BY_AMOUNT[0][1])}</div>
+</div></div></div>`});
+
+V.push({id:'v18', name:'18 Mobile', note:'사장님 휴대폰용 — 같은 관리자 화면을 폰에서 볼 때의 모습(홈 · 실시간 결제 · 거래처). PC 시안과 함께 반응형으로', html:`
+<div class="frame v18">
+ <div class="ph"><div class="sc">${sbar}<div class="hd"><img src="../../apps/admin/public/brand/greeneat_logo.png" style="height:22px" alt=""><div style="flex:1"></div>${ic('refresh')}</div>
+  <div class="bd">
+   <div class="cd ink"><div style="font-size:12px;color:#7fa2ff;font-weight:700">오늘 · 10월 20일 (화)</div><div class="num" style="font-size:44px;font-weight:800;letter-spacing:-.04em;margin-top:6px">88<span style="font-size:18px;opacity:.6;margin-left:3px">건</span></div><div class="num" style="font-size:14px;opacity:.75;font-weight:600">616,000원 · 마지막 12:50</div></div>
+   <div class="cd"><div style="display:flex;font-size:13px;font-weight:700">이번 달<span style="margin-left:auto;color:#8a93a6;font-weight:500" class="num">10.01 – 10.20</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px"><div><div style="font-size:12px;color:#8a93a6;font-weight:600">매출</div><div class="num" style="font-size:19px;font-weight:800">${won(TOTAL_AMOUNT)}원</div><div style="font-size:11.5px;color:#2c5fff;font-weight:700">+12.4%</div></div><div><div style="font-size:12px;color:#8a93a6;font-weight:600">수량</div><div class="num" style="font-size:19px;font-weight:800">${won(TOTAL_COUNT)}건</div><div style="font-size:11.5px;color:#2c5fff;font-weight:700">+8.1%</div></div></div></div>
+   <div class="cd"><div style="font-size:13px;font-weight:700">일별 매출</div>${bars(290,170,AMOUNTS,{fill:'#c9d6ff',today:'#2c5fff',fmt:kfmt,pad:[8,2,20,40],every:6})}</div>
+  </div>${tabbar(0)}</div></div>
+ <div class="ph"><div class="sc">${sbar}<div class="hd"><h4>실시간 결제</h4><span style="font-size:11.5px;font-weight:700;color:#2c5fff;background:#eef3ff;padding:3px 9px;border-radius:999px">● LIVE</span></div>
+  <div class="bd"><div class="cd" style="padding:6px 16px">${feed(FEED.concat([['12:22','이서연','초록물산','식권'],['12:18','박도윤','대성정밀','식권'],['12:14','최하은','한빛테크','장부']]))}</div></div>${tabbar(1)}</div></div>
+ <div class="ph"><div class="sc">${sbar}<div class="hd"><h4>거래처</h4><div style="flex:1"></div><span style="font-size:12px;color:#8a93a6;font-weight:600">이번 달</span></div>
+  <div class="bd"><div class="cd">${rank(BY_AMOUNT,'원',BY_AMOUNT[0][1])}</div>
+   <div class="cd"><div style="font-size:13px;font-weight:700">식사 구분</div><div class="donut" style="margin-top:10px;gap:14px">${donut(76,['#2c5fff','#a9bfff'],'#eef1f7')}${mealList(['#2c5fff','#a9bfff'])}</div></div></div>${tabbar(2)}</div></div>
+</div>`});
+document.getElementById('board').innerHTML = V.map(v=>`<section class="slot" id="${v.id}"><h2>${v.name}</h2><p>${v.note}</p>${v.html}</section>`).join('');
+</script>
+</body>
+</html>

@@ -3541,27 +3541,58 @@ class ErrorScreen extends StatelessWidget {
   }
 }
 
+/// Payment error card headline: the first sentence of the message
+/// (e.g. '결제 앱을 열 수 없어요.'). An empty WebView reason
+/// ('결제화면을 불러오지 못했어요: ') becomes a readable headline.
+String paymentErrorTitle(String error) {
+  final text = friendlyLoadError(error).trim();
+  if (text.startsWith('결제화면을 불러오지 못했어요')) return '결제화면을 불러오지 못했어요';
+  final dot = text.indexOf('. ');
+  return dot > 0 ? text.substring(0, dot) : text.replaceAll(RegExp(r'\.$'), '');
+}
+
+/// Remaining guidance under the headline.
+String paymentErrorDetail(String error) {
+  final text = friendlyLoadError(error).trim();
+  if (text.startsWith('결제화면을 불러오지 못했어요')) {
+    return '인터넷 연결을 확인한 뒤 다시 결제해 주세요.';
+  }
+  if (text.startsWith('결제 앱을 열 수 없어요')) {
+    return '해당 앱이 설치되어 있는지 확인하거나 다른 결제수단을 선택해 주세요.';
+  }
+  final dot = text.indexOf('. ');
+  return dot > 0 ? text.substring(dot + 2) : '잠시 후 다시 시도해 주세요.';
+}
+
 /// E1 error body (title, subtitle, message card). Shared by the full-screen
 /// [ErrorScreen] and in-tab load errors so both look the same.
 class AppErrorPanel extends StatelessWidget {
-  const AppErrorPanel({super.key, required this.message, required this.detail});
+  const AppErrorPanel({
+    super.key,
+    required this.message,
+    required this.detail,
+    this.title = '잠깐, 문제가 생겼어요',
+    this.subtitle = '네트워크와 계정 상태를 확인해 주세요.',
+  });
   final String message;
   final String detail;
+  final String title;
+  final String subtitle;
 
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('잠깐, 문제가 생겼어요',
-              style: TextStyle(
+          Text(title,
+              style: const TextStyle(
                   fontFamily: 'Pretendard',
                   color: AppColors.fg,
                   fontSize: 28,
                   height: 1.2,
                   fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
-          const Text('네트워크와 계정 상태를 확인해 주세요.',
-              style: TextStyle(
+          Text(subtitle,
+              style: const TextStyle(
                   fontFamily: 'Pretendard',
                   color: AppColors.fg2,
                   fontSize: 15,
@@ -5310,47 +5341,103 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       );
     }
     return Scaffold(
-        appBar: AppBar(title: Text('${widget.paymentTitle} 결제')),
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          backgroundColor: AppColors.bg,
+          surfaceTintColor: AppColors.bg,
+          foregroundColor: AppColors.fg,
+          title: Text('${widget.paymentTitle} 결제',
+              style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800)),
+        ),
         body: Stack(children: [
           WebViewWidget(controller: _controller),
           if (_loading)
+            // P1: dark loading cover with a blue ring.
             ColoredBox(
-                color: kCream,
-                child: Center(
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const CircularProgressIndicator(),
-                  if (_approvalPending) ...[
-                    const SizedBox(height: 16),
-                    const Text('결제 승인을 확인하고 있어요',
-                        style: TextStyle(fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 4),
-                    const Text('완료 화면으로 자동 전환됩니다.',
-                        style: TextStyle(color: Color(0xFF5C7A66))),
-                  ],
-                ]))),
-          if (_error != null)
-            ColoredBox(
-                color: kCream,
+                key: const ValueKey('payment-loading'),
+                color: AppColors.bg,
                 child: Center(
                     child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: BrandPanel(children: [
-                          BrandNotice(text: _error!, kind: NoticeKind.error),
-                          const SizedBox(height: 14),
-                          FilledButton(
-                              onPressed:
-                                  _approvalPending ? _confirm : _createOrder,
-                              child: Text(_approvalPending
-                                  ? '결제 상태 다시 확인'
-                                  : '다시 결제하기')),
-                          TextButton(
-                              onPressed: _approvalPending
-                                  ? _leavePendingCheckout
-                                  : () => Navigator.of(context).pop(false),
-                              child: Text(_approvalPending
-                                  ? '결제를 취소했어요'
-                                  : '상품 목록으로 돌아가기')),
-                        ])))),
+                  padding: const EdgeInsets.symmetric(horizontal: 30),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const SizedBox(
+                      width: 84,
+                      height: 84,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 5,
+                        color: AppColors.blueSoft,
+                        backgroundColor: Color(0x295B87FF),
+                      ),
+                    ),
+                    if (_approvalPending) ...[
+                      const SizedBox(height: 22),
+                      const Text('결제 승인을 확인하고 있어요',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              color: AppColors.fg,
+                              fontSize: 21,
+                              fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 8),
+                      const Text('완료 화면으로 자동 전환돼요.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              color: AppColors.fg2,
+                              fontSize: 14)),
+                    ],
+                  ]),
+                ))),
+          if (_error != null)
+            // P1: same layout as the app error screen (E1).
+            ColoredBox(
+              key: const ValueKey('payment-error'),
+              color: AppColors.bg,
+              child: Column(children: [
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(22, 12, 22, 24),
+                    children: [
+                      AppErrorPanel(
+                        title: _approvalPending
+                            ? '결제 확인이 끝나지 않았어요'
+                            : '결제를 진행하지 못했어요',
+                        subtitle: _approvalPending
+                            ? '결제를 마쳤다면 곧 확인돼요.'
+                            : '잠시 후 다시 시도해 주세요.',
+                        message: paymentErrorTitle(_error!),
+                        detail: paymentErrorDetail(_error!),
+                      ),
+                    ],
+                  ),
+                ),
+                SafeArea(
+                  top: false,
+                  minimum: const EdgeInsets.fromLTRB(22, 8, 22, 16),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    _ErrorButton(
+                      key: const ValueKey('payment-error-primary'),
+                      label: _approvalPending ? '결제 상태 다시 확인' : '다시 결제하기',
+                      primary: true,
+                      onPressed: () async =>
+                          _approvalPending ? _confirm() : _createOrder(),
+                    ),
+                    const SizedBox(height: 8),
+                    _ErrorButton(
+                      key: const ValueKey('payment-error-secondary'),
+                      label: _approvalPending ? '결제를 취소했어요' : '상품 목록으로 돌아가기',
+                      primary: false,
+                      onPressed: () async => _approvalPending
+                          ? _leavePendingCheckout()
+                          : Navigator.of(context).pop(false),
+                    ),
+                  ]),
+                ),
+              ]),
+            ),
         ]));
   }
 }

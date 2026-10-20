@@ -47,6 +47,34 @@ void main() {
     expect(find.textContaining('앱 환경값이 누락됐어요'), findsOneWidget);
   });
 
+  test('payment error headline/detail (P1)', () {
+    expect(paymentErrorTitle('결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.'),
+        '결제 앱을 열 수 없어요');
+    expect(paymentErrorDetail('결제 앱을 열 수 없어요. 해당 앱이 설치되어 있는지 확인해 주세요.'),
+        contains('다른 결제수단'));
+    // iOS WebView can pass an empty description.
+    expect(paymentErrorTitle('결제화면을 불러오지 못했어요: '), '결제화면을 불러오지 못했어요');
+    expect(paymentErrorDetail('결제화면을 불러오지 못했어요: '), contains('인터넷 연결'));
+    expect(paymentErrorTitle('결제가 취소되었어요.'), '결제가 취소되었어요');
+  });
+
+  testWidgets('payment error panel uses the E1 card with custom title',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: AppErrorPanel(
+          title: '결제를 진행하지 못했어요',
+          subtitle: '잠시 후 다시 시도해 주세요.',
+          message: '결제 앱을 열 수 없어요',
+          detail: '해당 앱이 설치되어 있는지 확인하거나 다른 결제수단을 선택해 주세요.',
+        ),
+      ),
+    ));
+    expect(find.text('결제를 진행하지 못했어요'), findsOneWidget);
+    expect(find.text('잠깐, 문제가 생겼어요'), findsNothing);
+    expect(find.byKey(const ValueKey('error-message-card')), findsOneWidget);
+  });
+
   test('network failures show a friendly message, never socket text', () {
     expect(
         friendlyLoadError(Exception(

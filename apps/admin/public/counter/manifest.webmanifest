@@ -1,0 +1,19 @@
+{
+  "name": "그린잇 식권 스캔 카운터",
+  "short_name": "식권 카운터",
+  "description": "식당 카운터 전용 식권 스캔 화면",
+  "id": "/counter",
+  "start_url": "/counter",
+  "scope": "/counter",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#0a0d14",
+  "theme_color": "#0a0d14",
+  "lang": "ko",
+  "icons": [
+    { "src": "/counter/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/counter/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/counter/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

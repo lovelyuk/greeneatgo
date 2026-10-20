@@ -119,3 +119,32 @@ test('zero vouchers: QR tab and home QR button open a purchase popup instead of 
   await expect(nav.getByRole('button', { name: '구매', exact: true })).toHaveAttribute('aria-current', 'page');
   expect(issued).toBe(0);
 });
+
+test('counter kiosk: installable manifest, offline banner, hold-to-logout', async ({ page, context }) => {
+  await base(page);
+  await page.goto('/counter');
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/counter/manifest.webmanifest');
+  const manifest = await (await page.request.get('/counter/manifest.webmanifest')).json();
+  expect(manifest).toMatchObject({ start_url: '/counter', scope: '/counter', display: 'fullscreen', orientation: 'landscape' });
+  for (const icon of manifest.icons) expect((await page.request.get(icon.src)).status()).toBe(200);
+  await page.getByLabel('이메일').fill('owner@example.invalid');
+  await page.getByLabel('비밀번호').fill('mock-only-password');
+  await page.getByRole('button', { name: '로그인' }).click();
+  await expect(page.getByRole('status', { name: '인터넷 연결됨' })).toBeVisible();
+  await context.setOffline(true);
+  await expect(page.getByRole('alert').filter({ hasText: '인터넷 연결이 끊겼어요' })).toBeVisible();
+  await expect(page.getByRole('status', { name: '인터넷 연결 끊김' })).toBeVisible();
+  await context.setOffline(false);
+  await expect(page.getByRole('alert').filter({ hasText: '인터넷 연결이 끊겼어요' })).toHaveCount(0);
+  // A quick tap does not log out; holding does.
+  const logout = page.getByRole('button', { name: '길게 눌러 로그아웃' });
+  await logout.click();
+  await page.waitForTimeout(300);
+  await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible();
+  await expect(page.locator('#counter-code')).toBeFocused();
+  const box = await logout.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down(); await page.waitForTimeout(1700); await page.mouse.up();
+  await expect(page.getByRole('heading', { name: '식권 스캔 카운터' })).toBeVisible();
+  await expect(page.getByLabel('비밀번호')).toBeVisible();
+});

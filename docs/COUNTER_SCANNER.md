@@ -43,5 +43,5 @@
 - 사용 기록은 그린잇 DB `kiosk_receipt_redemptions`(영수증 번호 unique)에 남긴다. **영수증 1장 = 1번 사용**(수량 정보가 API에 없음).
 - 키오스크 API가 응답하지 않거나 인증서가 유효하지 않으면 사용 처리하지 않는다(통과 없음). 인증서 검사는 끄지 않는다.
 - 설정: Vercel API 환경변수 `KIOSK_API_BASE_URL=https://api.tapandpick.com`. 비어 있으면 카운터에 "키오스크 영수증 준비 중".
-- DB: `infra/migrations/0064_kiosk_receipt_redemptions.sql` 적용 필요(테이블 추가만, 기존 데이터 변경 없음).
+- DB: `supabase/migrations/0069_kiosk_receipt_redemptions.sql` 적용 필요(테이블 추가만, 기존 데이터 변경 없음).
 - 미해결(탭앤픽 팀 확인 필요, 2026-10-20 기준): 인증서 만료(2026-09-22)·중간 인증서 누락, 사용 후 환불 방지.

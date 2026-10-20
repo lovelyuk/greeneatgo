@@ -75,6 +75,7 @@ class Settings:
     invite_email_from: str = "GreenEatGo <verified-sender@example.com>"
     pilot_merchant_id: str | None = None
     meal_qr_secret: str = ""
+    kiosk_api_base_url: str = ""
     cors_allowed_origins: tuple[str, ...] = ("http://localhost:5173", "https://greeneatgo.vercel.app")
     popbill_link_id: str = ""
     popbill_secret_key: str = ""
@@ -142,6 +143,9 @@ class Settings:
             # Signing key for member meal QR codes; falls back to OTP_PEPPER so no
             # new secret is required to deploy (domain-separated in meal_qr._key).
             meal_qr_secret=(os.environ.get("MEAL_QR_SECRET") or os.environ.get("OTP_PEPPER") or "development-only-meal-qr").strip(),
+            # Tap&Pick kiosk receipt verify API (e.g. https://api.tapandpick.com).
+            # Empty = kiosk receipts are refused with KIOSK_NOT_CONFIGURED.
+            kiosk_api_base_url=os.environ.get("KIOSK_API_BASE_URL", "").strip(),
             popbill_link_id=os.environ.get("POPBILL_LINK_ID", "").strip(),
             popbill_secret_key=os.environ.get("POPBILL_SECRET_KEY", "").strip(),
             # Keep the raw value: the SDK boundary accepts only the two documented

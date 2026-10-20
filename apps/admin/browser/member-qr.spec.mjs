@@ -148,3 +148,28 @@ test('counter kiosk: installable manifest, offline banner, hold-to-logout', asyn
   await expect(page.getByRole('heading', { name: '식권 스캔 카운터' })).toBeVisible();
   await expect(page.getByLabel('비밀번호')).toBeVisible();
 });
+
+test('counter: kiosk paper receipt QR (24 hex) goes to the kiosk endpoint, second scan says already used', async ({ page }) => {
+  await base(page);
+  const R = '6ad6e86b3bea82fef79ff23b';
+  const calls = [];
+  await page.route('**/api-fixture/transactions/**', route => {
+    const url = new URL(route.request().url());
+    calls.push([url.pathname.replace('/api-fixture', ''), route.request().postDataJSON()]);
+    return calls.length === 1
+      ? route.fulfill({ json: { ok: true, data: { result: 'success', kind: 'kiosk_receipt', receipt_id: R } } })
+      : route.fulfill({ status: 409, json: { detail: { code: 'KIOSK_RECEIPT_USED', message: 'x' } } });
+  });
+  await page.goto('/counter');
+  await page.getByLabel('이메일').fill('owner@example.invalid');
+  await page.getByLabel('비밀번호').fill('mock-only-password');
+  await page.getByRole('button', { name: '로그인' }).click();
+  await page.locator('#counter-code').waitFor({ state: 'attached' });
+  await page.keyboard.type(R + '\n');
+  await expect(page.getByRole('heading', { name: '키오스크 식권 사용 완료' })).toBeVisible();
+  expect(calls[0]).toEqual(['/transactions/kiosk-receipt/redeem', { code: R }]);
+  await expect(page.getByRole('list', { name: '최근 사용' })).toContainText('키오스크 영수증');
+  await page.keyboard.type(R + '\n');
+  await expect(page.getByRole('heading', { name: '이미 사용된 영수증이에요' })).toBeVisible();
+  expect(calls.length).toBe(2);
+});

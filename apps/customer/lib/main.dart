@@ -482,6 +482,19 @@ const paymentConfirmationMaxAttempts = 8;
 
 enum PaymentRedirectOutcome { success, failure, close }
 
+/// Schemes the payment WebView must load itself instead of handing to an
+/// external app. iOS WKWebView asks the navigation delegate about sub-frame
+/// loads such as `about:blank` iframes (Android's WebView does not), so these
+/// must not be treated as card/easy-pay app schemes.
+bool isInWebViewPaymentScheme(Uri uri) => const {
+      'http',
+      'https',
+      'about',
+      'data',
+      'blob',
+      'javascript',
+    }.contains(uri.scheme.toLowerCase());
+
 bool isMVaccineIntent(Uri intentUri) {
   if (intentUri.scheme != 'intent' || intentUri.host != 'mvaccine') {
     return false;
@@ -5108,7 +5121,7 @@ class _VoucherKiwoomPaymentScreenState extends State<VoucherKiwoomPaymentScreen>
       );
       return NavigationDecision.prevent;
     }
-    if (uri.scheme == 'http' || uri.scheme == 'https') {
+    if (isInWebViewPaymentScheme(uri)) {
       return NavigationDecision.navigate;
     }
     await _recoverExternalNavigation(uri);

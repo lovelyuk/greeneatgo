@@ -675,6 +675,28 @@ void main() {
     expect(label, isNot(contains('callback_token')));
   });
 
+  test('payment WebView keeps about/data frames and hands app schemes out', () {
+    for (final url in [
+      'https://ssltest.kiwoompay.co.kr/m/card_webview2/DaouCardMngEnc.jsp',
+      'http://example.com',
+      'about:blank',
+      'about:srcdoc',
+      'data:text/html,hi',
+      'blob:https://ssltest-v2.kiwoompay.co.kr/1234',
+    ]) {
+      expect(isInWebViewPaymentScheme(Uri.parse(url)), isTrue, reason: url);
+    }
+    for (final url in [
+      'ispmobile://TID=1',
+      'kb-acp://pay',
+      'kakaotalk://kakaopay/pg',
+      'intent://pay#Intent;scheme=hdcardappcardansimclick;end',
+      'supertoss://pay',
+    ]) {
+      expect(isInWebViewPaymentScheme(Uri.parse(url)), isFalse, reason: url);
+    }
+  });
+
   test('only the exact mVaccine intent uses history restoration', () {
     expect(
       isMVaccineIntent(

@@ -166,11 +166,52 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
             _body(),
             if (widget.onScanStoreQr != null) ...[
               const SizedBox(height: 16),
-              OutlinedButton.icon(
-                key: const ValueKey('scan-store-qr-button'),
-                onPressed: widget.onScanStoreQr,
-                icon: const Icon(Icons.qr_code_scanner_rounded),
-                label: const Text('스캐너가 없나요? 매장 QR 찍어서 결제'),
+              // Q3: guidance card (no theme-coloured outlined button).
+              Material(
+                color: AppColors.card,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  side: const BorderSide(color: AppColors.line),
+                ),
+                child: InkWell(
+                  key: const ValueKey('scan-store-qr-button'),
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: widget.onScanStoreQr,
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppColors.blue.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.qr_code_scanner_rounded,
+                            color: AppColors.blueSoft, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('매장 QR 찍어서 결제',
+                                style: TextStyle(
+                                    color: AppColors.fg,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800)),
+                            SizedBox(height: 2),
+                            Text('카운터에 스캐너가 없을 때 사용해요',
+                                style: TextStyle(
+                                    color: AppColors.fg2, fontSize: 12.5)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded,
+                          color: AppColors.fg2),
+                    ]),
+                  ),
+                ),
               ),
             ],
           ],

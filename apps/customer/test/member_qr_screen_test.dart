@@ -83,6 +83,10 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.ensureVisible(find.byKey(const ValueKey('scan-store-qr-button')));
+    expect(find.text('매장 QR 찍어서 결제'), findsOneWidget);
+    expect(find.text('카운터에 스캐너가 없을 때 사용해요'), findsOneWidget);
+    expect(find.byType(OutlinedButton), findsNothing,
+        reason: 'Q3 card, not the olive theme outlined button');
     await tester.tap(find.byKey(const ValueKey('scan-store-qr-button')));
     expect(tapped, isTrue);
     await tester.pumpWidget(const SizedBox());

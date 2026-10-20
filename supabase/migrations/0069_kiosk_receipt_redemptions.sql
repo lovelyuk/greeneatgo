@@ -18,3 +18,6 @@ create index if not exists kiosk_receipt_redemptions_merchant_time
 alter table public.kiosk_receipt_redemptions enable row level security;
 revoke all on public.kiosk_receipt_redemptions from public, anon, authenticated;
 grant select, insert on public.kiosk_receipt_redemptions to service_role;
+
+-- Let the Supabase REST API see the new table right away.
+notify pgrst, 'reload schema';

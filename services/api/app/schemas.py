@@ -391,6 +391,11 @@ class MemberQrRedeemRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class KioskReceiptRedeemRequest(BaseModel):
+    code: str = Field(min_length=24, max_length=200)
+    model_config = {"extra": "forbid"}
+
+
 class TransactionScanRequest(BaseModel):
     qr_data: str = Field(min_length=1, max_length=500)
     idempotency_key: str = Field(min_length=8, max_length=120)

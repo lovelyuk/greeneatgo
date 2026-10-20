@@ -6,7 +6,7 @@
 // the QR's one-time nonce to the idempotency key, so a double scan never
 // charges twice.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { counterResultView, extractMemberCode } from './counterScan.js';
+import { classifyScan, counterResultView } from './counterScan.js';
 import { installCounterManifest, keepScreenAwake, unlockAudio, LOGOUT_HOLD_MS } from './counterKiosk.js';
 import './counter.css';
 
@@ -125,14 +125,16 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
   }, [focus]);
 
   async function redeem(raw) {
-    const code = extractMemberCode(raw);
+    const scan = classifyScan(raw);
     setValue('');
-    if (!code || inFlight.current) return;
+    if (!scan || inFlight.current) return;
+    const code = scan.code;
+    const endpoint = scan.kind === 'kiosk' ? 'kiosk-receipt/redeem' : 'member-qr/redeem';
     inFlight.current = true; clearTimeout(resetTimer.current);
     setState({ kind: 'busy' });
     let view;
     try {
-      const response = await fetch(`${apiBaseUrl}/transactions/member-qr/redeem`, {
+      const response = await fetch(`${apiBaseUrl}/transactions/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ code }),
@@ -148,7 +150,7 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
     setState(view);
     if (view.kind === 'success') {
       try { chime.current.currentTime = 0; await chime.current.play(); setSoundBlocked(false); } catch { setSoundBlocked(true); }
-      setHistory(h => [{ at: new Date(), name: view.name, remaining: view.remaining, duplicate: view.duplicate }, ...h].slice(0, 8));
+      setHistory(h => [{ at: new Date(), name: view.name, remaining: view.remaining, duplicate: view.duplicate, receipt: view.receipt }, ...h].slice(0, 8));
     }
     if (view.code === 'UNAUTHENTICATED') return;
     resetTimer.current = setTimeout(() => setState({ kind: 'ready' }), RESET_AFTER_MS);
@@ -159,7 +161,7 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
     setValue(e.target.value);
     clearTimeout(idle.current);
     // Scanners configured without an Enter suffix: submit once input stops.
-    idle.current = setTimeout(() => { if (extractMemberCode(e.target.value)) redeem(e.target.value); }, IDLE_SUBMIT_MS);
+    idle.current = setTimeout(() => { if (classifyScan(e.target.value)) redeem(e.target.value); }, IDLE_SUBMIT_MS);
   }
 
   return <main className={`counter-app counter-${state.kind}`}>
@@ -185,7 +187,7 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
         autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} inputMode="none" />
     </form>
     {history.length > 0 && <ol className="counter-history" aria-label="최근 사용">
-      {history.map((h, i) => <li key={i}><time>{h.at.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>{h.name}</span><span>{h.duplicate ? '중복 스캔' : `남은 식권 ${h.remaining ?? '—'}장`}</span></li>)}
+      {history.map((h, i) => <li key={i}><time>{h.at.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>{h.name}</span><span>{h.receipt ? '키오스크 영수증' : h.duplicate ? '중복 스캔' : `남은 식권 ${h.remaining ?? '—'}장`}</span></li>)}
     </ol>}
   </main>;
 }

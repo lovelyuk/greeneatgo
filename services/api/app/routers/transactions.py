@@ -7,8 +7,8 @@ from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.pay import pay
-from app.schemas import GPSPoint, MemberQrRedeemRequest, PayRequest, TransactionScanRequest
-from app.services import meal_qr
+from app.schemas import GPSPoint, KioskReceiptRedeemRequest, MemberQrRedeemRequest, PayRequest, TransactionScanRequest
+from app.services import kiosk_receipt, meal_qr
 from app.services.vouchers import parse_qr_data, resolve_voucher_merchant
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -170,3 +170,67 @@ def redeem_member_qr(payload: MemberQrRedeemRequest, token: str = Depends(bearer
         if exc.status in (401, 403):
             raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
         raise _map_rpc_error(exc) from exc
+
+
+@router.post("/kiosk-receipt/redeem")
+def redeem_kiosk_receipt(payload: KioskReceiptRedeemRequest, token: str = Depends(bearer_token)):
+    """Restaurant counter: use a Tap&Pick kiosk paper receipt once (one meal).
+
+    The kiosk API only says whether the receipt is valid; GreenEat records the
+    use. The receipt id is unique in kiosk_receipt_redemptions, so a second scan
+    (any counter, any time) is refused with KIOSK_RECEIPT_USED.
+    """
+    from app.routers.merchant_admin import JoinFlowError, _merchant_admin
+
+    repo = JoinRepository()
+    try:
+        try:
+            profile, merchant_id = _merchant_admin(repo, token)
+        except JoinFlowError as exc:
+            raise _error(403, "FORBIDDEN", "식당관리자 계정으로 로그인해 주세요") from exc
+        receipt_id = kiosk_receipt.extract_receipt_id(payload.code)
+        if receipt_id is None:
+            raise _error(400, "INVALID_KIOSK_RECEIPT", "키오스크 영수증 QR이 아니에요")
+        merchants = repo.client.rest_get("merchants", {
+            "select": "id,name,status", "id": f"eq.{merchant_id}", "status": "eq.active", "limit": "1",
+        })
+        if not merchants:
+            raise _error(403, "MERCHANT_NOT_ACTIVE", "식당이 활성 상태가 아니에요")
+        used = repo.client.rest_get("kiosk_receipt_redemptions", {
+            "select": "redeemed_at,merchant_id", "receipt_id": f"eq.{receipt_id}", "limit": "1",
+        })
+        if used:
+            raise _error(409, "KIOSK_RECEIPT_USED", "이미 사용된 영수증이에요", used_at=used[0].get("redeemed_at"))
+        try:
+            verified = kiosk_receipt.verify(receipt_id, base_url=get_settings().kiosk_api_base_url)
+        except kiosk_receipt.KioskReceiptError as exc:
+            raise _error(exc.status, exc.code, exc.message) from exc
+        try:
+            rows = repo.client.rest_post("kiosk_receipt_redemptions", {
+                "receipt_id": receipt_id,
+                "merchant_id": str(merchant_id),
+                "redeemed_by": str(getattr(profile, "id", profile)),
+                "provider_result": verified.provider_result,
+            })
+        except SupabaseHttpError as exc:
+            # Unique violation: another counter used it between our read and write.
+            if exc.status == 409 or "23505" in exc.body:
+                raise _error(409, "KIOSK_RECEIPT_USED", "이미 사용된 영수증이에요") from exc
+            raise
+        row = (rows or [{}])[0] if isinstance(rows, list) else (rows or {})
+        return {
+            "ok": True,
+            "data": {
+                "result": "success",
+                "kind": "kiosk_receipt",
+                "receipt_id": receipt_id,
+                "used_at": row.get("redeemed_at"),
+            },
+            "error": None,
+        }
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "영수증 사용 기록을 저장하지 못했어요") from exc

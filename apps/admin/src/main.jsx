@@ -4,6 +4,9 @@ import { AlertTriangle, BarChart3, Bell, Building2, CalendarDays, CheckCircle2, 
 import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
+import './themes/skins.css';
+import './themes/calm-dark.css';
+import { ADMIN_THEMES, DEFAULT_THEME_ID, applyThemeToDocument, latestPayments, normalizeThemeId, ratingDistribution, readLastTheme, rememberLastTheme, themeById } from './themes.js';
 import { PaymentHistoryDashboard } from './PaymentFeatures.jsx';
 import SettlementDemoPanel from './SettlementDemoPanel.jsx';
 const PurchaseApp = React.lazy(() => import('./PurchaseApp.jsx'));
@@ -145,10 +148,83 @@ function showBlob(blob, previewWindow) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+const ThemeContext = React.createContext(null);
+// Outside the dashboard (login, loading) follow whatever theme is on <html>.
+function useAdminTheme() {
+  const value = React.useContext(ThemeContext);
+  if (value) return value;
+  const themeId = normalizeThemeId(typeof document === 'undefined' ? DEFAULT_THEME_ID : document.documentElement.dataset.theme);
+  return { themeId, skin: themeById(themeId).skin, extras: themeById(themeId).extras === true };
+}
+// Admin themes apply to the admin app only; /shop and /counter keep their own design.
+const isAdminRoute = typeof window === 'undefined'
+  || !['/shop', '/counter'].includes(window.location.pathname.replace(/\/+$/, '') || '/');
+// Screens before login show the last theme used on this browser (cosmetic only;
+// the account setting from /me wins as soon as the dashboard loads).
+if (typeof document !== 'undefined' && isAdminRoute) applyThemeToDocument(readLastTheme());
+
 function BrandMark() {
+  const { themeId } = useAdminTheme();
   return <div className="brandmark" aria-label="그린잇">
-    <img src="/brand/greeneat_logo.png" alt="그린잇" />
+    <img src={themeById(themeId).logo} alt="그린잇" />
   </div>;
+}
+
+function ThemePicker({ value, onChange, disabled }) {
+  return <label className="theme-picker">
+    <span>화면 테마</span>
+    <select aria-label="화면 테마" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
+      {ADMIN_THEMES.map((theme) => <option key={theme.id} value={theme.id}>{theme.label}</option>)}
+    </select>
+  </label>;
+}
+
+function SidebarAccount({ name, role }) {
+  const initial = (name || '관').trim().slice(0, 1);
+  return <div className="sidebar-account" aria-label="로그인 계정">
+    <span className="sidebar-account-avatar" aria-hidden="true">{initial}</span>
+    <span className="sidebar-account-copy"><strong>{name || '-'}</strong><small>{role}</small></span>
+  </div>;
+}
+
+/* Calm Dark only: 방금 들어온 결제 (from the merchant transaction feed already loaded). */
+function RecentPaymentsWidget({ items }) {
+  const rows = latestPayments(items, 5);
+  return <article className="dash-card dash-detail-card theme-extra recent-payments-widget">
+    <div className="dash-table-heading"><h3>방금 들어온 결제</h3><span>최근 {rows.length}건</span></div>
+    {rows.length === 0 ? <p className="dash-empty">아직 들어온 결제가 없어요.</p> : <ul className="recent-payments-list">{rows.map((row) => <li key={row.id}>
+      <time>{new Date(row.created_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false })}</time>
+      <span className="recent-payments-who"><strong>{row.employee_name || '-'}</strong><small>{row['company_name'] || '일반 고객'} · {row.product_name || row.meal_window || '식대'}</small></span>
+      <span className="recent-payments-type">{({ ledger: '장부', subsidized: '보조금', voucher: '식권', direct: '카드' })[row.pay_type] ?? '결제'}</span>
+      <strong className="money">{Math.abs(Number(row.amount ?? row.product_price ?? 0)).toLocaleString('ko-KR')}원</strong>
+    </li>)}</ul>}
+  </article>;
+}
+
+/* Calm Dark only: 별점 분포 for the reviews screen. */
+function RatingDistributionWidget({ items }) {
+  const rows = ratingDistribution(items);
+  return <div className="theme-extra rating-distribution" aria-label="별점 분포">
+    {rows.map((row) => <div key={row.star} className="rating-distribution-row">
+      <span>{row.star}점</span>
+      <i aria-hidden="true"><b style={{ width: `${row.ratio}%` }} /></i>
+      <strong>{row.count}</strong>
+    </div>)}
+  </div>;
+}
+
+/* Calm Dark only: how the buffet menu looks in the buyer app. */
+function DailyMenuPhonePreview({ form }) {
+  return <aside className="theme-extra daily-menu-phone" aria-label="앱 미리보기">
+    <div className="daily-menu-phone-screen">
+      <small>TODAY BUFFET</small>
+      <strong>{form.title || '오늘 뷔페 메뉴'}</strong>
+      {form.image_url ? <img src={form.image_url} alt="" /> : <div className="daily-menu-phone-image">이미지 없음</div>}
+      <p>{form.menu_text || '메뉴를 입력하면 여기에 보여요'}</p>
+      <span>{form.service_date}</span>
+    </div>
+    <p className="daily-menu-phone-caption">구매자 앱 홈에 이렇게 보여요</p>
+  </aside>;
 }
 
 function AuthLinkNotice() {
@@ -1272,6 +1348,7 @@ function PaymentQrPanel({ recentPaymentAlerts, merchantQr, merchantQrImageUrl, m
 }
 
 function AnnouncementReviewPanel({ token, section }) {
+  const { extras } = useAdminTheme();
   const today = todayInput();
   const [data, setData] = useState({ items: [] });
   const [error, setError] = useState('');
@@ -1354,6 +1431,7 @@ function AnnouncementReviewPanel({ token, section }) {
   });
   return <section className="panel review-management-panel">
     <div className="panel-title"><div><p className="panel-note titleless-guidance">평균 별점 ⭐️ {data.average_rating ?? 0} ({data.review_count ?? 0}개)</p></div><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="latest">최신순</option><option value="rating_asc">낮은 별점순</option></select></div>
+    {extras && <RatingDistributionWidget items={data.items}/>}
     <div className="review-filter-bar">
       <label>조회 시작일<input type="date" value={period.from} max={period.to || today} onChange={(event) => setPeriod((current) => ({ ...current, from: event.target.value }))}/></label>
       <label>조회 종료일<input type="date" value={period.to} min={period.from || undefined} max={today} onChange={(event) => setPeriod((current) => ({ ...current, to: event.target.value }))}/></label>
@@ -2172,8 +2250,8 @@ function MerchantSupplierInfoScreen({ merchant, busy, onSave, onSettings, token 
   </AdminPage>;
 }
 
-function MerchantScreen({ section, companyItems, onCompanyDetail, onCompaniesChanged, merchant, busy, onSaveSupplier, onSettings, token, scopeId, prepurchaseRefreshVersion }) {
-  if (section === 'main') return <DashboardView kind="merchant" token={token} scopeId={scopeId}/>;
+function MerchantScreen({ section, companyItems, onCompanyDetail, onCompaniesChanged, merchant, busy, onSaveSupplier, onSettings, token, scopeId, prepurchaseRefreshVersion, recentPayments = null }) {
+  if (section === 'main') return <DashboardView kind="merchant" token={token} scopeId={scopeId} recentPayments={recentPayments}/>;
   if (section === 'company-list') return <MerchantCompanyListScreen items={companyItems} onDetail={onCompanyDetail} />;
   if (section === 'supplier-info') return <MerchantSupplierInfoScreen merchant={merchant} busy={busy} onSave={onSaveSupplier} onSettings={onSettings} token={token} />;
   if (section === 'prepurchase') return <MerchantPrepurchaseScreen token={token} onChanged={onCompaniesChanged} refreshVersion={prepurchaseRefreshVersion} />;
@@ -2465,7 +2543,8 @@ function PeriodPicker({ draft, onChange, onApply, loading }) {
   </form>;
 }
 
-function DashboardView({ kind, token, scopeId }) {
+function DashboardView({ kind, token, scopeId, recentPayments = null }) {
+  const { extras } = useAdminTheme();
   const initialPeriod = useMemo(dashboardPeriodFromUrl, []);
   const [draft, setDraft] = useState(initialPeriod);
   const [applied, setApplied] = useState(initialPeriod);
@@ -2530,6 +2609,7 @@ function DashboardView({ kind, token, scopeId }) {
       <section className="dash-summary-grid"><SummaryCard label={labels.amount} value={summary.total_amount} delta={summary.total_amount_delta_pct} money Icon={WalletCards} tone="green"/><DonutCard rows={mealRows} total={summary.total_count}/><SummaryCard label={labels.count} value={summary.total_count} delta={summary.total_count_delta_pct} Icon={BarChart3} tone="orange"/></section>
       <section className="dash-two-grid"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'}/></section>
       <section className="dash-two-grid"><TrendChart title={labels.trendAmount} series={hasDashboardData ? summary.series : []} unit={summary.unit} valueKey="amount" money color="#2FB865"/><TrendChart title={labels.trendCount} series={hasDashboardData ? summary.series : []} unit={summary.unit} valueKey="count" color="#4C8BF5"/></section>
+      {extras && merchant && recentPayments && <section className="dash-two-grid theme-extra-grid"><RecentPaymentsWidget items={recentPayments}/></section>}
     </>}
   </AdminPage>;
 }
@@ -2702,6 +2782,8 @@ function Dashboard({ session, onLogout }) {
   const [contractModal, setContractModal] = useState(null);
   const [contractForm, setContractForm] = useState({ settlement_cycle: 'month_end', settlement_day: '25', unit_price: '', subsidy_enabled: false, prepurchase_enabled: false, company_subsidy_amount: '0', restaurant_subsidy_amount: '0', tax_type: 'unclassified' });
   const [busy, setBusy] = useState(false);
+  const [themeId, setThemeId] = useState(readLastTheme);
+  const [themeSaving, setThemeSaving] = useState(false);
   const [dashboardBooting, setDashboardBooting] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -2710,6 +2792,26 @@ function Dashboard({ session, onLogout }) {
   const isPlatformAdmin = me?.role === 'platform_admin';
   const isCompanyAdmin = me?.role === 'company_admin';
   const showCompanyLegacy = isCompanyAdmin && companySection === 'legacy-employees';
+  const themeContext = useMemo(() => ({ themeId, skin: themeById(themeId).skin, extras: themeById(themeId).extras === true }), [themeId]);
+
+  useEffect(() => { applyThemeToDocument(themeId); rememberLastTheme(themeId); }, [themeId]);
+
+  // Theme is saved per account (app_users.admin_ui_theme). Apply first so the
+  // switch feels instant; roll back if the server refuses.
+  async function changeTheme(nextId) {
+    const next = normalizeThemeId(nextId);
+    const previous = themeId;
+    if (next === previous || themeSaving) return;
+    setThemeId(next); setThemeSaving(true); setError('');
+    try {
+      const saved = await apiFetch('/me/preferences', token, { method: 'PATCH', body: JSON.stringify({ admin_theme: next }) });
+      setThemeId(normalizeThemeId(saved?.admin_theme ?? next));
+      setMe((current) => current ? { ...current, admin_theme: next } : current);
+    } catch (themeError) {
+      setThemeId(previous);
+      setError(`화면 테마를 저장하지 못했어요: ${themeError.message}`);
+    } finally { setThemeSaving(false); }
+  }
   const merchantRequest = useMemo(() => (path, options) => apiFetch(path, token, options), [token]);
   const inviteLink = (invite) => invite?.token ? `${window.location.origin}/?invite=${invite.token}` : '';
 
@@ -2917,6 +3019,7 @@ function Dashboard({ session, onLogout }) {
         }
       }
       setMe(meData);
+      setThemeId(normalizeThemeId(meData.admin_theme));
       setRequests(requestData.items ?? []);
       setEmployees(employeeData);
       setMealPolicy(mealPolicyData);
@@ -3339,6 +3442,8 @@ function Dashboard({ session, onLogout }) {
 
   if (!me) return <main className="loading"><BrandMark /><div className="alert error">권한 정보를 불러오지 못했어요. {error}</div><button className="ghost" onClick={onLogout}>로그아웃</button></main>;
 
+  const merchantNavGroupTitles = ['운영', '업체·정산', '식당'];
+  const companyNavGroupTitles = ['홈', '청구·증빙', '사원'];
   const merchantNavGroups = [
     [['main', '대시보드', Home], ['payment-history', '실시간 매출', CreditCard]],
     [['companies', '업체 정보', Building2], ['settlements-by-company', '매출 정산', WalletCards], ['tax-invoices', '증빙 내역', FileText]],
@@ -3367,7 +3472,7 @@ function Dashboard({ session, onLogout }) {
   ];
   const companyUsageTabs = [['employee-usage', '사원별 사용'], ['monthly-usage', '월별 이용']];
 
-  return <main className={`shell${isMerchantAdmin ? ' merchant-shell' : ''}${isCompanyAdmin ? ' company-shell' : ''}`}>
+  return <ThemeContext.Provider value={themeContext}><main className={`shell${isMerchantAdmin ? ' merchant-shell' : ''}${isCompanyAdmin ? ' company-shell' : ''}`}>
     <ImageCropModal request={cropRequest} onCancel={() => finishImageCrop(null)} onApply={finishImageCrop} />
     <header className={`topbar${isMerchantAdmin ? ' merchant-topbar' : ''}${isCompanyAdmin ? ' company-topbar' : ''}`}>
       <div className="top-copy">
@@ -3378,14 +3483,17 @@ function Dashboard({ session, onLogout }) {
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
       {isPlatformAdmin && <div className="top-actions">
+        <ThemePicker value={themeId} onChange={changeTheme} disabled={themeSaving}/>
         <button className="ghost" onClick={load} disabled={busy}><RefreshCw size={16}/> 새로고침</button>
         <button className="ghost" onClick={onLogout}><LogOut size={16}/> 로그아웃</button>
       </div>}
     </header>
 
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
-      {merchantNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'restaurant-management' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
+      {merchantNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{themeContext.skin && <div className="merchant-nav-group-title" aria-hidden="true">{merchantNavGroupTitles[groupIndex]}</div>}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'restaurant-management' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
       <div className="merchant-nav-divider merchant-nav-divider-before-logout" role="separator" />
+      {themeContext.skin && <SidebarAccount name={merchantQr?.merchant?.name ?? me?.display_name} role={`식당관리자 · ${me?.display_name ?? ''}`}/>}
+      <ThemePicker value={themeId} onChange={changeTheme} disabled={themeSaving}/>
       <button type="button" className="merchant-sidebar-logout" onClick={load} disabled={busy}><RefreshCw size={18}/><span>새로고침</span></button>
       <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
       <div className="merchant-sidebar-legal">
@@ -3396,8 +3504,10 @@ function Dashboard({ session, onLogout }) {
     </nav>}
 
     {isCompanyAdmin && <nav className="company-tabs" aria-label="업체 관리자 메뉴">
-      {companyNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{items.map(([id, label, Icon]) => <button key={id} type="button" className={companySection === id ? 'active' : ''} onClick={() => setCompanySection(id)} aria-current={companySection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span></button>)}</React.Fragment>)}
+      {companyNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{themeContext.skin && <div className="merchant-nav-group-title" aria-hidden="true">{companyNavGroupTitles[groupIndex]}</div>}{items.map(([id, label, Icon]) => <button key={id} type="button" className={companySection === id ? 'active' : ''} onClick={() => setCompanySection(id)} aria-current={companySection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span></button>)}</React.Fragment>)}
       <div className="merchant-nav-divider" role="separator" />
+      {themeContext.skin && <SidebarAccount name={me?.company?.name ?? me?.display_name} role={`회사관리자 · ${me?.display_name ?? ''}`}/>}
+      <ThemePicker value={themeId} onChange={changeTheme} disabled={themeSaving}/>
       <button type="button" className="merchant-sidebar-logout" onClick={load} disabled={busy}><RefreshCw size={18}/><span>새로고침</span></button>
       <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
       <div className="merchant-sidebar-legal">
@@ -3420,7 +3530,7 @@ function Dashboard({ session, onLogout }) {
     {isMerchantAdmin && merchantContentSection === 'partners' && <PartnerManagementScreen token={token}/>}
     {isMerchantAdmin && merchantContentSection === 'partner-banners' && <PartnerBannerManagementScreen token={token}/>}
     {isMerchantAdmin && ['announcements', 'reviews'].includes(merchantContentSection) && <AnnouncementReviewPanel token={token} section={merchantContentSection}/>}
-    {isMerchantAdmin && <MerchantScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} onCompaniesChanged={load} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} token={token} scopeId={me?.merchant_id} prepurchaseRefreshVersion={prepurchaseRefreshVersion} />}
+    {isMerchantAdmin && <MerchantScreen section={merchantContentSection} companyItems={merchantCompanies?.items ?? []} onCompanyDetail={openContractModal} onCompaniesChanged={load} merchant={merchantQr?.merchant} busy={busy} onSaveSupplier={saveMerchantSupplierProfile} onSettings={openAccountSettings} token={token} scopeId={me?.merchant_id} prepurchaseRefreshVersion={prepurchaseRefreshVersion} recentPayments={themeContext.extras ? (transactions?.items ?? []) : null} />}
     {isCompanyAdmin && !showCompanyLegacy && <CompanyScreen section={companyContentSection} company={me?.company} busy={busy} onSaveCompany={saveCompanyProfile} onSettings={openAccountSettings} onCompanyInfo={() => setCompanySection('company-info')} token={token} scopeId={me?.company_id} />}
 
     {error && <div className="alert error">{error}</div>}
@@ -3628,6 +3738,7 @@ function Dashboard({ session, onLogout }) {
         <span className="badge">{dailyMenuForm.service_date}</span>
       </div>
       {dailyMenu?.migration_required && <div className="alert error">오늘 메뉴 DB 마이그레이션이 아직 적용되지 않아 기본 메뉴만 표시 중이에요. 0006_merchant_daily_menus.sql 적용 후 저장이 활성화됩니다.</div>}
+      <div className="daily-menu-editor">
       <form className="daily-menu-form" onSubmit={saveDailyMenu}>
         <label>메뉴 날짜<input type="date" min={todayInput()} value={dailyMenuForm.service_date} onChange={(event) => selectDailyMenuDate(event.target.value)} required /></label>
         <input value={dailyMenuForm.title} onChange={(event) => setDailyMenuForm((form) => ({ ...form, title: event.target.value }))} placeholder="제목" required />
@@ -3636,6 +3747,8 @@ function Dashboard({ session, onLogout }) {
         {dailyMenuForm.image_url && <img className="menu-image-preview" src={dailyMenuForm.image_url} alt="오늘 메뉴 미리보기" />}
         <button className="primary" disabled={busy || dailyMenu?.migration_required}>선택 날짜 메뉴 저장</button>
       </form>
+      {themeContext.extras && <DailyMenuPhonePreview form={dailyMenuForm}/>}
+      </div>
       <div className="daily-menu-schedule">
         <h3>저장된 메뉴 일정</h3>
         {(dailyMenu?.menus?.length ?? 0) === 0
@@ -3688,7 +3801,7 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
     </div>
-  </main>;
+  </main></ThemeContext.Provider>;
 }
 
 function App() {

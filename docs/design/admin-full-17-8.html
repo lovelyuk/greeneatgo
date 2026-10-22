@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>관리자 전체 페이지 시안 · 17-8 Calm Dark</title>
+<style>
+@font-face{font-family:Pretendard;font-weight:400;src:url(../../apps/admin/public/fonts/Pretendard-Regular.otf)}
+@font-face{font-family:Pretendard;font-weight:600;src:url(../../apps/admin/public/fonts/Pretendard-SemiBold.otf)}
+@font-face{font-family:Pretendard;font-weight:700;src:url(../../apps/admin/public/fonts/Pretendard-Bold.otf)}
+@font-face{font-family:Pretendard;font-weight:800;src:url(../../apps/admin/public/fonts/Pretendard-ExtraBold.otf)}
+:root{--bg:#0a0d14;--panel:#131a2a;--hi:#1b2436;--line:#212b3e;--dash:#232d44;--fg:#e9edf5;--mut:#8a93a6;--dim:#6b7489;--blue:#2c5fff;--bs:#5b87ff;--paper:#f4f1e9;--red:#ff6b6b;--amber:#f5b54a}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Pretendard,sans-serif;background:#d9dde5;padding:40px;color:var(--fg);-webkit-font-smoothing:antialiased}
+.slot{margin:0 auto 56px;width:1440px}
+.slot>h2{font-size:22px;font-weight:800;margin-bottom:4px;color:#111}
+.slot>p{font-size:14px;color:#4a5263;margin-bottom:14px}
+.frame{width:1440px;height:900px;overflow:hidden;border-radius:14px;box-shadow:0 20px 50px rgba(15,23,42,.25);display:flex;background:var(--bg)}
+.frame.tall{height:1180px}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+svg.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* sidebar */
+.side{width:236px;flex:none;display:flex;flex-direction:column;padding:26px 16px 20px;border-right:1px solid var(--hi)}
+.side .logo{height:34px;margin:0 10px 26px;display:block;align-self:flex-start}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav .grp{font-size:11px;font-weight:700;letter-spacing:.08em;padding:18px 12px 6px;color:#5c6680}
+.nav .grp:first-child{padding-top:0}
+.nav a{display:flex;align-items:center;gap:12px;height:42px;padding:0 12px;border-radius:10px;font-size:14.5px;font-weight:600;color:var(--mut);position:relative}
+.nav a.on{background:var(--paper);color:#131a2a;-webkit-mask:radial-gradient(circle 7px at 100% 50%,transparent 6.5px,#000 7px);mask:radial-gradient(circle 7px at 100% 50%,transparent 6.5px,#000 7px)}
+.nav a .badge{margin-left:auto;background:var(--blue);color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:999px}
+.nav a.on .badge{margin-right:6px}
+.side .foot{margin-top:auto;display:flex;flex-direction:column;gap:4px}
+.side .foot a{display:flex;align-items:center;gap:12px;height:38px;padding:0 12px;font-size:14px;font-weight:600;color:var(--mut)}
+.side .legal{font-size:11.5px;color:#5c6680;padding:10px 12px 0}
+.me{display:flex;align-items:center;gap:10px;padding:12px;margin-bottom:8px;border-radius:12px;background:var(--panel)}
+.me .av{width:34px;height:34px;border-radius:10px;background:var(--blue);display:grid;place-items:center;font-weight:800;font-size:14px;color:#fff}
+.me b{font-size:13.5px;display:block}.me small{font-size:11.5px;color:var(--mut)}
+
+/* main */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{height:76px;display:flex;align-items:center;gap:14px;padding:0 32px;flex:none}
+.top h1{font-size:21px;font-weight:800;letter-spacing:-.02em}
+.top .sub{font-size:13px;color:var(--mut);font-weight:600}
+.top .sp{flex:1}
+.range{display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:10px;background:var(--panel);border:1px solid var(--line);font-size:13.5px;font-weight:600}
+.seg{display:flex;padding:3px;border-radius:11px;gap:2px;background:var(--panel);border:1px solid var(--line)}
+.seg span{height:32px;padding:0 13px;display:flex;align-items:center;font-size:13px;font-weight:600;border-radius:8px;color:var(--mut)}
+.seg span.on{background:var(--paper);color:#131a2a}
+.tabs{display:flex;gap:6px;padding:0 32px 14px;flex:none;flex-wrap:wrap}
+.tabs span{height:36px;padding:0 14px;display:flex;align-items:center;gap:7px;border-radius:999px;font-size:13.5px;font-weight:600;color:var(--mut);border:1px solid var(--line)}
+.tabs span.on{background:var(--paper);color:#131a2a;border-color:var(--paper)}
+.tabs span i{font-style:normal;background:var(--blue);color:#fff;font-size:11px;font-weight:800;padding:1px 6px;border-radius:999px}
+.content{flex:1;padding:4px 32px 28px;display:grid;gap:16px;min-height:0;align-content:start}
+
+/* surfaces */
+.dp{background:var(--panel);border-radius:14px;padding:20px 22px;min-width:0;min-height:0;position:relative}
+.dp h3{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;color:#fff}
+.dp h3 small{font-size:12px;color:var(--dim);font-weight:500}
+.dp h3 .r{margin-left:auto;display:flex;gap:8px;align-items:center}
+.dp .desc{font-size:13px;color:var(--mut);margin-top:4px}
+.dp hr{border:0;border-top:2px dashed var(--dash);margin:16px 0}
+.dk{--stub:96px;background:var(--panel);border-radius:14px;display:grid;grid-template-columns:1fr var(--stub);position:relative;min-width:0;min-height:0}
+.dk:before,.dk:after{content:"";position:absolute;right:calc(var(--stub) - 11px);width:22px;height:22px;border-radius:50%;background:var(--bg)}
+.dk:before{top:-11px}.dk:after{bottom:-11px}
+.dk .l{padding:18px 20px;display:flex;flex-direction:column;min-width:0}
+.dk .l small{font-size:12.5px;font-weight:600;color:var(--mut)}
+.dk .l .am{font-size:26px;font-weight:800;letter-spacing:-.03em;margin-top:auto;white-space:nowrap}
+.dk .l .am em{font-style:normal;font-size:14px;color:var(--mut);margin-left:2px}
+.dk .r{border-left:2px dashed #2a3550;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;text-align:center;padding:0 6px}
+.dk .r b{font-size:16px;font-weight:800;color:#7fa2ff}
+.dk .r span{font-size:11px;font-weight:600;color:var(--dim)}
+.dk.b{background:var(--blue)}.dk.b .l small,.dk.b .am em,.dk.b .r span{color:#dfe7ff}.dk.b .r{border-left-color:rgba(255,255,255,.4)}.dk.b .r b{color:#fff}
+.dk.red .r b{color:var(--red)}
+
+/* form */
+.f{display:flex;flex-direction:column;gap:7px;min-width:0}
+.f label{font-size:12.5px;font-weight:600;color:var(--mut)}
+.in{height:44px;border-radius:10px;background:#0f1420;border:1px solid var(--line);display:flex;align-items:center;padding:0 14px;font-size:14px;color:var(--fg);gap:8px}
+.in.ph{color:#525c72}
+.in.ta{height:auto;min-height:110px;align-items:flex-start;padding-top:12px;line-height:1.7;white-space:pre-line}
+.in.focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(44,95,255,.22)}
+.in .sfx{margin-left:auto;color:var(--dim);font-size:13px;font-weight:600}
+.in.ro{background:transparent;border-style:dashed;color:var(--fg)}
+.drop{border:2px dashed #2a3550;border-radius:12px;display:flex;align-items:center;gap:14px;padding:16px 18px;color:var(--mut);font-size:13.5px}
+.drop .th{width:56px;height:56px;border-radius:10px;background:var(--hi);display:grid;place-items:center;color:var(--bs)}
+.btn{height:44px;padding:0 18px;border-radius:10px;font-size:14px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid transparent;white-space:nowrap}
+.btn.p{background:var(--blue);color:#fff}
+.btn.s{background:transparent;color:var(--fg);border-color:#2a3550}
+.btn.g{background:var(--hi);color:var(--fg)}
+.btn.d{background:transparent;color:var(--red);border-color:rgba(255,107,107,.35)}
+.btn.sm{height:34px;padding:0 12px;font-size:13px;border-radius:8px}
+.btn.dis{opacity:.4}
+.chk{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:600}
+.chk i{width:20px;height:20px;border-radius:6px;border:1.5px solid #3d4a66;display:grid;place-items:center}
+.chk i.on{background:var(--blue);border-color:var(--blue)}
+.chk i.on:after{content:"";width:9px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
+.radio i{border-radius:50%}
+.radio i.on:after{width:8px;height:8px;border:0;border-radius:50%;background:#fff;transform:none}
+.tgl{display:inline-block;vertical-align:middle;width:40px;height:23px;border-radius:999px;background:#2a3550;position:relative;flex:none}
+.tgl:after{content:"";position:absolute;left:3px;top:3px;width:17px;height:17px;border-radius:50%;background:#8a93a6}
+.tgl.on{background:var(--blue)}.tgl.on:after{left:20px;background:#fff}
+.choice{border:1.5px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;gap:12px;align-items:flex-start}
+.choice.on{border-color:var(--blue);background:rgba(44,95,255,.08)}
+.choice b{font-size:14.5px;display:block}.choice small{font-size:12.5px;color:var(--mut)}
+
+/* table */
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{font-size:12px;color:var(--dim);font-weight:600;text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:13px 12px;border-bottom:2px dashed var(--dash);font-weight:500;white-space:nowrap}
+.tbl tr:last-child td{border-bottom:0}
+.tbl .n{text-align:right}
+.tbl td b{font-weight:700}
+.tbl tr.sel td{background:rgba(44,95,255,.07)}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:4px 9px;border-radius:999px;white-space:nowrap}
+.pill.blue{background:rgba(44,95,255,.18);color:#9db6ff}
+.pill.gray{background:var(--hi);color:#aab2c2}
+.pill.ok{background:rgba(91,135,255,.16);color:#c7d5ff}
+.pill.warn{background:rgba(245,181,74,.14);color:#f5c26b}
+.pill.red{background:rgba(255,107,107,.14);color:#ff9a9a}
+.pill.paper{background:var(--paper);color:#131a2a}
+.pill:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.nodot:before{display:none}
+.feed .row{display:grid;grid-template-columns:62px 1fr auto auto;gap:12px;align-items:center;padding:12px 0;font-size:13.5px;border-bottom:2px dashed var(--dash)}
+.feed .row:last-child{border-bottom:0}
+.feed .t{font-weight:700;color:var(--dim);font-size:12.5px}
+.feed .who{font-weight:600}.feed .who small{display:block;font-size:12px;color:var(--dim);font-weight:500;margin-top:2px}
+.empty{border:2px dashed #2a3550;border-radius:12px;padding:30px;text-align:center;color:var(--mut);font-size:13.5px}
+.empty b{display:block;color:var(--fg);font-size:15px;margin-bottom:4px}
+.note{background:rgba(44,95,255,.08);border-radius:10px;padding:12px 16px;font-size:13px;color:#b9c8f0;line-height:1.7}
+.rank .r{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:10px;padding:10px 0;font-size:13.5px;border-bottom:2px dashed var(--dash)}
+.rank .r b{font-weight:800;font-size:12.5px;color:var(--dim)}
+.rank .bar{grid-column:2/4;height:5px;border-radius:3px;margin-top:-4px;background:var(--hi)}
+.rank .bar i{display:block;height:100%;border-radius:3px;background:var(--bs)}
+.months{display:flex;gap:6px}
+.months span{height:34px;min-width:44px;padding:0 10px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--mut);background:var(--panel)}
+.months span.on{background:var(--paper);color:#131a2a}
+.months span.off{color:#3d4a66}
+.thumb{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#24324f,#131a2a);display:grid;place-items:center;color:var(--bs)}
+.star{color:#f5c26b;letter-spacing:1px}
+.qr{width:220px;height:220px;border-radius:14px;background:var(--paper);padding:16px}
+.qr svg{width:100%;height:100%}
+.ticketmini{background:var(--paper);color:#131a2a;border-radius:12px;display:grid;grid-template-columns:1fr 92px;position:relative;--bg:#131a2a}
+.ticketmini:before,.ticketmini:after{content:"";position:absolute;right:81px;width:20px;height:20px;border-radius:50%;background:var(--bg)}
+.ticketmini:before{top:-10px}.ticketmini:after{bottom:-10px}
+.ticketmini .l{padding:14px 18px}
+.ticketmini .r{border-left:2px dashed #cfc7b4;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.kick{font-size:11px;font-weight:800;letter-spacing:.14em;color:#8b8371}
+.phone{width:300px;height:600px;border-radius:40px;background:#000;padding:10px;flex:none}
+.phone .sc{width:100%;height:100%;border-radius:31px;background:var(--bg);overflow:hidden;padding:40px 16px 16px;display:flex;flex-direction:column;gap:10px}
+.banner{height:96px;border-radius:12px;background:linear-gradient(120deg,#2c5fff,#1b2b66);display:flex;align-items:center;padding:0 22px;font-weight:800;font-size:18px;color:#fff;position:relative;overflow:hidden}
+.banner small{display:block;font-size:12px;font-weight:600;opacity:.75;margin-top:4px}
+.login{flex:1;display:grid;grid-template-columns:1.1fr 1fr}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+ <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
+ <symbol id="i-live" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></symbol>
+ <symbol id="i-biz" viewBox="0 0 24 24"><path d="M4 21V7l8-4 8 4v14M9 21v-5h6v5M8 10h.01M12 10h.01M16 10h.01"/></symbol>
+ <symbol id="i-settle" viewBox="0 0 24 24"><path d="M4 6h16v12H4zM4 10h16M8 15h3"/></symbol>
+ <symbol id="i-doc" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"/></symbol>
+ <symbol id="i-cup" viewBox="0 0 24 24"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM17 10h1.5a2.5 2.5 0 0 1 0 5H17M8 3v3M12 3v3"/></symbol>
+ <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></symbol>
+ <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+ <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
+ <symbol id="i-out" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3"/></symbol>
+ <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+ <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+ <symbol id="i-img" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></symbol>
+ <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/></symbol>
+ <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 0 0 4 0"/></symbol>
+ <symbol id="i-qr" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/></symbol>
+ <symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></symbol>
+ <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+ <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></symbol>
+ <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+ <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+ <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+ <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+ <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1 6.3L12 17.5 6.5 20.4l1-6.3L3 9.7l6.2-.9z"/></symbol>
+ <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+ <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+ <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 0 0 4v0a2 2 0 0 1 0 4v2h18v-2a2 2 0 0 1 0-4 2 2 0 0 0 0-4V6H3zM15 6v12"/></symbol>
+ <symbol id="i-up" viewBox="0 0 24 24"><path d="M7 14l5-5 5 5"/></symbol>
+</svg>
+<div id="board"></div>
+<script>
+const ic = id => `<svg class="ic"><use href="#i-${id}"/></svg>`;
+const won = n => n.toLocaleString('ko-KR');
+// sample data (fictional)
+const DAYS = Array.from({length:20},(_,i)=>i+1);
+const CLOSED = new Set([3,4,9,10,11,17,18]);
+const OPEN = [108,96,112,118,121,114,110,117,124,98,105,112,88];
+const COUNTS = (()=>{let k=0;return DAYS.map(d=>CLOSED.has(d)?0:OPEN[k++]);})();
+const AMOUNTS = COUNTS.map(c=>c*7000);
+const TOTAL_COUNT = 1423, TOTAL_AMOUNT = 9961000;
+const COMP = [['한빛테크',3150000,450],['초록물산',2471000,353],['대성정밀',1890000,270],['미래로직스',1120000,160],['개인 구매',980000,140]];
+const FEED = [['12:50','김민준','한빛테크','식권'],['12:46','이서연','초록물산','장부'],['12:42','박도윤','대성정밀','식권'],['12:38','최하은','한빛테크','식권'],['12:34','정우진','초록물산','장부'],['12:30','강지우','대성정밀','식권'],['12:26','윤서아','미래로직스','식권'],['12:22','한도현','한빛테크','장부'],['12:18','오지민','개인 구매','식권']];
+const kfmt = v => v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?Math.round(v/1e3)+'K':v;
+
+function bars(w,h,vals,{fill='#2a3550',today='#2c5fff',grid='#1b2436',axis='#6b7489',closed='#3d4a66',pad=[14,6,24,44],fmt=v=>v,every=2,radius=4}={}){
+  const [t,r,b,l]=pad,W=w-l-r,H=h-t-b,max=Math.max(...vals)*1.15,n=vals.length,slot=W/n,bw=Math.min(28,slot*.62);
+  let g='';for(let k=0;k<=3;k++){const yy=t+H*k/3;g+=`<line x1="${l}" x2="${w-r}" y1="${yy}" y2="${yy}" stroke="${grid}"/><text x="${l-8}" y="${yy+4}" font-size="10.5" text-anchor="end" fill="${axis}">${fmt(Math.round(max*(1-k/3)))}</text>`;}
+  let o='';vals.forEach((v,i)=>{const cx=l+slot*i+slot/2;
+    if(!v){if(slot>=24)o+=`<text x="${cx}" y="${t+H-6}" font-size="10" text-anchor="middle" fill="${closed}">휴무</text>`;}
+    else{const bh=v/max*H;o+=`<rect x="${cx-bw/2}" y="${t+H-bh}" width="${bw}" height="${bh}" rx="${radius}" fill="${i===n-1?today:fill}"/>`;}
+    if((i%every===0&&i<n-2)||i===n-1)o+=`<text x="${cx}" y="${h-6}" font-size="10.5" text-anchor="middle" fill="${i===n-1?'#7fa2ff':axis}" font-weight="${i===n-1?700:400}">${i===n-1?'오늘':'10.'+String(i+1).padStart(2,'0')}</text>`;});
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block">${g}${o}</svg>`;
+}
+function donut(size,parts,track='#1b2436'){const r=size/2-10,c=2*Math.PI*r;let off=0,s='';parts.forEach(([p,col])=>{s+=`<circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${col}" stroke-width="14" stroke-dasharray="${p/100*c} ${c}" stroke-dashoffset="${-off/100*c}"/>`;off+=p;});
+  return `<svg width="${size}" height="${size}" style="transform:rotate(-90deg)"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${track}" stroke-width="14"/>${s}</svg>`;}
+function rank(rows,max){return `<div class="rank">${rows.map((r,i)=>`<div class="r"><b class="num">${i+1}</b><span style="font-weight:600">${r[0]}</span><span class="num" style="font-weight:700">${won(r[1])}</span><div class="bar"><i style="width:${r[1]/max*100}%"></i></div></div>`).join('')}</div>`;}
+const dk = ({c='',k,am,u,rb,rs,span=3,stub=96}) => `<div class="dk ${c}" style="grid-column:span ${span};--stub:${stub}px"><div class="l"><small>${k}</small><div class="am num">${am}<em>${u}</em></div></div><div class="r"><b class="num">${rb}</b><span>${rs}</span></div></div>`;
+const payPill = t => `<span class="pill ${t==='식권'?'blue':'gray'}">${t}</span>`;
+const feed = rows => `<div class="feed">${rows.map(f=>`<div class="row"><span class="t num">${f[0]}</span><span class="who">${f[1]}<small>${f[2]}</small></span>${payPill(f[3])}<b class="num">7,000원</b></div>`).join('')}</div>`;
+
+const NAV=[['운영',[['home','대시보드','main'],['live','실시간 매출','live']]],['업체·정산',[['biz','업체 정보','biz'],['settle','매출 정산','settle'],['doc','증빙 내역','doc']]],['식당',[['cup','식당 관리','cup'],['gear','공급자 정보','gear']]]];
+function side(on,badge=true){
+  return `<aside class="side"><img class="logo" src="../../apps/admin/public/brand/greeneat_logo_light.png" alt="그린잇">
+   <nav class="nav">${NAV.map(([g,items])=>`<div class="grp">${g}</div>`+items.map(([i,l,k])=>`<a class="${k===on?'on':''}">${ic(i)}${l}${k==='cup'&&badge?'<span class="badge num">3</span>':''}</a>`).join('')).join('')}</nav>
+   <div class="foot"><div class="me"><div class="av">돈</div><div><b>돈토 구내식당</b><small>김사장 · 식당관리자</small></div></div><a>${ic('refresh')}새로고침</a><a>${ic('out')}로그아웃</a><div class="legal">개인정보 처리방침 · 이용약관</div></div></aside>`;
+}
+const SEG=(on=2,items=['오늘','이번 주','이번 달','직접 선택'])=>`<div class="seg">${items.map((t,i)=>`<span class="${i===on?'on':''}">${t}</span>`).join('')}</div>`;
+const RANGE=(t='2026.10.01 – 10.20')=>`<div class="range">${ic('cal')}<span class="num">${t}</span></div>`;
+const topbar=(title,right='',sub='')=>`<div class="top"><h1>${title}</h1>${sub?`<span class="sub">${sub}</span>`:''}<div class="sp"></div>${right}</div>`;
+const TABS=(items,on)=>`<div class="tabs">${items.map((t,i)=>`<span class="${i===on?'on':''}">${t}</span>`).join('')}</div>`;
+const COMP_TABS=['업체 목록','업체 추가','선구매'];
+const REST_TABS=['오늘 뷔페 메뉴','판매 상품','쿠폰 관리','결제 QR <i>3</i>','알림','공지사항','리뷰','제휴사','배너 광고 설정'];
+const page=(on,body,{tall=false}={})=>`<div class="frame ${tall?'tall':''}">${side(on)}<div class="main">${body}</div></div>`;
+
+const P=[];
+
+// 00 login
+P.push({id:'p00',name:'00 로그인',note:'첫 화면 — 왼쪽 브랜드 티켓, 오른쪽 로그인. 버튼 문구 "운영 시작하기"는 그대로',html:`
+<div class="frame"><div class="login">
+ <div style="padding:60px 64px;display:flex;flex-direction:column;background:radial-gradient(900px 500px at 0% 100%,rgba(44,95,255,.18),transparent 60%)">
+  <img src="../../apps/admin/public/brand/greeneat_logo_light.png" style="height:40px;align-self:flex-start">
+  <div style="margin-top:auto">
+   <div style="font-size:14px;font-weight:700;color:#7fa2ff">GreenEat Go 관리자</div>
+   <div style="font-size:44px;font-weight:800;letter-spacing:-.04em;line-height:1.25;margin-top:10px">식권 결제부터 정산까지<br>한 화면에서</div>
+   <div style="display:flex;gap:16px;margin-top:40px">
+    <div class="ticketmini" style="width:260px;--bg:#0a0d14"><div class="l"><div class="kick">TODAY</div><div style="font-size:28px;font-weight:800" class="num">88<span style="font-size:14px;color:#7a7364">건</span></div><div style="font-size:12.5px;color:#7a7364;font-weight:600">오늘 식사</div></div><div class="r"><b class="num" style="font-size:18px">616K</b><span style="font-size:11px;color:#7a7364;font-weight:700">원</span></div></div>
+    <div class="ticketmini" style="width:260px;--bg:#0a0d14;background:#2c5fff;color:#fff"><div class="l"><div class="kick" style="color:#dfe7ff">OCTOBER</div><div style="font-size:28px;font-weight:800" class="num">1,423<span style="font-size:14px;color:#dfe7ff">건</span></div><div style="font-size:12.5px;color:#dfe7ff;font-weight:600">이번 달 식사</div></div><div class="r" style="border-left-color:rgba(255,255,255,.45)"><b class="num" style="font-size:18px">+8%</b></div></div>
+   </div>
+  </div>
+ </div>
+ <div style="display:grid;place-items:center;padding:40px">
+  <div class="dp" style="width:440px;padding:36px 36px 30px">
+   <div style="font-size:24px;font-weight:800">관리자 로그인</div><div class="desc" style="margin-top:6px">식당관리자 · 회사관리자 계정으로 로그인해 주세요.</div>
+   <div class="f" style="margin-top:26px"><label>이메일</label><div class="in focus">owner@example.com</div></div>
+   <div class="f" style="margin-top:14px"><label>비밀번호</label><div class="in">••••••••••<span class="sfx">${ic('eye')}</span></div></div>
+   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px"><span class="chk"><i class="on"></i>로그인 유지</span><span style="font-size:13px;color:#7fa2ff;font-weight:600">비밀번호 재설정</span></div>
+   <div class="btn p" style="width:100%;margin-top:22px;height:50px;font-size:15px">운영 시작하기</div>
+   <div style="font-size:12px;color:var(--dim);text-align:center;margin-top:18px">개인정보 처리방침 · 이용약관</div>
+  </div>
+ </div>
+</div></div>`});
+
+// 01 dashboard
+P.push({id:'p01',name:'01 대시보드',note:'선택한 17-8 그대로 — 숫자 티켓 4장, 일별 매출, 거래처 TOP 5, 방금 들어온 결제',html:page('main',`
+${topbar('대시보드',SEG()+RANGE(),'돈토 구내식당')}
+<div class="content" style="grid-template-columns:repeat(12,1fr);grid-template-rows:118px 330px 1fr">
+ ${dk({c:'b',k:'총 매출',am:won(TOTAL_AMOUNT),u:'원',rb:'+12.4%',rs:'9월 대비'})}
+ ${dk({k:'총 수량',am:won(TOTAL_COUNT),u:'건',rb:'+8.1%',rs:'9월 대비'})}
+ ${dk({k:'오늘',am:'88',u:'건',rb:'+6',rs:'지난주 대비'})}
+ ${dk({k:'중식 · 석식 (%)',am:'78 / 22',u:'',rb:'109',rs:'하루 평균'})}
+ <div class="dp" style="grid-column:span 8"><h3>일별 매출<small>원 · 파란 막대 = 오늘</small></h3><div style="margin-top:10px">${bars(700,270,AMOUNTS,{fmt:kfmt})}</div></div>
+ <div class="dp" style="grid-column:span 4;grid-row:span 2"><h3>거래처 TOP 5<small>매출 · 원</small></h3>${rank(COMP,COMP[0][1])}
+  <h3 style="margin-top:22px">식사 구분</h3><div style="display:flex;align-items:center;gap:18px;margin-top:12px">${donut(88,[[78,'#2c5fff'],[22,'#3d4a66']])}<div style="flex:1;display:flex;flex-direction:column;gap:10px;font-size:13.5px"><div style="display:flex">중식<b class="num" style="margin-left:auto">1,110건 · 78%</b></div><div style="display:flex">석식<b class="num" style="margin-left:auto">313건 · 22%</b></div></div></div></div>
+ <div class="dp" style="grid-column:span 8"><h3>방금 들어온 결제<small>오늘 · 실시간</small><span class="r" style="font-size:13px;color:#7fa2ff;font-weight:700">실시간 매출 전체 보기 ${ic('chev')}</span></h3>${feed(FEED.slice(0,4))}</div>
+</div>`)});
+
+// 02 live sales
+P.push({id:'p02',name:'02 실시간 매출',note:'올해·월별·날짜·기간 선택은 그대로, 왼쪽 거래 내역 + 오른쪽 결제·환불 — 순결제 금액을 파란 티켓으로',html:page('live',`
+${topbar('실시간 매출',SEG(2,['올해','월별','날짜','기간'])+RANGE('2026년 10월 20일 (화)'))}
+<div class="content" style="grid-template-columns:repeat(12,1fr);grid-template-rows:118px 1fr">
+ ${dk({c:'b',k:'순결제',am:'616,000',u:'원',rb:'88',rs:'건',span:4,stub:90})}
+ ${dk({k:'결제',am:'630,000',u:'원',rb:'90',rs:'건',span:4,stub:90})}
+ ${dk({c:'red',k:'환불',am:'14,000',u:'원',rb:'2',rs:'건',span:4,stub:90})}
+ <div class="dp" style="grid-column:span 7"><h3>거래 내역<small>10.20 · 88건</small><span class="r"><div class="in" style="height:36px;width:220px;font-size:13px;color:#525c72">${ic('search')}이름·회사 검색</div></span></h3>
+  <table class="tbl" style="margin-top:10px"><tr><th>시간</th><th>이름</th><th>회사</th><th>식사</th><th>결제</th><th class="n">금액</th></tr>
+  ${FEED.slice(0,9).map((f,i)=>`<tr><td class="num" style="color:var(--mut)">${f[0]}</td><td><b>${f[1]}</b></td><td style="color:var(--mut)">${f[2]}</td><td>중식</td><td>${payPill(f[3])}</td><td class="n num"><b>7,000원</b></td></tr>`).join('')}</table></div>
+ <div class="dp" style="grid-column:span 5"><h3>결제 · 환불<small>카드·간편결제 식권 구매</small></h3>
+  <table class="tbl" style="margin-top:10px"><tr><th>시간</th><th>구매자</th><th>상품</th><th>상태</th><th class="n">금액</th></tr>
+   <tr><td class="num" style="color:var(--mut)">12:12</td><td><b>김민준</b></td><td>식권 10장</td><td><span class="pill ok">결제</span></td><td class="n num"><b>70,000</b></td></tr>
+   <tr><td class="num" style="color:var(--mut)">11:58</td><td><b>오지민</b></td><td>식권 5장</td><td><span class="pill ok">결제</span></td><td class="n num"><b>35,000</b></td></tr>
+   <tr><td class="num" style="color:var(--mut)">11:40</td><td><b>윤서아</b></td><td>식권 2장</td><td><span class="pill red">환불</span></td><td class="n num" style="color:var(--red)"><b>−14,000</b></td></tr>
+   <tr><td class="num" style="color:var(--mut)">11:21</td><td><b>한도현</b></td><td>식권 20장</td><td><span class="pill ok">결제</span></td><td class="n num"><b>140,000</b></td></tr>
+   <tr><td class="num" style="color:var(--mut)">10:05</td><td><b>강지우</b></td><td>식권 10장</td><td><span class="pill ok">결제</span></td><td class="n num"><b>70,000</b></td></tr>
+  </table>
+  <div class="note" style="margin-top:14px">환불은 결제한 화면에서만 할 수 있어요. 금액은 키움페이 승인 기준이에요.</div></div>
+</div>`)});
+
+// 03 companies list
+const COS=[['한빛테크','김하나','02-1234-5678',84,'장부',3150000,'정상'],['초록물산','이도윤','02-2345-6789',61,'장부',2471000,'정상'],['대성정밀','박서준','031-345-6789',47,'선구매',1890000,'정상'],['미래로직스','최유나','02-456-7890',29,'장부',1120000,'정상'],['새봄디자인','정민호','02-567-8901',12,'선구매',0,'초대 대기']];
+P.push({id:'p03',name:'03 업체 정보 · 업체 목록',note:'거래 중인 회사를 표로 — 직원 수, 결제 방식(장부/선구매), 이번 달 매출, 상태',html:page('biz',`
+${topbar('업체 정보','<div class="btn p sm">'+ic('plus')+'업체 추가</div>')}
+${TABS(COMP_TABS,0)}
+<div class="content" style="grid-template-columns:repeat(12,1fr);grid-template-rows:118px 1fr">
+ ${dk({c:'b',k:'거래 업체',am:'5',u:'곳',rb:'1',rs:'초대 대기',span:4,stub:90})}
+ ${dk({k:'등록 직원',am:'233',u:'명',rb:'+12',rs:'이번 달',span:4,stub:90})}
+ ${dk({k:'이번 달 업체 매출',am:'8,631,000',u:'원',rb:'87%',rs:'전체 중',span:4,stub:90})}
+ <div class="dp" style="grid-column:span 12"><h3>업체 목록<small>5곳</small><span class="r"><div class="in" style="height:36px;width:240px;font-size:13px;color:#525c72">${ic('search')}회사명 검색</div></span></h3>
+  <table class="tbl" style="margin-top:10px"><tr><th>회사명</th><th>담당자</th><th>연락처</th><th class="n">직원</th><th>결제 방식</th><th class="n">이번 달 매출</th><th>상태</th><th></th></tr>
+  ${COS.map(c=>`<tr><td><b>${c[0]}</b></td><td>${c[1]}</td><td class="num" style="color:var(--mut)">${c[2]}</td><td class="n num">${c[3]}명</td><td><span class="pill nodot ${c[4]==='장부'?'gray':'paper'}">${c[4]}</span></td><td class="n num"><b>${c[5]?won(c[5])+'원':'—'}</b></td><td><span class="pill ${c[6]==='정상'?'ok':'warn'}">${c[6]}</span></td><td class="n"><span class="btn s sm">상세 ${ic('chev')}</span></td></tr>`).join('')}</table></div>
+</div>`)});
+
+// 04 company add
+P.push({id:'p04',name:'04 업체 정보 · 업체 추가',note:'새 회사 담당자 초대 — 입력 3칸 + 초대 버튼, 아래에 초대 보낸 목록(재발송·취소)',html:page('biz',`
+${topbar('업체 정보')}
+${TABS(COMP_TABS,1)}
+<div class="content" style="grid-template-columns:1fr 380px">
+ <div class="dp"><h3>새 회사 담당자 초대</h3><div class="desc">초대 메일을 받은 담당자가 가입하면 업체 목록에 추가돼요.</div><hr>
+  <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:14px"><div class="f"><label>신규 회사명</label><div class="in focus">새봄디자인</div></div><div class="f"><label>담당자 이메일 (필수)</label><div class="in ph">name@company.com</div></div><div class="f"><label>담당자 연락처 (선택)</label><div class="in ph">010-0000-0000</div></div></div>
+  <div style="display:flex;justify-content:flex-end;margin-top:18px"><div class="btn p">${ic('mail')}신규 생성 + 이메일 초대</div></div>
+  <hr><h3>초대 보낸 업체<small>2곳</small></h3>
+  <table class="tbl" style="margin-top:8px"><tr><th>회사명</th><th>담당자 이메일</th><th>보낸 날</th><th>상태</th><th></th></tr>
+   <tr><td><b>새봄디자인</b></td><td style="color:var(--mut)">jung@saebom.example</td><td class="num">10.18</td><td><span class="pill warn">가입 대기</span></td><td class="n"><span class="btn s sm">다시 보내기</span> <span class="btn d sm">취소</span></td></tr>
+   <tr><td><b>대성정밀</b></td><td style="color:var(--mut)">park@daesung.example</td><td class="num">09.02</td><td><span class="pill ok">가입 완료</span></td><td></td></tr></table></div>
+ <div class="dp"><h3>초대는 이렇게 진행돼요</h3>
+  ${[['1','회사명과 담당자 이메일 입력'],['2','담당자에게 초대 메일 발송'],['3','담당자가 회사관리자로 가입'],['4','직원 등록 후 바로 식사 가능']].map(s=>`<div style="display:flex;gap:12px;align-items:center;padding:14px 0;border-bottom:2px dashed var(--dash)"><span style="width:28px;height:28px;border-radius:50%;background:${s[0]==='1'?'var(--blue)':'var(--hi)'};display:grid;place-items:center;font-weight:800;font-size:13px">${s[0]}</span><span style="font-size:14px;font-weight:600">${s[1]}</span></div>`).join('')}
+  <div class="note" style="margin-top:16px">초대 링크는 7일 동안 유효해요.</div></div>
+</div>`)});
+
+// 05 prepurchase
+P.push({id:'p05',name:'05 업체 정보 · 선구매',note:'회사가 미리 산 식권 — 남은 장수를 티켓으로, 구매·사용 내역 표',html:page('biz',`
+${topbar('업체 정보')}
+${TABS(COMP_TABS,2)}
+<div class="content" style="grid-template-columns:repeat(12,1fr);grid-template-rows:118px 1fr">
+ ${dk({c:'b',k:'선구매 잔여',am:'312',u:'장',rb:'2',rs:'업체',span:4,stub:90})}
+ ${dk({k:'이번 달 선구매',am:'3,500,000',u:'원',rb:'500',rs:'장',span:4,stub:90})}
+ ${dk({k:'이번 달 사용',am:'270',u:'장',rb:'54%',rs:'사용률',span:4,stub:90})}
+ <div class="dp" style="grid-column:span 5"><h3>업체별 잔여</h3>
+  ${[['대성정밀',230,400],['새봄디자인',82,100]].map(r=>`<div style="padding:16px 0;border-bottom:2px dashed var(--dash)"><div style="display:flex;font-size:14.5px;font-weight:700">${r[0]}<span class="num" style="margin-left:auto">${r[1]} / ${r[2]}장</span></div><div style="height:10px;border-radius:5px;background:var(--hi);margin-top:10px;overflow:hidden"><i style="display:block;height:100%;width:${r[1]/r[2]*100}%;background:var(--bs)"></i></div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-top:6px"><span>남은 식권</span><span class="num">${Math.round(r[1]/r[2]*100)}%</span></div></div>`).join('')}
+  <div class="btn s" style="width:100%;margin-top:16px">${ic('plus')}선구매 등록</div></div>
+ <div class="dp" style="grid-column:span 7"><h3>선구매 내역<small>2026년</small></h3>
+  <table class="tbl" style="margin-top:10px"><tr><th>날짜</th><th>업체</th><th class="n">장수</th><th class="n">금액</th><th>입금</th><th class="n">잔여</th></tr>
+   <tr><td class="num">10.02</td><td><b>대성정밀</b></td><td class="n num">400장</td><td class="n num"><b>2,800,000원</b></td><td><span class="pill ok">입금 확인</span></td><td class="n num">230장</td></tr>
+   <tr><td class="num">10.15</td><td><b>새봄디자인</b></td><td class="n num">100장</td><td class="n num"><b>700,000원</b></td><td><span class="pill warn">입금 대기</span></td><td class="n num">82장</td></tr>
+   <tr><td class="num">09.01</td><td><b>대성정밀</b></td><td class="n num">300장</td><td class="n num"><b>2,100,000원</b></td><td><span class="pill ok">입금 확인</span></td><td class="n num" style="color:var(--dim)">소진</td></tr>
+  </table></div>
+</div>`)});
+
+// 06 settlements
+const MON=['전체','1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+P.push({id:'p06',name:'06 매출 정산',note:'월 선택 + 업체별 정산 표 — 정산·세금계산서·입금 상태를 한 줄에, 주요 액션 버튼',html:page('settle',`
+${topbar('매출 정산','<div class="range">'+ic('left')+'<b class="num">2026</b>'+ic('chev')+'</div>')}
+<div class="tabs"><div class="months">${MON.map((m,i)=>`<span class="${i===10?'on':''} ${i===11||i===12?'off':''}">${m}</span>`).join('')}</div></div>
+<div class="content" style="grid-template-columns:repeat(12,1fr);grid-template-rows:118px auto 1fr">
+ ${dk({c:'b',k:'10월 정산 예정',am:'8,631,000',u:'원',rb:'4',rs:'업체',span:4,stub:90})}
+ ${dk({k:'세금계산서 발행',am:'2',u:'/ 4건',rb:'2',rs:'대기',span:4,stub:90})}
+ ${dk({k:'입금 확인',am:'1',u:'/ 4건',rb:'3',rs:'미입금',span:4,stub:90})}
+ <div class="note" style="grid-column:span 12">· 매출 금액은 매일 1회 업데이트돼요. · 고객사와 직접거래가 있는 경우 정산금액에서 제외되어 보여요.</div>
+ <div class="dp" style="grid-column:span 12"><h3>월별 정산 목록<small>2026년 10월</small><span class="r"><span class="btn s sm">${ic('dl')}엑셀 받기</span></span></h3>
+  <table class="tbl" style="margin-top:10px"><tr><th>정산월</th><th>업체명</th><th class="n">정산금액</th><th>정산</th><th>세금계산서</th><th>입금</th><th class="n">주요 액션</th></tr>
+  ${[['한빛테크',3150000,'확정','발행 완료','입금 확인'],['초록물산',2471000,'확정','발행 완료','미입금'],['대성정밀',1890000,'검토 중','발행 대기','미입금'],['미래로직스',1120000,'검토 중','발행 대기','미입금']].map(r=>`<tr><td class="num">2026.10</td><td><b>${r[0]}</b></td><td class="n num"><b>${won(r[1])}원</b></td><td><span class="pill ${r[2]==='확정'?'ok':'warn'}">${r[2]}</span></td><td><span class="pill ${r[3]==='발행 완료'?'blue':'gray'}">${r[3]}</span></td><td><span class="pill ${r[4]==='입금 확인'?'ok':'red'}">${r[4]}</span></td><td class="n">${r[2]==='확정'?'<span class="btn s sm">정산서 보기</span>':'<span class="btn p sm">정산 확정</span>'}</td></tr>`).join('')}</table></div>
+</div>`)});
+
+// 07 evidence
+P.push({id:'p07',name:'07 증빙 내역',note:'세금계산서 발행 관리 / 발행 완료·증빙 내역 탭 — 공급가액·부가세 분리, 발행 버튼',html:page('doc',`
+${topbar('증빙 내역',RANGE('2026.10'))}
+${TABS(['발행 관리 <i>2</i>','발행 완료·증빙 내역'],0)}
+<div class="content" style="grid-template-columns:repeat(12,1fr);grid-template-rows:118px 1fr">
+ ${dk({c:'b',k:'발행 대기',am:'2',u:'건',rb:'3,010,000',rs:'공급가액',span:4,stub:110})}
+ ${dk({k:'이번 달 발행',am:'2',u:'건',rb:'5,110,000',rs:'공급가액',span:4,stub:110})}
+ ${dk({k:'부가세 합계',am:'511,000',u:'원',rb:'10%',rs:'세율',span:4,stub:110})}
+ <div class="dp" style="grid-column:span 12"><h3>발행 관리<small>정산 확정 후 세금계산서를 발행해요</small></h3>
+  <table class="tbl" style="margin-top:10px"><tr><th>정산월</th><th>업체명</th><th class="n">공급가액</th><th class="n">부가세</th><th class="n">합계</th><th>상태</th><th class="n">처리</th></tr>
+   <tr><td class="num">2026.10</td><td><b>대성정밀</b></td><td class="n num">1,718,182</td><td class="n num">171,818</td><td class="n num"><b>1,890,000원</b></td><td><span class="pill warn">발행 대기</span></td><td class="n"><span class="btn p sm">${ic('doc')}발행</span></td></tr>
+   <tr><td class="num">2026.10</td><td><b>미래로직스</b></td><td class="n num">1,018,182</td><td class="n num">101,818</td><td class="n num"><b>1,120,000원</b></td><td><span class="pill warn">발행 대기</span></td><td class="n"><span class="btn p sm">${ic('doc')}발행</span></td></tr>
+   <tr><td class="num">2026.10</td><td><b>한빛테크</b></td><td class="n num">2,863,636</td><td class="n num">286,364</td><td class="n num"><b>3,150,000원</b></td><td><span class="pill blue">발행 완료</span></td><td class="n"><span class="btn s sm">PDF</span></td></tr>
+   <tr><td class="num">2026.10</td><td><b>초록물산</b></td><td class="n num">2,246,364</td><td class="n num">224,636</td><td class="n num"><b>2,471,000원</b></td><td><span class="pill blue">발행 완료</span></td><td class="n"><span class="btn s sm">PDF</span></td></tr>
+  </table>
+  <div class="note" style="margin-top:14px">세금계산서는 팝빌로 발행돼요. 발행 전 공급자 정보가 맞는지 확인해 주세요.</div></div>
+</div>`)});
+
+// 08 daily menu
+P.push({id:'p08',name:'08 식당 관리 · 오늘 뷔페 메뉴',note:'왼쪽 입력, 오른쪽 앱에 보이는 모습 미리보기 — 저장된 메뉴 일정은 날짜 티켓으로',html:page('cup',`
+${topbar('식당 관리')}
+${TABS(REST_TABS,0)}
+<div class="content" style="grid-template-columns:1fr 340px">
+ <div class="dp"><h3>오늘 뷔페 메뉴<small>날짜를 골라 오늘과 이후 메뉴를 미리 저장할 수 있어요</small></h3><hr>
+  <div style="display:grid;grid-template-columns:220px 1fr;gap:14px"><div class="f"><label>메뉴 날짜</label><div class="in num">${ic('cal')}2026.10.20 (화)</div></div><div class="f"><label>제목</label><div class="in">오늘 뷔페 메뉴</div></div></div>
+  <div class="f" style="margin-top:14px"><label>메뉴</label><div class="in ta focus">제육볶음\n계란말이\n미역국\n배추김치 · 잡곡밥</div></div>
+  <div class="f" style="margin-top:14px"><label>오늘 메뉴 이미지 (최대 5MB)</label><div class="drop"><div class="th">${ic('img')}</div><div><b style="color:var(--fg)">이미지를 끌어다 놓거나 눌러서 선택</b><div style="font-size:12px;margin-top:3px">JPG · PNG · WEBP</div></div><span class="btn s sm" style="margin-left:auto">파일 선택</span></div></div>
+  <div style="display:flex;justify-content:flex-end;margin-top:18px"><div class="btn p">선택 날짜 메뉴 저장</div></div>
+  <hr><h3>저장된 메뉴 일정</h3>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px">${[['10.21 수','닭갈비 · 콩나물국'],['10.22 목','돈까스 · 우동'],['10.23 금','비빔밥 · 된장국']].map(m=>`<div class="ticketmini"><div class="l"><div class="kick">${m[0]}</div><div style="font-size:14px;font-weight:700;margin-top:4px">${m[1]}</div></div><div class="r">${ic('edit')}</div></div>`).join('')}</div></div>
+ <div class="dp" style="display:flex;flex-direction:column;align-items:center"><h3 style="align-self:stretch">앱 미리보기<small>사용자 홈 화면</small></h3>
+  <div class="phone" style="width:260px;height:520px;margin-top:16px"><div class="sc" style="padding-top:34px">
+   <div style="background:var(--panel);border-radius:16px;padding:14px"><span class="pill blue nodot" style="font-size:10.5px">TODAY BUFFET</span><div style="font-size:16px;font-weight:800;margin-top:8px">오늘 뷔페 메뉴</div><div style="height:96px;border-radius:10px;background:linear-gradient(135deg,#3a2a1a,#7a4a22);margin-top:10px"></div><div style="font-size:12.5px;color:var(--mut);line-height:1.7;margin-top:10px">제육볶음 · 계란말이<br>미역국 · 배추김치 · 잡곡밥</div></div>
+   <div style="background:var(--panel);border-radius:16px;padding:14px;height:120px"></div></div></div></div>
+</div>`)});
+
+// 09 products
+const PROD=[['식권 10장',10,1,7000,'통합결제창',true],['식권 20장',20,3,7000,'통합결제창',true],['식권 5장',5,0,7000,'통합결제창',true],['가을 이벤트 30장',30,6,6500,'통합결제창',false]];
+P.push({id:'p09',name:'09 식당 관리 · 판매 상품',note:'등록된 상품을 식권 티켓 목록으로(판매 켜기/끄기), 오른쪽 새 상품 등록 + 가격 미리보기',html:page('cup',`
+${topbar('식당 관리')}
+${TABS(REST_TABS,1)}
+<div class="content" style="grid-template-columns:1fr 440px">
+ <div class="dp"><h3>판매 중인 상품<small>4개 · 판매 상태를 바로 바꿀 수 있어요</small></h3>
+  <div style="display:flex;flex-direction:column;gap:18px;margin-top:16px">${PROD.map(p=>{const paid=p[1],total=p[1]+p[2],price=paid*p[3];return `<div class="ticketmini" style="grid-template-columns:64px 1fr 150px 110px;align-items:center;${p[5]?'':'opacity:.55'}"><div class="thumb" style="margin-left:14px;background:#e4ddcc;color:#131a2a">${ic('ticket')}</div><div class="l"><div style="font-size:15px;font-weight:800">${p[0]} ${p[2]?`<span class="pill nodot" style="background:#dfe6ff;color:#2c5fff;margin-left:4px">+${p[2]}장 보너스</span>`:''}</div><div style="font-size:12.5px;color:#7a7364;margin-top:3px">총 ${total}장 · 장당 ${won(Math.round(price/total))}원 · ${p[4]}</div></div><div class="num" style="font-size:18px;font-weight:800;text-align:right;padding-right:16px">${won(price)}원</div><div class="r" style="flex-direction:row;gap:8px"><span class="tgl ${p[5]?'on':''}"></span><span style="font-size:12px;font-weight:700;color:#7a7364">${p[5]?'판매':'중지'}</span></div></div>`;}).join('')}</div></div>
+ <div class="dp"><h3>새 상품 등록</h3><hr>
+  <div class="f"><label>패키지명</label><div class="in focus">식권 10장</div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px"><div class="f"><label>기본 장수</label><div class="in num">10<span class="sfx">장</span></div></div><div class="f"><label>보너스 장수</label><div class="in num">1<span class="sfx">장</span></div></div></div>
+  <div style="display:flex;gap:6px;margin-top:8px"><span class="btn g sm">+1장</span><span class="btn g sm">+5장</span><span class="btn g sm">+10장</span></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px"><div class="f"><label>장당 정가</label><div class="in num">7,000<span class="sfx">원</span></div></div><div class="f"><label>할인율</label><div class="in num">0<span class="sfx">%</span></div></div><div class="f"><label>장당 할인</label><div class="in num">0<span class="sfx">원</span></div></div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px"><div class="f"><label>결제 방식</label><div class="in">통합결제창<span class="sfx">${ic('chev')}</span></div></div><div class="f"><label>노출 순서</label><div class="in num">1</div></div></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px"><span class="chk"><i></i>이벤트 상품으로 등록</span><span class="btn s sm">${ic('img')}이미지</span></div>
+  <div class="ticketmini" style="margin-top:16px;grid-template-columns:1fr 110px;--bg:#131a2a"><div class="l"><div class="kick">미리보기</div><div class="num" style="font-size:20px;font-weight:800;margin-top:4px">11장 · 70,000원</div><div style="font-size:12px;color:#7a7364">유료 1장당 7,000원</div></div><div class="r"><b class="num" style="font-size:20px">+1</b><span style="font-size:11px;color:#7a7364;font-weight:700">보너스</span></div></div>
+  <div class="btn p" style="width:100%;margin-top:14px">상품 등록</div></div>
+</div>`)});
+
+// 10 coupons
+P.push({id:'p10',name:'10 식당 관리 · 쿠폰 관리',note:'할인율/금액 쿠폰 선택 카드 + 등록 폼, 아래에 쿠폰을 티켓 모양 목록으로(적용 켜기/끄기)',html:page('cup',`
+${topbar('식당 관리')}
+${TABS(REST_TABS,2)}
+<div class="content" style="grid-template-columns:440px 1fr">
+ <div class="dp"><h3>쿠폰 등록</h3><hr>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div class="choice on"><span class="chk radio"><i class="on"></i></span><div><b>할인쿠폰</b><small>결제금액의 일정 비율(%)</small></div></div><div class="choice"><span class="chk radio"><i></i></span><div><b>금액쿠폰</b><small>정해진 금액(원)</small></div></div></div>
+  <div class="f" style="margin-top:14px"><label>쿠폰명</label><div class="in focus">점심 10% 할인</div></div>
+  <div class="f" style="margin-top:12px"><label>할인율</label><div class="in num">10<span class="sfx">%</span></div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px"><div class="f"><label>시작일</label><div class="in num">${ic('cal')}2026.10.21</div></div><div class="f"><label>종료일</label><div class="in num">${ic('cal')}2026.11.30</div></div></div>
+  <div class="chk" style="margin-top:14px"><i class="on"></i>등록 즉시 적용</div>
+  <div class="btn p" style="width:100%;margin-top:18px">쿠폰 등록</div></div>
+ <div class="dp"><h3>등록된 쿠폰<small>3개</small></h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">${[['10%','점심 10% 할인','10.21 – 11.30',true,24],['3,000원','신규 가입 3,000원','상시',true,58],['20%','가을 이벤트','10.01 – 10.15',false,112]].map(c=>`<div class="ticketmini" style="grid-template-columns:110px 1fr;height:120px;${c[3]?'':'opacity:.5'}"><div style="display:grid;place-items:center;border-right:2px dashed #cfc7b4;font-size:26px;font-weight:800;color:#2c5fff" class="num">${c[0]}</div><div class="l" style="display:flex;flex-direction:column"><div class="kick">${c[3]?'적용 중':'종료'}</div><div style="font-size:15px;font-weight:800;margin-top:4px">${c[1]}</div><div style="font-size:12px;color:#7a7364;margin-top:2px" class="num">${c[2]} · 사용 ${c[4]}회</div><div style="margin-top:auto;display:flex;align-items:center;gap:8px"><span class="tgl ${c[3]?'on':''}"></span><span style="font-size:12px;font-weight:700;color:#7a7364">${c[3]?'적용':'중지'}</span></div></div></div>`).join('').replace(/grid-template-columns:110px 1fr;height:120px;/g,'grid-template-columns:110px 1fr;height:132px;')}</div></div>
+</div>`)});
+
+// 11 payment QR
+function qrSvg(){let s='';const n=25,rnd=(i)=>((i*9301+49297)%233280)/233280;for(let y=0;y<n;y++)for(let x=0;x<n;x++){const f=(x<7&&y<7)||(x>17&&y<7)||(x<7&&y>17);if(f)continue;if(rnd(x*31+y*17+7)>.55)s+=`<rect x="${x}" y="${y}" width="1" height="1"/>`;}
+ const fp=(x,y)=>`<rect x="${x}" y="${y}" width="7" height="7" fill="#131a2a"/><rect x="${x+1}" y="${y+1}" width="5" height="5" fill="#f4f1e9"/><rect x="${x+2}" y="${y+2}" width="3" height="3" fill="#131a2a"/>`;
+ return `<svg viewBox="0 0 25 25" shape-rendering="crispEdges"><g fill="#131a2a">${s}</g>${fp(0,0)}${fp(18,0)}${fp(0,18)}</svg>`;}
+P.push({id:'p11',name:'11 식당 관리 · 결제 QR',note:'왼쪽 오늘의 결제 알림(실시간), 오른쪽 매장 결제 QR을 종이 티켓처럼 — 저장·인쇄·링크 복사',html:page('cup',`
+${topbar('식당 관리')}
+${TABS(REST_TABS,3)}
+<div class="content" style="grid-template-columns:1fr 460px">
+ <div class="dp"><h3>${ic('bell')}오늘의 결제 알림<small>오늘 승인된 최근 결제 10건</small><span class="r"><span class="pill blue">새 결제 3건</span></span></h3>
+  <div style="margin-top:6px">${feed(FEED.slice(0,9)).replace('<div class="row">','<div class="row" style="background:rgba(44,95,255,.08);margin:0 -12px;padding:12px">')}</div></div>
+ <div class="dp"><h3>${ic('qr')}내 매장 결제 QR<small>카운터에 비치할 직원 결제용 QR</small></h3>
+  <div style="margin-top:18px;background:var(--paper);color:#131a2a;border-radius:16px;padding:26px 26px 22px;display:flex;flex-direction:column;align-items:center;position:relative">
+   <div class="kick">GREENEAT GO · PAY</div><div style="font-size:22px;font-weight:800;margin-top:6px">돈토 구내식당</div>
+   <div class="qr" style="margin-top:14px;padding:0;width:230px;height:230px">${qrSvg()}</div>
+   <div style="width:100%;border-top:2px dashed #cfc7b4;margin-top:18px;padding-top:14px;text-align:center;font-size:13px;font-weight:600;color:#7a7364">앱으로 QR을 찍어 식권을 사용하세요</div>
+   <span style="position:absolute;left:-11px;bottom:46px;width:22px;height:22px;border-radius:50%;background:var(--panel)"></span><span style="position:absolute;right:-11px;bottom:46px;width:22px;height:22px;border-radius:50%;background:var(--panel)"></span></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px"><span class="btn p">${ic('dl')}QR 이미지 저장</span><span class="btn s">${ic('copy')}결제 링크 복사</span></div>
+  <div style="font-size:12px;color:var(--dim);text-align:center;margin-top:12px">시안의 QR은 예시 무늬라 찍히지 않아요</div></div>
+</div>`)});
+
+// 12 notifications
+P.push({id:'p12',name:'12 식당 관리 · 알림',note:'앱 푸시 알림 보내기 — 대상 선택 카드, 제목·내용, 오른쪽에 폰 알림 미리보기 + 최근 발송 이력',html:page('cup',`
+${topbar('식당 관리')}
+${TABS(REST_TABS,4)}
+<div class="content" style="grid-template-columns:1fr 380px">
+ <div class="dp"><h3>알림 보내기<small>장부직원과 일반사용자 앱으로 공지·이벤트 알림을 보내요</small><span class="r"><span class="btn s sm">${ic('cal')}발송 이력</span></span></h3><hr>
+  <div class="f"><label>발송 대상</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div class="choice on"><span class="chk radio"><i class="on"></i></span><div><b>전체 사용자</b><small>장부직원 + 일반사용자 · 218명</small></div></div><div class="choice"><span class="chk radio"><i></i></span><div><b>일반 사용자만</b><small>개인 식권 구매자 · 64명</small></div></div></div></div>
+  <div class="f" style="margin-top:16px"><label>제목</label><div class="in focus">이번 주 금요일 임시 휴무 안내</div></div>
+  <div class="f" style="margin-top:14px"><label>내용</label><div class="in ta" style="min-height:150px">10월 24일(금)은 시설 점검으로 하루 쉬어요.\n이용에 참고해 주세요.</div><div style="text-align:right;font-size:11.5px;color:var(--dim)" class="num">38 / 1000</div></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><span class="btn s">미리보기</span><span class="btn p">${ic('send')}218명에게 보내기</span></div></div>
+ <div style="display:flex;flex-direction:column;gap:16px">
+  <div class="dp" style="background:linear-gradient(180deg,#1b2436,#131a2a)"><h3>폰 알림 미리보기</h3>
+   <div style="margin-top:14px;background:rgba(244,241,233,.94);color:#131a2a;border-radius:16px;padding:12px 14px;display:flex;gap:10px"><div style="width:34px;height:34px;border-radius:9px;background:#0a0d14;display:grid;place-items:center;color:#5b87ff;flex:none">${ic('ticket')}</div><div style="min-width:0"><div style="display:flex;font-size:12px;font-weight:700;color:#6b6556">그린잇 고<span style="margin-left:auto;font-weight:500">지금</span></div><div style="font-size:14px;font-weight:800;margin-top:2px">이번 주 금요일 임시 휴무 안내</div><div style="font-size:12.5px;color:#4a4436;margin-top:2px">10월 24일(금)은 시설 점검으로 하루 쉬어요…</div></div></div></div>
+  <div class="dp" style="flex:1"><h3>최근 발송<small>3건</small></h3>
+   ${[['10.15','가을 이벤트 쿠폰 도착','218명'],['10.01','10월 메뉴 안내','214명'],['09.12','추석 연휴 휴무','209명']].map(r=>`<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:2px dashed var(--dash)"><span class="num" style="font-size:12.5px;font-weight:700;color:var(--dim);width:40px">${r[0]}</span><span style="font-size:13.5px;font-weight:600;flex:1">${r[1]}</span><span class="num" style="font-size:12.5px;color:var(--mut)">${r[2]}</span></div>`).join('')}</div>
+ </div>
+</div>`)});
+
+// 13 announcements
+P.push({id:'p13',name:'13 식당 관리 · 공지사항',note:'앱 공지 목록 + 작성 폼 — 상단 고정·게시 상태를 토글로',html:page('cup',`
+${topbar('식당 관리')}
+${TABS(REST_TABS,5)}
+<div class="content" style="grid-template-columns:1fr 480px">
+ <div class="dp"><h3>공지 목록<small>3개 · 앱 공지 탭에 보여요</small></h3>
+  <table class="tbl" style="margin-top:10px"><tr><th>제목</th><th>작성일</th><th>상단 고정</th><th>게시</th><th></th></tr>
+   ${[['10월 식단표 안내','10.01',true,true],['식권 결제 방법이 바뀌었어요','09.20',false,true],['추석 연휴 휴무 안내','09.12',false,false]].map(a=>`<tr><td><b>${a[0]}</b></td><td class="num" style="color:var(--mut)">${a[1]}</td><td><span class="tgl ${a[2]?'on':''}"></span></td><td><span class="pill ${a[3]?'ok':'gray'}">${a[3]?'게시 중':'숨김'}</span></td><td class="n"><span class="btn s sm">${ic('edit')}수정</span></td></tr>`).join('')}</table></div>
+ <div class="dp"><h3>새 공지 작성</h3><hr>
+  <div class="f"><label>제목</label><div class="in focus">11월 식단표 안내</div></div>
+  <div class="f" style="margin-top:14px"><label>내용</label><div class="in ta" style="min-height:210px">11월 식단표를 올려 드려요.\n매주 수요일은 특식이 나와요.</div></div>
+  <div style="display:flex;gap:18px;margin-top:14px"><span class="chk"><i></i>상단 고정</span><span class="chk"><i class="on"></i>바로 게시</span></div>
+  <div style="display:flex;justify-content:flex-end;margin-top:16px"><span class="btn p">공지 게시</span></div></div>
+</div>`)});
+
+// 14 reviews
+const REV=[['김민준','한빛테크',5,'제육볶음 진짜 맛있어요. 반찬도 넉넉해요.','10.20 12:58',''],['이서연','초록물산',4,'국이 조금 짰어요. 그래도 잘 먹었습니다!','10.19 12:40','의견 감사해요. 간을 조절할게요!'],['박도윤','대성정밀',5,'샐러드바 생겨서 좋아요','10.16 12:31',''],['최하은','한빛테크',3,'줄이 너무 길어요 ㅠ','10.15 12:20','']];
+P.push({id:'p15',name:'14 식당 관리 · 리뷰',note:'별점 요약 티켓 + 리뷰 카드 목록, 카드 안에서 바로 답글',html:page('cup',`
+${topbar('식당 관리')}
+${TABS(REST_TABS,6)}
+<div class="content" style="grid-template-columns:repeat(12,1fr);grid-template-rows:118px 1fr">
+ ${dk({c:'b',k:'평균 별점',am:'4.3',u:'/ 5',rb:'+0.2',rs:'9월 대비',span:4,stub:90})}
+ ${dk({k:'이번 달 리뷰',am:'38',u:'개',rb:'12',rs:'답글 대기',span:4,stub:90})}
+ <div class="dp" style="grid-column:span 4;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:14px 20px">${[[5,24],[4,8],[3,4],[2,1],[1,1]].map(r=>`<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--mut)"><span style="width:10px">${r[0]}</span><div style="flex:1;height:6px;border-radius:3px;background:var(--hi)"><i style="display:block;height:100%;border-radius:3px;background:#f5c26b;width:${r[1]/24*100}%"></i></div><span class="num" style="width:18px;text-align:right">${r[1]}</span></div>`).join('')}</div>
+ <div class="dp" style="grid-column:span 12"><h3>리뷰<small>최신순</small><span class="r">${SEG(0,['전체','답글 대기','낮은 별점'])}</span></h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">${REV.map(r=>`<div style="background:#0f1420;border:1px solid var(--line);border-radius:12px;padding:16px 18px">
+   <div style="display:flex;align-items:center;gap:10px"><div class="me" style="padding:0;margin:0;background:none"><div class="av" style="background:var(--hi);color:var(--bs)">${r[0][0]}</div><div><b>${r[0]}</b><small>${r[1]} · ${r[4]}</small></div></div><span class="star" style="margin-left:auto">${'★'.repeat(r[2])}<span style="color:#2a3550">${'★'.repeat(5-r[2])}</span></span></div>
+   <div style="font-size:14px;margin-top:12px;line-height:1.6">${r[3]}</div>
+   ${r[5]?`<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--panel);font-size:13px;color:#b9c8f0"><b style="color:#7fa2ff">사장님 답글</b> · ${r[5]}</div>`:`<div style="display:flex;gap:8px;margin-top:12px"><div class="in ph" style="flex:1;height:38px;font-size:13px">답글 남기기</div><span class="btn p sm" style="height:38px">등록</span></div>`}</div>`).join('')}</div></div>
+</div>`)});
+
+// 15 partners
+P.push({id:'p16',name:'15 식당 관리 · 제휴사',note:'제휴사 카드 그리드 + 오른쪽 등록 폼(링크·로고·상태)',html:page('cup',`
+${topbar('식당 관리')}
+${TABS(REST_TABS,7)}
+<div class="content" style="grid-template-columns:1fr 420px">
+ <div class="dp"><h3>제휴사<small>3곳 · 앱 배너·쿠폰에 연결돼요</small></h3>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px">${[['카페 모먼트','카페','https://moment.example',true,'M'],['헬스핏','운동','https://fit.example',true,'H'],['북스앤','서점','https://books.example',false,'B']].map(p=>`<div style="background:#0f1420;border:1px solid var(--line);border-radius:12px;padding:18px;${p[3]?'':'opacity:.55'}"><div style="display:flex;align-items:center;gap:10px"><div class="thumb" style="background:var(--paper);color:#131a2a;font-weight:800;font-size:18px">${p[4]}</div><div><b style="font-size:15px">${p[0]}</b><div style="font-size:12px;color:var(--mut)">${p[1]}</div></div></div><div style="font-size:12.5px;color:#7fa2ff;margin-top:14px">${p[2]}</div><div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:12px;border-top:2px dashed var(--dash)"><span class="pill ${p[3]?'ok':'gray'}">${p[3]?'노출':'숨김'}</span><span class="btn s sm">${ic('edit')}수정</span></div></div>`).join('')}</div></div>
+ <div class="dp"><h3>제휴사 등록</h3><hr>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div class="f"><label>제휴사명</label><div class="in focus">카페 모먼트</div></div><div class="f"><label>업종</label><div class="in">카페</div></div></div>
+  <div class="f" style="margin-top:12px"><label>사이트 URL (https)</label><div class="in ph">https://</div></div>
+  <div class="f" style="margin-top:12px"><label>로고 URL</label><div class="in ph">https://</div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px"><div class="f"><label>담당자</label><div class="in ph">이름</div></div><div class="f"><label>연락처</label><div class="in ph">010-0000-0000</div></div></div>
+  <div class="f" style="margin-top:12px"><label>상태</label><div class="in">활성<span class="sfx">${ic('chev')}</span></div></div>
+  <div class="btn p" style="width:100%;margin-top:18px">제휴사 등록</div></div>
+</div>`)});
+
+// 16 banners
+P.push({id:'p17',name:'16 식당 관리 · 배너 광고 설정',note:'위치별(홈 상단·결제 완료) 배너를 실제 크기 미리보기로 — 노출·클릭 수, 기간',html:page('cup',`
+${topbar('식당 관리','<span class="btn p sm">'+ic('plus')+'배너 등록</span>')}
+${TABS(REST_TABS,8)}
+<div class="content" style="grid-template-columns:1fr 300px">
+ <div class="dp"><h3>배너<small>2개</small><span class="r">${SEG(0,['홈 상단 · 1080×360','결제 완료'])}</span></h3>
+  <div style="display:flex;gap:10px;margin-top:14px"><div class="in" style="height:38px;width:160px;font-size:13px">상태: 전체<span class="sfx">${ic('chev')}</span></div><div class="in" style="height:38px;width:180px;font-size:13px">제휴사: 전체<span class="sfx">${ic('chev')}</span></div></div>
+  ${[['카페 모먼트 아메리카노 1+1','카페 모먼트','10.01 – 10.31','노출 중','4,218','312'],['헬스핏 첫 달 50%','헬스핏','10.15 – 11.15','노출 중','1,904','87']].map((b,i)=>`<div style="display:grid;grid-template-columns:340px 1fr auto;gap:20px;align-items:center;padding:18px 0;border-bottom:2px dashed var(--dash)">
+   <div class="banner" style="${i?'background:linear-gradient(120deg,#131a2a,#2c5fff)':''}"><div>${b[0]}<small>${b[1]}</small></div></div>
+   <div><div style="font-size:15px;font-weight:700">${b[0]}</div><div style="font-size:12.5px;color:var(--mut);margin-top:4px" class="num">${b[1]} · ${b[2]}</div><div style="display:flex;gap:20px;margin-top:10px;font-size:13px"><span>노출 <b class="num">${b[4]}</b></span><span>클릭 <b class="num">${b[5]}</b></span><span>클릭률 <b class="num" style="color:#7fa2ff">${(parseInt(b[5].replace(',',''))/parseInt(b[4].replace(',',''))*100).toFixed(1)}%</b></span></div></div>
+   <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end"><span class="pill ok">${b[3]}</span><span class="btn s sm">${ic('edit')}수정</span></div></div>`).join('')}</div>
+ <div class="dp" style="display:flex;flex-direction:column;align-items:center"><h3 style="align-self:stretch">앱 미리보기</h3>
+  <div class="phone" style="width:240px;height:470px;margin-top:14px"><div class="sc" style="padding-top:34px"><div class="banner" style="height:72px;font-size:13px;padding:0 14px">카페 모먼트 아메리카노 1+1</div><div style="background:var(--panel);border-radius:14px;height:150px"></div><div style="background:var(--panel);border-radius:14px;height:100px"></div></div></div></div>
+</div>`)});
+
+// 17 supplier
+P.push({id:'p18',name:'17 공급자 정보',note:'세금계산서·정산에 쓰는 사업자/입금 정보 — 읽기 모드는 점선 칸, 수정 버튼으로 편집. 아래 기존 결제 검토·거래 생성',tall:true,html:`<div class="frame tall">${side('gear')}<div class="main">
+${topbar('공급자 정보','<span class="btn s sm">'+ic('edit')+'수정</span><span class="btn g sm dis">취소</span><span class="btn p sm dis">저장</span>')}
+<div class="content" style="grid-template-columns:1fr 1fr">
+ <div class="note" style="grid-column:span 2">세금계산서와 정산 상세에 쓰는 식당 정보예요. 사업자등록증과 같게 입력해 주세요.</div>
+ <div class="dp"><h3>사업자 정보</h3><hr>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+   ${[['사업자등록번호','123-45-67890'],['상호','돈토 구내식당'],['대표자','김사장'],['주소','서울시 ○○구 ○○로 12'],['업태','음식점업'],['종목','한식 · 단체급식'],['담당 전화번호','02-0000-0000'],['세금계산서 담당 이메일','tax@donto.example']].map(f=>`<div class="f"><label>${f[0]}</label><div class="in ro num">${f[1]}</div></div>`).join('')}</div></div>
+ <div class="dp"><h3>입금 정보<small>정산 상세에 표시할 선택 정보</small></h3><hr>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">${[['은행명','국민은행'],['계좌번호','000000-00-000000'],['예금주','김사장']].map(f=>`<div class="f"><label>${f[0]}</label><div class="in ro num">${f[1]}</div></div>`).join('')}</div>
+  <div class="ticketmini" style="margin-top:20px;--bg:#131a2a"><div class="l"><div class="kick">정산서 미리보기</div><div style="font-size:14px;font-weight:700;margin-top:6px">입금 계좌 · 국민은행 000000-00-000000</div><div style="font-size:12px;color:#7a7364;margin-top:2px">예금주 김사장</div></div><div class="r">${ic('doc')}</div></div></div>
+ <div class="dp" style="grid-column:span 2"><h3>기존 결제 과세 검토<small>읽기 전용 · 서버가 상품·계약 분류를 검증해 원자적으로 완료해요</small><span class="r"><span class="pill gray nodot">총 0건</span></span></h3>
+  <div class="empty" style="margin-top:14px"><b>대기 중인 기존 결제가 없어요</b>검토할 결제가 생기면 여기에 표시돼요.</div></div>
+ <div class="dp" style="grid-column:span 2"><h3>거래 생성 및 정산 처리<span class="r"><span class="btn s sm">${ic('refresh')}새로고침</span></span></h3>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${['팝빌 설정','개발 환경','인증서','공급자 정보','사업자번호 일치'].map((t,i)=>`<span class="pill ${i===3?'ok':'red'}">${t}: ${i===3?'준비됨':'미준비'}</span>`).join('')}</div>
+  <div style="display:grid;grid-template-columns:1fr 240px auto;gap:12px;margin-top:16px;align-items:end"><div class="f"><label>회사</label><div class="in ph">회사를 선택해 주세요<span class="sfx">${ic('chev')}</span></div></div><div class="f"><label>대상 월</label><div class="in num">2026-09<span class="sfx">${ic('chev')}</span></div></div><span class="btn p dis">거래 생성</span></div>
+  <div style="display:flex;justify-content:flex-end;margin-top:14px"><span class="btn d sm">현재 상태 초기화</span></div></div>
+</div></div></div>`});
+
+document.getElementById('board').innerHTML = P.map(p=>`<section class="slot" id="${p.id}"><h2>${p.name}</h2><p>${p.note}</p>${p.html}</section>`).join('');
+</script>
+</body>
+</html>

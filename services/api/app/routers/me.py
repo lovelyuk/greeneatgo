@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import CompanyBusinessProfileUpdateRequest, ProfileNameUpdateRequest
+from app.admin_themes import ADMIN_THEME_ROLES, DEFAULT_ADMIN_THEME, normalize_admin_theme
+from app.schemas import AdminPreferencesUpdateRequest, CompanyBusinessProfileUpdateRequest, ProfileNameUpdateRequest
 from app.services.join_flow import JoinFlowError
 from app.services.vouchers import decorate_bonus_voucher_transactions
 
@@ -262,6 +263,51 @@ def update_admin_name(payload: ProfileNameUpdateRequest, token: str = Depends(be
         raise _error(502, "SUPABASE_ERROR", "관리자 이름을 저장하는 중 오류가 발생했어요") from exc
 
 
+def _theme_column_missing(exc: SupabaseHttpError) -> bool:
+    body = exc.body or ""
+    return "admin_ui_theme" in body or "PGRST204" in body or "42703" in body
+
+
+def _admin_theme(repo: JoinRepository, user_id: str) -> str:
+    """Read the saved admin theme; before migration 0070 everyone gets the default."""
+    try:
+        rows = repo.client.rest_get(
+            "app_users", {"select": "admin_ui_theme", "id": f"eq.{user_id}", "limit": "1"},
+        )
+    except SupabaseHttpError as exc:
+        if _theme_column_missing(exc):
+            return DEFAULT_ADMIN_THEME
+        raise
+    return normalize_admin_theme(rows[0].get("admin_ui_theme") if rows else None)
+
+
+@router.patch("/me/preferences")
+def update_admin_preferences(payload: AdminPreferencesUpdateRequest, token: str = Depends(bearer_token)):
+    repo = JoinRepository()
+    try:
+        auth_user = repo.auth_user_from_token(token)
+        profile = repo.get_profile(auth_user.id, email=auth_user.email)
+        if profile is None:
+            raise _error(404, "PROFILE_NOT_FOUND", "프로필을 찾을 수 없어요")
+        # The target id always comes from the bearer token: own account only.
+        if profile.role not in ADMIN_THEME_ROLES or profile.status != "active":
+            raise _error(403, "FORBIDDEN", "관리자 계정만 화면 테마를 바꿀 수 있어요")
+        rows = repo.client.rest_patch(
+            "app_users", {"id": f"eq.{profile.id}"}, {"admin_ui_theme": payload.admin_theme},
+        )
+        if not rows:
+            raise _error(404, "PROFILE_NOT_FOUND", "관리자 프로필을 찾을 수 없어요")
+        return {"ok": True, "data": {"admin_theme": normalize_admin_theme(rows[0].get("admin_ui_theme"))}, "error": None}
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        if _theme_column_missing(exc):
+            raise _error(409, "MIGRATION_REQUIRED", "0070_admin_ui_theme.sql 적용 후 테마를 저장할 수 있어요") from exc
+        raise _error(502, "SUPABASE_ERROR", "화면 테마를 저장하는 중 오류가 발생했어요") from exc
+
+
 @router.get("/me")
 def me(token: str = Depends(bearer_token)):
     repo = JoinRepository()
@@ -286,6 +332,7 @@ def me(token: str = Depends(bearer_token)):
 
     invite_code = None
     company = None
+    admin_theme = None
     usage = {"balance": None, "monthly_limit": None, "remaining_limit": None, "month_used": None,
              "recent_transactions": [], "voucher_balance": None, "voucher_use_history": [],
              "voucher_month_used_count": 0, "voucher_month_used_amount": 0}
@@ -297,6 +344,8 @@ def me(token: str = Depends(bearer_token)):
             usage = _employee_usage(repo, profile.id)
         elif profile.role == "customer":
             usage = _customer_usage(repo, profile.id)
+        if profile.role in ADMIN_THEME_ROLES:
+            admin_theme = _admin_theme(repo, profile.id)
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "사용자 정보를 불러오는 중 오류가 발생했어요") from exc
 
@@ -315,6 +364,7 @@ def me(token: str = Depends(bearer_token)):
             "status": profile.status,
             "invite_code": invite_code,
             "company": company,
+            "admin_theme": admin_theme,
             "balance": usage["balance"],
             "monthly_limit": usage["monthly_limit"],
             "remaining_limit": usage["remaining_limit"],

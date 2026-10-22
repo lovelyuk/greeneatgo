@@ -70,6 +70,15 @@ test('login screen follows the last theme used on this browser', async ({ page }
   await expect(page.locator('.brandmark img').first()).toHaveAttribute('src', '/brand/greeneat_logo_light.png');
 });
 
+test('/shop and /counter ignore the admin theme even when this browser last used Calm Dark', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('greeneat.admin.lastTheme', 'calm-dark'));
+  for (const path of ['/shop', '/counter']) {
+    await page.goto(path);
+    await expect(page.locator('html')).not.toHaveAttribute('data-theme', /.+/);
+    await expect(page.locator('html')).not.toHaveAttribute('data-skin', /.+/);
+  }
+});
+
 test('Calm Dark leaves no light leftover surfaces on admin screens', async ({ page, context }) => {
   test.setTimeout(60000);
   await adminLogin(page, context, { role: 'merchant_admin', theme: 'calm-dark' });

@@ -156,9 +156,12 @@ function useAdminTheme() {
   const themeId = normalizeThemeId(typeof document === 'undefined' ? DEFAULT_THEME_ID : document.documentElement.dataset.theme);
   return { themeId, skin: themeById(themeId).skin, extras: themeById(themeId).extras === true };
 }
+// Admin themes apply to the admin app only; /shop and /counter keep their own design.
+const isAdminRoute = typeof window === 'undefined'
+  || !['/shop', '/counter'].includes(window.location.pathname.replace(/\/+$/, '') || '/');
 // Screens before login show the last theme used on this browser (cosmetic only;
 // the account setting from /me wins as soon as the dashboard loads).
-if (typeof document !== 'undefined') applyThemeToDocument(readLastTheme());
+if (typeof document !== 'undefined' && isAdminRoute) applyThemeToDocument(readLastTheme());
 
 function BrandMark() {
   const { themeId } = useAdminTheme();

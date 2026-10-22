@@ -128,6 +128,23 @@ svg.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;str
 .fx .cal-legend{display:flex;gap:14px;font-size:12px;color:#8a93a6;font-weight:600;margin-left:auto}
 .fx .cal-legend span{display:flex;align-items:center;gap:6px}
 .fx .cal-legend span:before{content:"";width:12px;height:12px;border-radius:3px;background:var(--c);border:var(--b,0)}
+
+/* tab card: 식권 달력 | 기간별 매출 */
+.fx .tabcard{display:flex;flex-direction:column}
+.fx .tabhead{display:flex;align-items:center;gap:10px}
+.fx .ctabs{display:flex;gap:6px;padding:4px;border-radius:12px;background:#0f1420;border:1px solid #212b3e}
+.fx .ctabs button{height:34px;padding:0 14px;border:0;border-radius:9px;background:transparent;color:#8a93a6;font:inherit;font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:7px;cursor:pointer}
+.fx .ctabs button svg.ic{width:16px;height:16px}
+.fx .ctabs button.on{background:#f4f1e9;color:#131a2a}
+.fx .tabsub{font-size:12px;color:#8a93a6;margin-top:10px}
+.fx .tabpane{display:none}.fx .tabpane.on{display:block}
+.fx .unitseg{margin-left:auto;display:flex;gap:2px;padding:3px;border-radius:10px;background:#0f1420;border:1px solid #212b3e}
+.fx .unitseg span{height:28px;padding:0 11px;display:flex;align-items:center;border-radius:7px;font-size:12.5px;font-weight:700;color:#8a93a6}
+.fx .unitseg span.on{background:#1b2436;color:#fff}
+.fx .salesum{display:flex;gap:26px;margin-top:14px;padding-bottom:12px;border-bottom:2px dashed #232d44}
+.fx .salesum div small{display:block;font-size:11.5px;color:#8a93a6;font-weight:600}
+.fx .salesum div b{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.fx .salesum div b em{font-style:normal;font-size:12.5px;color:#8a93a6;margin-left:2px}
 </style>
 </head>
 <body>
@@ -245,6 +262,26 @@ function dayStubs(){
   return `<div class="days">${h}</div>`;
 }
 const OPEN_DAYS = COUNTS.filter(Boolean).length;
+const LEGEND = `<div class="cal-legend"><span style="--c:#f4f1e9">영업일</span><span style="--c:#2c5fff">오늘</span><span style="--c:#1b2436">휴무</span><span style="--c:transparent;--b:2px dashed #2a3550">남은 날</span></div>`;
+function tabCard(active){
+  const best=Math.max(...COUNTS), bestDay=COUNTS.indexOf(best)+1;
+  return `<div class="card tabcard" style="grid-column:1/9;grid-row:2/4">
+  <div class="tabhead"><div class="ctabs" role="tablist">
+    <button role="tab" data-tab="cal" class="${active==='cal'?'on':''}">${ic('cal')}식권 달력</button>
+    <button role="tab" data-tab="sales" class="${active==='sales'?'on':''}">${ic('settle')}기간별 매출</button></div>
+    <div class="pane-extra cal" style="margin-left:auto;${active==='cal'?'':'display:none'}">${LEGEND}</div>
+    <div class="pane-extra sales unitseg" style="${active==='sales'?'':'display:none'}"><span class="on">일별</span><span>주별</span><span>월별</span></div>
+  </div>
+  <div class="tabpane cal ${active==='cal'?'on':''}">
+    <div class="tabsub">10월 · 티켓 한 장 = 하루 · 위는 식사 건수, 절취선 아래는 매출 · 파란 테두리 = 이번 달 최다</div>
+    ${dayStubs()}</div>
+  <div class="tabpane sales ${active==='sales'?'on':''}">
+    <div class="salesum"><div><small>기간 매출</small><b class="num">${won(TOTAL_AMOUNT)}<em>원</em></b></div><div><small>하루 평균</small><b class="num">${won(Math.round(TOTAL_AMOUNT/OPEN_DAYS))}<em>원</em></b></div><div><small>최다 매출일</small><b class="num">10.${String(bestDay).padStart(2,'0')} · ${won(best*7000)}<em>원</em></b></div><div><small>휴무</small><b class="num">${20-OPEN_DAYS}<em>일</em></b></div></div>
+    <div style="margin-top:12px">${bars(810,420,AMOUNTS,{fill:'#2a3550',today:'#2c5fff',grid:'#1b2436',axis:'#6b7489',closed:'#3d4a66',fmt:kfmt})}</div>
+    <div style="display:flex;gap:16px;font-size:12px;color:#8a93a6;font-weight:600"><span>단위 원 · 일별</span><span style="color:#5b87ff">■ 오늘</span><span>휴무일은 막대 대신 "휴무"</span></div></div>
+  </div>`;
+}
+
 V.push({id:'f1', name:'06 Forest × 16-2 Day Stubs', note:'06 Forest 배치(숫자 2장 + 식사 구분 + 거래처 순위) 그대로, 색은 16-2 Day Stubs(다크 · 종이 티켓 · 블루 오늘) — 기간별 매출 그래프 자리에 10월 식권 달력', html:`
 <div class="frame fx">${side('greeneat_logo_light.png',['운영','업체·정산','식당'])}
 <div class="main"><div class="top"><h1>대시보드</h1><div class="sp"></div>
@@ -260,7 +297,38 @@ V.push({id:'f1', name:'06 Forest × 16-2 Day Stubs', note:'06 Forest 배치(숫�
  <div class="card" style="grid-column:9/13"><h3>거래처별 수량<small>건</small></h3>${rank(BY_COUNT,'',BY_COUNT[0][1])}</div>
 </div></div></div>`});
 
+V.push({id:'f2', name:'06 Forest × 16-2 · 탭 ① 식권 달력', note:'큰 카드를 탭으로 — [식권 달력 | 기간별 매출]. 식권 달력 탭이 선택된 상태 (보드 안에서 탭을 눌러 전환해 볼 수 있어요)', html:`
+<div class="frame fx">${side('greeneat_logo_light.png',['운영','업체·정산','식당'])}
+<div class="main"><div class="top"><h1>대시보드</h1><div class="sp"></div>
+<div class="range">${ic('cal')}<span class="num">2026.10.01 – 2026.10.20</span></div><button class="btn p">조회</button></div>
+<div class="content">
+ <div class="card kt hero" style="grid-column:1/5"><div class="l"><div class="lab">TOTAL · 총 매출</div><div class="val num">${won(TOTAL_AMOUNT)}<em>원</em></div>${delta(12.4)}</div><div class="r">${spark(AMOUNTS,'#ffffff',100,34)}<small>일별 추이</small></div></div>
+ <div class="card kt paper" style="grid-column:5/9"><div class="l"><div class="lab">COUNT · 총 수량</div><div class="val num">${won(TOTAL_COUNT)}<em>건</em></div>${delta(8.1)}</div><div class="r"><b class="num" style="font-size:26px">${OPEN_DAYS}<span style="font-size:13px">일</span></b><small>영업일 · 평균 ${Math.round(TOTAL_COUNT/OPEN_DAYS)}건</small></div></div>
+ <div class="card" style="grid-column:9/13"><h3>식사 구분</h3><div class="donut" style="margin-top:6px">${donut(92,['#2c5fff','#f4f1e9'],'#1b2436')}${mealList(['#2c5fff','#f4f1e9'])}</div></div>
+ ${tabCard('cal')}
+ <div class="card" style="grid-column:9/13"><h3>거래처별 매출<small>원</small></h3>${rank(BY_AMOUNT,'',BY_AMOUNT[0][1])}</div>
+ <div class="card" style="grid-column:9/13"><h3>거래처별 수량<small>건</small></h3>${rank(BY_COUNT,'',BY_COUNT[0][1])}</div>
+</div></div></div>`});
+
+V.push({id:'f3', name:'06 Forest × 16-2 · 탭 ② 기간별 매출', note:'같은 카드에서 기간별 매출 탭을 고른 상태 — 위에 기간 요약 한 줄, 아래 일별 막대(오늘 = 블루, 휴무 표시), 오른쪽 위 일별·주별·월별', html:`
+<div class="frame fx">${side('greeneat_logo_light.png',['운영','업체·정산','식당'])}
+<div class="main"><div class="top"><h1>대시보드</h1><div class="sp"></div>
+<div class="range">${ic('cal')}<span class="num">2026.10.01 – 2026.10.20</span></div><button class="btn p">조회</button></div>
+<div class="content">
+ <div class="card kt hero" style="grid-column:1/5"><div class="l"><div class="lab">TOTAL · 총 매출</div><div class="val num">${won(TOTAL_AMOUNT)}<em>원</em></div>${delta(12.4)}</div><div class="r">${spark(AMOUNTS,'#ffffff',100,34)}<small>일별 추이</small></div></div>
+ <div class="card kt paper" style="grid-column:5/9"><div class="l"><div class="lab">COUNT · 총 수량</div><div class="val num">${won(TOTAL_COUNT)}<em>건</em></div>${delta(8.1)}</div><div class="r"><b class="num" style="font-size:26px">${OPEN_DAYS}<span style="font-size:13px">일</span></b><small>영업일 · 평균 ${Math.round(TOTAL_COUNT/OPEN_DAYS)}건</small></div></div>
+ <div class="card" style="grid-column:9/13"><h3>식사 구분</h3><div class="donut" style="margin-top:6px">${donut(92,['#2c5fff','#f4f1e9'],'#1b2436')}${mealList(['#2c5fff','#f4f1e9'])}</div></div>
+ ${tabCard('sales')}
+ <div class="card" style="grid-column:9/13"><h3>거래처별 매출<small>원</small></h3>${rank(BY_AMOUNT,'',BY_AMOUNT[0][1])}</div>
+ <div class="card" style="grid-column:9/13"><h3>거래처별 수량<small>건</small></h3>${rank(BY_COUNT,'',BY_COUNT[0][1])}</div>
+</div></div></div>`});
+
 document.getElementById('board').innerHTML = V.map(v=>`<section class="slot" id="${v.id}"><h2>${v.name}</h2><p>${v.note}</p>${v.html}</section>`).join('');
+
+document.addEventListener('click',e=>{const b=e.target.closest('.ctabs button'); if(!b) return; const card=b.closest('.tabcard'), t=b.dataset.tab;
+ card.querySelectorAll('.ctabs button').forEach(x=>x.classList.toggle('on',x===b));
+ card.querySelectorAll('.tabpane').forEach(x=>x.classList.toggle('on',x.classList.contains(t)));
+ card.querySelectorAll('.pane-extra').forEach(x=>{const on=x.classList.contains(t); x.style.display=on?'':'none';});});
 </script>
 </body>
 </html>

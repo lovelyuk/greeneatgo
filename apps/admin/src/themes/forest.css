@@ -1,0 +1,59 @@
+/* Theme: Forest (06) — deep forest sidebar, cream page, ivory cards.
+   Colour tokens only; component shapes are the "forest" skin in skins.css.
+   Scoped to :root[data-theme="forest"]. */
+
+:root[data-theme="forest"] {
+  --bg-page: #F4F2EC;
+  --bg-surface: #FFFDF8;
+  --bg-subtle: #EFEADF;
+  --border: #E7E2D5;
+  --border-strong: #D9D2C1;
+  --text-primary: #1F2A1F;
+  --text-secondary: #5F6B5C;
+  --text-label: #8F8A7C;
+  --text-muted: #8F8A7C;
+  --accent: #2E6B3F;
+  --accent-hover: #24432C;
+  --accent-soft: #E3EBDD;
+  --danger: #B43C2E;
+  --badge-gray-bg: #EFEADF;
+  --badge-gray-fg: #5F6B5C;
+  --badge-blue-bg: #E7EDF5;
+  --badge-blue-fg: #2F4F7A;
+  --badge-green-bg: #E3EBDD;
+  --badge-green-fg: #2E6B3F;
+  --badge-red-bg: #F6E3DE;
+  --badge-red-fg: #B43C2E;
+  --ink: var(--text-primary);
+  --soft: var(--text-secondary);
+  --muted: var(--text-secondary);
+  --forest: var(--accent);
+  --deep: var(--accent-hover);
+  --leaf: var(--accent);
+  --cream: var(--bg-page);
+  --paper: var(--bg-surface);
+  --line: var(--border);
+
+  /* forest-skin tokens (skins.css) */
+  --f-side: #18301F;
+  --f-side-line: #24432C;
+  --f-side-fg: #A9BBA4;
+  --f-side-strong: #FFFFFF;
+  --f-side-active: #24432C;
+  --f-side-group: #7E9479;
+  --f-gold: #B5893B;
+  --f-gold-soft: #C9A46A;
+  --f-warn-bg: #F7EEDB;
+  --f-warn-fg: #8A5A12;
+
+  /* dashboard tabs (layouts.css) */
+  --dash-tab-track: #EFEADF;
+  --dash-tab-on-bg: #2E6B3F;
+  --dash-tab-on-fg: #FFFFFF;
+  --cal-paper: #EFEADF;
+  --cal-paper-ink: #1F2A1F;
+  --cal-paper-label: #8F8A7C;
+  --cal-paper-line: #D9D2C1;
+  --cal-off: #F4F2EC;
+  --cal-off-fg: #B5AE9E;
+}

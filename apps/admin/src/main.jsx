@@ -5,8 +5,12 @@ import { createClient } from '@supabase/supabase-js';
 import Cropper from 'react-easy-crop';
 import './style.css';
 import './themes/skins.css';
+import './themes/layouts.css';
 import './themes/calm-dark.css';
-import { ADMIN_THEMES, DEFAULT_THEME_ID, applyThemeToDocument, latestPayments, normalizeThemeId, ratingDistribution, readLastTheme, rememberLastTheme, themeById } from './themes.js';
+import './themes/forest-stubs.css';
+import './themes/forest.css';
+import './themes/compact.css';
+import { ADMIN_THEMES, DEFAULT_THEME_ID, applyThemeToDocument, companyTableRows, dailyAverage, latestPayments, normalizeThemeId, ratingDistribution, readLastTheme, rememberLastTheme, themeById, ticketCalendar } from './themes.js';
 import { PaymentHistoryDashboard } from './PaymentFeatures.jsx';
 import SettlementDemoPanel from './SettlementDemoPanel.jsx';
 const PurchaseApp = React.lazy(() => import('./PurchaseApp.jsx'));
@@ -154,7 +158,11 @@ function useAdminTheme() {
   const value = React.useContext(ThemeContext);
   if (value) return value;
   const themeId = normalizeThemeId(typeof document === 'undefined' ? DEFAULT_THEME_ID : document.documentElement.dataset.theme);
-  return { themeId, skin: themeById(themeId).skin, extras: themeById(themeId).extras === true };
+  return themeContextFor(themeId);
+}
+function themeContextFor(themeId) {
+  const theme = themeById(themeId);
+  return { ...theme, themeId: theme.id, extras: theme.extras === true };
 }
 // Admin themes apply to the admin app only; /shop and /counter keep their own design.
 const isAdminRoute = typeof window === 'undefined'
@@ -163,10 +171,10 @@ const isAdminRoute = typeof window === 'undefined'
 // the account setting from /me wins as soon as the dashboard loads).
 if (typeof document !== 'undefined' && isAdminRoute) applyThemeToDocument(readLastTheme());
 
-function BrandMark() {
-  const { themeId } = useAdminTheme();
+function BrandMark({ place = 'page' }) {
+  const theme = useAdminTheme();
   return <div className="brandmark" aria-label="그린잇">
-    <img src={themeById(themeId).logo} alt="그린잇" />
+    <img src={place === 'sidebar' ? theme.sidebarLogo ?? theme.logo : theme.logo} alt="그린잇" />
   </div>;
 }
 
@@ -2461,7 +2469,7 @@ function dashboardTooltipDate(value, unit) {
   return `${year}.${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')}`;
 }
 
-function TrendChart({ title, series, unit, valueKey, money = false, color }) {
+function TrendChart({ title, series, unit, valueKey, money = false, color, embedded = false, height = DASH_CHART_HEIGHT }) {
   const reactId = useId();
   const gradientId = `dash-area-${valueKey}-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const viewportRef = useRef(null);
@@ -2471,7 +2479,7 @@ function TrendChart({ title, series, unit, valueKey, money = false, color }) {
   const minValue = Math.min(...values, 0);
   const maxValue = Math.max(...values, 0);
   const valueRange = maxValue - minValue || 1;
-  const plotHeight = DASH_CHART_HEIGHT - DASH_CHART_TOP - DASH_CHART_BOTTOM;
+  const plotHeight = height - DASH_CHART_TOP - DASH_CHART_BOTTOM;
   const plotWidth = Math.max(viewportWidth, series.length * MIN_POINT_GAP);
   const innerWidth = Math.max(0, plotWidth - DASH_CHART_SIDE * 2);
   const yFor = (value) => DASH_CHART_TOP + plotHeight - ((value - minValue) / valueRange) * plotHeight;
@@ -2510,28 +2518,29 @@ function TrendChart({ title, series, unit, valueKey, money = false, color }) {
 
   useEffect(() => { setHoveredIndex(null); }, [series, valueKey]);
 
-  return <article className="dash-card dash-detail-card">
-    <div className="dash-table-heading"><h3>{title}</h3><span>(단위: {money ? '원' : '건'} · {dashboardUnitLabel(unit)})</span></div>
+  const Wrapper = embedded ? 'div' : 'article';
+  return <Wrapper className={embedded ? 'dash-embedded-chart' : 'dash-card dash-detail-card'}>
+    {embedded ? <p className="dash-tab-note">단위: {money ? '원' : '건'} · {dashboardUnitLabel(unit)}</p> : <div className="dash-table-heading"><h3>{title}</h3><span>(단위: {money ? '원' : '건'} · {dashboardUnitLabel(unit)})</span></div>}
     {series.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <div className="dash-chart-layout">
-      <svg className="dash-chart-y-axis" viewBox={`0 0 58 ${DASH_CHART_HEIGHT}`} role="presentation" aria-hidden="true">
+      <svg className="dash-chart-y-axis" style={{ height: `${height}px` }} viewBox={`0 0 58 ${height}`} role="presentation" aria-hidden="true">
         {ticks.map((tick, index) => { const y = yFor(tick); return <text key={`${tick}-${index}`} x="54" y={y + 4} textAnchor="end" className="dash-axis-label">{money ? compactMoneyTick(tick) : Math.round(tick).toLocaleString('ko-KR')}</text>; })}
       </svg>
       <div className="dash-chart-scroll" ref={viewportRef} onScroll={() => setHoveredIndex(null)}>
-        <div className="dash-chart-plot" style={{ width: `${plotWidth}px` }}>
-          <svg className="dash-trend" width={plotWidth} height={DASH_CHART_HEIGHT} viewBox={`0 0 ${plotWidth} ${DASH_CHART_HEIGHT}`} role="img" aria-label={title}>
+        <div className="dash-chart-plot" style={{ width: `${plotWidth}px`, height: `${height}px` }}>
+          <svg className="dash-trend" style={{ height: `${height}px` }} width={plotWidth} height={height} viewBox={`0 0 ${plotWidth} ${height}`} role="img" aria-label={title}>
             <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={color} stopOpacity=".28"/><stop offset="1" stopColor={color} stopOpacity=".03"/></linearGradient></defs>
             {ticks.map((tick, index) => { const y = yFor(tick); return <line key={`${tick}-${index}`} x1="0" x2={plotWidth} y1={y} y2={y} className="dash-gridline"/>; })}
             <path d={area} fill={`url(#${gradientId})`} /><path d={line} className="dash-line" style={{ stroke: color }} />
             {points.map((point, index) => <g key={`${point.row.date}-${index}`} tabIndex="0" role="img" aria-label={`${dashboardTooltipDate(point.row.date, unit)}, ${money ? krw(point.row[valueKey]) : `${dashNumber(point.row[valueKey])}건`}`} onFocus={() => setHoveredIndex(index)} onBlur={() => setHoveredIndex(null)} onMouseEnter={() => setHoveredIndex(index)} onMouseLeave={() => setHoveredIndex(null)} onPointerDown={() => setHoveredIndex(index)} onPointerLeave={() => setHoveredIndex(null)}>
               <circle cx={point.x} cy={point.y} r="4" className="dash-point" style={{ stroke: color }}><title>{`${dashboardTooltipDate(point.row.date, unit)}: ${money ? krw(point.row[valueKey]) : `${dashNumber(point.row[valueKey])}건`}`}</title></circle>
-              <text x={point.x} y={DASH_CHART_HEIGHT - 14} textAnchor="middle" className="dash-axis-label">{dashboardAxisDate(point.row.date, unit)}</text>
+              <text x={point.x} y={height - 14} textAnchor="middle" className="dash-axis-label">{dashboardAxisDate(point.row.date, unit)}</text>
             </g>)}
           </svg>
           {hoveredIndex !== null && points[hoveredIndex] && <div className="dash-tooltip" role="tooltip" style={{ left: `${Math.min(plotWidth - 70, Math.max(70, points[hoveredIndex].x))}px`, top: `${Math.max(4, points[hoveredIndex].y - 54)}px` }}><span>{dashboardTooltipDate(points[hoveredIndex].row.date, unit)}</span><strong>{money ? krw(points[hoveredIndex].row[valueKey]) : `${dashNumber(points[hoveredIndex].row[valueKey])}건`}</strong></div>}
         </div>
       </div>
     </div>}
-  </article>;
+  </Wrapper>;
 }
 
 function PeriodPicker({ draft, onChange, onApply, loading }) {
@@ -2543,8 +2552,78 @@ function PeriodPicker({ draft, onChange, onApply, loading }) {
   </form>;
 }
 
+/* 식권 달력: one paper ticket per day (count above the perforation, amount below). */
+function TicketCalendar({ series, unit, period, money, countSuffix = '건' }) {
+  const today = kstDateParts(new Date());
+  const todayYmd = `${today.year}-${today.month}-${today.day}`;
+  const calendar = unit === 'day' ? ticketCalendar(series, period.from, period.to, todayYmd) : { weeks: [] };
+  if (calendar.weeks.length === 0) return <p className="dash-empty">식권 달력은 31일 이하 기간에서 볼 수 있어요. 기간을 줄이거나 다른 탭을 봐 주세요.</p>;
+  return <div className="ticket-calendar">
+    <p className="dash-tab-note">티켓 한 장 = 하루 · 위는 {countSuffix === '건' ? '식사 건수' : '건수'}, 절취선 아래는 {money}{calendar.best ? ' · 테두리 = 기간 최다' : ''}</p>
+    <div className="ticket-calendar-grid" role="grid" aria-label="식권 달력">
+      <div className="ticket-calendar-row" role="row">{['월', '화', '수', '목', '금', '토', '일'].map((d) => <span key={d} role="columnheader" className={`ticket-calendar-dow${d === '일' ? ' sunday' : ''}`}>{d}</span>)}</div>
+      {calendar.weeks.map((week) => <div key={week[0].key} className="ticket-calendar-row" role="row">{week.map((cell) => {
+        if (cell.kind === 'blank') return <span key={cell.key} className="day-stub blank" role="gridcell" aria-hidden="true" />;
+        const label = `${String(cell.month).padStart(2, '0')}.${String(cell.day).padStart(2, '0')} ${cell.dow}`;
+        if (cell.kind === 'rest') return <span key={cell.key} className="day-stub rest" role="gridcell" aria-label={`${label} 집계 전`}><small>{label}</small><i /></span>;
+        const empty = cell.count === 0 && cell.amount === 0;
+        return <span key={cell.key} className={`day-stub ${cell.kind}${cell.best ? ' best' : ''}`} role="gridcell" aria-label={`${label} ${dashNumber(cell.count)}${countSuffix} ${krw(cell.amount)}`}>
+          <small>{cell.kind === 'today' ? `TODAY ${cell.dow}` : label}</small>
+          {empty ? <b className="day-stub-none">판매 없음</b> : <b>{dashNumber(cell.count)}<em>{countSuffix}</em></b>}
+          <i>{empty ? '—' : krw(cell.amount)}</i>
+        </span>;
+      })}</div>)}
+    </div>
+    <ul className="ticket-calendar-legend" aria-label="달력 범례"><li className="sold">판매일</li><li className="today">오늘</li><li className="none">판매 없음</li><li className="rest">남은 날</li></ul>
+  </div>;
+}
+
+/* Big dashboard card with tabs (식권 달력 | 기간별 매출 | 기간별 수량), per theme. */
+function DashboardTabsCard({ tabs, labels, summary, series, period, color }) {
+  const [active, setActive] = useState(tabs[0]);
+  const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  useEffect(() => { if (!tabs.includes(active)) setActive(tabs[0]); }, [tabs, active]);
+  const names = { calendar: labels.calendar, amount: labels.trendAmount.replace(/ 그래프$/, ''), count: labels.trendCount.replace(/ 그래프$/, '') };
+  return <article className="dash-card dash-tabs-card">
+    <div className="dash-tabs-head">
+      <div className="dash-card-tabs" role="tablist" aria-label="기간 보기">{tabs.map((tab) => <button key={tab} type="button" role="tab" id={`${reactId}-${tab}`} aria-selected={active === tab} aria-controls={`${reactId}-${tab}-panel`} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}>{tab === 'calendar' ? <CalendarDays size={16}/> : <BarChart3 size={16}/>}{names[tab]}</button>)}</div>
+    </div>
+    <div role="tabpanel" id={`${reactId}-${active}-panel`} aria-labelledby={`${reactId}-${active}`} className="dash-tab-panel">
+      {active === 'calendar' && <TicketCalendar series={series} unit={summary.unit} period={period} money={labels.calendarMoney}/>}
+      {active === 'amount' && (series.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <TrendChart embedded title={names.amount} series={series} unit={summary.unit} valueKey="amount" money color={color.amount} height={340}/>)}
+      {active === 'count' && (series.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <TrendChart embedded title={names.count} series={series} unit={summary.unit} valueKey="count" color={color.count} height={340}/>)}
+    </div>
+  </article>;
+}
+
+/* 12 Compact Table: number strip. */
+function CompactChips({ summary, labels, series }) {
+  const avg = dailyAverage(series, summary.unit);
+  const delta = (value) => value === null ? '-' : `${value > 0 ? '↑' : value < 0 ? '↓' : ''} ${Math.abs(value).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}%`;
+  const meals = summary.by_meal_type;
+  return <section className="compact-chips" aria-label="요약 숫자">
+    <div><span>{labels.amount}</span><strong>{krw(summary.total_amount)}</strong><small className={summary.total_amount_delta_pct > 0 ? 'up' : summary.total_amount_delta_pct < 0 ? 'down' : ''}>전 기간 대비 {delta(summary.total_amount_delta_pct)}</small></div>
+    <div><span>{labels.count}</span><strong>{dashNumber(summary.total_count)}건</strong><small className={summary.total_count_delta_pct > 0 ? 'up' : summary.total_count_delta_pct < 0 ? 'down' : ''}>전 기간 대비 {delta(summary.total_count_delta_pct)}</small></div>
+    {meals.map((row) => <div key={row.label}><span>{row.label}</span><strong>{dashNumber(row.count)}건</strong><small>{row.ratio.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}%</small></div>)}
+    {avg && <div><span>하루 평균</span><strong>{dashNumber(avg.average)}건</strong><small>판매일 {avg.openDays}일</small></div>}
+  </section>;
+}
+
+/* 12 Compact Table: one row per company with count, amount and share. */
+function CompactCompanyTable({ title, rows, nameHeader }) {
+  return <article className="dash-card compact-table-card">
+    <div className="dash-table-heading"><h3>{title}</h3><span>매출순</span></div>
+    {rows.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <div className="dash-table-wrap"><table className="compact-company-table"><thead><tr><th>순위</th><th>{nameHeader}</th><th className="money">수량</th><th className="money">매출</th><th>매출 비중</th></tr></thead><tbody>
+      {rows.map((row) => <tr key={row.name}><td>{row.rank}</td><td><strong>{row.name}</strong></td><td className="money">{row.count === null ? '-' : `${dashNumber(row.count)}건`}</td><td className="money">{row.amount === null ? '-' : krw(row.amount)}</td><td>{row.share === null ? '-' : <span className="compact-share"><i><b style={{ width: `${Math.min(100, row.share)}%` }} /></i><em>{row.share.toLocaleString('ko-KR')}%</em></span>}</td></tr>)}
+    </tbody></table></div>}
+    <p className="dash-tab-note">순위표는 매출·수량 상위 거래처만 보여요.</p>
+  </article>;
+}
+
 function DashboardView({ kind, token, scopeId, recentPayments = null }) {
-  const { extras } = useAdminTheme();
+  const theme = useAdminTheme();
+  const { extras } = theme;
+  const layout = theme.dashboard ?? 'classic';
   const initialPeriod = useMemo(dashboardPeriodFromUrl, []);
   const [draft, setDraft] = useState(initialPeriod);
   const [applied, setApplied] = useState(initialPeriod);
@@ -2595,17 +2674,32 @@ function DashboardView({ kind, token, scopeId, recentPayments = null }) {
     amount: '총 매출', count: '총 수량',
     rankAmount: '거래처별 매출 합계', rankCount: '거래처별 수량 합계',
     trendAmount: '기간별 매출 그래프', trendCount: '기간별 수량 그래프',
+    calendar: '식권 달력', calendarMoney: '매출',
   } : {
     amount: '총 이용액', count: '총 이용 수량',
     rankAmount: '식사 구분별 이용액 합계', rankCount: '식사 구분별 이용 수량 합계',
     trendAmount: '기간별 이용액 그래프', trendCount: '기간별 이용 수량 그래프',
+    calendar: '식권 달력', calendarMoney: '이용액',
   };
+  const series = hasDashboardData ? summary.series : [];
 
   return <AdminPage showHeader={false} preview={false} className="dash-page merchant-regular-weight">
     <PeriodPicker draft={draft} onChange={setDraft} onApply={applyPeriod} loading={loading}/>
     {error && <div className="dash-error" role="alert">{error}<button type="button" className="ghost" onClick={() => setReload((value) => value + 1)} disabled={loading}>다시 시도</button></div>}
     {loading && <div className="dash-loading" role="status" aria-label="대시보드를 불러오는 중"><div className="dash-summary-grid">{[0, 1, 2].map((key) => <div key={key} className="dash-card dash-skeleton" />)}</div><div className="dash-two-grid">{[0, 1, 2, 3].map((key) => <div key={key} className="dash-card dash-skeleton dash-skeleton-large" />)}</div></div>}
-    {summary && !loading && <>
+    {summary && !loading && layout === 'forest' && <section className="dash-forest">
+      <SummaryCard label={labels.amount} value={summary.total_amount} delta={summary.total_amount_delta_pct} money Icon={WalletCards} tone="green"/>
+      <SummaryCard label={labels.count} value={summary.total_count} delta={summary.total_count_delta_pct} Icon={BarChart3} tone="orange"/>
+      <DonutCard rows={mealRows} total={summary.total_count}/>
+      <DashboardTabsCard tabs={theme.trendTabs.length ? theme.trendTabs : ['amount', 'count']} labels={labels} summary={summary} series={series} period={applied} color={theme.chart}/>
+      <div className="dash-forest-side"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'}/></div>
+    </section>}
+    {summary && !loading && layout === 'compact' && <section className="dash-compact">
+      <CompactChips summary={summary} labels={labels} series={series}/>
+      <TrendChart title={labels.trendAmount} series={series} unit={summary.unit} valueKey="amount" money color={theme.chart.amount} height={220}/>
+      <CompactCompanyTable title={merchant ? '거래처별 현황' : '식사 구분별 현황'} nameHeader={merchant ? '거래처' : '구분'} rows={!hasDashboardData ? [] : merchant ? companyTableRows(summary.top_companies_by_amount, summary.top_companies_by_count, summary.total_amount) : companyTableRows(mealRows.map((row) => ({ name: row.label, amount: row.amount })), mealRows.map((row) => ({ name: row.label, count: row.count })), summary.total_amount)}/>
+    </section>}
+    {summary && !loading && layout === 'classic' && <>
       <section className="dash-summary-grid"><SummaryCard label={labels.amount} value={summary.total_amount} delta={summary.total_amount_delta_pct} money Icon={WalletCards} tone="green"/><DonutCard rows={mealRows} total={summary.total_count}/><SummaryCard label={labels.count} value={summary.total_count} delta={summary.total_count_delta_pct} Icon={BarChart3} tone="orange"/></section>
       <section className="dash-two-grid"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'}/></section>
       <section className="dash-two-grid"><TrendChart title={labels.trendAmount} series={hasDashboardData ? summary.series : []} unit={summary.unit} valueKey="amount" money color="#2FB865"/><TrendChart title={labels.trendCount} series={hasDashboardData ? summary.series : []} unit={summary.unit} valueKey="count" color="#4C8BF5"/></section>
@@ -2792,7 +2886,7 @@ function Dashboard({ session, onLogout }) {
   const isPlatformAdmin = me?.role === 'platform_admin';
   const isCompanyAdmin = me?.role === 'company_admin';
   const showCompanyLegacy = isCompanyAdmin && companySection === 'legacy-employees';
-  const themeContext = useMemo(() => ({ themeId, skin: themeById(themeId).skin, extras: themeById(themeId).extras === true }), [themeId]);
+  const themeContext = useMemo(() => themeContextFor(themeId), [themeId]);
 
   useEffect(() => { applyThemeToDocument(themeId); rememberLastTheme(themeId); }, [themeId]);
 
@@ -3477,7 +3571,7 @@ function Dashboard({ session, onLogout }) {
     <header className={`topbar${isMerchantAdmin ? ' merchant-topbar' : ''}${isCompanyAdmin ? ' company-topbar' : ''}`}>
       <div className="top-copy">
         <div className="brand-row">
-          <BrandMark />
+          <BrandMark place={isMerchantAdmin || isCompanyAdmin ? 'sidebar' : 'page'} />
           <span className="pill">OPERATIONS</span>
         </div>
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
@@ -3490,9 +3584,9 @@ function Dashboard({ session, onLogout }) {
     </header>
 
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
-      {merchantNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{themeContext.skin && <div className="merchant-nav-group-title" aria-hidden="true">{merchantNavGroupTitles[groupIndex]}</div>}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'restaurant-management' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
+      {merchantNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{themeContext.navGroups && <div className="merchant-nav-group-title" aria-hidden="true">{merchantNavGroupTitles[groupIndex]}</div>}{items.map(([id, label, Icon]) => <button key={id} type="button" className={merchantSection === id ? 'active' : ''} onClick={() => setMerchantSection(id)} aria-current={merchantSection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span>{id === 'restaurant-management' && unreadPaymentCount > 0 && <span className="merchant-nav-badge" aria-label={`새 결제 ${unreadPaymentCount}건`}>{unreadPaymentCount > 99 ? '99+' : unreadPaymentCount}</span>}</button>)}</React.Fragment>)}
       <div className="merchant-nav-divider merchant-nav-divider-before-logout" role="separator" />
-      {themeContext.skin && <SidebarAccount name={merchantQr?.merchant?.name ?? me?.display_name} role={`식당관리자 · ${me?.display_name ?? ''}`}/>}
+      {themeContext.account && <SidebarAccount name={merchantQr?.merchant?.name ?? me?.display_name} role={`식당관리자 · ${me?.display_name ?? ''}`}/>}
       <ThemePicker value={themeId} onChange={changeTheme} disabled={themeSaving}/>
       <button type="button" className="merchant-sidebar-logout" onClick={load} disabled={busy}><RefreshCw size={18}/><span>새로고침</span></button>
       <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>
@@ -3504,9 +3598,9 @@ function Dashboard({ session, onLogout }) {
     </nav>}
 
     {isCompanyAdmin && <nav className="company-tabs" aria-label="업체 관리자 메뉴">
-      {companyNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{themeContext.skin && <div className="merchant-nav-group-title" aria-hidden="true">{companyNavGroupTitles[groupIndex]}</div>}{items.map(([id, label, Icon]) => <button key={id} type="button" className={companySection === id ? 'active' : ''} onClick={() => setCompanySection(id)} aria-current={companySection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span></button>)}</React.Fragment>)}
+      {companyNavGroups.map((items, groupIndex) => <React.Fragment key={items[0][0]}>{groupIndex > 0 && <div className="merchant-nav-divider" role="separator" />}{themeContext.navGroups && <div className="merchant-nav-group-title" aria-hidden="true">{companyNavGroupTitles[groupIndex]}</div>}{items.map(([id, label, Icon]) => <button key={id} type="button" className={companySection === id ? 'active' : ''} onClick={() => setCompanySection(id)} aria-current={companySection === id ? 'page' : undefined}><Icon size={20}/><span>{label}</span></button>)}</React.Fragment>)}
       <div className="merchant-nav-divider" role="separator" />
-      {themeContext.skin && <SidebarAccount name={me?.company?.name ?? me?.display_name} role={`회사관리자 · ${me?.display_name ?? ''}`}/>}
+      {themeContext.account && <SidebarAccount name={me?.company?.name ?? me?.display_name} role={`회사관리자 · ${me?.display_name ?? ''}`}/>}
       <ThemePicker value={themeId} onChange={changeTheme} disabled={themeSaving}/>
       <button type="button" className="merchant-sidebar-logout" onClick={load} disabled={busy}><RefreshCw size={18}/><span>새로고침</span></button>
       <button type="button" className="merchant-sidebar-logout" onClick={onLogout}><LogOut size={18}/><span>로그아웃</span></button>

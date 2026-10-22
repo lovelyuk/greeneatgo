@@ -7,7 +7,7 @@ id here and there, plus its stylesheet; the database only checks the id format.
 from __future__ import annotations
 
 DEFAULT_ADMIN_THEME = "default"
-ADMIN_THEMES: tuple[str, ...] = (DEFAULT_ADMIN_THEME, "calm-dark")
+ADMIN_THEMES: tuple[str, ...] = (DEFAULT_ADMIN_THEME, "calm-dark", "forest-stubs", "forest", "compact")
 ADMIN_THEME_ROLES = frozenset({"merchant_admin", "company_admin", "platform_admin"})
 
 

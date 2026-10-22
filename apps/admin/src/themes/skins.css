@@ -339,3 +339,207 @@
 :root[data-skin="ticket"] .banner-placement-tabs button.active { color: var(--t-paper-ink); background: var(--t-paper); border-color: var(--t-paper); }
 :root[data-skin="ticket"] .account-settings-button { color: var(--t-accent-text); background: var(--bg-subtle); border-color: var(--border); }
 :root[data-skin="ticket"] .account-settings-button svg { color: var(--t-accent-text) !important; }
+
+
+/* =====================================================================
+   Skin "forest" — 06 Forest: deep forest sidebar, cream page, ivory cards.
+   Colours from forest.css tokens only.
+   ===================================================================== */
+:root[data-skin="forest"] body,
+:root[data-skin="forest"] .auth-page { color: var(--text-primary); background: var(--bg-page); }
+:root[data-skin="forest"] .shell,
+:root[data-skin="forest"] .merchant-shell,
+:root[data-skin="forest"] .company-shell { background: var(--bg-page); }
+:root[data-skin="forest"] .topbar { background: var(--bg-page); }
+:root[data-skin="forest"] .merchant-topbar,
+:root[data-skin="forest"] .company-topbar { border-bottom: 0; background: transparent; }
+:root[data-skin="forest"] .merchant-topbar .top-copy,
+:root[data-skin="forest"] .company-topbar .top-copy { background: var(--f-side); border-right-color: var(--f-side); }
+:root[data-skin="forest"] .merchant-topbar .sidebar-entity-name,
+:root[data-skin="forest"] .company-topbar .sidebar-entity-name { color: var(--f-side-fg); }
+:root[data-skin="forest"] .merchant-tabs,
+:root[data-skin="forest"] .company-tabs { color: var(--f-side-fg); background: var(--f-side); border-color: var(--f-side); }
+:root[data-skin="forest"] .merchant-tabs > button,
+:root[data-skin="forest"] .company-tabs > button { min-height: 42px; color: var(--f-side-fg); background: transparent; border-radius: 10px; }
+:root[data-skin="forest"] .merchant-tabs > button:hover,
+:root[data-skin="forest"] .company-tabs > button:hover { color: var(--f-side-strong); background: var(--f-side-line); }
+:root[data-skin="forest"] .merchant-tabs > button.active,
+:root[data-skin="forest"] .company-tabs > button.active { padding-left: 12px; color: var(--f-side-strong); background: var(--f-side-active); }
+:root[data-skin="forest"] .merchant-tabs > button.active::before,
+:root[data-skin="forest"] .company-tabs > button.active::before { top: 10px; bottom: 10px; background: var(--f-gold-soft); }
+:root[data-skin="forest"] .merchant-tabs > button span,
+:root[data-skin="forest"] .company-tabs > button span { color: inherit; }
+:root[data-skin="forest"] .merchant-nav-badge { color: var(--f-side) !important; background: var(--f-gold-soft) !important; }
+:root[data-skin="forest"] .merchant-nav-divider { height: 0; margin: 4px 0; background: transparent; }
+:root[data-skin="forest"] .merchant-nav-group-title { flex: 0 0 auto; padding: 14px 12px 6px; color: var(--f-side-group); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+:root[data-skin="forest"] .merchant-tabs .merchant-sidebar-logout,
+:root[data-skin="forest"] .company-tabs .merchant-sidebar-logout { color: var(--f-side-fg); background: transparent; }
+:root[data-skin="forest"] .merchant-tabs .merchant-sidebar-logout:hover,
+:root[data-skin="forest"] .company-tabs .merchant-sidebar-logout:hover { color: var(--f-side-strong); background: var(--f-side-line); }
+:root[data-skin="forest"] .merchant-sidebar-legal,
+:root[data-skin="forest"] .merchant-sidebar-legal a,
+:root[data-skin="forest"] .theme-picker { color: var(--f-side-group); }
+:root[data-skin="forest"] .theme-picker select { color: var(--f-side-strong); background: var(--f-side-line); border-color: var(--f-side-line); }
+
+:root[data-skin="forest"] .merchant-section-tabs button.active { color: var(--accent); background: var(--accent-soft); border-bottom-color: var(--accent); }
+:root[data-skin="forest"] .panel,
+:root[data-skin="forest"] .card,
+:root[data-skin="forest"] .dash-card,
+:root[data-skin="forest"] .login-card { background: var(--bg-surface); border-color: var(--border); border-radius: 14px; box-shadow: none; }
+:root[data-skin="forest"] .primary,
+:root[data-skin="forest"] .approve { color: #fff; background: var(--accent); box-shadow: none; }
+:root[data-skin="forest"] .primary:hover,
+:root[data-skin="forest"] .approve:hover { background: var(--accent-hover); }
+:root[data-skin="forest"] .ghost { color: var(--text-primary); background: var(--bg-surface); border-color: var(--border-strong); }
+:root[data-skin="forest"] input,
+:root[data-skin="forest"] textarea,
+:root[data-skin="forest"] select { color: var(--text-primary); background: #fff; border-color: var(--border-strong); }
+:root[data-skin="forest"] input:focus,
+:root[data-skin="forest"] textarea:focus,
+:root[data-skin="forest"] select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(46, 107, 63, .16); }
+:root[data-skin="forest"] th { color: var(--text-label); }
+:root[data-skin="forest"] td { border-bottom-color: var(--bg-subtle); }
+:root[data-skin="forest"] .login-tagline { color: var(--accent); }
+
+/* dashboard */
+:root[data-skin="forest"] .dash-summary-green,
+:root[data-skin="forest"] .dash-summary-orange { background: var(--bg-surface); border-color: var(--border); }
+:root[data-skin="forest"] .dash-icon-green { color: var(--accent); background: var(--accent-soft); }
+:root[data-skin="forest"] .dash-icon-orange { color: var(--f-gold); background: var(--f-warn-bg); }
+:root[data-skin="forest"] .dash-icon-blue { color: var(--accent); background: var(--bg-subtle); }
+:root[data-skin="forest"] .dash-summary-copy > strong { font-weight: 800 !important; }
+:root[data-skin="forest"] .dash-delta.up { color: var(--accent); }
+:root[data-skin="forest"] .dash-delta.down { color: var(--danger); }
+:root[data-skin="forest"] .dash-donut circle:first-child { stroke: var(--bg-subtle); }
+:root[data-skin="forest"] .dash-donut circle:nth-child(2) { stroke: var(--accent); }
+:root[data-skin="forest"] .dash-donut circle:nth-child(3) { stroke: var(--f-gold-soft); }
+:root[data-skin="forest"] .dash-legend li:nth-child(1) i { background: var(--accent) !important; }
+:root[data-skin="forest"] .dash-legend li:nth-child(2) i { background: var(--f-gold-soft) !important; }
+:root[data-skin="forest"] .dash-gridline { stroke: var(--bg-subtle); }
+:root[data-skin="forest"] .dash-axis-label { fill: var(--text-label); }
+:root[data-skin="forest"] .dash-chart-y-axis { background: var(--bg-surface); }
+:root[data-skin="forest"] .dash-point { fill: var(--bg-surface); }
+:root[data-skin="forest"] .dash-total-row td { background: var(--bg-subtle); }
+:root[data-skin="forest"] .dash-skeleton { background: var(--bg-subtle); }
+:root[data-skin="forest"] .dash-tooltip { background: var(--bg-surface); border-color: var(--border); }
+@media (max-width: 1024px) {
+  :root[data-skin="forest"] .merchant-nav-group-title { display: none; }
+}
+
+/* =====================================================================
+   Skin "compact" — 12 Compact Table: white, thin lines, dense rows.
+   Colours from compact.css tokens only.
+   ===================================================================== */
+:root[data-skin="compact"] body,
+:root[data-skin="compact"] .auth-page { color: var(--text-primary); background: var(--bg-page); }
+:root[data-skin="compact"] .shell,
+:root[data-skin="compact"] .merchant-shell,
+:root[data-skin="compact"] .company-shell { background: var(--bg-page); }
+:root[data-skin="compact"] .topbar { background: var(--bg-page); }
+:root[data-skin="compact"] .merchant-topbar .top-copy,
+:root[data-skin="compact"] .company-topbar .top-copy { background: var(--c-side); }
+:root[data-skin="compact"] .merchant-tabs,
+:root[data-skin="compact"] .company-tabs { gap: 1px; padding-top: 14px; background: var(--c-side); }
+:root[data-skin="compact"] .merchant-tabs > button,
+:root[data-skin="compact"] .company-tabs > button { min-height: 34px; padding: 6px 12px; color: var(--text-secondary); border-radius: 6px; font-size: 13.5px; }
+:root[data-skin="compact"] .merchant-tabs > button:hover,
+:root[data-skin="compact"] .company-tabs > button:hover { background: var(--bg-subtle); }
+:root[data-skin="compact"] .merchant-tabs > button.active,
+:root[data-skin="compact"] .company-tabs > button.active { padding-left: 12px; color: var(--text-primary); background: var(--c-side-active); font-weight: 600; }
+:root[data-skin="compact"] .merchant-tabs > button.active::before,
+:root[data-skin="compact"] .company-tabs > button.active::before { display: none; }
+:root[data-skin="compact"] .merchant-nav-badge { color: #fff !important; background: var(--accent) !important; }
+
+:root[data-skin="compact"] .merchant-section-tabs button { min-height: 34px; font-size: 13.5px; }
+:root[data-skin="compact"] .merchant-section-tabs button.active { color: var(--text-primary); background: transparent; border-bottom-color: var(--text-primary); }
+:root[data-skin="compact"] .panel,
+:root[data-skin="compact"] .card,
+:root[data-skin="compact"] .dash-card,
+:root[data-skin="compact"] .login-card { background: var(--bg-surface); border-color: var(--border); border-radius: 8px; box-shadow: none; }
+:root[data-skin="compact"] .panel { padding: 16px 20px; }
+:root[data-skin="compact"] .dash-card { padding: 16px 20px; }
+:root[data-skin="compact"] .dash-card h3,
+:root[data-skin="compact"] .dash-table-heading h3 { margin-bottom: 10px; font-size: 14px; font-weight: 700 !important; }
+:root[data-skin="compact"] button { border-radius: 6px; }
+:root[data-skin="compact"] .primary,
+:root[data-skin="compact"] .approve { min-height: 36px; color: #fff; background: var(--accent); box-shadow: none; }
+:root[data-skin="compact"] .primary:hover,
+:root[data-skin="compact"] .approve:hover { background: var(--accent-hover); }
+:root[data-skin="compact"] .ghost { min-height: 36px; color: var(--text-primary); background: var(--bg-surface); border-color: var(--border-strong); }
+:root[data-skin="compact"] input,
+:root[data-skin="compact"] textarea,
+:root[data-skin="compact"] select { min-height: 36px; padding: 7px 10px; color: var(--text-primary); background: #fff; border-color: var(--border-strong); border-radius: 6px; font-size: 14px; }
+:root[data-skin="compact"] input:focus,
+:root[data-skin="compact"] textarea:focus,
+:root[data-skin="compact"] select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(44, 95, 255, .14); }
+:root[data-skin="compact"] th { padding: 9px 12px; color: var(--text-secondary); background: var(--c-head); border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; }
+:root[data-skin="compact"] td { padding: 10px 12px; border-bottom: 1px solid var(--c-row-line); font-size: 13.5px; }
+:root[data-skin="compact"] .login-tagline { color: var(--accent); }
+
+/* dashboard */
+:root[data-skin="compact"] .dash-page { gap: 14px; }
+:root[data-skin="compact"] .dash-delta.up { color: var(--accent); }
+:root[data-skin="compact"] .dash-delta.down { color: var(--danger); }
+:root[data-skin="compact"] .dash-gridline { stroke: var(--c-row-line); }
+:root[data-skin="compact"] .dash-axis-label { fill: var(--text-label); }
+:root[data-skin="compact"] .dash-point { fill: var(--bg-surface); }
+:root[data-skin="compact"] .dash-trend stop { stop-color: var(--accent); }
+:root[data-skin="compact"] .dash-skeleton { background: var(--bg-subtle); }
+:root[data-skin="compact"] .dash-total-row td { background: var(--c-head); }
+
+
+/* ---------- forest + compact: flat tables (no card rows), sidebar text size ---------- */
+:root[data-skin="forest"] table,
+:root[data-skin="compact"] table { border-collapse: collapse; border-spacing: 0; }
+:root[data-skin="forest"] td,
+:root[data-skin="forest"] tbody td:first-child,
+:root[data-skin="forest"] tbody td:last-child { background: transparent; border: 0; border-bottom: 1px solid var(--bg-subtle); border-radius: 0; }
+:root[data-skin="forest"] tbody tr:last-child td { border-bottom: 0; }
+:root[data-skin="forest"] tbody tr:hover td { background: var(--accent-soft); }
+:root[data-skin="compact"] td,
+:root[data-skin="compact"] tbody td:first-child,
+:root[data-skin="compact"] tbody td:last-child { background: transparent; border: 0; border-bottom: 1px solid var(--c-row-line); border-radius: 0; }
+:root[data-skin="compact"] tbody tr:hover td { background: var(--c-head); }
+:root[data-skin="forest"] .merchant-tabs > button,
+:root[data-skin="forest"] .company-tabs > button,
+:root[data-skin="forest"] .merchant-tabs .merchant-sidebar-logout,
+:root[data-skin="forest"] .company-tabs .merchant-sidebar-logout { font-size: 15px; }
+:root[data-skin="forest"] .merchant-tabs > button > svg,
+:root[data-skin="forest"] .company-tabs > button > svg { width: 18px; height: 18px; }
+:root[data-skin="compact"] .merchant-tabs > button,
+:root[data-skin="compact"] .company-tabs > button,
+:root[data-skin="compact"] .merchant-tabs .merchant-sidebar-logout,
+:root[data-skin="compact"] .company-tabs .merchant-sidebar-logout { font-size: 13.5px; }
+:root[data-skin="compact"] .merchant-tabs > button > svg,
+:root[data-skin="compact"] .company-tabs > button > svg { width: 16px; height: 16px; }
+
+
+/* ---------- forest + compact: hard-coded default greens → theme accent ---------- */
+:root[data-skin="forest"] .daily-menu-schedule,
+:root[data-skin="compact"] .daily-menu-schedule { border-top-color: var(--border); }
+:root[data-skin="forest"] .image-picker,
+:root[data-skin="compact"] .image-picker { background: var(--bg-subtle); border-color: var(--border-strong); }
+:root[data-skin="forest"] .product-item.off,
+:root[data-skin="compact"] .product-item.off { background: var(--bg-subtle); }
+:root[data-skin="forest"] .product-image-preview,
+:root[data-skin="forest"] .product-image-placeholder,
+:root[data-skin="compact"] .product-image-preview,
+:root[data-skin="compact"] .product-image-placeholder { color: var(--text-secondary); background: var(--bg-subtle); border-color: var(--border); }
+:root[data-skin="forest"] .coupon-type-cards button.active,
+:root[data-skin="compact"] .coupon-type-cards button.active { background: var(--accent-soft); border-color: var(--accent); box-shadow: none; }
+:root[data-skin="forest"] .coupon-icon,
+:root[data-skin="compact"] .coupon-icon { color: var(--accent); background: var(--accent-soft); }
+:root[data-skin="forest"] .status-switch.on,
+:root[data-skin="compact"] .status-switch.on { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+:root[data-skin="forest"] .status-switch.on > span,
+:root[data-skin="compact"] .status-switch.on > span { background: var(--accent); }
+:root[data-skin="forest"] .banner-placement-tabs button,
+:root[data-skin="compact"] .banner-placement-tabs button { border-color: var(--border); }
+:root[data-skin="forest"] .banner-placement-tabs button.active,
+:root[data-skin="compact"] .banner-placement-tabs button.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+:root[data-skin="forest"] .merchant-qr-image,
+:root[data-skin="compact"] .merchant-qr-image { border-color: var(--border); }
+
+/* calm-dark / forest-stubs (ticket) leftovers from the hue scan */
+:root[data-skin="ticket"] .daily-menu-schedule { border-top: 2px dashed var(--t-dash); }
+:root[data-skin="ticket"] .merchant-qr-image { border-color: var(--border); }

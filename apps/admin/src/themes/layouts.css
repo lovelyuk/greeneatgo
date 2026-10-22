@@ -1,0 +1,109 @@
+/* Dashboard layouts chosen by a theme's `dashboard` field (themes.js).
+   'forest'  = 06 Forest: two number cards + 식사 구분 on top, a big tabbed card
+               (식권 달력 / 기간별 매출 / 기간별 수량) and the two rankings on the side.
+   'compact' = 12 Compact Table: number strip, short chart, one company table.
+   Only structure lives here; colours come from the theme's tokens (with fallbacks)
+   and every selector is scoped to :root[data-dashboard=…]. */
+
+/* ---------- 06 Forest layout ---------- */
+:root[data-dashboard="forest"] .dash-forest { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+:root[data-dashboard="forest"] .dash-forest > .dash-summary-card:nth-child(1) { grid-column: 1 / 5; }
+:root[data-dashboard="forest"] .dash-forest > .dash-summary-card:nth-child(2) { grid-column: 5 / 9; }
+:root[data-dashboard="forest"] .dash-forest > .dash-donut-card { grid-column: 9 / 13; }
+:root[data-dashboard="forest"] .dash-forest > .dash-tabs-card { grid-column: 1 / 9; }
+:root[data-dashboard="forest"] .dash-forest-side { display: grid; grid-column: 9 / 13; gap: 16px; align-content: start; }
+:root[data-dashboard="forest"] .dash-forest-side .dash-detail-card { min-height: 0; }
+:root[data-dashboard="forest"] .dash-tabs-card { display: flex; min-height: 520px; flex-direction: column; gap: 14px; }
+:root[data-dashboard="forest"] .dash-tabs-head { display: flex; align-items: center; gap: 12px; }
+:root[data-dashboard="forest"] .dash-card-tabs { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--dash-tab-track, var(--bg-subtle)); }
+:root[data-dashboard="forest"] .dash-card-tabs button { min-height: 34px; padding: 0 14px; gap: 7px; color: var(--text-secondary); background: transparent; border: 0; border-radius: 9px; font-size: 13.5px; font-weight: 700; }
+:root[data-dashboard="forest"] .dash-card-tabs button:hover { color: var(--text-primary); }
+:root[data-dashboard="forest"] .dash-card-tabs button.active { color: var(--dash-tab-on-fg, var(--text-primary)); background: var(--dash-tab-on-bg, var(--bg-surface)); }
+:root[data-dashboard="forest"] .dash-card-tabs button svg { display: block; }
+:root[data-dashboard="forest"] .dash-tab-panel { min-width: 0; }
+:root[data-dashboard="forest"] .dash-tab-note { margin: 0 0 12px; color: var(--text-secondary); font-size: 12px; }
+
+/* 식권 달력 (16-2 Day Stubs) */
+:root[data-dashboard="forest"] .ticket-calendar-grid { display: grid; gap: 10px; }
+:root[data-dashboard="forest"] .ticket-calendar-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; }
+:root[data-dashboard="forest"] .ticket-calendar-dow { padding-left: 4px; color: var(--text-label); font-size: 12px; font-weight: 700; }
+:root[data-dashboard="forest"] .ticket-calendar-dow.sunday { color: var(--cal-sunday, #E5484D); }
+:root[data-dashboard="forest"] .day-stub { position: relative; display: grid; min-width: 0; height: 80px; grid-template-rows: auto 1fr 26px; padding: 0; border-radius: 10px; color: var(--cal-paper-ink, var(--text-primary)); background: var(--cal-paper, var(--bg-subtle)); }
+:root[data-dashboard="forest"] .day-stub::before,
+:root[data-dashboard="forest"] .day-stub::after { content: ""; position: absolute; bottom: 17px; width: 18px; height: 18px; border-radius: 50%; background: var(--bg-surface); }
+:root[data-dashboard="forest"] .day-stub::before { left: -9px; }
+:root[data-dashboard="forest"] .day-stub::after { right: -9px; }
+:root[data-dashboard="forest"] .day-stub small { padding: 8px 12px 0; overflow: hidden; color: var(--cal-paper-label, var(--text-label)); font-size: 11px; font-weight: 800; letter-spacing: .04em; white-space: nowrap; text-overflow: ellipsis; }
+:root[data-dashboard="forest"] .day-stub b { align-self: end; padding: 0 12px 4px; font-size: 21px; font-weight: 800; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+:root[data-dashboard="forest"] .day-stub b em { margin-left: 2px; font-size: 12px; font-style: normal; }
+:root[data-dashboard="forest"] .day-stub b.day-stub-none { font-size: 13px; font-weight: 700; }
+:root[data-dashboard="forest"] .day-stub i { display: flex; align-items: center; justify-content: center; overflow: hidden; border-top: 2px dashed var(--cal-paper-line, var(--border-strong)); color: var(--cal-paper-label, var(--text-secondary)); font-size: 11.5px; font-style: normal; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+:root[data-dashboard="forest"] .day-stub.today { color: #fff; background: var(--accent); }
+:root[data-dashboard="forest"] .day-stub.today small,
+:root[data-dashboard="forest"] .day-stub.today i { color: var(--cal-today-soft, rgba(255, 255, 255, .82)); }
+:root[data-dashboard="forest"] .day-stub.today i { border-top-color: rgba(255, 255, 255, .45); }
+:root[data-dashboard="forest"] .day-stub.none { color: var(--cal-off-fg, var(--text-label)); background: var(--cal-off, var(--bg-subtle)); }
+:root[data-dashboard="forest"] .day-stub.none small,
+:root[data-dashboard="forest"] .day-stub.none i { color: var(--cal-off-fg, var(--text-label)); }
+:root[data-dashboard="forest"] .day-stub.none i { border-top-color: var(--border-strong); }
+:root[data-dashboard="forest"] .day-stub.rest { color: var(--cal-off-fg, var(--text-label)); background: transparent; border: 2px dashed var(--border-strong); }
+:root[data-dashboard="forest"] .day-stub.rest::before,
+:root[data-dashboard="forest"] .day-stub.rest::after { display: none; }
+:root[data-dashboard="forest"] .day-stub.rest small { color: var(--cal-off-fg, var(--text-label)); }
+:root[data-dashboard="forest"] .day-stub.rest i { border-top: 2px dashed var(--border-strong); }
+:root[data-dashboard="forest"] .day-stub.blank { visibility: hidden; }
+:root[data-dashboard="forest"] .day-stub.best { box-shadow: inset 0 0 0 2px var(--accent); }
+:root[data-dashboard="forest"] .ticket-calendar-legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 14px 0 0; padding: 0; color: var(--text-secondary); font-size: 12px; font-weight: 600; list-style: none; }
+:root[data-dashboard="forest"] .ticket-calendar-legend li { display: inline-flex; align-items: center; gap: 6px; }
+:root[data-dashboard="forest"] .ticket-calendar-legend li::before { content: ""; width: 12px; height: 12px; border-radius: 3px; }
+:root[data-dashboard="forest"] .ticket-calendar-legend .sold::before { background: var(--cal-paper, var(--bg-subtle)); }
+:root[data-dashboard="forest"] .ticket-calendar-legend .today::before { background: var(--accent); }
+:root[data-dashboard="forest"] .ticket-calendar-legend .none::before { background: var(--cal-off, var(--bg-subtle)); }
+:root[data-dashboard="forest"] .ticket-calendar-legend .rest::before { border: 2px dashed var(--border-strong); }
+
+@media (max-width: 1199px) {
+  :root[data-dashboard="forest"] .dash-forest > .dash-summary-card:nth-child(1) { grid-column: 1 / 7; }
+  :root[data-dashboard="forest"] .dash-forest > .dash-summary-card:nth-child(2) { grid-column: 7 / 13; }
+  :root[data-dashboard="forest"] .dash-forest > .dash-donut-card,
+  :root[data-dashboard="forest"] .dash-forest > .dash-tabs-card,
+  :root[data-dashboard="forest"] .dash-forest-side { grid-column: 1 / 13; }
+  :root[data-dashboard="forest"] .dash-forest-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 767px) {
+  :root[data-dashboard="forest"] .dash-forest > .dash-summary-card:nth-child(1),
+  :root[data-dashboard="forest"] .dash-forest > .dash-summary-card:nth-child(2) { grid-column: 1 / 13; }
+  :root[data-dashboard="forest"] .dash-forest-side { grid-template-columns: minmax(0, 1fr); }
+  :root[data-dashboard="forest"] .dash-tabs-card { min-height: 0; }
+  :root[data-dashboard="forest"] .ticket-calendar-row { gap: 4px; }
+  :root[data-dashboard="forest"] .day-stub { height: 64px; grid-template-rows: auto 1fr; }
+  :root[data-dashboard="forest"] .day-stub::before,
+  :root[data-dashboard="forest"] .day-stub::after,
+  :root[data-dashboard="forest"] .day-stub i { display: none; }
+  :root[data-dashboard="forest"] .day-stub small { padding: 6px 6px 0; font-size: 10px; }
+  :root[data-dashboard="forest"] .day-stub b { padding: 0 6px 6px; font-size: 15px; }
+}
+
+/* ---------- 12 Compact Table layout ---------- */
+:root[data-dashboard="compact"] .dash-compact { display: grid; gap: 14px; }
+:root[data-dashboard="compact"] .compact-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); }
+:root[data-dashboard="compact"] .compact-chips > div { display: grid; gap: 4px; padding: 16px 20px; border-right: 1px solid var(--border); }
+:root[data-dashboard="compact"] .compact-chips > div:last-child { border-right: 0; }
+:root[data-dashboard="compact"] .compact-chips span { color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+:root[data-dashboard="compact"] .compact-chips strong { font-size: 22px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+:root[data-dashboard="compact"] .compact-chips small { color: var(--text-label); font-size: 12px; }
+:root[data-dashboard="compact"] .compact-chips small.up { color: var(--accent); }
+:root[data-dashboard="compact"] .compact-chips small.down { color: var(--danger, #C13333); }
+:root[data-dashboard="compact"] .dash-compact .dash-detail-card { min-height: 0; }
+:root[data-dashboard="compact"] .compact-company-table th:nth-child(1) { width: 56px; }
+:root[data-dashboard="compact"] .compact-company-table th:last-child,
+:root[data-dashboard="compact"] .compact-company-table td:last-child { width: 300px; text-align: left; }
+:root[data-dashboard="compact"] .compact-share { display: flex; align-items: center; gap: 10px; }
+:root[data-dashboard="compact"] .compact-share i { display: block; flex: 1; height: 6px; overflow: hidden; border-radius: 3px; background: var(--bg-subtle); }
+:root[data-dashboard="compact"] .compact-share b { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+:root[data-dashboard="compact"] .compact-share em { width: 48px; font-size: 12.5px; font-style: normal; font-weight: 700; text-align: right; }
+:root[data-dashboard="compact"] .compact-table-card .dash-tab-note { margin: 10px 0 0; color: var(--text-label); font-size: 12px; }
+@media (max-width: 767px) {
+  :root[data-dashboard="compact"] .compact-chips > div { border-right: 0; border-bottom: 1px solid var(--border); }
+  :root[data-dashboard="compact"] .compact-company-table th:last-child,
+  :root[data-dashboard="compact"] .compact-company-table td:last-child { width: 160px; }
+}

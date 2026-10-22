@@ -2139,3 +2139,11 @@ code { font-size: 12px; }
   .prepurchase-modal-backdrop { padding: 10px; }
   .prepurchase-charge-modal { width: 100%; padding: 18px 14px; }
 }
+
+/* Theme picker (관리자 화면 테마). Shown in every theme so an admin can switch back.
+   Theme-specific styling lives in src/themes/*.css, scoped by :root[data-theme]/[data-skin]. */
+.theme-picker { display: grid; gap: 4px; flex: 0 0 auto; margin: 6px 4px 4px; color: var(--text-secondary); font-size: 12px; font-weight: 500; }
+.theme-picker select { min-height: 36px; padding: 6px 10px; font-size: 13px; }
+.top-actions .theme-picker { margin: 0; grid-auto-flow: column; align-items: center; gap: 8px; }
+@media (max-width: 1024px) { .merchant-tabs .theme-picker, .company-tabs .theme-picker { margin: 0; min-width: 120px; } }
+@media (max-width: 700px) { .merchant-tabs .theme-picker > span, .company-tabs .theme-picker > span { display: none; } }

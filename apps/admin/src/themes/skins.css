@@ -1,0 +1,341 @@
+/* Skin "ticket" — component shapes for ticket-style themes (Calm Dark 17-8).
+   Colours come only from tokens (calm-dark.css); a new ticket-style theme just
+   ships a new token file. Every selector is scoped to :root[data-skin="ticket"]
+   so the default design is never affected. Keep labels/roles untouched: only
+   styling lives here. */
+
+/* ---------- page ---------- */
+:root[data-skin="ticket"],
+:root[data-skin="ticket"] body,
+:root[data-skin="ticket"] .auth-page { color: var(--text-primary); background: var(--bg-page); }
+:root[data-skin="ticket"] body { -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+:root[data-skin="ticket"] h1,
+:root[data-skin="ticket"] h2,
+:root[data-skin="ticket"] h3,
+:root[data-skin="ticket"] strong { color: var(--text-primary); }
+:root[data-skin="ticket"] .muted,
+:root[data-skin="ticket"] .panel-note,
+:root[data-skin="ticket"] .card span,
+:root[data-skin="ticket"] .profile-grid span { color: var(--text-secondary); }
+:root[data-skin="ticket"] a { color: var(--t-accent-text); }
+
+/* ---------- shell + sidebar ---------- */
+:root[data-skin="ticket"] .shell,
+:root[data-skin="ticket"] .merchant-shell,
+:root[data-skin="ticket"] .company-shell { background: var(--bg-page); border-color: var(--bg-subtle); }
+:root[data-skin="ticket"] .topbar { background: var(--bg-page); border-bottom-color: var(--bg-subtle); }
+:root[data-skin="ticket"] .merchant-topbar,
+:root[data-skin="ticket"] .company-topbar { border-bottom: 0; }
+:root[data-skin="ticket"] .merchant-topbar .top-copy,
+:root[data-skin="ticket"] .company-topbar .top-copy { background: var(--bg-page); border-right-color: var(--bg-subtle); }
+:root[data-skin="ticket"] .merchant-topbar .brandmark img,
+:root[data-skin="ticket"] .company-topbar .brandmark img { height: 40px; }
+:root[data-skin="ticket"] .merchant-topbar .sidebar-entity-name,
+:root[data-skin="ticket"] .company-topbar .sidebar-entity-name { color: var(--text-secondary); }
+
+:root[data-skin="ticket"] .merchant-tabs,
+:root[data-skin="ticket"] .company-tabs { background: var(--bg-page); border-right-color: var(--bg-subtle); border-top-color: var(--bg-subtle); border-bottom-color: var(--bg-subtle); padding-top: 8px; }
+:root[data-skin="ticket"] .merchant-tabs > button,
+:root[data-skin="ticket"] .company-tabs > button { min-height: 42px; gap: 12px; padding: 0 12px; color: var(--text-secondary); border-radius: 10px; font-size: 15px; }
+:root[data-skin="ticket"] .merchant-tabs > button:hover,
+:root[data-skin="ticket"] .company-tabs > button:hover { color: var(--text-primary); background: var(--bg-surface); }
+:root[data-skin="ticket"] .merchant-tabs > button.active,
+:root[data-skin="ticket"] .company-tabs > button.active {
+  padding-left: 12px; color: var(--t-paper-ink); background: var(--t-paper);
+  -webkit-mask: radial-gradient(circle 7px at 100% 50%, transparent 6.5px, #000 7px);
+  mask: radial-gradient(circle 7px at 100% 50%, transparent 6.5px, #000 7px);
+}
+:root[data-skin="ticket"] .merchant-tabs > button.active span,
+:root[data-skin="ticket"] .company-tabs > button.active span,
+:root[data-skin="ticket"] .merchant-tabs > button.active svg,
+:root[data-skin="ticket"] .company-tabs > button.active svg { color: var(--t-paper-ink); }
+:root[data-skin="ticket"] .merchant-tabs > button.active::before,
+:root[data-skin="ticket"] .company-tabs > button.active::before { display: none; }
+:root[data-skin="ticket"] .merchant-tabs > button > svg,
+:root[data-skin="ticket"] .company-tabs > button > svg { width: 18px; height: 18px; }
+:root[data-skin="ticket"] .merchant-nav-badge { color: #fff !important; background: var(--accent) !important; }
+:root[data-skin="ticket"] .merchant-nav-divider { height: 0; margin: 4px 0; background: transparent; }
+:root[data-skin="ticket"] .merchant-nav-group-title { flex: 0 0 auto; padding: 14px 12px 6px; color: var(--t-group); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+:root[data-skin="ticket"] .merchant-tabs .merchant-sidebar-logout,
+:root[data-skin="ticket"] .company-tabs .merchant-sidebar-logout { min-height: 38px; color: var(--text-secondary); font-size: 14px; }
+:root[data-skin="ticket"] .merchant-tabs .merchant-sidebar-logout:hover,
+:root[data-skin="ticket"] .company-tabs .merchant-sidebar-logout:hover { color: var(--text-primary); background: var(--bg-surface); }
+:root[data-skin="ticket"] .merchant-sidebar-legal { color: var(--t-group); }
+:root[data-skin="ticket"] .merchant-sidebar-legal a:hover { color: var(--t-accent-text); }
+
+:root[data-skin="ticket"] .sidebar-account { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; margin: 8px 0 6px; padding: 12px; border-radius: 12px; background: var(--bg-surface); }
+:root[data-skin="ticket"] .sidebar-account-avatar { display: grid; flex: 0 0 34px; width: 34px; height: 34px; place-items: center; border-radius: 10px; color: #fff; background: var(--accent); font-size: 14px; font-weight: 800; }
+:root[data-skin="ticket"] .sidebar-account-copy { display: grid; min-width: 0; }
+:root[data-skin="ticket"] .sidebar-account-copy strong { overflow: hidden; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-skin="ticket"] .sidebar-account-copy small { overflow: hidden; color: var(--text-secondary); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-skin="ticket"] .theme-picker { color: var(--text-secondary); }
+
+/* ---------- sub tabs: pills, selected = paper ---------- */
+:root[data-skin="ticket"] .merchant-section-tabs { gap: 6px; padding-bottom: 14px; border-bottom: 0; }
+:root[data-skin="ticket"] .merchant-section-tabs button { min-height: 36px; padding: 0 14px; color: var(--text-secondary); background: transparent; border: 1px solid var(--border); border-radius: 999px; font-size: 13.5px; }
+:root[data-skin="ticket"] .merchant-section-tabs button:hover { color: var(--text-primary); background: var(--bg-surface); }
+:root[data-skin="ticket"] .merchant-section-tabs button.active { color: var(--t-paper-ink); background: var(--t-paper); border-color: var(--t-paper); }
+
+/* ---------- surfaces ---------- */
+:root[data-skin="ticket"] .panel,
+:root[data-skin="ticket"] .card,
+:root[data-skin="ticket"] .card:first-child,
+:root[data-skin="ticket"] .card:nth-child(2),
+:root[data-skin="ticket"] .card:nth-child(3),
+:root[data-skin="ticket"] .card:nth-child(4),
+:root[data-skin="ticket"] .dash-card,
+:root[data-skin="ticket"] .login-card { color: var(--text-primary); background: var(--bg-surface); border-color: transparent; border-radius: 14px; box-shadow: none; }
+:root[data-skin="ticket"] .panel-title { border-bottom: 2px dashed var(--t-dash); }
+:root[data-skin="ticket"] .card svg { color: var(--t-accent-text) !important; }
+:root[data-skin="ticket"] .empty-state,
+:root[data-skin="ticket"] .vendor-empty { color: var(--text-secondary); background: transparent; border: 2px dashed var(--t-dash-strong); }
+:root[data-skin="ticket"] .product-item,
+:root[data-skin="ticket"] .settlement-grid div,
+:root[data-skin="ticket"] .invite-code-box,
+:root[data-skin="ticket"] .contract-summary,
+:root[data-skin="ticket"] .notification-audience,
+:root[data-skin="ticket"] .voucher-preview,
+:root[data-skin="ticket"] .subsidy-toggle,
+:root[data-skin="ticket"] .subsidy-fields,
+:root[data-skin="ticket"] .notification-form fieldset,
+:root[data-skin="ticket"] .history-period-filter,
+:root[data-skin="ticket"] .merchant-refund-dock { background: var(--bg-surface); border-color: var(--border); }
+
+/* Paper ticket: things that ARE a voucher/menu (판매 상품, 메뉴 일정, 쿠폰). */
+:root[data-skin="ticket"] .product-list .product-item { position: relative; color: var(--t-paper-ink); background: var(--t-paper); border: 0; border-radius: 12px; }
+:root[data-skin="ticket"] .product-list .product-item::before,
+:root[data-skin="ticket"] .product-list .product-item::after { content: ""; position: absolute; right: 92px; width: 20px; height: 20px; border-radius: 50%; background: var(--bg-surface); }
+:root[data-skin="ticket"] .product-list .product-item::before { top: -10px; }
+:root[data-skin="ticket"] .product-list .product-item::after { bottom: -10px; }
+:root[data-skin="ticket"] .product-list .product-item strong,
+:root[data-skin="ticket"] .product-list .product-item span { color: var(--t-paper-ink); }
+:root[data-skin="ticket"] .product-list .product-item .ghost { color: var(--t-paper-ink); background: transparent; border-color: var(--t-paper-line); }
+:root[data-skin="ticket"] .product-image-placeholder { color: var(--text-secondary); background: var(--bg-subtle); border-color: transparent; }
+
+/* ---------- KPI ticket cards (dashboard) ---------- */
+:root[data-skin="ticket"] .dash-summary-card { position: relative; align-items: stretch; padding: 18px 116px 18px 20px; border: 0; background: var(--bg-surface); }
+:root[data-skin="ticket"] .dash-summary-card::before,
+:root[data-skin="ticket"] .dash-summary-card::after { content: ""; position: absolute; right: 85px; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-page); }
+:root[data-skin="ticket"] .dash-summary-card::before { top: -11px; }
+:root[data-skin="ticket"] .dash-summary-card::after { bottom: -11px; }
+:root[data-skin="ticket"] .dash-summary-card > .dash-icon-badge { display: none; }
+:root[data-skin="ticket"] .dash-summary-copy { align-content: space-between; width: 100%; }
+:root[data-skin="ticket"] .dash-summary-copy > span { color: var(--text-secondary); font-size: 12.5px; font-weight: 600 !important; }
+:root[data-skin="ticket"] .dash-summary-copy > strong { color: var(--text-primary); font-size: 28px; font-weight: 800 !important; letter-spacing: -.03em; }
+:root[data-skin="ticket"] .dash-summary-copy > small { position: absolute; top: 0; right: 0; bottom: 0; display: grid; width: 96px; place-content: center; padding: 0 8px; border-left: 2px dashed var(--t-dash-strong); color: var(--text-label); font-size: 11px; text-align: center; white-space: normal; }
+:root[data-skin="ticket"] .dash-summary-green { background: var(--accent); }
+:root[data-skin="ticket"] .dash-summary-green .dash-summary-copy > span,
+:root[data-skin="ticket"] .dash-summary-green .dash-summary-copy > small { color: var(--t-accent-ink); }
+:root[data-skin="ticket"] .dash-summary-green .dash-summary-copy > strong { color: #fff; }
+:root[data-skin="ticket"] .dash-summary-green .dash-summary-copy > small { border-left-color: rgba(255, 255, 255, .4); }
+:root[data-skin="ticket"] .dash-delta.up { color: var(--t-accent-text); }
+:root[data-skin="ticket"] .dash-delta.down { color: var(--danger); }
+:root[data-skin="ticket"] .dash-summary-green .dash-delta.up,
+:root[data-skin="ticket"] .dash-summary-green .dash-delta.down { color: #fff; }
+:root[data-skin="ticket"] .dash-icon-green,
+:root[data-skin="ticket"] .dash-icon-blue,
+:root[data-skin="ticket"] .dash-icon-orange { color: var(--t-accent-text); background: var(--bg-subtle); }
+:root[data-skin="ticket"] .dash-donut circle:first-child { stroke: var(--bg-subtle); }
+:root[data-skin="ticket"] .dash-donut circle:nth-child(2) { stroke: var(--t-chart-2); }
+:root[data-skin="ticket"] .dash-donut circle:nth-child(3) { stroke: var(--t-chart-1); }
+:root[data-skin="ticket"] .dash-legend li:nth-child(1) i { background: var(--t-chart-2) !important; }
+:root[data-skin="ticket"] .dash-legend li:nth-child(2) i { background: var(--t-chart-1) !important; }
+:root[data-skin="ticket"] .dash-donut-label { fill: var(--text-label); }
+:root[data-skin="ticket"] .dash-donut-total { fill: var(--text-primary); }
+:root[data-skin="ticket"] .dash-legend span,
+:root[data-skin="ticket"] .dash-table-heading span { color: var(--text-label); }
+
+/* charts */
+:root[data-skin="ticket"] .dash-chart-y-axis { background: var(--bg-surface); }
+:root[data-skin="ticket"] .dash-gridline { stroke: var(--t-dash); stroke-dasharray: 4 4; }
+:root[data-skin="ticket"] .dash-axis-label { fill: var(--text-label); }
+:root[data-skin="ticket"] .dash-line { stroke: var(--t-chart-1) !important; }
+:root[data-skin="ticket"] .dash-point { fill: var(--bg-surface); stroke: var(--t-chart-1) !important; }
+:root[data-skin="ticket"] .dash-trend stop { stop-color: var(--t-chart-2); }
+:root[data-skin="ticket"] .dash-tooltip { color: var(--text-primary); background: var(--bg-subtle); border-color: var(--border); box-shadow: var(--t-shadow); }
+:root[data-skin="ticket"] .dash-skeleton { background: var(--bg-surface); }
+:root[data-skin="ticket"] .dash-error { color: var(--badge-red-fg); background: var(--badge-red-bg); border-color: transparent; }
+:root[data-skin="ticket"] .dash-total-row td { color: var(--text-primary); background: var(--bg-subtle); border-top-color: var(--border); }
+
+/* ---------- tables: dim header, dashed rows ---------- */
+:root[data-skin="ticket"] table { border-collapse: collapse; border-spacing: 0; }
+:root[data-skin="ticket"] th { height: auto; padding: 10px 12px; color: var(--text-label); border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; white-space: nowrap; }
+:root[data-skin="ticket"] td,
+:root[data-skin="ticket"] tbody td:first-child,
+:root[data-skin="ticket"] tbody td:last-child { height: auto; padding: 13px 12px; color: var(--text-primary); background: transparent; border: 0; border-bottom: 2px dashed var(--t-dash); border-radius: 0; }
+:root[data-skin="ticket"] tbody tr:last-child td { border-bottom: 0; }
+:root[data-skin="ticket"] tbody tr:hover td { background: var(--accent-soft); border-color: var(--t-dash); }
+:root[data-skin="ticket"] td.money,
+:root[data-skin="ticket"] .money { font-weight: 700; }
+:root[data-skin="ticket"] .merchant-open-table thead th { border-bottom-color: var(--border); }
+:root[data-skin="ticket"] .merchant-open-table tbody td { border-bottom: 2px dashed var(--t-dash); }
+
+/* ---------- inputs ---------- */
+:root[data-skin="ticket"] input,
+:root[data-skin="ticket"] textarea,
+:root[data-skin="ticket"] select { min-height: 44px; color: var(--text-primary); background: var(--t-input-bg); border: 1px solid var(--border); border-radius: 10px; }
+:root[data-skin="ticket"] input::placeholder,
+:root[data-skin="ticket"] textarea::placeholder { color: var(--t-placeholder); }
+:root[data-skin="ticket"] input:focus,
+:root[data-skin="ticket"] textarea:focus,
+:root[data-skin="ticket"] select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(44, 95, 255, .22); outline: none; }
+:root[data-skin="ticket"] input[readonly],
+:root[data-skin="ticket"] input:disabled,
+:root[data-skin="ticket"] textarea:disabled,
+:root[data-skin="ticket"] select:disabled { background: transparent; border-style: dashed; }
+:root[data-skin="ticket"] label { color: var(--text-secondary); }
+:root[data-skin="ticket"] .image-picker { border-color: var(--t-dash-strong); background: transparent; }
+
+/* ---------- buttons ---------- */
+:root[data-skin="ticket"] button { border-radius: 10px; }
+:root[data-skin="ticket"] .primary,
+:root[data-skin="ticket"] .approve { color: #fff; background: var(--accent); border: 0; }
+:root[data-skin="ticket"] .primary:hover,
+:root[data-skin="ticket"] .approve:hover { background: var(--accent-hover); }
+:root[data-skin="ticket"] .primary:disabled { opacity: .4; }
+:root[data-skin="ticket"] .ghost { color: var(--text-primary); background: transparent; border: 1px solid var(--border-strong); }
+:root[data-skin="ticket"] .ghost:hover { background: var(--bg-subtle); }
+:root[data-skin="ticket"] .reject,
+:root[data-skin="ticket"] .refund-open-button,
+:root[data-skin="ticket"] .delete-button,
+:root[data-skin="ticket"] .settlement-demo-reset { color: var(--danger); background: transparent; border: 1px solid rgba(255, 107, 107, .35); }
+
+/* ---------- status pills ---------- */
+:root[data-skin="ticket"] .pill,
+:root[data-skin="ticket"] .eyebrow,
+:root[data-skin="ticket"] .badge { color: var(--badge-green-fg); background: var(--badge-green-bg); }
+:root[data-skin="ticket"] .settlement-v2-status,
+:root[data-skin="ticket"] .employee-status-badge,
+:root[data-skin="ticket"] .payment-type-badge,
+:root[data-skin="ticket"] .pay-type-badge,
+:root[data-skin="ticket"] .tax-type-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; }
+:root[data-skin="ticket"] .settlement-v2-status::before,
+:root[data-skin="ticket"] .employee-status-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+:root[data-skin="ticket"] .settlement-v2-status.complete,
+:root[data-skin="ticket"] .settlement-v2-status.confirmed,
+:root[data-skin="ticket"] .settlement-v2-status.issued,
+:root[data-skin="ticket"] .settlement-v2-status.paid,
+:root[data-skin="ticket"] .settlement-v2-status.nts_accepted,
+:root[data-skin="ticket"] .settlement-v2-status.issuing,
+:root[data-skin="ticket"] .settlement-v2-status.nts_sending,
+:root[data-skin="ticket"] .settlement-v2-status.matching,
+:root[data-skin="ticket"] .employee-status-badge.status-active { color: var(--badge-green-fg); background: var(--badge-green-bg); }
+:root[data-skin="ticket"] .settlement-v2-status.requested,
+:root[data-skin="ticket"] .settlement-v2-status.pending,
+:root[data-skin="ticket"] .settlement-v2-status.not_requested,
+:root[data-skin="ticket"] .settlement-v2-status.unpaid,
+:root[data-skin="ticket"] .settlement-v2-status.partially_paid { color: var(--t-warn-fg); background: var(--t-warn-bg); }
+:root[data-skin="ticket"] .settlement-v2-status.failed,
+:root[data-skin="ticket"] .settlement-v2-status.cancelled,
+:root[data-skin="ticket"] .settlement-v2-status.overpaid,
+:root[data-skin="ticket"] .settlement-v2-status.unmatched,
+:root[data-skin="ticket"] .employee-status-badge.status-suspended { color: var(--badge-red-fg); background: var(--badge-red-bg); }
+:root[data-skin="ticket"] .payment-type-badge.voucher { color: var(--t-warn-fg) !important; background: var(--t-warn-bg); }
+
+/* ---------- alerts + modals ---------- */
+:root[data-skin="ticket"] .alert.success { color: var(--badge-green-fg); background: var(--badge-green-bg); border-color: transparent; }
+:root[data-skin="ticket"] .alert.error { color: var(--badge-red-fg); background: var(--badge-red-bg); border-color: transparent; }
+:root[data-skin="ticket"] .alert.warning { color: var(--t-warn-fg); background: var(--t-warn-bg); border-color: transparent; }
+:root[data-skin="ticket"] .modal-backdrop,
+:root[data-skin="ticket"] .vendor-modal-backdrop,
+:root[data-skin="ticket"] .banner-modal-backdrop,
+:root[data-skin="ticket"] .prepurchase-modal-backdrop { background: var(--t-overlay); }
+:root[data-skin="ticket"] .invite-modal,
+:root[data-skin="ticket"] .notification-confirm-modal,
+:root[data-skin="ticket"] .notification-history-modal,
+:root[data-skin="ticket"] .employee-bulk-modal,
+:root[data-skin="ticket"] .vendor-modal,
+:root[data-skin="ticket"] .image-crop-modal,
+:root[data-skin="ticket"] .refund-modal,
+:root[data-skin="ticket"] .account-settings-modal,
+:root[data-skin="ticket"] .banner-editor-modal,
+:root[data-skin="ticket"] .banner-stats-modal,
+:root[data-skin="ticket"] .prepurchase-charge-modal,
+:root[data-skin="ticket"] .tx-modal { color: var(--text-primary); background: var(--bg-surface); border-color: var(--border); box-shadow: var(--t-shadow); }
+:root[data-skin="ticket"] .vendor-modal-header,
+:root[data-skin="ticket"] .vendor-filterbar,
+:root[data-skin="ticket"] .vendor-modal-footer,
+:root[data-skin="ticket"] .bulk-header,
+:root[data-skin="ticket"] .bulk-footer,
+:root[data-skin="ticket"] .refund-modal-header,
+:root[data-skin="ticket"] .refund-modal-footer,
+:root[data-skin="ticket"] .banner-modal-header { background: var(--bg-surface); border-color: var(--border); }
+
+/* ---------- login ---------- */
+:root[data-skin="ticket"] .login-card { padding: 34px; border: 1px solid var(--border); }
+:root[data-skin="ticket"] .login-tagline { color: var(--t-accent-text); }
+:root[data-skin="ticket"] .legal-links,
+:root[data-skin="ticket"] .legal-links a { color: var(--text-secondary); }
+:root[data-skin="ticket"] .loading { color: var(--text-primary); background: var(--bg-page); }
+:root[data-skin="ticket"] .spinner { border-color: var(--border); border-top-color: var(--accent); }
+
+/* ---------- Calm Dark extras (only rendered when the theme has extras) ---------- */
+:root[data-skin="ticket"] .theme-extra-grid { grid-template-columns: minmax(0, 1fr); }
+:root[data-skin="ticket"] .recent-payments-widget { min-height: 0; }
+:root[data-skin="ticket"] .recent-payments-list { display: grid; margin: 0; padding: 0; list-style: none; }
+:root[data-skin="ticket"] .recent-payments-list li { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 2px dashed var(--t-dash); font-size: 13.5px; }
+:root[data-skin="ticket"] .recent-payments-list li:last-child { border-bottom: 0; }
+:root[data-skin="ticket"] .recent-payments-list time { color: var(--text-label); font-size: 12.5px; font-weight: 700; }
+:root[data-skin="ticket"] .recent-payments-who { display: grid; min-width: 0; }
+:root[data-skin="ticket"] .recent-payments-who small { color: var(--text-label); font-size: 12px; }
+:root[data-skin="ticket"] .recent-payments-type { padding: 4px 9px; border-radius: 999px; color: var(--badge-green-fg); background: var(--badge-green-bg); font-size: 11.5px; }
+
+:root[data-skin="ticket"] .rating-distribution { display: grid; gap: 8px; max-width: 420px; margin: 0 0 18px; }
+:root[data-skin="ticket"] .rating-distribution-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) 32px; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 13px; }
+:root[data-skin="ticket"] .rating-distribution-row i { display: block; height: 6px; border-radius: 3px; background: var(--bg-subtle); }
+:root[data-skin="ticket"] .rating-distribution-row b { display: block; height: 100%; border-radius: 3px; background: var(--t-warn); }
+:root[data-skin="ticket"] .rating-distribution-row strong { text-align: right; font-variant-numeric: tabular-nums; }
+
+:root[data-skin="ticket"] .daily-menu-editor { display: grid; grid-template-columns: minmax(0, 1fr) 260px; align-items: start; gap: 24px; }
+:root[data-skin="ticket"] .daily-menu-phone { display: grid; justify-items: center; gap: 10px; }
+:root[data-skin="ticket"] .daily-menu-phone-screen { display: grid; gap: 10px; width: 240px; min-height: 420px; align-content: start; padding: 34px 16px 18px; border: 10px solid #000; border-radius: 36px; background: var(--bg-page); }
+:root[data-skin="ticket"] .daily-menu-phone-screen small { color: var(--t-accent-text); font-size: 10.5px; font-weight: 800; letter-spacing: .14em; }
+:root[data-skin="ticket"] .daily-menu-phone-screen strong { font-size: 16px; }
+:root[data-skin="ticket"] .daily-menu-phone-screen img,
+:root[data-skin="ticket"] .daily-menu-phone-image { width: 100%; height: 120px; border-radius: 12px; object-fit: cover; }
+:root[data-skin="ticket"] .daily-menu-phone-image { display: grid; place-items: center; color: var(--text-label); background: var(--bg-surface); font-size: 12px; }
+:root[data-skin="ticket"] .daily-menu-phone-screen p { margin: 0; padding: 12px; border-radius: 12px; color: var(--t-paper-ink); background: var(--t-paper); font-size: 13px; line-height: 1.6; white-space: pre-line; }
+:root[data-skin="ticket"] .daily-menu-phone-screen span { color: var(--text-label); font-size: 11.5px; }
+:root[data-skin="ticket"] .daily-menu-phone-caption { margin: 0; color: var(--text-label); font-size: 12px; }
+
+/* Narrow screens: the sidebar becomes a row/bottom bar; keep it compact. */
+:root[data-skin="ticket"] .merchant-tabs .merchant-nav-group-title:only-child { display: none; }
+@media (max-width: 1024px) {
+  :root[data-skin="ticket"] .merchant-nav-group-title,
+  :root[data-skin="ticket"] .sidebar-account { display: none; }
+  :root[data-skin="ticket"] .merchant-tabs > button.active,
+  :root[data-skin="ticket"] .company-tabs > button.active { -webkit-mask: none; mask: none; }
+  :root[data-skin="ticket"] .daily-menu-editor { grid-template-columns: minmax(0, 1fr); }
+  :root[data-skin="ticket"] .daily-menu-phone { display: none; }
+  :root[data-skin="ticket"] .topbar,
+  :root[data-skin="ticket"] .merchant-topbar,
+  :root[data-skin="ticket"] .company-topbar,
+  :root[data-skin="ticket"] .merchant-tabs,
+  :root[data-skin="ticket"] .company-tabs { background: var(--bg-page); }
+}
+
+/* ---------- leftovers found by the light-element scan ---------- */
+:root[data-skin="ticket"] .settlement-v2-months button,
+:root[data-skin="ticket"] .settlement-v2-tabs button { color: var(--text-secondary); background: var(--bg-surface); }
+:root[data-skin="ticket"] .settlement-v2-months button.active,
+:root[data-skin="ticket"] .settlement-v2-tabs button.active { color: var(--t-paper-ink); background: var(--t-paper); }
+:root[data-skin="ticket"] .settlement-v2-months button:disabled { color: var(--t-group); background: var(--bg-surface); }
+:root[data-skin="ticket"] .event-toggle { color: var(--t-warn-fg) !important; background: var(--t-warn-bg); }
+:root[data-skin="ticket"] .status-switch { color: var(--text-secondary); background: transparent; border-color: var(--border-strong); }
+:root[data-skin="ticket"] .status-switch > span { background: var(--border-strong); box-shadow: none; }
+:root[data-skin="ticket"] .status-switch > span::after { background: var(--text-secondary); }
+:root[data-skin="ticket"] .status-switch.on { color: var(--t-accent-text); background: var(--accent-soft); border-color: var(--accent); }
+:root[data-skin="ticket"] .status-switch.on > span { background: var(--accent); }
+:root[data-skin="ticket"] .status-switch.on > span::after { background: #fff; }
+:root[data-skin="ticket"] .coupon-type-cards button { color: var(--text-primary); background: transparent; border: 1.5px solid var(--border); }
+:root[data-skin="ticket"] .coupon-type-cards button.active { background: var(--accent-soft); border-color: var(--accent); box-shadow: none; }
+:root[data-skin="ticket"] .coupon-icon { color: var(--t-paper-ink); background: var(--t-paper); }
+:root[data-skin="ticket"] .notification-form fieldset legend,
+:root[data-skin="ticket"] .banner-radio legend,
+:root[data-skin="ticket"] .settlement-v2-confirmations legend { color: var(--text-primary); }
+:root[data-skin="ticket"] .delete-button { color: var(--danger) !important; border-color: rgba(255, 107, 107, .35) !important; }
+:root[data-skin="ticket"] .review-visibility-checkbox { color: var(--text-secondary); background: var(--bg-subtle); }
+:root[data-skin="ticket"] .banner-placement-tabs button { color: var(--text-secondary); background: transparent; border-color: var(--border); }
+:root[data-skin="ticket"] .banner-placement-tabs button.active { color: var(--t-paper-ink); background: var(--t-paper); border-color: var(--t-paper); }
+:root[data-skin="ticket"] .account-settings-button { color: var(--t-accent-text); background: var(--bg-subtle); border-color: var(--border); }
+:root[data-skin="ticket"] .account-settings-button svg { color: var(--t-accent-text) !important; }

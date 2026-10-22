@@ -98,6 +98,21 @@ class ProfileNameUpdateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class AdminPreferencesUpdateRequest(BaseModel):
+    admin_theme: str = Field(min_length=1, max_length=40)
+
+    @field_validator("admin_theme")
+    @classmethod
+    def known_theme(cls, value: str) -> str:
+        from app.admin_themes import ADMIN_THEMES
+
+        if value not in ADMIN_THEMES:
+            raise ValueError("지원하지 않는 테마예요")
+        return value
+
+    model_config = {"extra": "forbid"}
+
+
 class CompanyBusinessProfileUpdateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     biz_reg_no: str = Field(min_length=1, max_length=40)

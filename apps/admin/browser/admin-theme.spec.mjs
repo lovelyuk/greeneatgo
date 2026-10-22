@@ -79,9 +79,9 @@ test('/shop and /counter ignore the admin theme even when this browser last used
   }
 });
 
-test('Calm Dark leaves no light leftover surfaces on admin screens', async ({ page, context }) => {
+for (const darkTheme of ['calm-dark', 'forest-stubs']) test(`${darkTheme} leaves no light leftover surfaces on admin screens`, async ({ page, context }) => {
   test.setTimeout(60000);
-  await adminLogin(page, context, { role: 'merchant_admin', theme: 'calm-dark' });
+  await adminLogin(page, context, { role: 'merchant_admin', theme: darkTheme });
   const nav = page.getByRole('navigation', { name: '식당 관리자 메뉴' });
   const screens = [['대시보드'], ['실시간 매출'], ['업체 정보'], ['매출 정산'], ['증빙 내역'], ['식당 관리', '판매 상품'], ['식당 관리', '쿠폰 관리'],
     ['식당 관리', '알림'], ['식당 관리', '리뷰'], ['식당 관리', '배너 광고 설정'], ['공급자 정보']];
@@ -89,7 +89,7 @@ test('Calm Dark leaves no light leftover surfaces on admin screens', async ({ pa
     await nav.getByRole('button', { name: section, exact: true }).click();
     if (tab) await page.getByRole('button', { name: tab, exact: true }).click();
     const light = await page.evaluate(() => [...document.querySelectorAll('.merchant-content *, .merchant-tabs *')].filter((el) => {
-      if (['INPUT', 'IMG', 'svg'].includes(el.tagName)) return false;
+      if (['INPUT', 'IMG', 'svg'].includes(el.tagName) || el.closest('.day-stub')) return false; // day stubs are paper tickets
       const r = el.getBoundingClientRect(); if (r.width < 8 || r.height < 8) return false;
       const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]+)\)/); if (!m) return false;
       const [R, G, B, A = 1] = m[1].split(',').map(Number);
@@ -98,4 +98,59 @@ test('Calm Dark leaves no light leftover surfaces on admin screens', async ({ pa
     }).map((el) => `${el.tagName}.${el.className}`));
     expect(light, `${section}${tab ? `/${tab}` : ''}`).toEqual([]);
   }
+});
+
+test('Forest Day Stubs: 06 layout with a tabbed card — 식권 달력 first, 기간별 매출 second', async ({ page, context }) => {
+  await adminLogin(page, context, { role: 'merchant_admin', theme: 'forest-stubs' });
+  await expect(page.locator('html')).toHaveAttribute('data-dashboard', 'forest');
+  const tabs = page.getByRole('tablist', { name: '기간 보기' });
+  await expect(tabs.getByRole('tab')).toHaveText(['식권 달력', '기간별 매출']);
+  await expect(tabs.getByRole('tab', { name: '식권 달력' })).toHaveAttribute('aria-selected', 'true');
+  const calendar = page.getByRole('grid', { name: '식권 달력' });
+  await expect(calendar).toBeVisible();
+  await expect(calendar.locator('.day-stub.today')).toHaveCount(1);
+  await expect(calendar.locator('.day-stub.best')).toHaveCount(1);
+  await expect(calendar.locator('.day-stub.sold').first()).toContainText('건');
+  expect(await bg(calendar.locator('.day-stub.sold').first())).toBe('rgb(244, 241, 233)');
+  await expect(page.getByText('방금 들어온 결제')).toHaveCount(0); // Calm Dark-only extra
+  await expect(page.getByLabel('로그인 계정')).toHaveCount(0);
+  await tabs.getByRole('tab', { name: '기간별 매출' }).click();
+  await expect(calendar).toHaveCount(0);
+  await expect(page.getByRole('img', { name: '기간별 매출' })).toBeVisible();
+  await expect(page.getByText('단위: 원 · 일별')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '거래처별 매출 합계' })).toBeVisible();
+});
+
+test('Forest: deep forest sidebar, cream page, tabs 기간별 매출 | 기간별 수량', async ({ page, context }) => {
+  await adminLogin(page, context, { role: 'merchant_admin', theme: 'forest' });
+  expect(await bg(page.locator('body'))).toBe('rgb(244, 242, 236)');
+  expect(await bg(page.getByRole('navigation', { name: '식당 관리자 메뉴' }))).toBe('rgb(24, 48, 31)');
+  const tabs = page.getByRole('tablist', { name: '기간 보기' });
+  await expect(tabs.getByRole('tab')).toHaveText(['기간별 매출', '기간별 수량']);
+  await tabs.getByRole('tab', { name: '기간별 수량' }).click();
+  await expect(page.getByRole('img', { name: '기간별 수량' })).toBeVisible();
+  await expect(page.getByRole('grid', { name: '식권 달력' })).toHaveCount(0);
+});
+
+test('Compact Table: number strip + one company table with count, amount and share', async ({ page, context }) => {
+  await adminLogin(page, context, { role: 'merchant_admin', theme: 'compact' });
+  await expect(page.locator('html')).toHaveAttribute('data-dashboard', 'compact');
+  const chips = page.getByLabel('요약 숫자');
+  for (const label of ['총 매출', '총 수량', '중식', '석식', '하루 평균']) await expect(chips.getByText(label, { exact: true })).toBeVisible();
+  await expect(chips).toContainText('₩');
+  await expect(page.getByRole('img', { name: '기간별 매출 그래프' })).toBeVisible();
+  const table = page.locator('.compact-company-table');
+  await expect(table.locator('thead th')).toHaveText(['순위', '거래처', '수량', '매출', '매출 비중']);
+  await expect(table.locator('tbody tr').first()).toContainText('합성테크');
+  await expect(table.locator('tbody tr').first()).toContainText('225건');
+  await expect(table.locator('tbody tr').first()).toContainText('51.8%');
+  await expect(page.getByRole('tablist', { name: '기간 보기' })).toHaveCount(0);
+});
+
+for (const theme of ['forest-stubs', 'forest', 'compact']) test(`company admin dashboard renders in the ${theme} layout`, async ({ page, context }) => {
+  await adminLogin(page, context, { role: 'company_admin', theme });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+  await expect(page.getByText('총 이용액', { exact: true }).first()).toBeVisible();
+  if (theme === 'forest-stubs') await expect(page.getByRole('grid', { name: '식권 달력' })).toBeVisible();
+  if (theme === 'compact') await expect(page.locator('.compact-company-table thead th').nth(1)).toHaveText('구분');
 });

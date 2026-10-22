@@ -22,7 +22,8 @@ class AdminThemeRegistryTests(unittest.TestCase):
     def test_default_is_current_design_and_calm_dark_is_listed(self):
         self.assertEqual(DEFAULT_ADMIN_THEME, "default")
         self.assertEqual(ADMIN_THEMES[0], "default")
-        self.assertIn("calm-dark", ADMIN_THEMES)
+        for theme in ("calm-dark", "forest-stubs", "forest", "compact"):
+            self.assertIn(theme, ADMIN_THEMES)
 
     def test_unknown_or_missing_theme_falls_back_to_default(self):
         for value in (None, "", "neon", 3, "CALM-DARK"):

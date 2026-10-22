@@ -1,0 +1,44 @@
+/* Theme: Compact Table (12) — white, dense, tool-like; blue accent.
+   Colour tokens only; component shapes are the "compact" skin in skins.css.
+   Scoped to :root[data-theme="compact"]. */
+
+:root[data-theme="compact"] {
+  --bg-page: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F3F3F5;
+  --border: #ECECEF;
+  --border-strong: #E3E3E8;
+  --text-primary: #16181D;
+  --text-secondary: #5B5F6A;
+  --text-label: #8B8F99;
+  --text-muted: #8B8F99;
+  --accent: #2C5FFF;
+  --accent-hover: #2450D9;
+  --accent-soft: #EEF2FF;
+  --danger: #D92D20;
+  --badge-gray-bg: #F3F3F5;
+  --badge-gray-fg: #5B5F6A;
+  --badge-blue-bg: #EEF2FF;
+  --badge-blue-fg: #2450D9;
+  --badge-green-bg: #EEF2FF;
+  --badge-green-fg: #2450D9;
+  --badge-red-bg: #FDECEC;
+  --badge-red-fg: #C13333;
+  --ink: var(--text-primary);
+  --soft: var(--text-secondary);
+  --muted: var(--text-secondary);
+  --forest: var(--accent);
+  --deep: var(--accent-hover);
+  --leaf: var(--accent);
+  --cream: var(--bg-page);
+  --paper: var(--bg-surface);
+  --line: var(--border);
+
+  /* compact-skin tokens (skins.css) */
+  --c-side: #FAFAFA;
+  --c-side-active: #ECECF0;
+  --c-head: #FAFAFA;
+  --c-row-line: #F2F2F4;
+  --c-warn-bg: #FFF4E0;
+  --c-warn-fg: #9A5B00;
+}

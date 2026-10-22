@@ -74,7 +74,7 @@ test('all-zero dashboard data renders empty tables and charts instead of believa
 });
 
 test('charts share fixed y-axis, scrollable plot, unit label, and tooltips', () => {
-  assert.match(main, /function TrendChart\(\{ title, series, unit, valueKey, money = false, color \}\)/);
+  assert.match(main, /function TrendChart\(\{ title, series, unit, valueKey, money = false, color, embedded = false, height = DASH_CHART_HEIGHT \}\)/);
   assert.match(main, /useId\(\)/);
   assert.match(main, /const MIN_POINT_GAP = 40/);
   assert.match(main, /ResizeObserver/);

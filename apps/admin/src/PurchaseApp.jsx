@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { publishedLegalAvailable } from "./purchaseSafety.js";
+import { BUSINESS_INFO, BUSINESS_INFO_ROWS } from "./businessInfo.js";
 import "./purchase.css";
 
 import PurchaseDashboard from "./PurchaseDashboard.jsx";
@@ -115,6 +116,15 @@ export default function PurchaseApp({ supabase, apiBaseUrl }) {
           개인정보 처리방침
         </a>
         <a href="/">관리자 화면</a>
+        <address className="business-info" aria-label="사업자 정보">
+          {BUSINESS_INFO_ROWS.map(([label, value]) => (
+            <span key={label}>
+              {label} {label === "이메일" ? <a href={`mailto:${value}`}>{value}</a>
+                : label === "고객센터" ? <a href={`tel:${BUSINESS_INFO.phone.replace(/-/g, "")}`}>{value}</a>
+                : value}
+            </span>
+          ))}
+        </address>
       </footer>
     </main>
   );

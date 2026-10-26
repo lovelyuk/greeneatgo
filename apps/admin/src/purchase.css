@@ -29,6 +29,10 @@
 .purchase-app .pre-line{white-space:pre-line}
 .purchase-app footer{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;font-size:11px;padding:26px 0 0;color:var(--fg2)}
 .purchase-app.signed-in footer{margin-top:20px}
+.purchase-app footer a{color:inherit}
+.purchase-app footer .business-info{flex-basis:100%;display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;margin:4px 0 0;padding:14px 4px 0;border-top:1px solid var(--line);font-style:normal;font-size:11px;line-height:1.6;color:var(--fg2);text-align:center;word-break:keep-all}
+.purchase-app footer .business-info span{white-space:normal}
+.purchase-app footer .business-info a{text-decoration:none}
 .purchase-app.signed-out{background:#0e1c2b;--bg:#0e1c2b;padding:26px;display:flex;flex-direction:column;justify-content:center}
 .purchase-app .purchase-login{width:100%;margin:30px auto 0;max-width:400px}
 .purchase-app .purchase-login img{display:block;width:94px;aspect-ratio:430/383;object-fit:contain;margin-bottom:28px}

@@ -1,0 +1,57 @@
+{
+  "name": "greeneatgo-admin-desktop",
+  "productName": "그린잇 관리자",
+  "version": "1.0.0",
+  "description": "그린잇 관리자 웹(greeneatgo.vercel.app)을 여는 Windows 데스크톱 앱",
+  "author": "그린잇",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/navigation.test.js",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "kr.greeneat.go.admin",
+    "productName": "그린잇 관리자",
+    "artifactName": "GreeneatGo-Admin-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "그린잇 관리자",
+      "uninstallDisplayName": "그린잇 관리자",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerLanguages": [
+        "ko_KR"
+      ],
+      "language": "1042"
+    }
+  }
+}

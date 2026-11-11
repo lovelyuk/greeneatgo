@@ -137,6 +137,20 @@ def test_production_bank_cash_receipt_requires_provider_authorization():
     )
 
 
+def test_bank_without_cash_receipt_is_not_reported_as_issued():
+    # 통합결제창 V1.7 §3.1: CASHRECAUTHNO is "0" for a bank transfer with no cash receipt.
+    for value in ("0", 0, "00", " 0 ", ""):
+        result = present_payment_completion(
+            _order(payment_method="BANK", provider_response={"CASHRECAUTHNO": value}),
+            base_url=PROD,
+            cpid="CPID",
+        )
+        assert result["payment"]["cash_receipt_authorization_number"] is None
+        assert result["payment"]["cash_receipt_status"] is None
+        assert result["receipts"]["cash_receipt_url"] is None
+        assert "PayInfoPrintBank.jsp" in result["receipts"]["sales_slip_url"]
+
+
 def test_development_maps_agenttest_but_never_emits_cash_receipt():
     result = present_payment_completion(
         _order(payment_method="BANK", provider_response={"CASHRECAUTHNO": "cash-auth-1"}),

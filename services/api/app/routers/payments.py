@@ -37,6 +37,7 @@ KIWOOM_NOTIFICATION_STORED_FIELDS = frozenset({
     "ORDERNO",
     "AMOUNT",
     "SETTDATE",
+    "SETTLEDATE",  # KakaoPay sends its settle date under this name
     "CANCELDATE",
     "PAYMENTTYPE",
     "RESULTCODE",

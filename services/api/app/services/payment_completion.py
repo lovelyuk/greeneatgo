@@ -18,6 +18,12 @@ def _text(value: Any) -> str | None:
     return result or None
 
 
+def _cash_receipt_authorization(value: Any) -> str | None:
+    """Kiwoom sends CASHRECAUTHNO=0 for a bank transfer with no cash receipt issued."""
+    text = _text(value)
+    return None if text is None or not text.strip("0") else text
+
+
 def _masked_card_number(value: Any) -> str | None:
     # Provider CARDNO formatting varies. Discard everything except digits and
     # reveal only the final four; malformed short values are not presented.
@@ -146,7 +152,7 @@ def payment_receipt_links(order: dict[str, Any], *, base_url: str, cpid: str) ->
     provider = payload if isinstance(payload, dict) else {}
     receipt_method = payment_receipt_method(order)
     transaction_id = _text(order.get("provider_payment_key"))
-    cash_authorization = _text(provider.get("CASHRECAUTHNO"))
+    cash_authorization = _cash_receipt_authorization(provider.get("CASHRECAUTHNO"))
     slip_page = _EASY_PAY_SLIP_PAGES.get((_text(order.get("payment_method")) or "").upper())
     return _receipt_urls(base_url, cpid, transaction_id, receipt_method, cash_authorization, slip_page)
 
@@ -162,7 +168,7 @@ def present_payment_completion(order: dict[str, Any], *, base_url: str, cpid: st
     method = _text(order.get("payment_method"))
     method = method.upper() if method else None
     transaction_id = _text(order.get("provider_payment_key"))
-    cash_authorization = _text(provider.get("CASHRECAUTHNO"))
+    cash_authorization = _cash_receipt_authorization(provider.get("CASHRECAUTHNO"))
     receipt_method = payment_receipt_method(order)
     links = payment_receipt_links(order, base_url=base_url, cpid=cpid)
     issued_count = _issued_count(order)

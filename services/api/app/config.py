@@ -5,12 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Kiwoom "통지기능 안내 매뉴얼" V1.0 §2.1: result notifications come from
+# 123.140.121.205 (개발 서버) and 27.102.213.200~209 (운영 서버).
 DEFAULT_KIWOOMPAY_NOTIFICATION_IPS = (
     "123.140.121.205",
-    "27.102.213.200",
-    "27.102.213.201",
-    "27.102.213.202",
-    "27.102.213.203",
+    *(f"27.102.213.{host}" for host in range(200, 210)),
 )
 ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "production"})
 

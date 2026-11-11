@@ -113,3 +113,12 @@ def test_real_app_boot_rejects_missing_or_default_production_otp_pepper():
         assert result.returncode != 0
         assert "OTP_PEPPER must be explicitly set to a non-default value in production" in result.stderr
         assert "test-api-secret" not in result.stderr
+
+
+def test_default_notification_ips_cover_kiwoom_documented_servers():
+    # 통지기능 안내 매뉴얼 V1.0 §2.1: 개발 123.140.121.205, 운영 27.102.213.200~209
+    assert DEFAULT_KIWOOMPAY_NOTIFICATION_IPS == (
+        "123.140.121.205", *(f"27.102.213.{host}" for host in range(200, 210)),
+    )
+    assert "27.102.213.210" not in DEFAULT_KIWOOMPAY_NOTIFICATION_IPS
+    assert "27.102.213.199" not in DEFAULT_KIWOOMPAY_NOTIFICATION_IPS

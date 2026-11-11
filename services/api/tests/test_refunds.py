@@ -706,8 +706,8 @@ def test_payment_history_receipt_returns_card_slip_for_naverpay_card(repo_class,
 
     result = payment_history_receipt("payment", "order", "sales_slip", Response(), "token")
 
-    assert result["data"]["title"] == "카드 매출전표"
-    assert "PayInfoPrintDirectCard.jsp" in result["data"]["url"]
+    assert result["data"]["title"] == "네이버페이 매출전표"
+    assert "PayInfoPrintNaverPay.jsp" in result["data"]["url"]
 
 
 @patch("app.routers.merchant_admin.JoinRepository")

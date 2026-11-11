@@ -20,7 +20,7 @@ from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
 from app.services.kiwoom_payment import KiwoomCancellationOutcomeUnknown, KiwoomPaymentError, cancel_payment
-from app.services.payment_completion import payment_receipt_links, payment_receipt_method
+from app.services.payment_completion import payment_receipt_links, payment_receipt_title
 from app.services.vouchers import decorate_bonus_voucher_transactions
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
@@ -1530,13 +1530,7 @@ def payment_history_receipt(
         url = links.get(key)
         if not url:
             raise _error(409, "RECEIPT_NOT_AVAILABLE", "발행 완료된 영수증이 없어요")
-        receipt_method = payment_receipt_method(orders[0])
-        if receipt_type == "cash_receipt":
-            title = "현금영수증"
-        elif receipt_method == "CARD":
-            title = "카드 매출전표"
-        else:
-            title = "계좌이체 전표"
+        title = "현금영수증" if receipt_type == "cash_receipt" else payment_receipt_title(orders[0])
         if source == "original_payment":
             title = f"원결제 {title}"
         response.headers["Cache-Control"] = "private, no-store"

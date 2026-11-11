@@ -543,3 +543,22 @@
 /* calm-dark / forest-stubs (ticket) leftovers from the hue scan */
 :root[data-skin="ticket"] .daily-menu-schedule { border-top: 2px dashed var(--t-dash); }
 :root[data-skin="ticket"] .merchant-qr-image { border-color: var(--border); }
+
+/* ---------- receipt modal (실시간 매출 → 영수증) ---------- */
+:root[data-skin="ticket"] .receipt-modal { color: var(--text-primary); background: var(--bg-surface); box-shadow: var(--t-shadow); }
+:root[data-skin="ticket"] .receipt-modal-header,
+:root[data-skin="ticket"] .receipt-modal-footer,
+:root[data-skin="ticket"] .receipt-type-tabs,
+:root[data-skin="ticket"] .receipt-modal-body { background: var(--bg-surface); border-color: var(--border); }
+:root[data-skin="ticket"] .receipt-type-tabs button { color: var(--text-secondary); background: transparent; }
+:root[data-skin="ticket"] .receipt-type-tabs button.active { color: var(--t-paper-ink); background: var(--t-paper); }
+:root[data-skin="ticket"] .receipt-source-notice { color: var(--t-warn-fg); background: var(--t-warn-bg); }
+:root[data-skin="forest"] .receipt-modal-header,
+:root[data-skin="forest"] .receipt-modal-footer,
+:root[data-skin="forest"] .receipt-type-tabs,
+:root[data-skin="compact"] .receipt-modal-header,
+:root[data-skin="compact"] .receipt-modal-footer,
+:root[data-skin="compact"] .receipt-type-tabs { background: var(--bg-surface); border-color: var(--border); }
+:root[data-skin="forest"] .receipt-modal-body,
+:root[data-skin="compact"] .receipt-modal-body { background: var(--bg-surface); }
+

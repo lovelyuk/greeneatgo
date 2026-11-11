@@ -6,6 +6,8 @@ const RECEIPT_HOSTS = new Set([
 const RECEIPT_PATHS = new Map([
   ['/common/PayInfoPrintDirectCard.jsp', new Set(['DAOUTRX', 'STATUS'])],
   ['/common/PayInfoPrintBank.jsp', new Set(['DAOUTRX', 'STATUS'])],
+  ['/common/PayInfoPrintNaverPay.jsp', new Set(['DAOUTRX', 'STATUS'])],
+  ['/common/PayInfoPrintKakaoPay.jsp', new Set(['DAOUTRX', 'STATUS'])],
   ['/common/CashRecInfoPrint.jsp', new Set(['DAOUTRX'])],
 ]);
 

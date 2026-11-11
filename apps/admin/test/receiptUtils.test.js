@@ -11,6 +11,12 @@ test('receipt URL validator allows only exact official receipt destinations', ()
   assert.equal(validateReceiptUrl(card), card);
   assert.equal(validateReceiptUrl(bank), bank);
   assert.equal(validateReceiptUrl(cash), cash);
+  // Kiwoom "전표 호출 안내": easy-pay methods have their own slip pages.
+  for (const page of ['PayInfoPrintNaverPay.jsp', 'PayInfoPrintKakaoPay.jsp']) {
+    const url = `https://agent.kiwoompay.co.kr/common/${page}?DAOUTRX=trx-4&STATUS=A`;
+    assert.equal(validateReceiptUrl(url), url);
+    assert.equal(validateReceiptUrl(`${url}&next=evil`), '');
+  }
 });
 
 test('receipt URL validator rejects hostile or malformed destinations', () => {

@@ -102,6 +102,34 @@ class KiwoomPaymentServiceTests(unittest.TestCase):
         self.assertEqual(result["RESULTCODE"], "0000")
 
     @patch("app.services.kiwoom_payment.urlopen")
+    def test_cancel_ready_refusal_stops_before_the_cancel_request(self, mocked_urlopen):
+        # What Kiwoom really answers (HTTP 200) for a wrong 결제연동키: an error URL and the
+        # reason as TOKEN. Sending that TOKEN as a header used to crash with UnicodeEncodeError
+        # and left the refund stuck in provider_in_flight.
+        for ready in (
+            {"RETURNURL": "https://api.kiwoompay.co.kr/pay/error", "TOKEN": "결제연동키 또는 CPID 불일치"},
+            {"RETURNURL": "https://api.kiwoompay.co.kr/pay/error", "TOKEN": "ascii-reason"},
+            {"RETURNURL": "https://api.kiwoompay.co.kr/pay/cancel", "TOKEN": "한글 토큰"},
+            {"RETURNURL": "https://api.kiwoompay.co.kr/pay/cancel", "TOKEN": "line\nbreak"},
+        ):
+            mocked_urlopen.reset_mock()
+            mocked_urlopen.side_effect = [_Response(ready)]
+            with self.assertRaises(KiwoomPaymentError) as ctx:
+                cancel_payment("https://api.kiwoompay.co.kr", "auth", "CPID", "trx", 100, pay_method="NAVERPAY")
+            self.assertEqual(ctx.exception.code, "KIWOOMPAY_CANCEL_READY_REJECTED")
+            self.assertNotIsInstance(ctx.exception, KiwoomCancellationOutcomeUnknown)
+            self.assertEqual(mocked_urlopen.call_count, 1)  # the cancel request was never made
+        self.assertIn("결제연동키 또는 CPID 불일치", KiwoomPaymentError(502, "x", "키움페이가 취소 요청을 거절했어요: 결제연동키 또는 CPID 불일치").message)
+
+    @patch("app.services.kiwoom_payment.urlopen")
+    def test_cancel_refuses_a_key_that_cannot_be_sent_as_a_header(self, mocked_urlopen):
+        for key in ("한글키", "key\nwith-newline", "smart\u2019quote"):
+            with self.assertRaises(KiwoomPaymentError) as ctx:
+                cancel_payment("https://api.kiwoompay.co.kr", key, "CPID", "trx", 100)
+            self.assertEqual(ctx.exception.code, "KIWOOMPAY_AUTH_INVALID_FORMAT")
+        mocked_urlopen.assert_not_called()
+
+    @patch("app.services.kiwoom_payment.urlopen")
     def test_cancel_rejects_untrusted_return_url(self, mocked_urlopen):
         mocked_urlopen.return_value = _Response({"RETURNURL": "https://evil.example/cancel", "TOKEN": "token-1"})
         with self.assertRaises(KiwoomPaymentError) as ctx:

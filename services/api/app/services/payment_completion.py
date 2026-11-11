@@ -64,6 +64,7 @@ def _receipt_urls(
     transaction_id: str | None,
     payment_method: str | None,
     cash_receipt_authorization_number: str | None,
+    slip_page: str | None = None,
 ) -> dict[str, str | None]:
     result: dict[str, str | None] = {
         "receipt_url": None,
@@ -77,7 +78,9 @@ def _receipt_urls(
     origin, supports_cash_receipt = mapped
     transaction_query = urlencode({"DAOUTRX": transaction_id})
     approval_query = urlencode({"DAOUTRX": transaction_id, "STATUS": "A"})
-    if payment_method == "CARD":
+    if slip_page:
+        result["receipt_url"] = f"{origin}/{slip_page}?{approval_query}"
+    elif payment_method == "CARD":
         result["receipt_url"] = f"{origin}/PayInfoPrintDirectCard.jsp?{approval_query}"
     elif payment_method == "BANK":
         result["receipt_url"] = f"{origin}/PayInfoPrintBank.jsp?{approval_query}"
@@ -119,6 +122,24 @@ def payment_receipt_method(order: dict[str, Any]) -> str | None:
     return payment_type if payment_type in {"CARD", "BANK"} else None
 
 
+# Kiwoom "전표 호출 안내": easy-pay methods have their own slip page. Card and bank
+# keep the pages chosen in _receipt_urls.
+_EASY_PAY_SLIP_PAGES = {
+    "NAVERPAY": "PayInfoPrintNaverPay.jsp",
+    "KAKAOPAY": "PayInfoPrintKakaoPay.jsp",
+}
+
+
+def payment_receipt_title(order: dict[str, Any]) -> str:
+    """Name of the sales-slip document for this order's payment method."""
+    method = (_text(order.get("payment_method")) or "").upper()
+    if method == "NAVERPAY":
+        return "네이버페이 매출전표"
+    if method == "KAKAOPAY":
+        return "카카오페이 매출전표"
+    return "카드 매출전표" if payment_receipt_method(order) == "CARD" else "계좌이체 전표"
+
+
 def payment_receipt_links(order: dict[str, Any], *, base_url: str, cpid: str) -> dict[str, str | None]:
     """Build official receipt URLs from authoritative payment-order columns."""
     payload = order.get("provider_response")
@@ -126,7 +147,8 @@ def payment_receipt_links(order: dict[str, Any], *, base_url: str, cpid: str) ->
     receipt_method = payment_receipt_method(order)
     transaction_id = _text(order.get("provider_payment_key"))
     cash_authorization = _text(provider.get("CASHRECAUTHNO"))
-    return _receipt_urls(base_url, cpid, transaction_id, receipt_method, cash_authorization)
+    slip_page = _EASY_PAY_SLIP_PAGES.get((_text(order.get("payment_method")) or "").upper())
+    return _receipt_urls(base_url, cpid, transaction_id, receipt_method, cash_authorization, slip_page)
 
 
 def present_payment_completion(order: dict[str, Any], *, base_url: str, cpid: str) -> dict[str, Any]:
@@ -145,7 +167,7 @@ def present_payment_completion(order: dict[str, Any], *, base_url: str, cpid: st
     links = payment_receipt_links(order, base_url=base_url, cpid=cpid)
     issued_count = _issued_count(order)
     cash_receipt_status = "ISSUED" if links["cash_receipt_url"] else None
-    method_label = {"CARD": "카드", "BANK": "계좌이체", "NAVERPAY": "네이버페이"}.get(method, method) if method else None
+    method_label = {"CARD": "카드", "BANK": "계좌이체", "NAVERPAY": "네이버페이", "KAKAOPAY": "카카오페이"}.get(method, method) if method else None
 
     return {
         "order_id": _text(order.get("order_id")),

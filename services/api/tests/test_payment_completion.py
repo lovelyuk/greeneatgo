@@ -79,8 +79,29 @@ def test_naverpay_card_payment_uses_provider_card_receipt_type():
     assert payment["method_label"] == "네이버페이"
     assert payment["issuer_name"] == "신한카드 - 체크"
     assert payment["masked_card_number"] == "****-****-****-8900"
-    assert "PayInfoPrintDirectCard.jsp" in receipts["sales_slip_url"]
+    assert "PayInfoPrintNaverPay.jsp" in receipts["sales_slip_url"]
     assert receipts["cash_receipt_url"] is None
+
+
+def test_easy_pay_methods_use_their_own_official_slip_pages():
+    # Kiwoom "전표 호출 안내": NaverPay / KakaoPay have dedicated slip pages, whatever funded them.
+    naver_points = present_payment_completion(
+        _order(payment_method="NAVERPAY", provider_response={}), base_url=PROD, cpid="CPID"
+    )
+    kakao = present_payment_completion(
+        _order(payment_method="kakaopay", provider_response={}), base_url=PROD, cpid="CPID"
+    )
+    card = present_payment_completion(_order(payment_method="CARD"), base_url=PROD, cpid="CPID")
+
+    assert naver_points["receipts"]["sales_slip_url"].startswith(
+        "https://agent.kiwoompay.co.kr/common/PayInfoPrintNaverPay.jsp?DAOUTRX="
+    )
+    assert kakao["receipts"]["sales_slip_url"].startswith(
+        "https://agent.kiwoompay.co.kr/common/PayInfoPrintKakaoPay.jsp?DAOUTRX="
+    )
+    assert kakao["payment"]["method_label"] == "카카오페이"
+    assert kakao["receipts"]["cash_receipt_url"] is None
+    assert "PayInfoPrintDirectCard.jsp" in card["receipts"]["sales_slip_url"]
 
 
 def test_bank_completion_uses_official_bank_receipt():

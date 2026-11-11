@@ -140,7 +140,12 @@ function ReceiptModal({ modal, onClose, onSelectType }) {
       <div id="receipt-panel" className="receipt-modal-body" role={types.length > 1 ? 'tabpanel' : undefined} aria-labelledby={types.length > 1 ? `receipt-tab-${modal.type}` : undefined}>
         {modal.status === 'loading' && <p className="receipt-loading" role="status">영수증을 불러오는 중...</p>}
         {modal.status === 'error' && <div className="alert error" role="alert">{modal.error}</div>}
-        {modal.status === 'ready' && safeUrl && <iframe className="receipt-frame" src={safeUrl} title={modal.title || '영수증'} referrerPolicy="no-referrer" sandbox="allow-scripts allow-forms allow-modals allow-same-origin"/>}
+        {/* Kiwoom's receipt pages send X-Frame-Options: SAMEORIGIN, so they cannot be
+            embedded here (an iframe renders blank). Open the official page in a new window. */}
+        {modal.status === 'ready' && safeUrl && <div className="receipt-open">
+          <p>영수증은 키움페이 공식 페이지에서 열려요. 결제 정보 보호를 위해 결제일자·금액·승인번호 확인을 요청할 수 있어요.</p>
+          <a className="primary receipt-open-link" href={safeUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{modal.title || '영수증'} 새 창으로 열기</a>
+        </div>}
       </div>
       <footer className="receipt-modal-footer">
         <button type="button" className="ghost" onClick={onClose}>닫기</button>

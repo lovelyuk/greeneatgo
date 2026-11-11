@@ -1,6 +1,6 @@
 // Admin UI themes (관리자 화면 테마). SYNTHETIC fixtures only; every nonlocal request is blocked.
 import { test, expect } from '@playwright/test';
-import { adminLogin } from './admin-fixture.mjs';
+import { adminFixtureData, adminLogin } from './admin-fixture.mjs';
 
 test.use({ viewport: { width: 1440, height: 900 }, timezoneId: 'Asia/Seoul' });
 
@@ -143,7 +143,10 @@ test('Compact Table: number strip + one company table with count, amount and sha
   await expect(table.locator('thead th')).toHaveText(['순위', '거래처', '수량', '매출', '매출 비중']);
   await expect(table.locator('tbody tr').first()).toContainText('합성테크');
   await expect(table.locator('tbody tr').first()).toContainText('225건');
-  await expect(table.locator('tbody tr').first()).toContainText('51.8%');
+  // The fixture's period total depends on today's weekday, so derive the expected share from it.
+  const summary = adminFixtureData('merchant_admin')['/admin/dashboard/summary'];
+  const share = Math.round((summary.top_companies_by_amount[0].amount * 1000) / summary.total_amount) / 10;
+  await expect(table.locator('tbody tr').first()).toContainText(`${share.toLocaleString('ko-KR')}%`);
   await expect(page.getByRole('tablist', { name: '기간 보기' })).toHaveCount(0);
 });
 

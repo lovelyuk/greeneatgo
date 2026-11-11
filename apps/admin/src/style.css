@@ -2147,3 +2147,10 @@ code { font-size: 12px; }
 .top-actions .theme-picker { margin: 0; grid-auto-flow: column; align-items: center; gap: 8px; }
 @media (max-width: 1024px) { .merchant-tabs .theme-picker, .company-tabs .theme-picker { margin: 0; min-width: 120px; } }
 @media (max-width: 700px) { .merchant-tabs .theme-picker > span, .company-tabs .theme-picker > span { display: none; } }
+.receipt-open { display: grid; gap: 16px; justify-items: center; padding: 28px 20px; text-align: center; }
+.receipt-open p { margin: 0; color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+.receipt-open a.receipt-open-link { display: inline-flex; align-items: center; justify-content: center; padding: 10px 18px; border-radius: 8px; color: #fff !important; background: var(--accent); font-size: 14px; font-weight: 500; text-decoration: none; }
+.receipt-open-link:hover { background: var(--accent-hover); }
+/* The receipt now opens in a new window, so the modal body only needs to fit its content. */
+.receipt-modal-body { flex: 0 1 auto; }
+.receipt-loading { min-width: 0; min-height: 140px; }

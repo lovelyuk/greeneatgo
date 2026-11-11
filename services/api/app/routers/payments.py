@@ -339,6 +339,15 @@ def _decode_form(raw: bytes) -> dict[str, str]:
     return {}
 
 
+def _notification_query(request: Request) -> dict[str, str]:
+    raw = request.scope.get("query_string") or b""
+    if not raw:
+        return {}
+    # Never lose an approval over a display name: if the bytes fit no known
+    # encoding, keep Starlette's lenient decoding (ASCII fields stay intact).
+    return _decode_form(raw) or dict(request.query_params)
+
+
 TRUSTED_LOCAL_PEERS = frozenset({"127.0.0.1", "::1", "testclient"})
 
 
@@ -419,7 +428,10 @@ async def _notification(request: Request) -> Response:
     if source_ip not in TRUSTED_LOCAL_PEERS and source_ip not in settings.kiwoompay_notification_ips:
         _log_notification_outcome("kiwoom_notification_rejected", "source_ip_not_allowed")
         return _ack(False, 403)
-    values = dict(request.query_params)
+    # Kiwoom sends result fields as an EUC-KR GET query. Starlette's
+    # query_params would decode Korean names (CARDNAME, BANKNAME) as UTF-8 and
+    # store replacement characters, so decode the raw query bytes ourselves.
+    values = _notification_query(request)
     if request.method == "POST":
         values.update(_decode_form(await request.body()))
     try:

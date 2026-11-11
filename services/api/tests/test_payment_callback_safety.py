@@ -202,3 +202,26 @@ def test_notification_reason_logs_are_structured_and_privacy_safe(
         "private-runtime-error",
     ):
         assert sensitive_value not in logged
+
+
+def test_notification_get_query_decodes_euc_kr_korean_names():
+    # 통지기능 안내 매뉴얼 §2.3/2.5: Kiwoom sends a GET query in EUC-KR.
+    from urllib.parse import urlencode
+
+    from app.routers.payments import _notification_query
+
+    raw = urlencode(
+        {"CPID": "CGN00000", "PAYMETHOD": "NAVERPAY", "AMOUNT": "100", "CARDNAME": "네이버카드", "BANKNAME": "신한"},
+        encoding="euc-kr",
+    ).encode("ascii")
+    values = _notification_query(Request({"type": "http", "headers": [], "query_string": raw}))
+    assert values["CARDNAME"] == "네이버카드"
+    assert values["BANKNAME"] == "신한"
+    assert values["CPID"] == "CGN00000" and values["AMOUNT"] == "100"
+    assert _notification_query(Request({"type": "http", "headers": [], "query_string": b""})) == {}
+    # An already-UTF-8 query (manual test call) still reads correctly.
+    utf8 = urlencode({"CARDNAME": "네이버카드"}).encode("ascii")
+    assert _notification_query(Request({"type": "http", "headers": [], "query_string": utf8}))["CARDNAME"] == "네이버카드"
+    # Bytes valid in no supported encoding must not drop the ASCII approval fields.
+    broken = _notification_query(Request({"type": "http", "headers": [], "query_string": b"CPID=CGN00000&AMOUNT=100&CARDNAME=%FF%FF"}))
+    assert broken["CPID"] == "CGN00000" and broken["AMOUNT"] == "100"

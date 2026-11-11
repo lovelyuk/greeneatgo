@@ -2154,3 +2154,23 @@ code { font-size: 12px; }
 /* The receipt now opens in a new window, so the modal body only needs to fit its content. */
 .receipt-modal-body { flex: 0 1 auto; }
 .receipt-loading { min-width: 0; min-height: 140px; }
+/* Receipt modal: our own payment record + the values Kiwoom's slip page asks for. */
+.receipt-modal-body { overflow-y: auto; }
+.receipt-sheet { display: grid; gap: 10px; padding: 16px 22px 12px; border-bottom: 1px dashed var(--border); }
+.receipt-sheet-amount { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.receipt-sheet-amount span { color: var(--text-secondary); font-size: 13px; }
+.receipt-sheet-amount strong { color: var(--text-primary); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.receipt-sheet-rows { display: grid; gap: 5px; margin: 0; }
+.receipt-sheet-rows div { display: flex; justify-content: space-between; gap: 16px; font-size: 14px; }
+.receipt-sheet-rows dt { flex: 0 0 auto; color: var(--text-secondary); }
+.receipt-sheet-rows dd { margin: 0; min-width: 0; color: var(--text-primary); text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.receipt-sheet-seller, .receipt-sheet-note { margin: 0; color: var(--text-muted, var(--text-secondary)); font-size: 12px; line-height: 1.5; }
+.receipt-open { justify-items: stretch; gap: 10px; padding: 12px 22px 16px; text-align: left; }
+.receipt-open p { font-size: 13px; }
+.receipt-lookup { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.receipt-lookup li { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 3px 6px 3px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+.receipt-lookup span { color: var(--text-secondary); }
+.receipt-lookup code { min-width: 0; color: var(--text-primary); font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; background: none; }
+.receipt-lookup .receipt-copy { min-height: 28px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); background: var(--bg-surface); font-size: 12px; font-weight: 500; box-shadow: none; }
+.receipt-lookup .receipt-copy:hover { border-color: var(--accent); }
+.receipt-open a.receipt-open-link { justify-self: center; }

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarDays, CheckCircle2, ChevronDown, ReceiptText, RotateCcw, Search, X } from 'lucide-react';
-import { receiptApiPath, receiptTypeLabel, validateReceiptUrl } from './receiptUtils.js';
+import { receiptAmountLabel, receiptApiPath, receiptLookupRows, receiptRows, receiptTypeLabel, validateReceiptUrl } from './receiptUtils.js';
+import { BUSINESS_INFO } from './businessInfo.js';
 import { paymentHistoryPeriod } from './paymentHistoryPeriod.js';
 import { paymentMethodLabel, refundButtonState } from './paymentHistoryDisplay.js';
 
@@ -15,6 +16,40 @@ const dateTime = (value) => {
   }).formatToParts(new Date(value)).map((part) => [part.type, part.value]));
   return `${parts.year}.${parts.month}.${parts.day} ${parts.hour}:${parts.minute}`;
 };
+function ReceiptSheet({ receipt, type }) {
+  const rows = receiptRows(receipt);
+  if (type !== 'sales_slip' || !rows.length) return null;
+  return <section className="receipt-sheet" aria-label="결제 내역">
+    <div className="receipt-sheet-amount"><span>결제금액</span><strong>{receiptAmountLabel(receipt) || '-'}</strong></div>
+    <dl className="receipt-sheet-rows">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+    <p className="receipt-sheet-seller">{BUSINESS_INFO.name} · 대표 {BUSINESS_INFO.representative} · 사업자등록번호 {BUSINESS_INFO.bizRegNo} · 고객센터 {BUSINESS_INFO.phone}<br/>그린잇 결제 기록이에요. 증빙용 공식 전표는 아래 키움페이 전표를 이용해 주세요.</p>
+  </section>;
+}
+
+function ReceiptOfficial({ url, title, receipt, type }) {
+  const lookup = type === 'sales_slip' ? receiptLookupRows(receipt) : [];
+  const [copied, setCopied] = useState('');
+  const copy = async (label, value) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+    } catch {
+      setCopied('');
+    }
+  };
+  return <section className="receipt-open" aria-label="키움페이 공식 전표">
+    {lookup.length > 0 && <>
+      <p>키움페이 전표는 아래 세 가지를 입력해야 열려요.</p>
+      <ul className="receipt-lookup">{lookup.map(({ label, value }) => <li key={label}>
+        <span>{label}</span><code>{value}</code>
+        <button type="button" className="receipt-copy" onClick={() => copy(label, value)} aria-label={`${label} 복사`}>{copied === label ? '복사됨' : '복사'}</button>
+      </li>)}</ul>
+    </>}
+    {lookup.length === 0 && <p>공식 전표는 키움페이 페이지에서 열려요. 결제 정보 확인을 요청할 수 있어요.</p>}
+    <a className="primary receipt-open-link" href={url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{title || '영수증'} 새 창으로 열기</a>
+  </section>;
+}
+
 const periodModes = [['year', '올해'], ['month', '월별'], ['date', '날짜'], ['range', '기간']];
 
 function Rows({ items, kind, onOpenReceipt, onRefund }) {
@@ -140,12 +175,11 @@ function ReceiptModal({ modal, onClose, onSelectType }) {
       <div id="receipt-panel" className="receipt-modal-body" role={types.length > 1 ? 'tabpanel' : undefined} aria-labelledby={types.length > 1 ? `receipt-tab-${modal.type}` : undefined}>
         {modal.status === 'loading' && <p className="receipt-loading" role="status">영수증을 불러오는 중...</p>}
         {modal.status === 'error' && <div className="alert error" role="alert">{modal.error}</div>}
-        {/* Kiwoom's receipt pages send X-Frame-Options: SAMEORIGIN, so they cannot be
-            embedded here (an iframe renders blank). Open the official page in a new window. */}
-        {modal.status === 'ready' && safeUrl && <div className="receipt-open">
-          <p>영수증은 키움페이 공식 페이지에서 열려요. 결제 정보 보호를 위해 결제일자·금액·승인번호 확인을 요청할 수 있어요.</p>
-          <a className="primary receipt-open-link" href={safeUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{modal.title || '영수증'} 새 창으로 열기</a>
-        </div>}
+        {/* Kiwoom's slip pages cannot be embedded (X-Frame-Options: SAMEORIGIN) and, since
+            2026-11-06, ask the viewer to confirm the payment first. So the modal shows our own
+            record right away and offers the official page in a new window with the values to enter. */}
+        {modal.status === 'ready' && <ReceiptSheet receipt={modal.receipt} type={modal.type}/>}
+        {modal.status === 'ready' && safeUrl && <ReceiptOfficial url={safeUrl} title={modal.title} receipt={modal.receipt} type={modal.type}/>}
       </div>
       <footer className="receipt-modal-footer">
         <button type="button" className="ghost" onClick={onClose}>닫기</button>
@@ -181,7 +215,7 @@ export function PaymentHistoryDashboard({ request }) {
       if (requestId !== receiptRequestId.current) return;
       const url = validateReceiptUrl(data?.url);
       if (!url) throw new Error('허용되지 않은 영수증 주소입니다.');
-      setReceiptModal({ descriptor, type, status: 'ready', title: data?.title ?? '', url, error: '' });
+      setReceiptModal({ descriptor, type, status: 'ready', title: data?.title ?? '', url, receipt: data?.receipt ?? null, error: '' });
     } catch (receiptError) {
       if (requestId !== receiptRequestId.current) return;
       setReceiptModal({ descriptor, type, status: 'error', title: receiptTypeLabel(type, descriptor.source), url: '', error: receiptError.message });

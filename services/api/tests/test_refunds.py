@@ -710,6 +710,51 @@ def test_payment_history_receipt_returns_card_slip_for_naverpay_card(repo_class,
     assert "PayInfoPrintNaverPay.jsp" in result["data"]["url"]
 
 
+@patch("app.routers.merchant_admin.get_settings")
+@patch("app.routers.merchant_admin.JoinRepository")
+def test_payment_history_receipt_returns_own_record_and_provider_lookup_values(repo_class, settings):
+    settings.return_value = SimpleNamespace(
+        kiwoompay_base_url="https://api.kiwoompay.co.kr", kiwoompay_cpid="CPID"
+    )
+    repo = repo_class.return_value
+    repo.auth_user_from_token.return_value = SimpleNamespace(id="admin-123", email="a@example.com")
+    repo.get_profile.return_value = SimpleNamespace(
+        id="admin-123", role="merchant_admin", status="active", merchant_id="merchant-1"
+    )
+    repo.client.rest_get.return_value = [{
+        "id": "order", "order_id": "GE-ORDER-1", "payment_method": "NAVERPAY", "provider_payment_key": "naver-trx",
+        "status": "done", "product_name": "합성 식권", "merchant_name": "합성식당", "amount": 100,
+        # 2026-11-11 23:30 UTC is already 11-12 in Korea; Kiwoom's own date wins when present.
+        "approved_at": "2026-11-11T23:30:00+00:00",
+        "provider_response": {
+            "PAYMENTTYPE": "CARD", "AUTHNO": "12345678", "CARDNO": "1234560000001234",
+            "CARDNAME": "\ufffd\ufffd\ufffd\u0339\ufffd", "SETTDATE": "20261111164139", "CPID": "CPID",
+        },
+    }]
+
+    data = payment_history_receipt("payment", "order", "sales_slip", Response(), "token")["data"]
+    receipt = data["receipt"]
+
+    assert receipt["product_name"] == "합성 식권" and receipt["amount"] == 100
+    assert receipt["method_label"] == "네이버페이"
+    assert receipt["authorization_number"] == "12345678" and receipt["order_number"] == "GE-ORDER-1"
+    assert receipt["issuer_name"] is None  # garbled legacy name is hidden, not shown
+    assert "123456" not in str(receipt["masked_card_number"]) or "*" in receipt["masked_card_number"]
+    assert receipt["lookup"] == {"date": "2026-11-11", "amount": 100, "number": "12345678", "number_type": "approval"}
+    assert "provider_response" not in receipt and "naver-trx" not in str(receipt)
+    assert "select" in repo.client.rest_get.call_args.args[1]
+
+    # No approval number (bank transfer): Kiwoom also accepts the order number; date falls back to KST approval time.
+    repo.client.rest_get.return_value = [{
+        "id": "order", "order_id": "GE-ORDER-2", "payment_method": "BANK", "provider_payment_key": "bank-trx",
+        "status": "done", "product_name": "합성 식권", "amount": 80000,
+        "approved_at": "2026-11-11T23:30:00+00:00", "provider_response": {"BANKNAME": "테스트은행"},
+    }]
+    bank = payment_history_receipt("payment", "order", "sales_slip", Response(), "token")["data"]["receipt"]
+    assert bank["bank_name"] == "테스트은행" and bank["issuer_name"] is None
+    assert bank["lookup"] == {"date": "2026-11-12", "amount": 80000, "number": "GE-ORDER-2", "number_type": "order"}
+
+
 @patch("app.routers.merchant_admin.JoinRepository")
 def test_payment_history_receipt_hides_other_merchant_entries(repo_class):
     repo = repo_class.return_value

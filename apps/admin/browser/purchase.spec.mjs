@@ -343,6 +343,11 @@ for (const reopen of [false]) test(`recovery done exact completion via ${reopen 
   await expect(page.getByText("복구한 식권", { exact: false })).toBeVisible();
   await expect(page.getByText("발급 식권 11장")).toBeVisible();
   await expect(page.getByRole("link", { name: "매출전표" })).toHaveAttribute("href", recoveryCompletion.receipts.sales_slip_url);
+  // Kiwoom's slip page asks for date / amount / number first; no approval number here, so the order number is offered.
+  await expect(page.locator(".done-lookup")).toContainText("결제일자 2026-01-01");
+  await expect(page.locator(".done-lookup")).toContainText("결제금액 72000");
+  await expect(page.locator(".done-lookup")).toContainText(`주문번호 ${recoveryCompletion.order_id}`);
+  if (process.env.SHOP_DONE_SHOT) await page.getByRole("dialog").last().screenshot({ path: process.env.SHOP_DONE_SHOT });
   expect(await page.evaluate(key => sessionStorage.getItem(key), recoveryStorageKey)).toBe(null);
   await expect.poll(() => context.pages().length).toBe(1);
 });

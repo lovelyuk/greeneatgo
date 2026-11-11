@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { verifiedOrderClosure, validLocalAbandonment } from './paymentClosure.js';
 import { safeCheckoutUrl } from "./purchaseSafety.js";
 import { checkoutPresentation, loadSdk, validateSdkData, openSdkFrame } from './kiwoomSdk.js';
-import { validateReceiptUrl } from "./receiptUtils.js";
+import { completionLookupRows, validateReceiptUrl } from "./receiptUtils.js";
 import { formatKst } from "./purchaseExtras.js";
 
 // A failed storage write must not discard an order already returned by the server.
@@ -682,6 +682,12 @@ export default function PurchaseCheckout({
             ) : null,
           )}
         </div>
+        {/* Kiwoom's slip page asks for these before it shows the slip (since 2026-11-06). */}
+        {validateReceiptUrl(completion.receipts?.sales_slip_url) && completionLookupRows(completion).length > 0 && (
+          <p className="done-lookup">매출전표는 키움페이 화면에 아래 값을 입력하면 열려요.<br/>
+            {completionLookupRows(completion).map(({ label, value }) => <span key={label}>{label} <b>{value}</b></span>)}
+          </p>
+        )}
         {(error || completion.storage_blocked) && <p role="alert">{error || "저장된 주문을 지우지 못했어요. 완료 결과는 유지했어요. 중복 구매하지 말고 관리자에게 확인해 주세요."}</p>}
         {completionClosable && <button className="done-ok" autoFocus onClick={closeCompletion}>확인</button>}
       </section>

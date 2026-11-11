@@ -252,3 +252,6 @@
 .purchase-app .done-receipt .done-row+.done-row{border-top:1px solid #e3ddce}
 .purchase-app .done-receipt .done-row span{color:#6b6f78}
 .purchase-app .done-receipt .done-row b{color:#131a2a}
+.done-lookup{margin:2px 0 6px;color:var(--fg2);font-size:12px;line-height:1.7;text-align:center}
+.done-lookup span{display:inline-block;margin:0 6px;white-space:nowrap}
+.done-lookup b{color:#e8ecf5;font-weight:700;font-variant-numeric:tabular-nums;user-select:all}

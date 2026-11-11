@@ -20,7 +20,7 @@ from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
 from app.services.kiwoom_payment import KiwoomCancellationOutcomeUnknown, KiwoomPaymentError, cancel_payment
-from app.services.payment_completion import payment_receipt_links, payment_receipt_title
+from app.services.payment_completion import payment_receipt_details, payment_receipt_links, payment_receipt_title
 from app.services.vouchers import decorate_bonus_voucher_transactions
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
@@ -1485,6 +1485,12 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
         raise _error(502, "SUPABASE_ERROR", "결제 분석을 불러오지 못했어요") from exc
 
 
+_RECEIPT_ORDER_SELECT = (
+    "id,order_id,payment_method,provider_payment_key,provider_response,status,"
+    "product_name,merchant_name,amount,approved_at"
+)
+
+
 @router.get("/payment-history/receipts/{entry_kind}/{entry_id}/{receipt_type}")
 def payment_history_receipt(
     entry_kind: str,
@@ -1501,7 +1507,7 @@ def payment_history_receipt(
         source = "payment"
         if entry_kind == "payment":
             orders = repo.client.rest_get("payment_orders", {
-                "select": "id,payment_method,provider_payment_key,provider_response,status",
+                "select": _RECEIPT_ORDER_SELECT,
                 "id": f"eq.{entry_id}", "merchant_id": f"eq.{merchant_id}",
                 "status": "in.(done,refunded)", "limit": "1",
             })
@@ -1515,7 +1521,7 @@ def payment_history_receipt(
                 raise _error(404, "RECEIPT_NOT_FOUND", "영수증을 찾을 수 없어요")
             refund = refunds[0]
             orders = repo.client.rest_get("payment_orders", {
-                "select": "id,payment_method,provider_payment_key,provider_response,status",
+                "select": _RECEIPT_ORDER_SELECT,
                 "id": f"eq.{refund.get('order_id')}", "merchant_id": f"eq.{merchant_id}",
                 "status": "in.(done,refunded)", "limit": "1",
             })
@@ -1534,7 +1540,12 @@ def payment_history_receipt(
         if source == "original_payment":
             title = f"원결제 {title}"
         response.headers["Cache-Control"] = "private, no-store"
-        return {"ok": True, "data": {"title": title, "url": url, "source": source}, "error": None}
+        # `receipt` is our own record (shown in the modal right away); `url` stays the
+        # provider's official page, which now asks the viewer to confirm the payment first.
+        return {"ok": True, "data": {
+            "title": title, "url": url, "source": source,
+            "receipt": payment_receipt_details(orders[0]),
+        }, "error": None}
     except HTTPException:
         raise
     except JoinFlowError as exc:

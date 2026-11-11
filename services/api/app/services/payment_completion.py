@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
@@ -144,6 +145,67 @@ def payment_receipt_title(order: dict[str, Any]) -> str:
     if method == "KAKAOPAY":
         return "카카오페이 매출전표"
     return "카드 매출전표" if payment_receipt_method(order) == "CARD" else "계좌이체 전표"
+
+
+def _display_name(value: Any) -> str | None:
+    """Provider names stored before EUC-KR decoding was fixed contain U+FFFD; hide those."""
+    text = _text(value)
+    return None if text is None or "\ufffd" in text else text
+
+
+def _kst_date(order: dict[str, Any], provider: dict[str, Any]) -> str | None:
+    """Payment date (KST, YYYY-MM-DD) as Kiwoom knows it; falls back to our approval time."""
+    for key in ("SETTDATE", "SETTLEDATE"):
+        digits = _text(provider.get(key)) or ""
+        if len(digits) >= 8 and digits[:8].isdigit():
+            return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    approved = _text(order.get("approved_at"))
+    if not approved:
+        return None
+    try:
+        moment = datetime.fromisoformat(approved.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+
+
+def payment_receipt_details(order: dict[str, Any]) -> dict[str, Any]:
+    """Our own record of a paid order, for showing a receipt without the provider page.
+
+    Not the provider's official slip. `lookup` carries the three values Kiwoom's slip
+    page asks for (payment date, amount, approval or order number).
+    """
+    payload = order.get("provider_response")
+    provider = payload if isinstance(payload, dict) else {}
+    method = (_text(order.get("payment_method")) or "").upper() or None
+    receipt_method = payment_receipt_method(order)
+    is_card = receipt_method == "CARD" or method in {"NAVERPAY", "KAKAOPAY"}
+    authorization = _text(provider.get("AUTHNO"))
+    order_number = _text(order.get("order_id"))
+    lookup_number = authorization or order_number
+    amount = order.get("amount")
+    return {
+        "product_name": _text(order.get("product_name")),
+        "merchant_name": _text(order.get("merchant_name")),
+        "amount": amount if isinstance(amount, int) else None,
+        "status": _text(order.get("status")),
+        "method": method,
+        "method_label": {"CARD": "카드", "BANK": "계좌이체", "NAVERPAY": "네이버페이", "KAKAOPAY": "카카오페이"}.get(method or "", method),
+        "issuer_name": _display_name(provider.get("CARDNAME")) if is_card else None,
+        "masked_card_number": _masked_card_number(provider.get("CARDNO")) if is_card else None,
+        "bank_name": _display_name(provider.get("BANKNAME")) if method == "BANK" else None,
+        "authorization_number": authorization,
+        "order_number": order_number,
+        "approved_at": _text(order.get("approved_at")),
+        "lookup": {
+            "date": _kst_date(order, provider),
+            "amount": amount if isinstance(amount, int) else None,
+            "number": lookup_number,
+            "number_type": "approval" if authorization else "order",
+        } if lookup_number else None,
+    }
 
 
 def payment_receipt_links(order: dict[str, Any], *, base_url: str, cpid: str) -> dict[str, str | None]:

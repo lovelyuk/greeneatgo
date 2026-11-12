@@ -114,6 +114,11 @@ def request_payment_hash(base_url: str, payload: KiwoomHashInput, *, strict_resp
     return str(response["KIWOOM_ENC"])
 
 
+def _is_header_safe(value: str) -> bool:
+    """HTTP header values must be printable ASCII; anything else cannot be sent."""
+    return bool(value) and value.isascii() and value.isprintable()
+
+
 def _validate_cancel_url(url: str) -> None:
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
@@ -138,6 +143,9 @@ def cancel_payment(
         raise KiwoomPaymentError(400, "INVALID_TAX_FREE_AMOUNT", "비과세 환불 금액이 올바르지 않아요")
     if not authorization_key:
         raise KiwoomPaymentError(503, "KIWOOMPAY_AUTH_NOT_CONFIGURED", "키움페이 취소 인증키가 설정되지 않았어요")
+    if not _is_header_safe(authorization_key):
+        # Would crash while building the request; nothing has been sent yet.
+        raise KiwoomPaymentError(503, "KIWOOMPAY_AUTH_INVALID_FORMAT", "키움페이 취소 인증키 형식이 올바르지 않아요")
 
     ready = _request_json(
         f"{base_url.rstrip('/')}/pay/ready",
@@ -148,6 +156,12 @@ def cancel_payment(
     return_url, token = str(ready.get("RETURNURL") or ""), str(ready.get("TOKEN") or "")
     if not return_url or not token:
         raise KiwoomPaymentError(502, "KIWOOMPAY_CANCEL_READY_FAILED", "키움페이 취소 준비에 실패했어요")
+    # A rejected key answers HTTP 200 with RETURNURL=.../pay/error and the reason (Korean
+    # text such as "결제연동키 또는 CPID 불일치") in TOKEN. That is a refusal, not a token:
+    # stop here, before the cancel request, so the refund is released and can be retried.
+    if urlparse(return_url).path.rstrip("/").endswith("/pay/error") or not _is_header_safe(token):
+        reason = "".join(ch for ch in token if ch.isprintable())[:80]
+        raise KiwoomPaymentError(502, "KIWOOMPAY_CANCEL_READY_REJECTED", f"키움페이가 취소 요청을 거절했어요: {reason}")
     _validate_cancel_url(return_url)
 
     body = {

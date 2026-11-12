@@ -120,6 +120,14 @@ def customer_coupons(token: str = Depends(bearer_token)):
             "user_id": f"eq.{profile.id}", "merchant_id": f"eq.{merchant['id']}",
             "status": "eq.available", "order": "created_at.desc",
         })
+        used = {
+            str(row.get("coupon_id")) for row in repo.client.rest_get("payment_orders", {
+                "select": "coupon_id", "user_id": f"eq.{profile.id}", "coupon_id": "not.is.null",
+                "user_coupon_id": "is.null",
+                "or": "(status.in.(done,refunded),fulfilled_at.not.is.null,provider_payment_key.not.is.null)",
+            })
+        }
+        rows = [row for row in rows if str(row.get("id")) not in used]  # public coupons: one use per person
         now = datetime.now(timezone.utc)
         issued = [row for row in issued if not row.get("valid_until") or datetime.fromisoformat(str(row["valid_until"]).replace("Z", "+00:00")) > now]
         return {"ok": True, "data": {

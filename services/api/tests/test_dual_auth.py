@@ -234,7 +234,8 @@ class FirebasePhoneJoinTests(unittest.TestCase):
         )
         return client, repository
 
-    def test_hostile_body_phone_cannot_override_trusted_legacy_activation_phone(self):
+    def test_metadata_phone_never_self_activates_bulk_invite(self):
+        # 0072: user_metadata.phone is user-editable, so it cannot claim a staged row.
         auth_user = AuthUser(
             id="8c966c67-1644-4f12-bb78-d7a14572d643",
             email="person@example.com",
@@ -242,26 +243,21 @@ class FirebasePhoneJoinTests(unittest.TestCase):
         )
         client, repository = self._repository(auth_user=auth_user)
 
-        repository.request_join(
+        result = repository.request_join(
             access_token=_token("https://project.supabase.co/auth/v1"),
             invite_code="PILOT",
             display_name="Person",
             phone="01012345678",
         )
 
-        client.rpc.assert_called_once_with(
-            "activate_employee_bulk_invite",
-            {
-                "p_user_id": auth_user.id,
-                "p_company_id": "c1",
-                "p_phone": "01099998888",
-                "p_invite_code": "PILOT",
-            },
-        )
+        self.assertEqual(result["status"], "pending")
+        client.rpc.assert_not_called()
         posted_profile = client.rest_post.call_args_list[0].args[1]
         self.assertEqual(posted_profile["phone"], "01012345678")
+        self.assertEqual(posted_profile["status"], "pending")
 
-    def test_firebase_exact_bulk_profile_match_activates_staged_employee(self):
+    def test_firebase_body_phone_matching_bulk_row_stays_pending(self):
+        # 0072: a submitted name+phone pair is guessable and unproven.
         auth_user = AuthUser(
             id="8c966c67-1644-4f12-bb78-d7a14572d643",
             email="person@example.com",
@@ -273,7 +269,6 @@ class FirebasePhoneJoinTests(unittest.TestCase):
             if table == "employee_bulk_invites"
             else [{"used_count": 0}]
         )
-        client.rpc.return_value = {"status": "active", "bulk_invite_claimed": True}
 
         result = repository.request_join(
             access_token=_token("https://securetoken.google.com/greeneatgo"),
@@ -282,32 +277,11 @@ class FirebasePhoneJoinTests(unittest.TestCase):
             phone="01012345678",
         )
 
-        self.assertEqual(result["status"], "active")
-        bulk_lookup = next(
-            call for call in client.rest_get.call_args_list
-            if call.args[0] == "employee_bulk_invites"
-        )
-        self.assertEqual(
-            bulk_lookup.args[1],
-            {
-                "select": "id",
-                "company_id": "eq.c1",
-                "display_name": "eq.Person",
-                "phone": "eq.01012345678",
-                "status": "eq.invited",
-                "limit": "1",
-            },
-        )
-        client.rpc.assert_called_once_with(
-            "activate_employee_bulk_invite",
-            {
-                "p_user_id": auth_user.id,
-                "p_company_id": "c1",
-                "p_phone": "01012345678",
-                "p_invite_code": "PILOT",
-            },
-        )
-        client.rest_post.assert_not_called()
+        self.assertEqual(result["status"], "pending")
+        client.rpc.assert_not_called()
+        self.assertFalse(any(
+            call.args[0] == "employee_bulk_invites" for call in client.rest_get.call_args_list
+        ))
 
     def test_firebase_unmatched_body_profile_stays_pending(self):
         auth_user = AuthUser(

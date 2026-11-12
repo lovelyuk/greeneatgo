@@ -175,6 +175,8 @@ def purchase_subsidized(payload: LegacyCompatibleVoucherPurchaseRequest | None =
     except SupabaseHttpError as exc:
         if exc.status in (401, 403):
             raise _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요") from exc
+        if (rule := _coupon_rule_error(exc)) is not None:
+            raise rule from exc
         raise _error(502, "SUPABASE_ERROR", "보조금 식권 주문을 만들지 못했어요") from exc
 
 
@@ -207,15 +209,42 @@ def _selected_coupon(repo: JoinRepository, merchant_id: str, coupon_id: str | No
         return snapshot
     if coupon_id is None:
         return None
+    # Only the public catalog is selectable by id. Issue-only coupons are usable
+    # solely through the caller's own user_coupons instance above.
     rows = repo.client.rest_get("merchant_coupons", {
         "select": "id,merchant_id,name,discount_type,discount_value,valid_from,valid_until,is_active",
-        "id": f"eq.{coupon_id}", "merchant_id": f"eq.{merchant_id}", "limit": "1",
+        "id": f"eq.{coupon_id}", "merchant_id": f"eq.{merchant_id}", "is_public": "eq.true", "limit": "1",
     })
     if not rows:
         raise _error(404, "COUPON_NOT_FOUND", "쿠폰을 찾을 수 없어요")
     if not coupon_is_valid(rows[0]):
         raise _error(409, "COUPON_NOT_AVAILABLE", "현재 사용할 수 없는 쿠폰이에요")
+    if user_id is not None and public_coupon_used(repo, user_id, coupon_id):
+        raise _error(409, "COUPON_ALREADY_USED", "이미 사용한 쿠폰이에요")
     return rows[0]
+
+
+def public_coupon_used(repo: JoinRepository, user_id: str, coupon_id: str) -> bool:
+    """One use per person for public coupons (paid order with the coupon).
+
+    Mirrors trg_public_coupon_once (0072), which is authoritative under a lock.
+    """
+    rows = repo.client.rest_get("payment_orders", {
+        "select": "id", "user_id": f"eq.{user_id}", "coupon_id": f"eq.{coupon_id}",
+        "user_coupon_id": "is.null",
+        "or": "(status.in.(done,refunded),fulfilled_at.not.is.null,provider_payment_key.not.is.null)",
+        "limit": "1",
+    })
+    return bool(rows)
+
+
+def _coupon_rule_error(exc: SupabaseHttpError) -> HTTPException | None:
+    body = str(getattr(exc, "body", "") or "")
+    if "COUPON_ALREADY_USED" in body:
+        return _error(409, "COUPON_ALREADY_USED", "이미 사용한 쿠폰이에요")
+    if "COUPON_IN_PROGRESS" in body:
+        return _error(409, "COUPON_IN_PROGRESS", "이 쿠폰으로 진행 중인 결제가 있어요. 잠시 후 다시 시도해 주세요")
+    return None
 
 
 def _reserve_issued_coupon(repo: JoinRepository, order: dict, coupon: dict | None,
@@ -690,4 +719,6 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
     except SupabaseHttpError as exc:
         if exc.status in (401, 403):
             raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        if (rule := _coupon_rule_error(exc)) is not None:
+            raise rule from exc
         raise _error(502, "SUPABASE_ERROR", "식권 결제 주문을 만들지 못했어요") from exc

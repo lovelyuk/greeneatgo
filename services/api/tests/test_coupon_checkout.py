@@ -56,20 +56,23 @@ def test_coupon_date_policy_is_inclusive_and_active():
 
 @patch("app.routers.coupons.get_settings")
 @patch("app.routers.coupons.JoinRepository")
-def test_customer_coupon_catalog_is_pilot_scoped_date_filtered_and_reusable(repo_class, settings):
+def test_customer_coupon_catalog_is_pilot_scoped_date_filtered_and_hides_used(repo_class, settings):
     repo = repo_class.return_value
     settings.return_value.pilot_merchant_id = "merchant-1"
     repo.auth_user_from_token.return_value = SimpleNamespace(id="auth", email="user@example.com")
     repo.get_profile.return_value = SimpleNamespace(id="user-1", role="customer", status="active")
     repo.client.rest_get.side_effect = [
         [{"id": "merchant-1", "name": "pilot"}],
-        [coupon(), coupon(id="expired-1", valid_until="2020-01-01")],
+        [coupon(), coupon(id="expired-1", valid_until="2020-01-01"), coupon(id="used-1")],
         [],
+        [{"coupon_id": "used-1"}],
     ]
 
     data = customer_coupons("token")["data"]
 
     assert [row["id"] for row in data["items"]] == ["coupon-123"]
+    used = repo.client.rest_get.call_args_list[3].args[1]
+    assert used["user_id"] == "eq.user-1" and used["user_coupon_id"] == "is.null"
     assert data["merchant"] == {"id": "merchant-1", "name": "pilot"}
     params = repo.client.rest_get.call_args_list[1].args[1]
     assert params["merchant_id"] == "eq.merchant-1"
@@ -123,7 +126,7 @@ def test_customer_coupon_issued_snapshot_envelope_is_exact(repo_class, settings)
                                   "discount_type": "fixed", "discount_value": 1000},
               "valid_from": "2026-08-01T00:00:00+00:00", "valid_until": "2099-08-08T00:00:00+00:00",
               "status": "available", "created_at": "2026-08-01T00:00:00+00:00"}
-    repo.client.rest_get.side_effect = [[{"id": "merchant-1", "name": "pilot"}], [], [issued]]
+    repo.client.rest_get.side_effect = [[{"id": "merchant-1", "name": "pilot"}], [], [issued], []]
     result = customer_coupons("token")
     assert result == {"ok": True, "data": {"merchant": {"id": "merchant-1", "name": "pilot"},
                                              "items": [], "issued": [issued]}, "error": None}
@@ -144,7 +147,7 @@ def test_purchase_recalculates_coupon_and_persists_snapshots(repo_class, setting
         "kiwoom_pay_method": "TOTAL",
     }
     repo.client.rest_get.side_effect = [
-        [{"id": "merchant-1", "name": "pilot"}], [product], [coupon()],
+        [{"id": "merchant-1", "name": "pilot"}], [product], [coupon()], [],
     ]
     repo.client.rest_post.return_value = [{"id": "db-order", "amount": 8750}]
 
@@ -152,6 +155,8 @@ def test_purchase_recalculates_coupon_and_persists_snapshots(repo_class, setting
         product_id="product-123", coupon_id="coupon-123", requested_point_amount=0,
     ), "token")["data"]
 
+    catalog = repo.client.rest_get.call_args_list[2].args[1]
+    assert catalog["is_public"] == "eq.true"
     values = repo.client.rest_post.call_args.args[1]
     assert data["amount"] == 8750
     assert values["gross_amount"] == 10000
@@ -168,3 +173,25 @@ def test_coupon_migration_contains_selected_point_cap_and_idempotent_fulfillment
     assert "unique(order_id)" in sql
     assert "on conflict(order_id) do nothing" in sql
     assert "complete_kiwoom_payment_notification" not in sql
+
+
+def test_issue_only_coupon_is_not_selectable_by_catalog_id():
+    repo = SimpleNamespace(client=SimpleNamespace(rest_get=lambda table, params: []))
+    with pytest.raises(HTTPException) as exc:
+        _selected_coupon(repo, "merchant-1", "private-coupon", None, "user-1")
+    assert exc.value.detail["code"] == "COUPON_NOT_FOUND"
+
+
+def test_public_coupon_second_use_is_rejected_before_checkout():
+    calls = []
+
+    def rest_get(table, params):
+        calls.append((table, params))
+        return [coupon()] if table == "merchant_coupons" else [{"id": "paid-order"}]
+
+    repo = SimpleNamespace(client=SimpleNamespace(rest_get=rest_get))
+    with pytest.raises(HTTPException) as exc:
+        _selected_coupon(repo, "merchant-1", "coupon-123", None, "user-1")
+    assert exc.value.status_code == 409 and exc.value.detail["code"] == "COUPON_ALREADY_USED"
+    assert calls[0][1]["is_public"] == "eq.true"
+    assert calls[1][1]["user_coupon_id"] == "is.null"

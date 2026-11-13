@@ -40,7 +40,9 @@ def test_production_never_trusts_forwarded_header_from_loopback_peer():
 @pytest.mark.parametrize("origin,ok", [
     ("https://greeneatgo-5b676grp1-yonguks-projects.vercel.app", True),
     ("https://greeneatgo-git-feat-2026-11-12-joa-yonguks-projects.vercel.app", True),
+    ("https://greeneatgo.vercel.app", True),
     ("https://evil.vercel.app", False),
+    ("https://greeneatgox.vercel.app", False),
     ("https://greeneatgo-x-yonguks-projects.vercel.app.evil.com", False),
     ("https://greeneatgo-x-otherteam.vercel.app", False),
 ])

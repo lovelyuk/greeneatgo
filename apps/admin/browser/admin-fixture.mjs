@@ -22,7 +22,7 @@ export function adminFixtureData(role, theme = 'default') {
   const merchant = role === 'merchant_admin';
   const me = {
     user_id: '11111111-1111-4111-8111-111111111111', email: 'admin@example.invalid',
-    display_name: merchant ? '합성 식당관리자' : '합성 회사관리자', role, status: 'active',
+    display_name: role === 'platform_admin' ? '합성 플랫폼관리자' : merchant ? '합성 식당관리자' : '합성 회사관리자', role, status: 'active',
     merchant_id: merchant ? MERCHANT_ID : null, company_id: merchant ? null : COMPANY_ID,
     admin_theme: theme, invite_code: merchant ? null : 'GE-ABC123',
     company: merchant ? null : { id: COMPANY_ID, name: '합성테크', biz_reg_no: '123-45-67890', representative_name: '김대표', status: 'active', contact_email: 'ops@example.invalid' },
@@ -88,6 +88,10 @@ export async function adminLogin(page, context, { role = 'merchant_admin', theme
   await page.getByLabel('이메일', { exact: true }).fill('admin@example.invalid');
   await page.getByLabel('비밀번호', { exact: true }).fill('synthetic-password-only');
   await page.getByRole('button', { name: '운영 시작하기', exact: true }).click();
+  if (role === 'platform_admin') {
+    await expect(page.getByRole('heading', { name: '플랫폼 관리', exact: true })).toBeVisible();
+    return calls;
+  }
   const navName = role === 'merchant_admin' ? '식당 관리자 메뉴' : '업체 관리자 메뉴';
   await expect(page.getByRole('navigation', { name: navName })).toBeVisible();
   return calls;

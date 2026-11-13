@@ -123,6 +123,19 @@ class SupabaseHttpClient:
                     time.sleep(0.25 * (2**attempt))
         raise SupabaseHttpError(0, f"Storage delete transport failure: {last_error}") from last_error
 
+    def auth_admin_create_user(self, *, email: str, password: str, user_metadata: dict[str, Any] | None = None) -> AuthUser:
+        """Create a confirmed auth user with the service role (works with public signup disabled)."""
+        data = self._request("POST", "/auth/v1/admin/users", key=self.settings.supabase_service_role_key, body={
+            "email": email, "password": password, "email_confirm": True, "user_metadata": user_metadata or {},
+        })
+        return AuthUser(id=data["id"], email=data.get("email"), metadata=data.get("user_metadata") or {})
+
+    def auth_admin_delete_user(self, user_id: str) -> None:
+        try:
+            self._request("DELETE", f"/auth/v1/admin/users/{quote(user_id, safe='')}", key=self.settings.supabase_service_role_key)
+        except SupabaseHttpError:
+            pass  # best-effort rollback; an orphan auth user without a profile has no access
+
     def auth_get_user(self, access_token: str) -> AuthUser:
         headers = {
             "apikey": self.settings.supabase_anon_key,

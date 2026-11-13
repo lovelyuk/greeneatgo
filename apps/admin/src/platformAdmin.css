@@ -1,0 +1,14 @@
+/* Platform admin (astryx pilot).
+ * astryx ships every rule inside @layer (reset / astryx-base / astryx-theme), and
+ * the legacy admin stylesheets (style.css, themes/*.css) are unlayered, so their
+ * element rules (button, input, label, h1, th/td, ...) would win over every
+ * astryx component. Inside the pilot screen, roll those legacy declarations back
+ * to the layered astryx values. The doubled id outranks the :root[data-skin] rules. */
+#platform-admin#platform-admin :is(button, input, textarea, select, label, h1, h2, h3, h4, p, a, img, table, thead, tbody, tr, th, td) {
+  all: revert-layer;
+}
+#platform-admin {
+  min-height: 100vh;
+  background: #f6f8f5;
+  color: #14351f;
+}

@@ -15,6 +15,7 @@ import { PaymentHistoryDashboard } from './PaymentFeatures.jsx';
 import SettlementDemoPanel from './SettlementDemoPanel.jsx';
 const PurchaseApp = React.lazy(() => import('./PurchaseApp.jsx'));
 const CounterScanApp = React.lazy(() => import('./CounterScanApp.jsx'));
+const PlatformAdminScreen = React.lazy(() => import('./PlatformAdminScreen.jsx'));
 import { contractFormFromItem, subsidyContractInvalid } from './contractForm.js';
 import { PREPURCHASE_MAX_QUANTITY, PREPURCHASE_MAX_UNIT_PRICE, prepurchaseChargeInvalid, prepurchaseChargePayload, prepurchaseChargeTotal, prepurchaseItems } from './prepurchase.js';
 import { captureGeneration, generationIsCurrent } from './generationGuard.js';
@@ -2919,8 +2920,6 @@ function Dashboard({ session, onLogout }) {
   const [employeeManageForm, setEmployeeManageForm] = useState({ department: '', display_name: '', employee_no: '', phone: '', charge_amount: '', target_balance: '' });
   const [merchantQr, setMerchantQr] = useState(null);
   const [platformMerchants, setPlatformMerchants] = useState(null);
-  const [platformMerchantForm, setPlatformMerchantForm] = useState({ name: '', owner_phone: '', category: '', avg_price: '' });
-  const [platformInvitePhone, setPlatformInvitePhone] = useState({});
   const [inviteModal, setInviteModal] = useState(null);
   const [contractModal, setContractModal] = useState(null);
   const [contractForm, setContractForm] = useState({ settlement_cycle: 'month_end', settlement_day: '25', unit_price: '', subsidy_enabled: false, prepurchase_enabled: false, company_subsidy_amount: '0', restaurant_subsidy_amount: '0', tax_type: 'unclassified' });
@@ -3446,46 +3445,35 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
-  async function createPlatformMerchant(event) {
-    event.preventDefault();
+  async function createPlatformMerchant(payload) {
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      await apiFetch('/admin/platform/merchants', token, {
-        method: 'POST',
-        body: JSON.stringify({
-          name: platformMerchantForm.name.trim(),
-          owner_phone: platformMerchantForm.owner_phone.trim() || null,
-          category: platformMerchantForm.category.trim() || null,
-          avg_price: platformMerchantForm.avg_price ? Number(platformMerchantForm.avg_price) : null,
-        }),
-      });
-      setPlatformMerchantForm({ name: '', owner_phone: '', category: '', avg_price: '' });
-      setMessage('식당을 등록했어요.');
-      await load();
+      await apiFetch('/admin/platform/merchants', token, { method: 'POST', body: JSON.stringify(payload) });
+      await load(); // load() clears the banner, so announce after it
+      setMessage(`${payload.name} 식당을 등록했어요.`);
+      return true;
     } catch (createError) {
       setError(createError.message);
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
-  async function invitePlatformMerchant(merchantId) {
-    const phone = (platformInvitePhone[merchantId] ?? '').trim();
-    if (!phone) return;
+  async function invitePlatformMerchant(merchantId, phone) {
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      const invite = await apiFetch(`/admin/platform/merchants/${merchantId}/invite`, token, {
+      return await apiFetch(`/admin/platform/merchants/${merchantId}/invite`, token, {
         method: 'POST',
         body: JSON.stringify({ phone }),
       });
-      setPlatformInvitePhone((form) => ({ ...form, [merchantId]: '' }));
-      setMessage(`식당관리자 초대를 생성했어요. 초대 토큰: ${invite.token ?? '-'}`);
     } catch (inviteError) {
       setError(inviteError.message);
+      return null;
     } finally {
       setBusy(false);
     }
@@ -3615,6 +3603,13 @@ function Dashboard({ session, onLogout }) {
   ];
   const companyUsageTabs = [['employee-usage', '사원별 사용'], ['monthly-usage', '월별 이용']];
 
+  if (isPlatformAdmin) {
+    return <React.Suspense fallback={<div className="boot-card">불러오는 중…</div>}>
+      <PlatformAdminScreen email={session.user.email} me={me} merchants={platformMerchants} busy={busy} error={error} message={message}
+        onCreate={createPlatformMerchant} onInvite={invitePlatformMerchant} onRefresh={load} onLogout={onLogout} />
+    </React.Suspense>;
+  }
+
   return <ThemeContext.Provider value={themeContext}><main className={`shell${isMerchantAdmin ? ' merchant-shell' : ''}${isCompanyAdmin ? ' company-shell' : ''}`}>
     <ImageCropModal request={cropRequest} onCancel={() => finishImageCrop(null)} onApply={finishImageCrop} />
     <header className={`topbar${isMerchantAdmin ? ' merchant-topbar' : ''}${isCompanyAdmin ? ' company-topbar' : ''}`}>
@@ -3625,11 +3620,6 @@ function Dashboard({ session, onLogout }) {
         </div>
         <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
-      {isPlatformAdmin && <div className="top-actions">
-        <ThemePicker value={themeId} onChange={changeTheme} disabled={themeSaving}/>
-        <button className="ghost" onClick={load} disabled={busy}><RefreshCw size={16}/> 새로고침</button>
-        <button className="ghost" onClick={onLogout}><LogOut size={16}/> 로그아웃</button>
-      </div>}
     </header>
 
     {isMerchantAdmin && <nav className="merchant-tabs" aria-label="식당 관리자 메뉴">
@@ -3786,48 +3776,7 @@ function Dashboard({ session, onLogout }) {
       <div><QrCode size={20}/><span>초대코드</span><strong>{me?.invite_code ?? '-'}</strong><button type="button" className="ghost" onClick={copyCompanyInviteCode} disabled={!me?.invite_code}>복사</button></div>
     </section>}
 
-    {isPlatformAdmin && <section className="grid">
-      {cards.map(([label, value, Icon, tone]) => <article className={`card ${tone}${isMerchantAdmin ? ' merchant-kpi-card' : ''}`} key={label}>
-        <Icon size={28}/><span>{label}</span><strong>{value}</strong>
-      </article>)}
-    </section>}
-
-    {isPlatformAdmin && <section className="panel">
-      <div className="panel-title">
-        <div><h2>플랫폼 식당 온보딩</h2><p className="panel-note">식당을 등록하고 사장님에게 식당관리자 초대를 생성합니다.</p></div>
-        <span className="badge">{platformMerchants?.items?.length ?? 0}곳</span>
-      </div>
-      <form className="product-form" onSubmit={createPlatformMerchant}>
-        <input value={platformMerchantForm.name} onChange={(event) => setPlatformMerchantForm((form) => ({ ...form, name: event.target.value }))} placeholder="식당명" required />
-        <input value={platformMerchantForm.owner_phone} onChange={(event) => setPlatformMerchantForm((form) => ({ ...form, owner_phone: event.target.value }))} placeholder="사장님 연락처" />
-        <input value={platformMerchantForm.category} onChange={(event) => setPlatformMerchantForm((form) => ({ ...form, category: event.target.value }))} placeholder="카테고리" />
-        <input value={platformMerchantForm.avg_price} onChange={(event) => setPlatformMerchantForm((form) => ({ ...form, avg_price: event.target.value }))} placeholder="평균가" type="number" min="1" />
-        <button className="primary" disabled={busy}>식당 등록</button>
-      </form>
-      {(platformMerchants?.items?.length ?? 0) === 0
-        ? <p className="empty-state">등록된 식당이 없어요.</p>
-        : <div className="product-list">{platformMerchants.items.map((merchant) => <article className="product-item" key={merchant.id}>
-          <div><strong>{merchant.name}</strong><span>{merchant.category ?? '기본'} · {merchant.owner_phone ?? '연락처 없음'} · {merchant.status}</span></div>
-          <div className="row-actions">
-            <input value={platformInvitePhone[merchant.id] ?? ''} onChange={(event) => setPlatformInvitePhone((form) => ({ ...form, [merchant.id]: event.target.value }))} placeholder="초대 연락처" />
-            <button className="ghost" onClick={() => invitePlatformMerchant(merchant.id)} disabled={busy || !(platformInvitePhone[merchant.id] ?? '').trim()}>사장님 초대</button>
-          </div>
-        </article>)}</div>}
-    </section>}
-
     {isMerchantAdmin && merchantSection === 'payment-history' && <PaymentHistoryDashboard request={merchantRequest}/>}
-
-    {isPlatformAdmin && <section>
-      <article className="panel profile-panel">
-        <div className="panel-title"><h2>로그인 정보</h2><span className="badge">secure</span></div>
-        <div className="profile-grid">
-          <span>이메일</span><strong>{session.user.email}</strong>
-          <span>{['company_admin', 'merchant_admin'].includes(me?.role) ? '관리자 이름' : '이름'}</span>
-          <strong>{me?.display_name ?? '-'}</strong>
-          {me?.role !== 'company_admin' && <><span>권한</span><strong>{me?.role === 'merchant_admin' ? '관리자' : me?.role ?? '-'}</strong><span>상태</span><strong>{me?.status ?? '-'}</strong></>}
-        </div>
-      </article>
-    </section>}
 
     {showCompanyLegacy && <section className="panel employee-panel merchant-regular-weight merchant-open-table">
       <div className="panel-title">

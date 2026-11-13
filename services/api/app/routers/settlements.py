@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from app.auth import bearer_token
-from app.config import get_settings
+from app.config import get_settings, parse_env_bool
 from app.repositories.settlements import SettlementRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.settlement_schemas import (
@@ -30,7 +30,22 @@ company_router = APIRouter(prefix="/company/settlements", tags=["company-settlem
 company_alias_router = APIRouter(prefix="/admin/settlements", tags=["company-settlements"])
 merchant_router = APIRouter(prefix="/admin/merchant/settlements", tags=["merchant-settlements"])
 demo_router = APIRouter(prefix="/admin/merchant/settlement-demo", tags=["merchant-settlement-demo"])
-generation_router = APIRouter(prefix="/admin/merchant/transaction-generation", tags=["merchant-transaction-generation"])
+def _transaction_generation_enabled() -> None:
+    """Development transaction generator switch (TRANSACTION_GENERATION_ENABLED).
+
+    On by default while the service is pre-launch; set it to ``false`` in the
+    production environment at launch to remove the whole surface.
+    """
+    if not parse_env_bool("TRANSACTION_GENERATION_ENABLED", True):
+        raise HTTPException(status_code=404, detail={
+            "code": "TRANSACTION_GENERATION_DISABLED", "message": "거래 생성 기능이 꺼져 있어요",
+        })
+
+
+generation_router = APIRouter(
+    prefix="/admin/merchant/transaction-generation", tags=["merchant-transaction-generation"],
+    dependencies=[Depends(_transaction_generation_enabled)],
+)
 logger = logging.getLogger(__name__)
 
 
@@ -139,6 +154,7 @@ def _rpc_error(exc: SupabaseHttpError) -> HTTPException:
         ("SETTLEMENT_DEMO_CREATE_RESULT_MISMATCH", 409, "SETTLEMENT_DEMO_CREATE_RESULT_MISMATCH", "데모 정산 결과가 예상 거래와 일치하지 않아요"),
         ("DEMO_PERIOD_TRANSACTION_CONFLICT", 409, "DEMO_PERIOD_TRANSACTION_CONFLICT", "데모 기간에 다른 거래가 포함되어 있어요"),
         ("GENERATED_PERIOD_NOT_EMPTY", 409, "GENERATED_PERIOD_NOT_EMPTY", "선택한 회사와 월에 이미 정산이 있어요"),
+        ("GENERATED_PERIOD_HAS_REAL_TRANSACTIONS", 409, "GENERATED_PERIOD_HAS_REAL_TRANSACTIONS", "실제 거래가 있는 월에는 거래 생성·확정·초기화를 할 수 없어요"),
         ("GENERATED_SETTLEMENT_SET_CONFLICT", 409, "GENERATED_SETTLEMENT_SET_CONFLICT", "정산 구성이 변경되어 처리할 수 없어요"),
         ("GENERATED_STATE_EXTERNAL_REFERENCE", 409, "GENERATED_STATE_EXTERNAL_REFERENCE", "외부 처리 내역이 있어 현재 상태를 초기화할 수 없어요"),
         ("SETTLEMENT_GENERATION_STATE_CONFLICT", 409, "SETTLEMENT_GENERATION_STATE_CONFLICT", "현재 정산 상태에서는 처리할 수 없어요"),

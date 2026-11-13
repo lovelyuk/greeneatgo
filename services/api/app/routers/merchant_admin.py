@@ -15,7 +15,7 @@ from app.auth import bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.schemas import LegacyVoucherClassifyRequest, MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyLinkRequest, MerchantCompanyPrepurchaseChargeRequest, MerchantProductCreateRequest, MerchantProductUpdateRequest, MerchantProfileUpdateRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
+from app.schemas import LegacyVoucherClassifyRequest, MerchantCompanyContractUpdateRequest, MerchantCompanyCreateAndLinkRequest, MerchantCompanyPrepurchaseChargeRequest, MerchantProductCreateRequest, MerchantProductUpdateRequest, MerchantProfileUpdateRequest, MerchantRefundRequest, SettlementCreateRequest, SettlementPaymentConfirmRequest
 from app.services.join_flow import JoinErrorCode, JoinFlowError
 from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
@@ -526,22 +526,6 @@ def update_merchant_profile(payload: MerchantProfileUpdateRequest, token: str = 
         raise _error(502, "SUPABASE_ERROR", "공급자 정보를 저장하는 중 오류가 발생했어요") from exc
 
 
-@router.get("/companies/search")
-def search_companies(q: str = Query(min_length=1, max_length=80), token: str = Depends(bearer_token)):
-    repo = JoinRepository()
-    try:
-        _merchant_admin(repo, token)
-        rows = repo.client.rest_get(
-            "companies",
-            {"select": "id,name,biz_reg_no,status,created_at", "name": f"ilike.*{q}*", "order": "name.asc", "limit": "20"},
-        )
-        return {"ok": True, "data": {"items": rows}, "error": None}
-    except JoinFlowError as exc:
-        raise _error(403, str(exc.code), exc.message) from exc
-    except SupabaseHttpError as exc:
-        raise _error(502, "SUPABASE_ERROR", "회사 검색 중 오류가 발생했어요") from exc
-
-
 @router.get("/products")
 def list_merchant_products(token: str = Depends(bearer_token)):
     repo = JoinRepository()
@@ -705,25 +689,6 @@ def list_companies(token: str = Depends(bearer_token)):
         if "PGRST205" in exc.body or "settlement_cycle" in exc.body or "unit_price" in exc.body or "PGRST204" in exc.body:
             raise _error(400, "MIGRATION_REQUIRED", "0008_mealledger_v23.sql, 0010_merchant_company_contract.sql 적용 후 장부업체를 관리할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "장부업체 목록을 불러오는 중 오류가 발생했어요") from exc
-
-
-@router.post("/companies/link")
-def link_company(payload: MerchantCompanyLinkRequest, token: str = Depends(bearer_token)):
-    repo = JoinRepository()
-    try:
-        actor, merchant_id = _merchant_admin(repo, token)
-        companies = repo.client.rest_get("companies", {"select": "id,name,status", "id": f"eq.{payload.company_id}", "limit": "1"})
-        if not companies:
-            raise JoinFlowError("COMPANY_NOT_FOUND", "회사를 찾을 수 없어요")
-        link = _upsert_link(repo, merchant_id, payload.company_id, actor.id)
-        return {"ok": True, "data": {"link": link, "company": companies[0]}, "error": None}
-    except JoinFlowError as exc:
-        status = 404 if str(exc.code) == "COMPANY_NOT_FOUND" else 403
-        raise _error(status, str(exc.code), exc.message) from exc
-    except SupabaseHttpError as exc:
-        if "PGRST205" in exc.body:
-            raise _error(400, "MIGRATION_REQUIRED", "0008_mealledger_v23.sql 적용 후 장부업체를 연결할 수 있어요") from exc
-        raise _error(502, "SUPABASE_ERROR", "장부업체 연결 중 오류가 발생했어요") from exc
 
 
 @router.post("/companies/create-and-link")

@@ -17,7 +17,9 @@ app.add_middleware(CheckoutMaintenanceMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_allowed_origins),
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    # Only this project's Vercel deployments (previews call the production API),
+    # not any *.vercel.app page (audit L1).
+    allow_origin_regex=settings.cors_allowed_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -79,7 +79,7 @@ def test_admin_banner_create_is_one_transactional_rpc_and_tenant_scoped(repo_cla
         payload = BannerPayload.model_validate({
             "partner_id": "33333333-3333-3333-3333-333333333333", "title": "banner",
             "image_url": "https://cdn.example/banner.webp", "link_url": "https://partner.example",
-            "reward": RewardPayload(reward_type="point", point_amount=100),
+            "reward": RewardPayload(reward_type="point", point_amount=100, total_budget=10000),
         })
         result = create_banner(payload, "token")
     assert result["data"]["reward"]["id"] == "r"

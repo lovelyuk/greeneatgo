@@ -363,12 +363,32 @@ def _notification_ip(request: Request) -> str:
     # simulated source IP in tests). A direct attacker therefore cannot smuggle an
     # allowed IP through a forged X-Forwarded-For header.
     peer = request.client.host if request.client else ""
-    if peer in TRUSTED_LOCAL_PEERS:
+    if peer in TRUSTED_LOCAL_PEERS and getattr(get_settings(), "env", "development") != "production":
         forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
         if forwarded:
             return str(ipaddress.ip_address(forwarded[-1]))
         return peer
     return str(ipaddress.ip_address(peer))
+
+
+KIWOOM_DEV_NOTIFICATION_IP = "123.140.121.205"
+
+
+def _notification_source_allowed(settings, source_ip: str) -> bool:
+    """Hardened allowlist (audit M1).
+
+    - Loopback/test peers are trusted only outside ``ENV=production``; on Vercel
+      the socket peer is the real caller, so production never needs them.
+    - Kiwoom's development notifier only counts while the API itself talks to
+      the Kiwoom test gateway (apitest); a live gateway accepts only the
+      documented production notifiers.
+    """
+    if source_ip in TRUSTED_LOCAL_PEERS:
+        return getattr(settings, "env", "development") != "production"
+    allowed = set(settings.kiwoompay_notification_ips)
+    if "apitest." not in str(getattr(settings, "kiwoompay_base_url", "https://apitest.kiwoompay.co.kr")):
+        allowed.discard(KIWOOM_DEV_NOTIFICATION_IP)
+    return source_ip in allowed
 
 
 def _ack(success: bool, status_code: int = 200) -> Response:
@@ -426,7 +446,7 @@ async def _notification(request: Request) -> Response:
     except ValueError:
         _log_notification_outcome("kiwoom_notification_rejected", "invalid_source_ip")
         return _ack(False, 400)
-    if source_ip not in TRUSTED_LOCAL_PEERS and source_ip not in settings.kiwoompay_notification_ips:
+    if not _notification_source_allowed(settings, source_ip):
         _log_notification_outcome("kiwoom_notification_rejected", "source_ip_not_allowed")
         return _ack(False, 403)
     # Kiwoom sends result fields as an EUC-KR GET query. Starlette's

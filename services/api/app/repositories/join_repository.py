@@ -80,56 +80,14 @@ class JoinRepository:
         invite = self.get_invite(invite_code)
         validated_invite = validate_invite(invite, now=datetime.now(timezone.utc))
 
-        # Firebase email/password signup does not produce a verified phone claim.
-        # For the bulk-registration workflow, accept the submitted phone only
-        # when the same company already staged the exact name+phone pair and the
-        # user supplied that company's valid invite code. Unmatched submissions
-        # remain pending for explicit company-admin approval.
+        # 0072: a join request never self-activates from a phone number. Neither
+        # the submitted phone nor Supabase user_metadata.phone (editable by the
+        # user) is proven, so a staged bulk row could be claimed with someone
+        # else's number. Every request stays pending for company-admin approval.
         metadata_phone = normalize_phone(
             auth_user.metadata.get("phone") or auth_user.metadata.get("phone_number")
         )
         join_phone = normalize_phone(phone) or metadata_phone
-        firebase_token = is_firebase_token(access_token)
-        activation_phone = "" if firebase_token else metadata_phone
-        if (
-            firebase_token
-            and existing is None
-            and PHONE_RE.fullmatch(join_phone)
-            and self.client.rest_get(
-                "employee_bulk_invites",
-                {
-                    "select": "id",
-                    "company_id": f"eq.{validated_invite.company_id}",
-                    "display_name": f"eq.{display_name}",
-                    "phone": f"eq.{join_phone}",
-                    "status": "eq.invited",
-                    "limit": "1",
-                },
-            )
-        ):
-            activation_phone = join_phone
-        # An existing customer must always go through company-admin approval.
-        # In particular, a coincidental bulk name/phone match must never turn an
-        # already-active customer directly into an active employee.
-        active_customer = (
-            existing is not None
-            and existing.role == "customer"
-            and existing.status == "active"
-        )
-        if not active_customer and PHONE_RE.fullmatch(activation_phone):
-            try:
-                activated = self.client.rpc("activate_employee_bulk_invite", {
-                    "p_user_id": auth_user.id,
-                    "p_company_id": validated_invite.company_id,
-                    "p_phone": activation_phone,
-                    "p_invite_code": invite_code,
-                })
-            except SupabaseHttpError as exc:
-                if "PROFILE_CONFLICT" in exc.body:
-                    raise JoinFlowError(JoinErrorCode.COMPANY_MISMATCH, "기존 고객/관리자 또는 다른 회사 프로필은 직원으로 변경할 수 없어요") from exc
-                raise
-            if activated:
-                return activated
 
         result = build_pending_join_request(user=user, invite=invite, now=datetime.now(timezone.utc))
 

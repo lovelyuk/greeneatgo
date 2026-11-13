@@ -35,7 +35,7 @@ class SmsDelivery:
 
 
 def verification_message(code: str) -> str:
-    return f"[돈토식당] 인증번호 {code}\n타인에게 알려주지 마세요."
+    return f"[그린잇] 인증번호 {code}\n타인에게 알려주지 마세요."
 
 
 def mask_phone(phone: str) -> str:

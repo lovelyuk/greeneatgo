@@ -746,7 +746,7 @@ String recentMeta(Map<String, dynamic> tx) {
 String displayMerchantName(String? name) {
   final value = (name ?? '').trim();
   if (value.isEmpty || value.startsWith('밥장부') || value == '그린잇 식당') {
-    return '돈토';
+    return '그린잇';
   }
   return value;
 }
@@ -3223,7 +3223,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
         const SizedBox(height: 24),
-        const SectionHeader(title: '소식 & 리뷰', action: '돈토의 새로운 이야기를 확인하세요'),
+        const SectionHeader(title: '소식 & 리뷰', action: '그린잇의 새로운 이야기를 확인하세요'),
         const SizedBox(height: 10),
         Row(children: [
           Expanded(

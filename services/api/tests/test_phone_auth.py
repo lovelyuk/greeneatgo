@@ -313,3 +313,24 @@ def test_signup_safe_status_mapping(status, http, code):
     with pytest.raises(PhoneAuthError) as raised:
         repository(client).signup(verification_token="v" * 24, display_name="Kim")
     assert (raised.value.status, raised.value.code) == (http, code)
+
+
+def test_store_review_number_uses_fixed_code_without_sms():
+    from dataclasses import replace
+    client, sms = Mock(), Mock()
+    client.rpc.side_effect = [{"status": "created", "verification_id": "v1"}, True, None]
+    review_settings = replace(settings(), review_login_phone="01000000000", review_login_code="246810")
+    repo = PhoneAuthRepository(client, review_settings, sms, code_factory=lambda: 123456,
+                               token_factory=lambda: "raw-exchange-token-which-is-long-enough")
+    repo.send(phone="01000000000", purpose="signup_login", request_ip="203.0.113.4")
+    sms.send_verification_code.assert_not_called()
+    code_hash = client.rpc.call_args_list[1].args[1]["p_code_hash"]
+    proof = repo._code_proof(phone="01000000000", purpose="signup_login", code="246810")
+    assert bcrypt.checkpw(proof.encode(), code_hash.encode())
+    assert client.rpc.call_args_list[2].args[1]["p_provider_msg_id"] == "store-review-account"
+    # Every other number still gets a random code by SMS.
+    client.rpc.side_effect = [{"status": "created", "verification_id": "v2"}, True, None]
+    sms.send_verification_code.return_value = SimpleNamespace(message_id="p")
+    repo.send(phone="01012345678", purpose="signup_login", request_ip="203.0.113.4")
+    sms.send_verification_code.assert_called_once_with("01012345678", "123456")
+    assert not repo._is_review_login("01000000000", "change_phone")

@@ -1,3 +1,7 @@
+param(
+  # -Bundle builds the Play Store AAB (requires android/key.properties with the upload key).
+  [switch]$Bundle
+)
 $ErrorActionPreference = 'Stop'
 # Flutter SDK: FLUTTER_BAT env var, else G:\dev\flutter, else D:\dev\flutter.
 $flutter = @($env:FLUTTER_BAT, 'G:\dev\flutter\bin\flutter.bat', 'D:\dev\flutter\bin\flutter.bat') | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
@@ -50,8 +54,11 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $flutter pub get
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+if ($Bundle -and -not (Test-Path (Join-Path $root 'apps\customer\android\key.properties'))) {
+  throw 'Play AAB needs android/key.properties (upload keystore). Debug-signed bundles are rejected by Play.'
+}
 $buildArgs = @(
-  'build', 'apk',
+  'build', $(if ($Bundle) { 'appbundle' } else { 'apk' }),
   "--dart-define=API_BASE_URL=$($envs['VITE_API_BASE_URL'])"
 )
 $firebaseConfigPath = Join-Path $root 'apps\customer\android\app\google-services.json'

@@ -126,3 +126,16 @@ def test_public_coupon_is_one_use_per_person(phone_auth_db):
     order(u=reserved_user, point_reserved=True)
     with pytest.raises(psycopg.errors.RaiseException, match="COUPON_IN_PROGRESS"):
         order(u=reserved_user)
+
+
+def test_withdrawn_account_number_can_sign_up_again_0076(phone_auth_db):
+    conn, _ = phone_auth_db
+    verified = _setup(conn)
+    conn.execute((ROOT / "supabase/migrations/0076_account_deletion_resignup.sql").read_text(encoding="utf-8"))
+    assert verified("01099990000", "signup_login", "f" * 64)["status"] == "new"
+    first = conn.execute("select public.phone_auth_signup(%s,'first')", ("f" * 64,)).fetchone()[0]
+    conn.execute("update public.app_users set phone=null,phone_verified_at=null,display_name='탈퇴회원',status='left' where id=%s", (first["user_id"],))
+    assert verified("01099990000", "signup_login", "g" * 64)["status"] == "new"
+    again = conn.execute("select public.phone_auth_signup(%s,'again')", ("g" * 64,)).fetchone()[0]
+    assert again["status"] == "ok" and again["user_id"] != first["user_id"]
+    assert conn.execute("select status from public.app_users where id=%s", (first["user_id"],)).fetchone() == ("left",)

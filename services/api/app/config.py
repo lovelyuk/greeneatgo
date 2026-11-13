@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,6 +82,9 @@ class Settings:
     kiosk_api_base_url: str = ""
     cors_allowed_origins: tuple[str, ...] = ("http://localhost:5173", "https://greeneatgo.vercel.app")
     cors_allowed_origin_regex: str = DEFAULT_CORS_ORIGIN_REGEX
+    # App Store / Play review sign-in: one number whose OTP is fixed and never sent.
+    review_login_phone: str = ""
+    review_login_code: str = ""
     popbill_link_id: str = ""
     popbill_secret_key: str = ""
     popbill_corp_num: str = ""
@@ -161,6 +165,8 @@ class Settings:
             popbill_use_static_ip=parse_env_bool("POPBILL_USE_STATIC_IP", False),
             popbill_use_local_time=parse_env_bool("POPBILL_USE_LOCAL_TIME", True),
             cors_allowed_origin_regex=os.environ.get("CORS_ALLOWED_ORIGIN_REGEX", DEFAULT_CORS_ORIGIN_REGEX).strip(),
+            review_login_phone=re.sub(r"[^0-9]", "", os.environ.get("REVIEW_LOGIN_PHONE", "")),
+            review_login_code=os.environ.get("REVIEW_LOGIN_CODE", "").strip(),
             cors_allowed_origins=tuple(
                 origin.strip()
                 for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173,https://greeneatgo.vercel.app").split(",")

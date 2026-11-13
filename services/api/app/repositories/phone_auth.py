@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import secrets
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Callable
 
 import bcrypt
@@ -76,6 +77,14 @@ class PhoneAuthRepository:
             # a transient database failure.
             pass
 
+    def _is_review_login(self, phone: str, purpose: str) -> bool:
+        """Store reviewers cannot receive Korean SMS: one configured number uses a
+        fixed 6-digit code instead (REVIEW_LOGIN_PHONE / REVIEW_LOGIN_CODE).
+        Rate limits and attempt limits still apply; any other number is unaffected."""
+        number, code = self.settings.review_login_phone, self.settings.review_login_code
+        return (purpose == "signup_login" and bool(number) and phone == number
+                and len(code) == 6 and code.isdigit())
+
     def send(self, *, phone: str, purpose: str, request_ip: str) -> dict[str, int]:
         result = self.client.rpc("phone_auth_begin_send", {
             "p_phone": phone, "p_purpose": purpose, "p_request_ip": request_ip,
@@ -84,8 +93,9 @@ class PhoneAuthRepository:
             retry = int(result.get("retry_after") or 60)
             raise PhoneAuthError(429, "RATE_LIMITED", "잠시 후 다시 시도해 주세요", retry_after=retry)
         verification_id = result["verification_id"]
+        review = self._is_review_login(phone, purpose)
         try:
-            code = f"{self.code_factory():06d}"
+            code = self.settings.review_login_code if review else f"{self.code_factory():06d}"
             code_proof = self._code_proof(phone=phone, purpose=purpose, code=code)
             code_hash = bcrypt.hashpw(
                 code_proof.encode(),
@@ -96,7 +106,8 @@ class PhoneAuthRepository:
             })
             if hash_set is not True:
                 raise SupabaseHttpError(502, "OTP hash reservation was not pending")
-            delivery = self.sms.send_verification_code(phone, code)
+            delivery = (SimpleNamespace(message_id="store-review-account") if review
+                        else self.sms.send_verification_code(phone, code))
         except Exception:
             # Once a rate-limit slot has been reserved, every local/provider
             # failure must make it permanently unverifiable before returning.

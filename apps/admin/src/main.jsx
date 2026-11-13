@@ -2787,6 +2787,63 @@ function CompanyInfoScreen({ company, busy, onSave, onSettings }) {
   </AdminPage>;
 }
 
+function CompanyMerchantsScreen({ token }) {
+  const [items, setItems] = useState(null);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState(null);
+  const [busyId, setBusyId] = useState('');
+  const [error, setError] = useState('');
+  const reload = async () => {
+    try { setItems((await apiFetch('/admin/company/merchants', token)).items ?? []); }
+    catch (loadError) { setError(loadError.message); setItems([]); }
+  };
+  useEffect(() => { reload(); }, [token]);
+  const search = async (event) => {
+    event.preventDefault();
+    if (!query.trim()) return;
+    setError('');
+    try { setResults((await apiFetch(`/admin/company/merchants/search?q=${encodeURIComponent(query.trim())}`, token)).items ?? []); }
+    catch (searchError) { setError(searchError.message); }
+  };
+  const act = async (merchant, action) => {
+    if (action === 'pause' && !window.confirm(`'${merchant.name}' 이용을 중지할까요? 사원들이 이 식당에서 장부·보조금 결제를 할 수 없게 됩니다.`)) return;
+    setBusyId(merchant.id); setError('');
+    try {
+      await apiFetch(`/admin/company/merchants/${merchant.id}/${action}`, token, { method: 'POST' });
+      await reload();
+      setResults((current) => current?.map((row) => row.id === merchant.id ? { ...row, link_status: action === 'link' ? 'active' : 'paused' } : row) ?? current);
+    } catch (actionError) { setError(actionError.message); }
+    finally { setBusyId(''); }
+  };
+  const statusLabel = (item) => item.link_status === 'active' ? (item.price_configured === false ? '이용 중 · 식당 단가 설정 대기' : '이용 중') : '중지됨';
+  return <AdminPage title={null} description="사원들이 장부·보조금으로 이용할 식당을 회사가 직접 선택합니다. 식당은 회사를 임의로 추가할 수 없어요." preview={false} className="merchant-regular-weight">
+    {error && <div className="alert error">{error}</div>}
+    <article className="panel">
+      <div className="panel-title"><h3>이용 식당</h3></div>
+      {items === null ? <p className="empty-state">불러오는 중…</p> : items.length === 0 ? <p className="empty-state">아직 이용 중인 식당이 없어요. 아래에서 식당을 검색해 추가하세요.</p>
+        : <div className="product-list">{items.map((item) => <article className="product-item" key={item.id}>
+            <div className="product-copy"><strong>{item.name}</strong><span>{[item.category, item.address].filter(Boolean).join(' · ') || '-'}</span><span>{statusLabel(item)}</span></div>
+            {item.link_status === 'active'
+              ? <button type="button" className="ghost" disabled={busyId === item.id} onClick={() => act(item, 'pause')}>이용 중지</button>
+              : <button type="button" className="primary" disabled={busyId === item.id} onClick={() => act(item, 'link')}>다시 이용</button>}
+          </article>)}</div>}
+    </article>
+    <article className="panel">
+      <div className="panel-title"><h3>식당 추가</h3></div>
+      <form className="inline-form" onSubmit={search}>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="식당 이름으로 검색" maxLength={40} />
+        <button type="submit" className="primary">검색</button>
+      </form>
+      {results !== null && (results.length === 0 ? <p className="empty-state">검색 결과가 없어요.</p>
+        : <div className="product-list">{results.map((row) => <article className="product-item" key={row.id}>
+            <div className="product-copy"><strong>{row.name}</strong><span>{[row.category, row.address].filter(Boolean).join(' · ') || '-'}</span></div>
+            {row.link_status === 'active' ? <span className="badge">이용 중</span>
+              : <button type="button" className="primary" disabled={busyId === row.id} onClick={() => act(row, 'link')}>{row.link_status === 'paused' ? '다시 이용' : '추가'}</button>}
+          </article>)}</div>)}
+    </article>
+  </AdminPage>;
+}
+
 function CompanyScreen({ section, company, busy, onSaveCompany, onSettings, onCompanyInfo, token, scopeId }) {
   const usageSection = ['monthly-usage', 'employee-usage'].includes(section);
   const [usageYm, setUsageYm] = useState(currentPeriodYm);
@@ -2816,6 +2873,7 @@ function CompanyScreen({ section, company, busy, onSaveCompany, onSettings, onCo
   if (section === 'company-info') return <CompanyInfoScreen company={company} busy={busy} onSave={onSaveCompany} onSettings={onSettings} />;
   if (section === 'company-billing') return <CompanySettlementScreen token={token} company={company} onCompanyInfo={onCompanyInfo} />;
   if (section === 'company-tax-invoices') return <CompanyTaxInvoiceScreen token={token} company={company} />;
+  if (section === 'company-merchants') return <CompanyMerchantsScreen token={token} />;
   const screens = {
     'company-dashboard': CompanyDashboard,
     'monthly-usage': CompanyMonthlyUsage,
@@ -3560,7 +3618,7 @@ function Dashboard({ session, onLogout }) {
     ['partner-banners', '배너 광고 설정'],
   ];
   const companyNavGroups = [
-    [['company-dashboard', '대시보드', Home]],
+    [['company-dashboard', '대시보드', Home], ['company-merchants', '이용 식당', Coffee]],
     [['company-billing', '청구 내역', WalletCards], ['company-tax-invoices', '증빙 내역', FileText], ['company-info', '회사 정보', Settings]],
     [['legacy-employees', '사원 관리', Users], ['company-usage', '이용 내역', BarChart3]],
   ];

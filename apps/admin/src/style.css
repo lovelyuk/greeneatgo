@@ -2174,3 +2174,7 @@ code { font-size: 12px; }
 .receipt-lookup .receipt-copy { min-height: 28px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); background: var(--bg-surface); font-size: 12px; font-weight: 500; box-shadow: none; }
 .receipt-lookup .receipt-copy:hover { border-color: var(--accent); }
 .receipt-open a.receipt-open-link { justify-self: center; }
+
+/* Company-managed restaurant partnerships (이용 식당) */
+.inline-form { display: flex; gap: 8px; margin: 8px 0 12px; }
+.inline-form input { flex: 1; min-width: 0; }

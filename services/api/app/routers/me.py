@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta, timezone
-import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import bearer_token
+from app.services.invite_codes import new_company_invite_code
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.admin_themes import ADMIN_THEME_ROLES, DEFAULT_ADMIN_THEME, normalize_admin_theme
@@ -38,7 +38,7 @@ def _company_profile(repo: JoinRepository, company_id: str) -> dict | None:
 
 
 def _new_invite_code() -> str:
-    return f"GE-{secrets.token_hex(3).upper()}"
+    return new_company_invite_code()
 
 
 def _ensure_invite_code(repo: JoinRepository, company_id: str) -> str | None:

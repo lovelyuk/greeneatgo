@@ -428,6 +428,12 @@ class ApiResponse(BaseModel):
 
 class JoinRequest(BaseModel):
     invite_code: str = Field(min_length=4, max_length=64)
+
+    @field_validator("invite_code", mode="before")
+    @classmethod
+    def normalize_invite_code(cls, value: object) -> object:
+        # Codes are issued upper-case; accept what people type (spaces, lower case).
+        return value.strip().upper() if isinstance(value, str) else value
     display_name: str = Field(min_length=1, max_length=80)
     phone: str | None = Field(default=None, pattern=r"^010\d{8}$")
     department: str | None = Field(default=None, min_length=1, max_length=120)

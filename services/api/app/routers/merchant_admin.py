@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from app.auth import bearer_token
+from app.services.invite_codes import new_company_invite_code
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
@@ -56,7 +57,7 @@ def _token() -> str:
 
 
 def _invite_code() -> str:
-    return f"GE-{secrets.token_hex(3).upper()}"
+    return new_company_invite_code()
 
 
 def _ensure_company_invite_code(repo: JoinRepository, company_id: str) -> str:

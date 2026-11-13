@@ -59,3 +59,34 @@ def test_banner_point_rewards_are_capped():
         with pytest.raises(ValidationError):
             RewardPayload(reward_type="point", **bad)
     RewardPayload(reward_type="point", point_amount=100, total_budget=1000, grant_policy="unlimited", per_user_limit=100)
+
+
+def test_new_invite_codes_have_50_bits_and_typing_is_normalized():
+    from app.schemas import JoinRequest
+    from app.services.invite_codes import ALPHABET, new_company_invite_code
+    code = new_company_invite_code()
+    assert re.fullmatch(r"GE-[A-Z2-9]{5}-[A-Z2-9]{5}", code) and not set(code[3:].replace("-", "")) - set(ALPHABET)
+    assert len({new_company_invite_code() for _ in range(200)}) == 200
+    assert JoinRequest(invite_code=" ge-abcde-fghjk ", display_name="x").invite_code == "GE-ABCDE-FGHJK"
+
+
+def test_restaurant_push_audience_is_its_own_customers_and_employees():
+    from app.routers import push_notifications as pn
+    users = [{"id": "e1", "role": "employee", "company_id": "c1"}, {"id": "e2", "role": "employee", "company_id": "c2"},
+             {"id": "k1", "role": "customer", "company_id": None}, {"id": "k2", "role": "customer", "company_id": None}]
+    tables = {"app_users": users, "merchant_companies": [{"company_id": "c1"}], "payment_orders": [{"user_id": "k1"}],
+              "device_tokens": []}
+
+    class Client:
+        def rest_get(self, table, params):
+            if table == "device_tokens":
+                ids = params["account_id"][4:-1].split(",")
+                return [{"account_id": i, "fcm_token": "t-" + i} for i in ids]
+            return tables[table] if params.get("offset") == "0" else []
+
+    repo = SimpleNamespace(client=Client())
+    with patch.object(pn, "get_settings", return_value=SimpleNamespace(pilot_merchant_id="pilot")):
+        other = pn._audience(repo, "all", "m-other")
+        pilot = pn._audience(repo, "all", "pilot")
+    assert {t.account_id for t in other["targets"]} == {"e1", "k1"}
+    assert {t.account_id for t in pilot["targets"]} == {"e1", "e2", "k1", "k2"}

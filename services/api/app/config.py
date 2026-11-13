@@ -14,7 +14,8 @@ DEFAULT_KIWOOMPAY_NOTIFICATION_IPS = (
 ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "production"})
 # Vercel deployment URLs of the admin web project only:
 # greeneatgo-<hash>-yonguks-projects.vercel.app / greeneatgo-git-<branch>-yonguks-projects.vercel.app
-DEFAULT_CORS_ORIGIN_REGEX = r"https://greeneatgo-[a-z0-9-]+-yonguks-projects\.vercel\.app"
+DEFAULT_CORS_ORIGIN_REGEX = r"https://greeneatgo(-[a-z0-9-]+-yonguks-projects)?\.vercel\.app"
+# The production web origin must match even when CORS_ALLOWED_ORIGINS (env) omits it.
 
 
 def _kiwoompay_notification_ips(raw: str | None) -> tuple[str, ...]:

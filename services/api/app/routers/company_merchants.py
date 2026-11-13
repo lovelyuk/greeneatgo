@@ -36,6 +36,10 @@ def _actor(repo: JoinRepository, token: str):
         return _company_admin(repo, token)
     except JoinFlowError as exc:
         raise _error(403, "FORBIDDEN", "회사관리자만 이용할 수 있어요") from exc
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "로그인 정보를 확인하지 못했어요") from exc
 
 
 def _active_merchant(repo: JoinRepository, merchant_id: UUID) -> dict:

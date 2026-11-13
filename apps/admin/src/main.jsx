@@ -3817,7 +3817,7 @@ function Dashboard({ session, onLogout }) {
 
     {isMerchantAdmin && merchantSection === 'payment-history' && <PaymentHistoryDashboard request={merchantRequest}/>}
 
-    {isPlatformAdmin && <section className="two-col">
+    {isPlatformAdmin && <section>
       <article className="panel profile-panel">
         <div className="panel-title"><h2>로그인 정보</h2><span className="badge">secure</span></div>
         <div className="profile-grid">
@@ -3825,14 +3825,6 @@ function Dashboard({ session, onLogout }) {
           <span>{['company_admin', 'merchant_admin'].includes(me?.role) ? '관리자 이름' : '이름'}</span>
           <strong>{me?.display_name ?? '-'}</strong>
           {me?.role !== 'company_admin' && <><span>권한</span><strong>{me?.role === 'merchant_admin' ? '관리자' : me?.role ?? '-'}</strong><span>상태</span><strong>{me?.status ?? '-'}</strong></>}
-        </div>
-      </article>
-      <article className="panel menu-panel restaurant-card">
-        <div className="restaurant-card-head"><Coffee size={24}/><strong>돈토 식당</strong></div>
-        <div className="invite-code-box">
-          <span>초대코드</span>
-          <strong>{me?.invite_code ?? '-'}</strong>
-          <button className="ghost" onClick={copyCompanyInviteCode} disabled={!me?.invite_code}>복사</button>
         </div>
       </article>
     </section>}

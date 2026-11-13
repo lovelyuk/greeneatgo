@@ -70,6 +70,9 @@ def _map_rpc_error(exc: SupabaseHttpError) -> HTTPException:
         "PREPURCHASE_INVENTORY_EMPTY": (409, "PREPURCHASE_INVENTORY_EMPTY", "선구매 식권 잔여 수량이 없어요"),
         "IDEMPOTENCY_CONFLICT": (409, "IDEMPOTENCY_CONFLICT", "이미 다른 결제에 사용된 요청 키예요"),
         "TAX_TYPE_UNCLASSIFIED": (409, "TAX_TYPE_UNCLASSIFIED", "과세 유형이 설정되지 않아 결제할 수 없어요"),
+        "NOT_COMPANY_MEMBER": (403, "FORBIDDEN", "활성 직원 계정만 결제할 수 있어요"),
+        "MONTHLY_LIMIT": (400, "MONTHLY_LIMIT", "월 한도를 초과해요"),
+        "DAILY_LIMIT": (400, "DAILY_LIMIT", "오늘 사용 한도를 초과해요"),
     }
     for key, value in mapping.items():
         if key in body:

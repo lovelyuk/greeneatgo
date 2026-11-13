@@ -91,7 +91,7 @@ def test_official_request_contract_and_deterministic_hmac():
             {
                 "to": PHONE,
                 "from": SENDER,
-                "text": "[돈토식당] 인증번호 123456\n타인에게 알려주지 마세요.",
+                "text": "[그린잇] 인증번호 123456\n타인에게 알려주지 마세요.",
             }
         ],
         "showMessageList": True,
@@ -110,7 +110,7 @@ def test_official_request_contract_and_deterministic_hmac():
 
 
 def test_message_helpers_are_exact_and_phone_is_masked():
-    assert verification_message(CODE) == "[돈토식당] 인증번호 123456\n타인에게 알려주지 마세요."
+    assert verification_message(CODE) == "[그린잇] 인증번호 123456\n타인에게 알려주지 마세요."
     assert mask_phone(PHONE) == "010****5678"
     assert PHONE not in mask_phone(PHONE)
 

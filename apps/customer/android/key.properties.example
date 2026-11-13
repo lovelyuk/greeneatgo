@@ -1,0 +1,6 @@
+# Copy to android/key.properties (gitignored) and fill in. Keep the .jks outside git.
+# Create once:  keytool -genkey -v -keystore G:\keys\greeneatgo-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+storePassword=
+keyPassword=
+keyAlias=upload
+storeFile=G:/keys/greeneatgo-upload.jks

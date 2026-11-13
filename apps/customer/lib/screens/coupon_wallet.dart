@@ -132,7 +132,7 @@ class CouponWallet {
             .toList()
         : const [];
     return CouponWallet(
-      merchantName: merchantName.trim().isEmpty ? '돈토식당' : merchantName,
+      merchantName: merchantName.trim().isEmpty ? '그린잇' : merchantName,
       items: parse(json['items']),
       issued: parse(json['issued'], issued: true),
     );

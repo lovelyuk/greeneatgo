@@ -226,6 +226,8 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> getMe() async => _request('/me');
+  Future<Map<String, dynamic>> deleteAccount() async =>
+      _request('/me', method: 'DELETE');
 
   Future<BannerTransportResponse> bannerTransport(
     String method,
@@ -744,7 +746,7 @@ String recentMeta(Map<String, dynamic> tx) {
 String displayMerchantName(String? name) {
   final value = (name ?? '').trim();
   if (value.isEmpty || value.startsWith('밥장부') || value == '그린잇 식당') {
-    return '돈토';
+    return '그린잇';
   }
   return value;
 }
@@ -1650,6 +1652,45 @@ class AccountSettingsScreen extends StatefulWidget {
 }
 
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
+  bool _deleting = false;
+
+  // App Store 5.1.1(v) / Google Play: account deletion starts inside the app.
+  Future<void> _confirmDeleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('회원 탈퇴'),
+        content: const Text('탈퇴하면 이름·휴대폰 번호 등 개인정보가 삭제되고 다시 복구할 수 없어요.\n\n'
+            '남은 식권과 포인트는 모두 사라져요. 결제·이용 기록은 관련 법령에 따라 일정 기간 보관 후 파기돼요.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('취소')),
+          TextButton(
+              key: const Key('confirm-delete-account'),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+              child: const Text('탈퇴하기')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _deleting = true);
+    try {
+      await ApiClient(widget.session).deleteAccount();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('탈퇴가 완료됐어요. 그동안 이용해 주셔서 감사합니다.')));
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      await widget.onSignOut();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _deleting = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('탈퇴하지 못했어요: $error')));
+    }
+  }
+
   String get _roleLabel => switch (widget.me['role']) {
         'employee' => '임직원',
         'customer' => '일반 고객',
@@ -1723,6 +1764,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               },
               icon: const Icon(Icons.logout_rounded),
               label: const Text('로그아웃')),
+          if (widget.me['role'] == 'customer' || widget.me['role'] == 'employee')
+            TextButton(
+                key: const Key('delete-account'),
+                onPressed: _deleting ? null : _confirmDeleteAccount,
+                style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+                child: Text(_deleting ? '탈퇴 처리 중…' : '회원 탈퇴')),
         ]),
       ),
     );
@@ -3176,7 +3223,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
         const SizedBox(height: 24),
-        const SectionHeader(title: '소식 & 리뷰', action: '돈토의 새로운 이야기를 확인하세요'),
+        const SectionHeader(title: '소식 & 리뷰', action: '그린잇의 새로운 이야기를 확인하세요'),
         const SizedBox(height: 10),
         Row(children: [
           Expanded(

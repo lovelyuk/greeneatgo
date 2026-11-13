@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta, timezone
-import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import bearer_token
+from app.services.invite_codes import new_company_invite_code
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.admin_themes import ADMIN_THEME_ROLES, DEFAULT_ADMIN_THEME, normalize_admin_theme
@@ -38,7 +38,7 @@ def _company_profile(repo: JoinRepository, company_id: str) -> dict | None:
 
 
 def _new_invite_code() -> str:
-    return f"GE-{secrets.token_hex(3).upper()}"
+    return new_company_invite_code()
 
 
 def _ensure_invite_code(repo: JoinRepository, company_id: str) -> str | None:
@@ -306,6 +306,62 @@ def update_admin_preferences(payload: AdminPreferencesUpdateRequest, token: str 
         if _theme_column_missing(exc):
             raise _error(409, "MIGRATION_REQUIRED", "0070_admin_ui_theme.sql 적용 후 테마를 저장할 수 있어요") from exc
         raise _error(502, "SUPABASE_ERROR", "화면 테마를 저장하는 중 오류가 발생했어요") from exc
+
+
+WITHDRAWN_NAME = "탈퇴회원"
+
+
+def _delete_login_identity(repo: JoinRepository, token: str, auth_user_id: str, phone: str | None) -> None:
+    """Remove the sign-in identity; the anonymised profile stays for the ledger."""
+    from app.services.firebase_auth import is_firebase_token, phone_firebase_uid
+    if is_firebase_token(token):
+        from firebase_admin import auth as firebase_auth
+        from app.services.push_notifications import _firebase_app
+        if phone:
+            try:
+                firebase_auth.delete_user(phone_firebase_uid(phone), app=_firebase_app())
+            except Exception:  # already gone or not a phone user; the profile is withdrawn anyway
+                pass
+    else:
+        repo.client.auth_admin_delete_user(auth_user_id)
+
+
+@router.delete("/me")
+def delete_my_account(token: str = Depends(bearer_token)):
+    """In-app account deletion for buyers (App Store 5.1.1(v), Google Play).
+
+    Personal data (name, phone, department, employee number, device tokens) is
+    removed and the sign-in identity deleted. Payment and meal records stay,
+    as tax and e-commerce law require, linked only to the anonymised profile.
+    Unused vouchers and points are forfeited (the app warns before this call).
+    """
+    repo = JoinRepository()
+    try:
+        auth_user = repo.auth_user_from_token(token)
+        profile = repo.get_profile(auth_user.id, email=auth_user.email)
+        if profile is None:
+            raise _error(404, "PROFILE_NOT_FOUND", "계정을 찾을 수 없어요")
+        if profile.role not in {"customer", "employee"}:
+            raise _error(403, "ADMIN_ACCOUNT_DELETION", "관리자 계정은 운영자에게 삭제를 요청해 주세요")
+        if profile.status != "left":
+            # Unpaid checkouts must not complete after withdrawal.
+            repo.client.rest_patch("payment_orders", {
+                "user_id": f"eq.{profile.id}", "status": "eq.ready",
+                "provider_payment_key": "is.null", "point_reserved": "is.false",
+            }, {"status": "canceled"})
+            repo.client.rest_patch("app_users", {"id": f"eq.{profile.id}"}, {
+                "display_name": WITHDRAWN_NAME, "phone": None, "phone_verified_at": None,
+                "department": None, "employee_no": None, "status": "left",
+            })
+            repo.client.rest_delete("device_tokens", {"account_id": f"eq.{profile.id}"})
+        _delete_login_identity(repo, token, auth_user.id, profile.phone)
+        return {"ok": True, "data": {"deleted": True}, "error": None}
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "회원 탈퇴를 처리하지 못했어요") from exc
 
 
 @router.get("/me")

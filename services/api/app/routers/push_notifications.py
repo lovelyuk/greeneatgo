@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from firebase_admin import exceptions as firebase_exceptions
 
 from app.auth import bearer_token
+from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.merchant_admin import _merchant_admin
@@ -37,13 +38,29 @@ def _paged_get(repo: JoinRepository, table: str, params: dict[str, str], page_si
         offset += page_size
 
 
-def _audience(repo: JoinRepository, target_type: str) -> dict:
+def _audience(repo: JoinRepository, target_type: str, merchant_id: str | None = None) -> dict:
+    """Push audience of one restaurant (audit M4).
+
+    The pilot restaurant is the app's single voucher merchant, so its audience
+    stays every active buyer. Any other restaurant reaches only employees of the
+    companies it actively serves and customers who paid it.
+    """
     role_filter = "eq.customer" if target_type == "voucher_only" else "in.(employee,customer)"
     accounts = _paged_get(
         repo,
         "app_users",
-        {"select": "id", "role": role_filter, "status": "eq.active", "order": "id.asc"},
+        {"select": "id,role,company_id", "role": role_filter, "status": "eq.active", "order": "id.asc"},
     )
+    pilot = get_settings().pilot_merchant_id
+    if merchant_id is not None and str(merchant_id) != str(pilot or ""):
+        companies = {str(row["company_id"]) for row in _paged_get(repo, "merchant_companies", {
+            "select": "company_id", "merchant_id": f"eq.{merchant_id}", "status": "eq.active", "order": "company_id.asc",
+        })}
+        buyers = {str(row["user_id"]) for row in _paged_get(repo, "payment_orders", {
+            "select": "user_id", "merchant_id": f"eq.{merchant_id}", "status": "eq.done", "order": "user_id.asc",
+        }) if row.get("user_id")}
+        accounts = [row for row in accounts if str(row["id"]) in buyers
+                    or (row.get("role") == "employee" and str(row.get("company_id")) in companies)]
     account_ids = [str(row["id"]) for row in accounts]
     token_rows: list[dict] = []
     for start in range(0, len(account_ids), 200):
@@ -129,8 +146,8 @@ def notification_audience(
 ):
     repo = JoinRepository()
     try:
-        _merchant_admin(repo, token)
-        audience = _audience(repo, target_type)
+        _, merchant_id = _merchant_admin(repo, token)
+        audience = _audience(repo, target_type, merchant_id)
         return {"ok": True, "data": {key: value for key, value in audience.items() if key != "targets"}, "error": None}
     except Exception as exc:
         raise _push_error(exc) from exc
@@ -162,7 +179,7 @@ def create_notification(payload: NotificationCreateRequest, token: str = Depends
     repo = JoinRepository()
     try:
         actor, merchant_id = _merchant_admin(repo, token)
-        audience = _audience(repo, payload.target_type)
+        audience = _audience(repo, payload.target_type, merchant_id)
         targets = audience["targets"]
         if not targets:
             raise _error(400, "NO_NOTIFICATION_TARGETS", "발송 대상이 없습니다")

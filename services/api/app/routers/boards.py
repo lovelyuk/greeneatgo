@@ -109,7 +109,7 @@ def create_announcement(payload: AnnouncementCreate, token: str = Depends(bearer
     row = repo.client.rest_post("announcements", {**payload.model_dump(), "merchant_id": merchant_id, "created_by": actor.id})[0]
     push = None
     if payload.send_push:
-        audience = _audience(repo, "all")
+        audience = _audience(repo, "all", merchant_id)
         targets = audience["targets"]
         if targets:
             result = send_push_notifications(title=payload.title, body=(payload.content[:50] + ("..." if len(payload.content) > 50 else "")), targets=targets)

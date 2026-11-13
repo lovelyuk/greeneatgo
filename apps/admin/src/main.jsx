@@ -343,22 +343,13 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
     setMessage('');
     try {
       if (session) await supabase.auth.signOut();
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: { display_name: displayName.trim() || undefined },
-        },
-      });
-      if (signUpError) throw signUpError;
-      if (!data.session) throw new Error('Supabase Email Confirm이 켜져 있어 즉시 로그인이 막혔어요. Authentication > Providers > Email에서 Confirm email을 꺼주세요.');
-      const authUser = data.user;
-      if (!authUser?.id) throw new Error('가입된 사용자 정보를 찾을 수 없어요');
-      await publicApiFetch(`/invites/${token}/claim`, {
+      // The server creates the account from the invite (public signup is disabled).
+      const accepted = await publicApiFetch(`/invites/${token}/accept`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${data.session.access_token}` },
-        body: JSON.stringify({ display_name: displayName.trim() || null }),
+        body: JSON.stringify({ password, display_name: displayName.trim() || null, email: invite?.email ? null : email.trim() }),
       });
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email: accepted.email, password });
+      if (signInError) throw signInError;
       setMessage('가입과 초대 연결이 완료됐어요. 바로 관리자 화면으로 이동합니다.');
       setTimeout(onClaimed, 500);
     } catch (claimError) {
@@ -394,12 +385,12 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
           <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="owner@example.com" readOnly={!!invite?.email} required />
         </label>
         <label>비밀번호
-          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="6자리 이상 비밀번호" minLength="6" required />
+          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="8자리 이상 비밀번호" minLength="8" autoComplete="new-password" required />
         </label>
         <label>이름
           <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="표시 이름" />
         </label>
-        <button className="primary" disabled={busy || missingEnv.length > 0 || !invite}>새 계정으로 가입하고 초대 수락</button>
+        <button className="primary" disabled={busy || missingEnv.length > 0 || !invite}>계정 만들고 초대 수락</button>
       </form>
       <LegalLinks consent />
     </section>

@@ -66,3 +66,11 @@ def test_non_company_admin_is_forbidden():
         with pytest.raises(HTTPException) as exc:
             cm._actor(MagicMock(), "t")
     assert exc.value.status_code == 403
+
+
+def test_invalid_token_is_401_not_500():
+    from app.repositories.supabase_http import SupabaseHttpError
+    with patch.object(cm, "_company_admin", side_effect=SupabaseHttpError(401, "bad jwt")):
+        with pytest.raises(HTTPException) as exc:
+            cm._actor(MagicMock(), "t")
+    assert exc.value.status_code == 401

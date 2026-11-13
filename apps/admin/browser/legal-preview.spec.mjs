@@ -27,15 +27,14 @@ for (const width of [1440, 390, 320]) {
     });
   }
 }
-test('emitted routes preserve admin and shop separation and enable signup after consent', async ({ page }) => {
+test('emitted routes preserve admin and shop separation and send new buyers to the app', async ({ page }) => {
   await page.route('**/*', route => new URL(route.request().url()).origin === 'http://127.0.0.1:4175' ? route.continue() : route.abort());
   await page.goto('/');
   await expect(page.getByLabel('이메일', { exact: true })).toBeVisible();
   await page.goto('/shop');
   await expect(page.getByLabel('이메일', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '회원가입', exact: true }).click();
-  await page.getByLabel('약관 및 개인정보 처리방침 확인').check();
-  await expect(page.getByRole('button', { name: '가입 신청', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '회원가입', exact: true })).toHaveCount(0);
+  await expect(page.getByText('그린잇 앱에서 휴대폰 인증으로 가입해 주세요')).toBeVisible();
   await expect(page.locator('footer a[href="/terms.html"]')).toHaveCount(1);
   await expect(page.locator('footer a[href="/privacy.html"]')).toHaveCount(1);
 });

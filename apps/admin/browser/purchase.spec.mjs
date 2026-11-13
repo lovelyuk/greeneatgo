@@ -1675,28 +1675,19 @@ test("employee requests membership then sees pending server state without catalo
   });
   expect(calls.some((c) => c.path === "/vouchers/products")).toBe(false);
 });
-test("signup with actual published documents requires consent and waits for email verification", async ({
+test("web signup is closed: no signup request, new buyers are sent to the app", async ({
   page,
 }) => {
   const calls = await fixture(page);
-  let signup;
+  let signupCalled = false;
   await page.route("**/auth-fixture/auth/v1/signup**", async (route) => {
-    signup = route.request().postDataJSON();
-    await route.fulfill({
-      json: { user: { id: "new-fixture", email: signup.email }, session: null },
-    });
+    signupCalled = true;
+    await route.abort();
   });
   await page.goto("/shop");
-  await page.getByRole("button", { name: "회원가입", exact: true }).click();
-  await page.getByLabel("이메일", { exact: true }).fill("new@example.invalid");
-  await page
-    .getByLabel("비밀번호", { exact: true })
-    .fill("mocked-password-only");
-  await expect(page.getByRole("button", { name: "가입 신청", exact: true })).toBeDisabled();
-  await page.getByLabel("약관 및 개인정보 처리방침 확인").check();
-  await page.getByRole("button", { name: "가입 신청", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("이메일 인증");
-  expect(signup.email).toBe("new@example.invalid");
+  await expect(page.getByRole("button", { name: "회원가입", exact: true })).toHaveCount(0);
+  await expect(page.getByText("그린잇 앱에서 휴대폰 인증으로 가입해 주세요")).toBeVisible();
+  expect(signupCalled).toBe(false);
   expect(calls).toEqual([]);
 });
 test("new authenticated purchaser registers with normalized phone and server profile refresh", async ({

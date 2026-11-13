@@ -547,8 +547,11 @@ class InviteClaimRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=80)
 
 
-class MerchantCompanyLinkRequest(BaseModel):
-    company_id: str = Field(min_length=8, max_length=80)
+class InviteAcceptRequest(BaseModel):
+    password: str = Field(min_length=8, max_length=72)
+    display_name: str | None = Field(default=None, max_length=80)
+    # Only used when the invite itself carries no e-mail (manual merchant invites).
+    email: str | None = Field(default=None, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class MerchantCompanyCreateAndLinkRequest(BaseModel):

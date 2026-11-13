@@ -130,32 +130,22 @@ export default function PurchaseApp({ supabase, apiBaseUrl }) {
   );
 }
 function Login({ supabase }) {
+  // Web sign-up is closed (public Supabase signup disabled, D-19): new buyers
+  // join through the app's phone verification; existing web accounts sign in.
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const lock = useRef(false);
-  const [joining, setJoining] = useState(false),
-    [consent, setConsent] = useState(false),
-    [notice, setNotice] = useState("");
-  const { ready } = usePublishedLegal();
   async function submit(event) {
     event.preventDefault();
-    if (lock.current || (joining && (!consent || !ready))) return;
+    if (lock.current) return;
     lock.current = true;
     setBusy(true);
     setError("");
     try {
-      const result = joining
-        ? await supabase.auth.signUp({
-            email,
-            password,
-            options: { emailRedirectTo: `${window.location.origin}/shop` },
-          })
-        : await supabase.auth.signInWithPassword({ email, password });
+      const result = await supabase.auth.signInWithPassword({ email, password });
       if (result.error) throw result.error;
-      if (joining && !result.data.session)
-        setNotice("이메일 인증 링크를 확인한 후 로그인해 주세요.");
     } catch (e) {
       setError(e.message);
     } finally {
@@ -186,41 +176,14 @@ function Login({ supabase }) {
           <input
             type="password"
             required
-            minLength={joining ? 8 : undefined}
-            autoComplete={joining ? "new-password" : "current-password"}
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
-        {joining && (
-          <>
-            <LegalGate ready={ready} />
-            <label className="purchase-check">
-              <input
-                type="checkbox"
-                checked={consent}
-                onChange={(e) => setConsent(e.target.checked)}
-              />
-              약관 및 개인정보 처리방침 확인
-            </label>
-          </>
-        )}
-        <button disabled={busy || (joining && (!consent || !ready))}>
-          {joining ? "가입 신청" : "로그인"}
-        </button>
+        <button disabled={busy}>로그인</button>
       </form>
-      <button
-        className="secondary"
-        disabled={busy}
-        onClick={() => {
-          setJoining(!joining);
-          setError("");
-          setNotice("");
-        }}
-      >
-        {joining ? "로그인으로 돌아가기" : "회원가입"}
-      </button>
-      {notice && <p role="status">{notice}</p>}
+      <p role="note">처음 이용하시나요? 그린잇 앱에서 휴대폰 인증으로 가입해 주세요.</p>
       {error && <p role="alert">{error}</p>}
     </section>
   );

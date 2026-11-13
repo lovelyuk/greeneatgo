@@ -12,6 +12,9 @@ DEFAULT_KIWOOMPAY_NOTIFICATION_IPS = (
     *(f"27.102.213.{host}" for host in range(200, 210)),
 )
 ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "production"})
+# Vercel deployment URLs of the admin web project only:
+# greeneatgo-<hash>-yonguks-projects.vercel.app / greeneatgo-git-<branch>-yonguks-projects.vercel.app
+DEFAULT_CORS_ORIGIN_REGEX = r"https://greeneatgo-[a-z0-9-]+-yonguks-projects\.vercel\.app"
 
 
 def _kiwoompay_notification_ips(raw: str | None) -> tuple[str, ...]:
@@ -76,6 +79,7 @@ class Settings:
     meal_qr_secret: str = ""
     kiosk_api_base_url: str = ""
     cors_allowed_origins: tuple[str, ...] = ("http://localhost:5173", "https://greeneatgo.vercel.app")
+    cors_allowed_origin_regex: str = DEFAULT_CORS_ORIGIN_REGEX
     popbill_link_id: str = ""
     popbill_secret_key: str = ""
     popbill_corp_num: str = ""
@@ -155,6 +159,7 @@ class Settings:
             popbill_ip_restrict_on=parse_env_bool("POPBILL_IP_RESTRICT_ON", True),
             popbill_use_static_ip=parse_env_bool("POPBILL_USE_STATIC_IP", False),
             popbill_use_local_time=parse_env_bool("POPBILL_USE_LOCAL_TIME", True),
+            cors_allowed_origin_regex=os.environ.get("CORS_ALLOWED_ORIGIN_REGEX", DEFAULT_CORS_ORIGIN_REGEX).strip(),
             cors_allowed_origins=tuple(
                 origin.strip()
                 for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173,https://greeneatgo.vercel.app").split(",")

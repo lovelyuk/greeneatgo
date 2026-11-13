@@ -78,6 +78,11 @@ class PartnerPatchPayload(BaseModel):
         return _https(value)
 
 
+BANNER_POINT_MAX = 10_000
+BANNER_POINT_BUDGET_MAX = 10_000_000
+BANNER_POINT_PER_USER_MAX = 100
+
+
 class RewardPayload(BaseModel):
     reward_type: Literal["none", "point", "coupon"] = "none"
     point_amount: int | None = Field(default=None, gt=0)
@@ -99,6 +104,14 @@ class RewardPayload(BaseModel):
             raise ValueError("none reward cannot contain a value")
         if self.grant_policy != "unlimited" and self.per_user_limit is not None:
             raise ValueError("per_user_limit is only valid for unlimited")
+        # 0074 caps: a restaurant must not be able to mint unbounded company points.
+        if self.reward_type == "point":
+            if self.point_amount is not None and self.point_amount > BANNER_POINT_MAX:
+                raise ValueError(f"point_amount must be at most {BANNER_POINT_MAX}")
+            if self.total_budget is None or self.total_budget > BANNER_POINT_BUDGET_MAX:
+                raise ValueError(f"point reward requires total_budget of at most {BANNER_POINT_BUDGET_MAX}")
+            if self.grant_policy == "unlimited" and (self.per_user_limit is None or self.per_user_limit > BANNER_POINT_PER_USER_MAX):
+                raise ValueError(f"unlimited point reward requires per_user_limit of at most {BANNER_POINT_PER_USER_MAX}")
         return self
 
 

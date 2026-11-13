@@ -4,7 +4,7 @@
 
 `/shop` (also `/shop/`) is a separate, lazy-loaded purchaser surface. The existing admin route, invite route and admin API role checks are unchanged. Purchaser UI admits only active `customer` and `employee` profiles; pending/suspended/inactive profiles cannot load the catalog. No-profile and rejected employee users can request customer registration; company membership uses the existing invitation endpoint and waits for server approval.
 
-Only the existing public variables are used: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_BASE_URL`. Never supply a service-role key or Kiwoom secret to Vite. Supabase email/password sign-in and signup use the existing public client; signup verification links return to `/shop` (the origin/path must be allowlisted in Supabase). No auth or payment production operation was exercised for this implementation.
+Only the existing public variables are used: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_BASE_URL`. Never supply a service-role key or Kiwoom secret to Vite. Supabase email/password sign-in uses the existing public client. Web signup is closed (D-19): new purchasers join through the app phone verification. No auth or payment production operation was exercised for this implementation.
 
 ## Native/API parity implemented
 

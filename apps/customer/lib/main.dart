@@ -108,7 +108,7 @@ class GreeneatGoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = ThemeData(useMaterial3: true, fontFamily: 'Roboto');
     return MaterialApp(
-      title: '그린잇',
+      title: '밥대리',
       debugShowCheckedModeBanner: false,
       theme: base.copyWith(
         scaffoldBackgroundColor: kCream,
@@ -3223,7 +3223,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
         const SizedBox(height: 24),
-        const SectionHeader(title: '소식 & 리뷰', action: '그린잇의 새로운 이야기를 확인하세요'),
+        const SectionHeader(title: '소식 & 리뷰', action: '밥대리의 새로운 이야기를 확인하세요'),
         const SizedBox(height: 10),
         Row(children: [
           Expanded(
@@ -3539,9 +3539,9 @@ class ErrorScreen extends StatelessWidget {
         foregroundColor: AppColors.fg,
         automaticallyImplyLeading: false,
         titleSpacing: 20,
-        title: Image.asset('assets/brand/greeneat_logo_light.png',
-            height: 22,
-            errorBuilder: (_, __, ___) => const Text('그린잇',
+        title: Image.asset('assets/brand/bapdaeri_lockup_light.png',
+            height: 28,
+            errorBuilder: (_, __, ___) => const Text('밥대리',
                 style: TextStyle(
                     color: AppColors.fg, fontWeight: FontWeight.w900))),
         actions: [
@@ -5540,7 +5540,7 @@ BoxDecoration brandCardDecoration({double radius = 26}) => BoxDecoration(
     );
 
 /// 좌측 정렬 브랜드 타이틀. 여러 화면에서 공통으로 사용한다.
-/// assets/brand/greeneat_logo.png를 원본 비율로 표시한다.
+/// assets/brand/bapdaeri_logo.png를 원본 비율로 표시한다.
 class BrandTitle extends StatelessWidget {
   const BrandTitle(
       {super.key, this.height = 40, this.alignment = Alignment.centerLeft});
@@ -5552,11 +5552,11 @@ class BrandTitle extends StatelessWidget {
     return Align(
       alignment: alignment,
       child: Image.asset(
-        'assets/brand/greeneat_logo.png',
+        'assets/brand/bapdaeri_logo.png',
         height: height,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => Text(
-          '그린잇',
+          '밥대리',
           style: TextStyle(
               fontSize: height * 0.66,
               fontWeight: FontWeight.w900,
@@ -5846,9 +5846,9 @@ class BrandLoadingScreen extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Image.asset(
-                      'assets/brand/greeneat_logo_light.png',
+                      'assets/brand/bapdaeri_full_light.png',
                       key: const Key('splash-logo'),
-                      width: 112,
+                      width: 230,
                       fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 30),

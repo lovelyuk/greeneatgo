@@ -67,7 +67,7 @@ test('login screen follows the last theme used on this browser', async ({ page }
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'calm-dark');
   await expect(page.getByRole('button', { name: '운영 시작하기', exact: true })).toBeVisible();
-  await expect(page.locator('.brandmark img').first()).toHaveAttribute('src', '/brand/greeneat_logo_light.png');
+  await expect(page.locator('.brandmark img').first()).toHaveAttribute('src', '/brand/bapdaeri_full_admin_light.png');
 });
 
 test('/shop and /counter ignore the admin theme even when this browser last used Calm Dark', async ({ page }) => {

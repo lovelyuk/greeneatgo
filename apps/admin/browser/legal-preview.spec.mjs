@@ -34,7 +34,7 @@ test('emitted routes preserve admin and shop separation and send new buyers to t
   await page.goto('/shop');
   await expect(page.getByLabel('이메일', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '회원가입', exact: true })).toHaveCount(0);
-  await expect(page.getByText('그린잇 앱에서 휴대폰 인증으로 가입해 주세요')).toBeVisible();
+  await expect(page.getByText('밥대리 앱에서 휴대폰 인증으로 가입해 주세요')).toBeVisible();
   await expect(page.locator('footer a[href="/terms.html"]')).toHaveCount(1);
   await expect(page.locator('footer a[href="/privacy.html"]')).toHaveCount(1);
 });

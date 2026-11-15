@@ -35,7 +35,7 @@
 .purchase-app footer .business-info a{text-decoration:none}
 .purchase-app.signed-out{background:#0e1c2b;--bg:#0e1c2b;padding:26px;display:flex;flex-direction:column;justify-content:center}
 .purchase-app .purchase-login{width:100%;margin:30px auto 0;max-width:400px}
-.purchase-app .purchase-login img{display:block;width:94px;aspect-ratio:430/383;object-fit:contain;margin-bottom:28px}
+.purchase-app .purchase-login img{display:block;width:240px;max-width:100%;aspect-ratio:913/400;object-fit:contain;margin-bottom:28px}
 .purchase-app .purchase-login .login-mode{font-size:11px;color:#9dbf63;letter-spacing:1px;margin-bottom:10px}
 .purchase-app .purchase-login h1{font-size:12px;color:#7b8fa5;margin:0 0 6px;letter-spacing:0}
 .purchase-app .purchase-login .login-headline{color:white;font-size:26px;line-height:1.4;font-weight:600;letter-spacing:-.4px;margin-bottom:8px}

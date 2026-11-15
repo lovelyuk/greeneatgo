@@ -55,7 +55,7 @@ Future<void> _settleLoginLogo(WidgetTester tester) async {
   final context = tester.element(find.byKey(const Key('phone-login-screen')));
   await tester.runAsync(
     () => precacheImage(
-      const AssetImage('assets/brand/greeneat_logo_light.png'),
+      const AssetImage('assets/brand/bapdaeri_lockup_light.png'),
       context,
     ),
   );
@@ -102,7 +102,7 @@ void main() {
             .backgroundColor,
         AppColors.navyBase,
       );
-      expect(tester.getSize(find.byKey(const Key('splash-logo'))).width, 112);
+      expect(tester.getSize(find.byKey(const Key('splash-logo'))).width, 230);
       expect(tester.getSize(find.byKey(const Key('splash-spinner'))),
           const Size.square(26));
       final spinner = tester.widget<CircularProgressIndicator>(
@@ -141,7 +141,7 @@ void main() {
       expect(contentRect.center.dy / size.height, inInclusiveRange(0.40, 0.45));
 
       expect(tester.getSize(find.byKey(const Key('login-logo'))).width,
-          closeTo(78 * scale, 0.001));
+          closeTo(150 * scale, 0.001));
       expect(
         tester
             .widget<Text>(find.byKey(const Key('login-headline')))

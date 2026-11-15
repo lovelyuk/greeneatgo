@@ -53,7 +53,7 @@
 .counter-history li{display:grid;grid-template-columns:90px 1fr auto;gap:12px}
 .counter-history span:first-of-type{color:#fff}
 .counter-login{width:min(100%,380px);display:grid;gap:12px;background:var(--card);padding:28px;border-radius:20px}
-.counter-login img{height:32px;justify-self:start}
+.counter-login img{height:84px;justify-self:start}
 .counter-login h1{color:#fff;margin:4px 0 0;font-size:24px}
 .counter-login p{margin:0;color:var(--fg2)}
 .counter-login label{display:grid;gap:6px;font-size:14px;color:var(--fg2)}

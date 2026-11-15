@@ -68,7 +68,7 @@ test('navy email login explicitly differs from native phone auth', async ({ page
   await setup(page, context); await page.goto('/shop');
   await expect(page.getByText('웹 전용 이메일 로그인')).toBeVisible();
   await expect(page.getByText('앱의 휴대폰 인증과 다른 로그인 방식이에요.')).toBeVisible();
-  await expect(page.locator('.purchase-login img')).toHaveAttribute('src', '/brand/greeneat_logo_light.png');
+  await expect(page.locator('.purchase-login img')).toHaveAttribute('src', '/brand/bapdaeri_full_shop_light.png');
   expect(await page.locator('.purchase-app').evaluate(e => getComputedStyle(e).backgroundColor)).toBe('rgb(14, 28, 43)');
 });
 test('native five tabs, real shortcuts and history precedence', async ({ page, context }) => {

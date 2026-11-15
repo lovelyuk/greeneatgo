@@ -276,9 +276,9 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Image.asset(
-                        'assets/brand/bapdaeri_logo_light.png',
+                        'assets/brand/bapdaeri_lockup_light.png',
                         key: const Key('signup-logo'),
-                        width: 78,
+                        width: 150,
                         fit: BoxFit.contain,
                       ),
                     ),
@@ -529,10 +529,10 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                               Align(
                                 alignment: Alignment.centerLeft,
                                 child: Image.asset(
-                                  'assets/brand/bapdaeri_logo_light.png',
+                                  'assets/brand/bapdaeri_lockup_light.png',
                                   key: const Key('login-logo'),
-                                  width: 78 * scale,
-                                  height: 78 * scale * 383 / 430,
+                                  width: 150 * scale,
+                                  height: 150 * scale * 240 / 548,
                                   fit: BoxFit.contain,
                                 ),
                               ),

@@ -175,7 +175,7 @@ if (typeof document !== 'undefined' && isAdminRoute) applyThemeToDocument(readLa
 function BrandMark({ place = 'page' }) {
   const theme = useAdminTheme();
   return <div className="brandmark" aria-label="밥대리">
-    <img src={place === 'sidebar' ? theme.sidebarLogo ?? theme.logo : theme.logo} alt="밥대리" />
+    <img src={place === 'login' ? theme.logo.replace('lockup', 'full_admin') : place === 'sidebar' ? theme.sidebarLogo ?? theme.logo : theme.logo} alt="밥대리" />
   </div>;
 }
 
@@ -287,7 +287,7 @@ function LoginScreen({ missingEnv, onLogin }) {
   return <main className="auth-page login-page">
     <section className="login-card">
       <div className="login-brand">
-        <BrandMark />
+        <BrandMark place="login" />
         <p className="login-tagline">건강한 한 끼, 밥대리</p>
       </div>
       <p className="eyebrow">ADMIN LOGIN</p>

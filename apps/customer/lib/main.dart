@@ -5846,9 +5846,9 @@ class BrandLoadingScreen extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Image.asset(
-                      'assets/brand/bapdaeri_logo_light.png',
+                      'assets/brand/bapdaeri_full_light.png',
                       key: const Key('splash-logo'),
-                      width: 112,
+                      width: 230,
                       fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 30),

@@ -155,7 +155,7 @@ function Login({ supabase }) {
   }
   return (
     <section className="purchase-login">
-      <img src="/brand/bapdaeri_logo_light.png" alt="밥대리" />
+      <img src="/brand/bapdaeri_full_shop_light.png" alt="밥대리" />
       <p className="login-mode">웹 전용 이메일 로그인</p>
       <h1>식권 구매</h1>
       <p className="login-headline">이메일로<br />맛있는 한 끼를 시작하세요</p>

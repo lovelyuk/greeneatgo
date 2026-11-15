@@ -39,7 +39,7 @@ function CounterLogin({ supabase }) {
   }
   return <main className="counter-app counter-center">
     <form className="counter-login" onSubmit={submit}>
-      <img src="/brand/bapdaeri_logo_light.png" alt="밥대리" />
+      <img src="/brand/bapdaeri_full_counter_light.png" alt="밥대리" />
       <h1>식권 스캔 카운터</h1>
       <p>식당관리자 계정으로 로그인해 주세요.</p>
       <label>이메일<input type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required /></label>

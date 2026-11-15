@@ -155,7 +155,7 @@ function Login({ supabase }) {
   }
   return (
     <section className="purchase-login">
-      <img src="/brand/greeneat_logo_light.png" alt="그린잇" />
+      <img src="/brand/bapdaeri_logo_light.png" alt="밥대리" />
       <p className="login-mode">웹 전용 이메일 로그인</p>
       <h1>식권 구매</h1>
       <p className="login-headline">이메일로<br />맛있는 한 끼를 시작하세요</p>
@@ -183,7 +183,7 @@ function Login({ supabase }) {
         </label>
         <button disabled={busy}>로그인</button>
       </form>
-      <p role="note">처음 이용하시나요? 그린잇 앱에서 휴대폰 인증으로 가입해 주세요.</p>
+      <p role="note">처음 이용하시나요? 밥대리 앱에서 휴대폰 인증으로 가입해 주세요.</p>
       {error && <p role="alert">{error}</p>}
     </section>
   );

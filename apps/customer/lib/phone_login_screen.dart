@@ -276,7 +276,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Image.asset(
-                        'assets/brand/greeneat_logo_light.png',
+                        'assets/brand/bapdaeri_logo_light.png',
                         key: const Key('signup-logo'),
                         width: 78,
                         fit: BoxFit.contain,
@@ -529,7 +529,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                               Align(
                                 alignment: Alignment.centerLeft,
                                 child: Image.asset(
-                                  'assets/brand/greeneat_logo_light.png',
+                                  'assets/brand/bapdaeri_logo_light.png',
                                   key: const Key('login-logo'),
                                   width: 78 * scale,
                                   height: 78 * scale * 383 / 430,

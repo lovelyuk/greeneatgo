@@ -1686,7 +1686,7 @@ test("web signup is closed: no signup request, new buyers are sent to the app", 
   });
   await page.goto("/shop");
   await expect(page.getByRole("button", { name: "회원가입", exact: true })).toHaveCount(0);
-  await expect(page.getByText("그린잇 앱에서 휴대폰 인증으로 가입해 주세요")).toBeVisible();
+  await expect(page.getByText("밥대리 앱에서 휴대폰 인증으로 가입해 주세요")).toBeVisible();
   expect(signupCalled).toBe(false);
   expect(calls).toEqual([]);
 });

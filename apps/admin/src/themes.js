@@ -22,8 +22,8 @@
 export const DEFAULT_THEME_ID = 'default';
 export const LAST_THEME_STORAGE_KEY = 'greeneat.admin.lastTheme';
 
-const LIGHT_LOGO = '/brand/greeneat_logo_light.png';
-const DARK_LOGO = '/brand/greeneat_logo.png';
+const LIGHT_LOGO = '/brand/bapdaeri_lockup_light.png';
+const DARK_LOGO = '/brand/bapdaeri_lockup.png';
 
 export const ADMIN_THEMES = Object.freeze([
   Object.freeze({

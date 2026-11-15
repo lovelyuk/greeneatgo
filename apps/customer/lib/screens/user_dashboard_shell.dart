@@ -402,7 +402,7 @@ class _HomeTab extends StatelessWidget {
             role: data['role'],
             subsidizedFuture: subsidizedFuture,
             displayName: displayName,
-            subtitle: [company, '그린잇'].where((e) => e.isNotEmpty).join(' · '),
+            subtitle: [company, '밥대리'].where((e) => e.isNotEmpty).join(' · '),
             onProfile: onProfile,
           ),
           if (pendingBanner != null) ...[

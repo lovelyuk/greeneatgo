@@ -55,7 +55,7 @@ Future<void> _settleLoginLogo(WidgetTester tester) async {
   final context = tester.element(find.byKey(const Key('phone-login-screen')));
   await tester.runAsync(
     () => precacheImage(
-      const AssetImage('assets/brand/greeneat_logo_light.png'),
+      const AssetImage('assets/brand/bapdaeri_logo_light.png'),
       context,
     ),
   );

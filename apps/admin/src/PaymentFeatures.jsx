@@ -22,7 +22,7 @@ function ReceiptSheet({ receipt, type }) {
   return <section className="receipt-sheet" aria-label="결제 내역">
     <div className="receipt-sheet-amount"><span>결제금액</span><strong>{receiptAmountLabel(receipt) || '-'}</strong></div>
     <dl className="receipt-sheet-rows">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-    <p className="receipt-sheet-seller">{BUSINESS_INFO.name} · 대표 {BUSINESS_INFO.representative} · 사업자등록번호 {BUSINESS_INFO.bizRegNo} · 고객센터 {BUSINESS_INFO.phone}<br/>그린잇 결제 기록이에요. 증빙용 공식 전표는 아래 키움페이 전표를 이용해 주세요.</p>
+    <p className="receipt-sheet-seller">{BUSINESS_INFO.name} · 대표 {BUSINESS_INFO.representative} · 사업자등록번호 {BUSINESS_INFO.bizRegNo} · 고객센터 {BUSINESS_INFO.phone}<br/>밥대리 결제 기록이에요. 증빙용 공식 전표는 아래 키움페이 전표를 이용해 주세요.</p>
   </section>;
 }
 

@@ -79,7 +79,7 @@ export default function PlatformAdminScreen({ email, me, merchants, busy, error,
       <div id="platform-admin"><main style={{ maxWidth: 1040, margin: '0 auto', padding: '24px 20px 48px' }}>
         <VStack gap={5}>
           <HStack gap={3} align="center">
-            <img src="/brand/greeneat_logo.png" alt="그린잇" style={{ height: 36 }} />
+            <img src="/brand/bapdaeri_lockup.png" alt="밥대리" style={{ height: 36 }} />
             <VStack gap={0}>
               <Heading level={1}>플랫폼 관리</Heading>
               <Text color="secondary">식당을 등록하고 사장님에게 식당관리자 초대를 보냅니다.</Text>

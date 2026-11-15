@@ -12,7 +12,7 @@ def auth_confirmed() -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>그린잇 이메일 인증 완료</title>
+  <title>밥대리 이메일 인증 완료</title>
   <style>
     :root { color: #14351F; background: #F3FBF4; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     * { box-sizing: border-box; }

@@ -30,7 +30,7 @@ class PushNotifications {
   static const AndroidNotificationChannel _announcementChannel =
       AndroidNotificationChannel(
     'greeneat_announcements',
-    'Green eat 공지',
+    '밥대리 공지',
     description: '공지와 포인트 충전 알림을 표시합니다.',
     importance: Importance.max,
   );
@@ -81,7 +81,7 @@ class PushNotifications {
 
   Future<void> showForegroundNotification(RemoteMessage message) async {
     if (!_initialized) return;
-    final title = message.notification?.title ?? 'Green eat 알림';
+    final title = message.notification?.title ?? '밥대리 알림';
     final body = message.notification?.body ?? '';
     await _localNotifications.show(
       id: message.messageId?.hashCode ??
@@ -91,7 +91,7 @@ class PushNotifications {
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'greeneat_announcements',
-          'Green eat 공지',
+          '밥대리 공지',
           channelDescription: '공지와 포인트 충전 알림을 표시합니다.',
           importance: Importance.max,
           priority: Priority.high,

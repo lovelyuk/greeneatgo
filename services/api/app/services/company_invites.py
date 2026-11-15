@@ -42,7 +42,7 @@ def send_company_invitation(
     link = invitation_url(token)
     safe_company_name = escape(company_name)
     safe_link = escape(link, quote=True)
-    clean_sender_name = (sender_name or "그린잇").replace("\r", " ").replace("\n", " ").strip()
+    clean_sender_name = (sender_name or "밥대리").replace("\r", " ").replace("\n", " ").strip()
     html = (
         f"<h2>{safe_company_name} 회사관리자 초대</h2>"
         "<p>아래 버튼을 눌러 초대를 수락하고 관리자 계정을 만들어 주세요.</p>"
@@ -52,7 +52,7 @@ def send_company_invitation(
     message: dict = {
         "personalizations": [{"to": [{"email": email.strip().lower()}]}],
         "from": {"email": from_address, "name": clean_sender_name},
-        "subject": f"[그린잇] {company_name} 회사관리자 초대",
+        "subject": f"[밥대리] {company_name} 회사관리자 초대",
         "content": [{"type": "text/html", "value": html}],
     }
     if reply_to:

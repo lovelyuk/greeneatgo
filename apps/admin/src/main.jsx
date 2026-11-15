@@ -174,8 +174,8 @@ if (typeof document !== 'undefined' && isAdminRoute) applyThemeToDocument(readLa
 
 function BrandMark({ place = 'page' }) {
   const theme = useAdminTheme();
-  return <div className="brandmark" aria-label="그린잇">
-    <img src={place === 'sidebar' ? theme.sidebarLogo ?? theme.logo : theme.logo} alt="그린잇" />
+  return <div className="brandmark" aria-label="밥대리">
+    <img src={place === 'sidebar' ? theme.sidebarLogo ?? theme.logo : theme.logo} alt="밥대리" />
   </div>;
 }
 
@@ -249,7 +249,7 @@ function AuthLinkNotice() {
   }
   if (!hasAuthCode) return null;
   return <div className="alert success">
-    이메일 인증이 완료됐어요. 이제 그린잇 앱으로 돌아가 로그인한 뒤 회사 초대코드를 입력해 주세요.
+    이메일 인증이 완료됐어요. 이제 밥대리 앱으로 돌아가 로그인한 뒤 회사 초대코드를 입력해 주세요.
   </div>;
 }
 
@@ -288,7 +288,7 @@ function LoginScreen({ missingEnv, onLogin }) {
     <section className="login-card">
       <div className="login-brand">
         <BrandMark />
-        <p className="login-tagline">건강한 한 끼, 그린잇</p>
+        <p className="login-tagline">건강한 한 끼, 밥대리</p>
       </div>
       <p className="eyebrow">ADMIN LOGIN</p>
       <h2>관리자 로그인</h2>
@@ -365,7 +365,7 @@ function InviteClaimScreen({ token, missingEnv, session, onClaimed }) {
       <BrandMark />
       <div className="hero-copy">
         <span className="pill">INVITE</span>
-        <h1>그린잇<br/>운영자 초대</h1>
+        <h1>밥대리<br/>운영자 초대</h1>
         <p>이메일과 비밀번호로 가입한 뒤 식당관리자 또는 회사관리자 계정으로 연결합니다.</p>
       </div>
     </section>
@@ -3618,7 +3618,7 @@ function Dashboard({ session, onLogout }) {
           <BrandMark place={isMerchantAdmin || isCompanyAdmin ? 'sidebar' : 'page'} />
           <span className="pill">OPERATIONS</span>
         </div>
-        <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 그린잇 스타일의 카드 대시보드로 확인합니다.</p>
+        <p>가입 승인, 직원 상태, 식당 결제와 정산 현황을 밥대리 스타일의 카드 대시보드로 확인합니다.</p>
       </div>
     </header>
 

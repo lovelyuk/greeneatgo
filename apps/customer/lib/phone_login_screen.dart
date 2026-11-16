@@ -377,6 +377,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                         if (!_busy) _submitCurrentStep();
                       },
                       decoration: const InputDecoration(
+                        filled: false,
                         labelText: '이름',
                         labelStyle: TextStyle(color: AppColors.textSecondary),
                         floatingLabelStyle:

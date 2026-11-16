@@ -64,7 +64,7 @@ $buildArgs = @(
 $firebaseConfigPath = Join-Path $root 'apps\customer\android\app\google-services.json'
 if (Test-Path $firebaseConfigPath) {
   $firebaseConfig = Get-Content $firebaseConfigPath -Raw | ConvertFrom-Json
-  $firebaseClient = $firebaseConfig.client | Where-Object { $_.client_info.android_client_info.package_name -eq 'com.greeneat.greeneatgo' } | Select-Object -First 1
+  $firebaseClient = $firebaseConfig.client | Where-Object { $_.client_info.android_client_info.package_name -eq 'com.greeneatfood.babdaeri' } | Select-Object -First 1
   if ($firebaseClient) {
     if (-not $envs['FIREBASE_API_KEY']) { $envs['FIREBASE_API_KEY'] = $firebaseClient.api_key[0].current_key }
     if (-not $envs['FIREBASE_APP_ID']) { $envs['FIREBASE_APP_ID'] = $firebaseClient.client_info.mobilesdk_app_id }

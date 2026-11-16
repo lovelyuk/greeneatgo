@@ -5,7 +5,7 @@
 Android 패키지 ID:
 
 ```text
-com.greeneat.greeneatgo
+com.greeneatfood.babdaeri
 ```
 
 Firebase Android 앱은 반드시 이 패키지 ID로 등록합니다.
@@ -48,7 +48,7 @@ FIREBASE_PROJECT_ID=...
 powershell -ExecutionPolicy Bypass -File D:\projects\greeneatGo\apps\customer\build_apk_from_admin_env.ps1
 ```
 
-빌드 후 APK 내부 package가 `com.greeneat.greeneatgo`인지 확인합니다.
+빌드 후 APK 내부 package가 `com.greeneatfood.babdaeri`인지 확인합니다.
 
 ## 3. 서버 Firebase Admin
 

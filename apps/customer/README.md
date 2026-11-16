@@ -86,7 +86,7 @@ D:\dev\flutter\bin\flutter.bat test
 현재 package ID:
 
 ```text
-com.greeneat.greeneatgo
+com.greeneatfood.babdaeri
 ```
 
 배포할 때:

@@ -49,7 +49,7 @@
 
 ## Android 앱
 
-- [ ] `applicationId=com.greeneat.greeneatgo`
+- [ ] `applicationId=com.greeneatfood.babdaeri`
 - [ ] versionCode 증가
 - [ ] 운영 release keystore 사용 여부 확인
 - [ ] API/Supabase 공개 설정이 APK에 주입됐는지 확인

@@ -1,4 +1,4 @@
-package com.greeneat.greeneatgo
+package com.greeneatfood.babdaeri
 
 import android.content.ActivityNotFoundException
 import android.content.Intent

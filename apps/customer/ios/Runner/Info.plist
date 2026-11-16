@@ -26,7 +26,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.greeneat.greeneatgo.payment</string>
+			<string>com.greeneatfood.babdaeri.payment</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>greeneatgo</string>

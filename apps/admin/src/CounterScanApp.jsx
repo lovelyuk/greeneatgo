@@ -1,17 +1,19 @@
 // Restaurant counter screen (/counter): a USB QR scanner such as Newland
 // NLS-FR2780 works as a keyboard and "types" the member QR followed by Enter.
-// This page keeps a focused input, submits on Enter (or when the code stops
-// arriving), shows the result big enough to read from the counter, then
+// This page listens for those keys on the document (no focused text field, so
+// TV boxes and tablets never pop their on-screen keyboard), submits on Enter
+// (or when the code stops arriving), shows the result big enough to read from the counter, then
 // clears itself for the next guest. One scan = one voucher; the server binds
 // the QR's one-time nonce to the idempotency key, so a double scan never
 // charges twice.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { classifyScan, counterResultView } from './counterScan.js';
+import React, { useEffect, useRef, useState } from 'react';
+import { classifyScan, counterResultView, scanKeyChar } from './counterScan.js';
 import { installCounterManifest, keepScreenAwake, unlockAudio, LOGOUT_HOLD_MS } from './counterKiosk.js';
 import './counter.css';
 
 const RESET_AFTER_MS = 4000;
 const IDLE_SUBMIT_MS = 120;
+const MAX_SCAN_CHARS = 400;
 
 export default function CounterScanApp({ supabase, apiBaseUrl }) {
   const [session, setSession] = useState(null), [booting, setBooting] = useState(true);
@@ -95,8 +97,8 @@ function ReadyGuide() {
 }
 
 function CounterScanner({ session, apiBaseUrl, onLogout }) {
-  const input = useRef(null), idle = useRef(null), resetTimer = useRef(null), inFlight = useRef(false);
-  const [state, setState] = useState({ kind: 'ready' }), [history, setHistory] = useState([]), [value, setValue] = useState('');
+  const buffer = useRef(''), idle = useRef(null), resetTimer = useRef(null), inFlight = useRef(false), submit = useRef(null);
+  const [state, setState] = useState({ kind: 'ready' }), [history, setHistory] = useState([]);
   const chime = useRef(typeof Audio !== 'undefined' ? new Audio('/audio/payment-success.mp3') : null);
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine !== false);
   const [soundBlocked, setSoundBlocked] = useState(false);
@@ -113,20 +115,34 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
   async function enableSound() {
     const ok = await unlockAudio(chime.current);
     setSoundBlocked(!ok);
-    focus();
   }
 
-  const focus = useCallback(() => { if (document.activeElement !== input.current) input.current?.focus({ preventScroll: true }); }, []);
+  // The scanner's keystrokes are collected here instead of in a text field.
+  // A focused field makes Google TV / some tablet browsers open their
+  // on-screen keyboard on every scan, even with inputmode="none".
   useEffect(() => {
-    focus();
-    const keep = setInterval(focus, 1000);
-    window.addEventListener('click', focus);
-    return () => { clearInterval(keep); window.removeEventListener('click', focus); };
-  }, [focus]);
+    document.activeElement?.blur?.(); // the login field is gone; drop its focus
+    const flush = () => {
+      clearTimeout(idle.current);
+      const raw = buffer.current; buffer.current = '';
+      if (raw) submit.current?.(raw);
+    };
+    const onKey = e => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'Enter') { if (buffer.current) { e.preventDefault(); flush(); } return; }
+      const char = scanKeyChar(e);
+      if (!char) return;
+      buffer.current = (buffer.current + char).slice(-MAX_SCAN_CHARS);
+      clearTimeout(idle.current);
+      // Scanners configured without an Enter suffix: submit once input stops.
+      idle.current = setTimeout(flush, IDLE_SUBMIT_MS);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); clearTimeout(idle.current); };
+  }, []);
 
   async function redeem(raw) {
     const scan = classifyScan(raw);
-    setValue('');
     if (!scan || inFlight.current) return;
     const code = scan.code;
     const endpoint = scan.kind === 'kiosk' ? 'kiosk-receipt/redeem' : 'member-qr/redeem';
@@ -154,15 +170,8 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
     }
     if (view.code === 'UNAUTHENTICATED') return;
     resetTimer.current = setTimeout(() => setState({ kind: 'ready' }), RESET_AFTER_MS);
-    focus();
   }
-
-  function onChange(e) {
-    setValue(e.target.value);
-    clearTimeout(idle.current);
-    // Scanners configured without an Enter suffix: submit once input stops.
-    idle.current = setTimeout(() => { if (classifyScan(e.target.value)) redeem(e.target.value); }, IDLE_SUBMIT_MS);
-  }
+  submit.current = redeem;
 
   return <main className={`counter-app counter-${state.kind}`}>
     <header className="counter-head">
@@ -181,11 +190,6 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
       {state.kind === 'success' && <><div className="counter-icon" aria-hidden="true">✓</div><h1>{state.title}</h1><p className="counter-name">{state.name}</p><p>{state.detail}</p></>}
       {state.kind === 'error' && <><div className="counter-icon" aria-hidden="true">!</div><h1>{state.title}</h1><p>{state.detail}</p>{state.code === 'UNAUTHENTICATED' && <button type="button" onClick={onLogout}>다시 로그인</button>}</>}
     </section>
-    <form onSubmit={e => { e.preventDefault(); redeem(value); }} className="counter-input">
-      <label htmlFor="counter-code">스캔 입력</label>
-      <input id="counter-code" ref={input} value={value} onChange={onChange} onBlur={() => setTimeout(focus, 50)}
-        autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} inputMode="none" />
-    </form>
     {history.length > 0 && <ol className="counter-history" aria-label="최근 사용">
       {history.map((h, i) => <li key={i}><time>{h.at.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>{h.name}</span><span>{h.receipt ? '키오스크 영수증' : h.duplicate ? '중복 스캔' : `남은 식권 ${h.remaining ?? '—'}장`}</span></li>)}
     </ol>}

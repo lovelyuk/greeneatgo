@@ -43,3 +43,18 @@ test('kiosk receipt result views', () => {
   assert.equal(counterResultView(false, { detail: { code: 'KIOSK_UNAVAILABLE' } }).title, '영수증을 확인하지 못했어요');
   assert.equal(counterResultView(false, { detail: { code: 'KIOSK_NOT_CONFIGURED' } }).title, '키오스크 영수증 준비 중');
 });
+
+test('scanner keystrokes map to code characters, also under an IME', async () => {
+  const { scanKeyChar } = await import('../src/counterScan.js');
+  assert.equal(scanKeyChar({ key: '8', code: 'Digit8' }), '8');
+  assert.equal(scanKeyChar({ key: 'a', code: 'KeyA' }), 'a');
+  assert.equal(scanKeyChar({ key: ']', code: 'BracketRight' }), ']');
+  // IME active: the browser hides the character, the physical key still tells.
+  assert.equal(scanKeyChar({ key: 'Process', code: 'Digit1' }), '1');
+  assert.equal(scanKeyChar({ key: 'Process', code: 'Numpad7' }), '7');
+  assert.equal(scanKeyChar({ key: 'Process', code: 'KeyF' }), 'f');
+  assert.equal(scanKeyChar({ key: 'Unidentified', code: 'KeyQ', shiftKey: true }), 'Q');
+  // Not part of a code: control keys, space (would click a focused button), unknown.
+  for (const key of ['Enter', 'Shift', 'Tab', 'ArrowDown', 'F5', ' ', 'Process', '']) assert.equal(scanKeyChar({ key, code: '' }), '', key);
+  assert.equal(scanKeyChar(undefined), '');
+});

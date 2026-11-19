@@ -50,8 +50,10 @@ test('counter: scanner keyboard input + Enter redeems once, shows result, ignore
   await page.getByLabel('비밀번호').fill('mock-only-password');
   await page.getByRole('button', { name: '로그인' }).click();
   await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible();
-  // Input stays focused without clicking; scanner types like a keyboard.
-  await expect(page.locator('#counter-code')).toBeFocused();
+  // No text field holds focus (a focused field opens the on-screen keyboard on TV boxes);
+  // the scanner's keys are read from the document.
+  await expect(page.locator('input, textarea')).toHaveCount(0);
+  expect(await page.evaluate(() => ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName))).toBe(false);
   // Idle demo uses real app screenshots; all three load.
   for (const img of await page.locator('.counter-demo img').all()) expect(await img.evaluate(i => i.complete && i.naturalWidth > 0)).toBe(true);
   await page.keyboard.type(CODE + '\n', { delay: 1 });
@@ -65,7 +67,7 @@ test('counter: scanner keyboard input + Enter redeems once, shows result, ignore
   expect(bodies[0]).toEqual({ code: CODE });
   expect(bodies.length).toBe(1);
   await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible({ timeout: 6000 });
-  await expect(page.locator('#counter-code')).toBeFocused();
+  expect(await page.evaluate(() => ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName))).toBe(false);
 });
 
 test('counter shows clear errors: no voucher, expired, store QR scanned', async ({ page }) => {
@@ -80,7 +82,7 @@ test('counter shows clear errors: no voucher, expired, store QR scanned', async 
   await page.getByLabel('이메일').fill('owner@example.invalid');
   await page.getByLabel('비밀번호').fill('mock-only-password');
   await page.getByRole('button', { name: '로그인' }).click();
-  await page.locator('#counter-code').waitFor({ state: 'attached' });
+  await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible();
   await page.keyboard.type(CODE + '\n');
   await expect(page.getByRole('heading', { name: '남은 식권이 없어요' })).toBeVisible();
   await page.keyboard.type(CODE + '\n');
@@ -141,7 +143,7 @@ test('counter kiosk: installable manifest, offline banner, hold-to-logout', asyn
   await logout.click();
   await page.waitForTimeout(300);
   await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible();
-  await expect(page.locator('#counter-code')).toBeFocused();
+  expect(await page.evaluate(() => ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName))).toBe(false);
   const box = await logout.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down(); await page.waitForTimeout(1700); await page.mouse.up();
@@ -164,7 +166,7 @@ test('counter: kiosk paper receipt QR (24 hex) goes to the kiosk endpoint, secon
   await page.getByLabel('이메일').fill('owner@example.invalid');
   await page.getByLabel('비밀번호').fill('mock-only-password');
   await page.getByRole('button', { name: '로그인' }).click();
-  await page.locator('#counter-code').waitFor({ state: 'attached' });
+  await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible();
   await page.keyboard.type(R + '\n');
   await expect(page.getByRole('heading', { name: '키오스크 식권 사용 완료' })).toBeVisible();
   expect(calls[0]).toEqual(['/transactions/kiosk-receipt/redeem', { code: R }]);
@@ -172,4 +174,37 @@ test('counter: kiosk paper receipt QR (24 hex) goes to the kiosk endpoint, secon
   await page.keyboard.type(R + '\n');
   await expect(page.getByRole('heading', { name: '이미 사용된 영수증이에요' })).toBeVisible();
   expect(calls.length).toBe(2);
+});
+
+test('counter reads the scanner without a text field: no Enter suffix, focus on a button, IME-masked keys', async ({ page }) => {
+  await base(page);
+  const bodies = [];
+  await page.route('**/api-fixture/transactions/member-qr/redeem', route => {
+    bodies.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true, data: { result: 'success', duplicate: false, pay_type: 'voucher', member_name: '김구매', remaining: 3, amount: 7000 } } });
+  });
+  await page.goto('/counter');
+  await page.getByLabel('이메일').fill('owner@example.invalid');
+  await page.getByLabel('비밀번호').fill('mock-only-password');
+  await page.getByRole('button', { name: '로그인' }).click();
+  await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible();
+  // Nothing editable on the page, so no device can raise its on-screen keyboard.
+  await expect(page.locator('input, textarea, [contenteditable]')).toHaveCount(0);
+  // Scanner without an Enter suffix: the code is sent once typing stops.
+  await page.keyboard.type(CODE, { delay: 1 });
+  await expect(page.getByRole('heading', { name: '식권 1장 사용 완료' })).toBeVisible();
+  expect(bodies).toEqual([{ code: CODE }]);
+  // Focus parked on the logout button (a tap, or a TV remote) must not swallow the scan or log out.
+  await page.getByRole('button', { name: '길게 눌러 로그아웃' }).focus();
+  await page.keyboard.type(CODE + '\n', { delay: 1 });
+  await expect.poll(() => bodies.length).toBe(2);
+  await expect(page.getByLabel('이메일')).toHaveCount(0);
+  await page.waitForTimeout(400); // let the second answer land; scans during a request are ignored by design
+  // IME on: the browser reports key "Process"; the physical key code is used instead.
+  await page.evaluate(code => {
+    for (const d of code) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Process', code: 'Digit' + d, bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+  }, CODE);
+  await expect.poll(() => bodies.length).toBe(3);
+  expect(bodies[2]).toEqual({ code: CODE });
 });

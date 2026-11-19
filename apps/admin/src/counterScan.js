@@ -22,6 +22,21 @@ export function extractKioskReceipt(raw) {
 }
 
 /** Decide what a scan is: member QR, kiosk receipt, or nothing. */
+// One scanner keystroke -> the character it stands for ('' = not part of a code).
+// With a Korean/Japanese IME active the browser reports key "Process", so fall
+// back to the physical key (`code`) for digits and letters.
+export function scanKeyChar(event) {
+  const key = event?.key ?? '';
+  if (key.length === 1) return key === ' ' ? '' : key;
+  if (key !== 'Process' && key !== 'Unidentified') return '';
+  const code = event?.code ?? '';
+  const digit = /^(?:Digit|Numpad)(\d)$/.exec(code);
+  if (digit) return digit[1];
+  const letter = /^Key([A-Z])$/.exec(code);
+  if (letter) return event.shiftKey ? letter[1] : letter[1].toLowerCase();
+  return '';
+}
+
 export function classifyScan(raw) {
   const member = extractMemberCode(raw);
   if (member) return { kind: 'member', code: member };

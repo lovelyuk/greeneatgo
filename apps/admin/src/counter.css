@@ -48,7 +48,6 @@
 .demo-light{position:absolute;left:10%;right:10%;top:-4px;height:8px;border-radius:8px;background:#ff3b5c;filter:blur(3px);opacity:.25;animation:light 10s infinite}
 @keyframes light{0%,58%{opacity:.25}60%,72%{opacity:1}76%,100%{opacity:.25}}
 @media(max-width:760px){.counter-ready-layout{grid-template-columns:1fr}.counter-demo{display:none}}
-.counter-input{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .counter-history{list-style:none;margin:0;padding:12px 24px 20px;display:grid;gap:6px;border-top:1px solid var(--line);font-size:15px;color:var(--fg2)}
 .counter-history li{display:grid;grid-template-columns:90px 1fr auto;gap:12px}
 .counter-history span:first-of-type{color:#fff}

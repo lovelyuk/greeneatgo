@@ -109,8 +109,10 @@ def pay(payload: PayRequest, token: str = Depends(bearer_token)):
 
         tx_rows = repo.client.rest_get(
             "normal_meal_transactions",
-            {"select": "amount,kind,created_at", "user_id": f"eq.{user.id}"},
+            {"select": "amount,kind,created_at,pay_type", "user_id": f"eq.{user.id}"},
         )
+        # Meals paid with a personal voucher are not company spending (0077).
+        tx_rows = [row for row in tx_rows if row.get("pay_type") != "voucher"]
         now = datetime.now(timezone.utc)
         today_start = _today_start_utc(now)
         month_start = _month_start_utc(now)

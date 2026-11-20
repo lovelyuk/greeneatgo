@@ -759,7 +759,7 @@ def _purchase_row(order: dict) -> dict:
 
 
 @router.get("/history")
-def purchase_history(
+def order_history(
     response: Response,
     limit: int = Query(default=50, ge=1, le=100),
     token: str = Depends(bearer_token),
@@ -784,7 +784,7 @@ def purchase_history(
 
 
 @router.get("/history/{order_id}")
-def purchase_receipt(
+def order_receipt(
     response: Response,
     order_id: str = Path(min_length=6, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
     token: str = Depends(bearer_token),

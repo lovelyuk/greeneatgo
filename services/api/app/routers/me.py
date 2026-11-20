@@ -93,10 +93,16 @@ def _voucher_month_usage(repo: JoinRepository, user_id: str) -> tuple[int, int]:
 
 
 def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
-    rows = repo.client.rest_get(
+    all_rows = repo.client.rest_get(
         "normal_meal_transactions",
-        {"select": "id,amount,kind,tx_code,meal_window,product_name,merchant_id,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc"},
+        {"select": "id,amount,kind,tx_code,meal_window,product_name,merchant_id,created_at,pay_type", "user_id": f"eq.{user_id}", "order": "created_at.desc"},
     )
+    # Meals paid with a personal voucher are the employee's own money: they are
+    # listed, but never count toward the company balance or monthly limit.
+    rows = [row for row in all_rows if row.get("pay_type") != "voucher"]
+    personal_voucher_balance = len(repo.client.rest_get("vouchers", {
+        "select": "id", "user_id": f"eq.{user_id}", "status": "eq.unused", "company_id": "is.null", "limit": "1000",
+    }))
     limit_rows = repo.client.rest_get("app_users", {"select": "monthly_limit", "id": f"eq.{user_id}", "limit": "1"})
     monthly_limit = int((limit_rows[0].get("monthly_limit") if limit_rows else None) or 200000)
     month_start = _month_start_utc()
@@ -111,7 +117,8 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
             created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
             if created >= month_start:
                 month_used += abs(int(row.get("amount") or 0))
-        if len(recent_spends) < 3:
+    for row in all_rows:
+        if row.get("kind") == "spend" and len(recent_spends) < 3:
             recent_spends.append(row)
     merchant_ids = sorted({str(row.get("merchant_id")) for row in recent_spends if row.get("merchant_id")})
     merchants = {}
@@ -126,6 +133,7 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
             "title": row.get("product_name") or row.get("meal_window") or "식대 사용",
             "merchant_name": merchants.get(row.get("merchant_id"), ""),
             "created_at": row.get("created_at"),
+            "pay_source": "personal" if row.get("pay_type") == "voucher" else "company",
         }
         for row in recent_spends
     ]
@@ -138,6 +146,7 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
         "month_used": month_used,
         "recent_transactions": recent_transactions,
         "voucher_balance": None,
+        "personal_voucher_balance": personal_voucher_balance,
         "voucher_use_history": [],
         "voucher_month_used_count": 0,
         "voucher_month_used_amount": 0,
@@ -427,6 +436,8 @@ def me(token: str = Depends(bearer_token)):
             "month_used": usage["month_used"],
             "recent_transactions": usage["recent_transactions"],
             "voucher_balance": usage["voucher_balance"],
+            # Employees: vouchers bought with their own money (pay choice in the QR tab).
+            "personal_voucher_balance": usage.get("personal_voucher_balance"),
             "voucher_use_history": usage["voucher_use_history"],
             "voucher_month_used_count": usage["voucher_month_used_count"],
             "voucher_month_used_amount": usage["voucher_month_used_amount"],

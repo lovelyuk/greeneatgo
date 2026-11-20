@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 import re
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -415,6 +416,9 @@ class TransactionScanRequest(BaseModel):
     qr_data: str = Field(min_length=1, max_length=500)
     idempotency_key: str = Field(min_length=8, max_length=120)
     gps: GPSPoint | None = None
+    # Ledger employees only: "personal" pays with the employee's own voucher
+    # instead of the company ledger. Ignored for other accounts.
+    pay_source: Literal["company", "personal"] | None = None
 
 class ApiError(BaseModel):
     code: str

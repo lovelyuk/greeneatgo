@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronRight, ReceiptText } from 'lucide-react';
 import PurchaseHistory, { MerchantChips } from './PurchaseHistory.jsx';
 import { won } from './PurchaseCatalog.jsx';
@@ -20,11 +20,17 @@ function ReceiptDialog({ api, orderId, onClose }) {
       .catch(error => { if (live) setState({ status: 'error', message: error?.message || '영수증을 불러오지 못했어요.' }); });
     return () => { live = false; };
   }, [api, orderId, attempt]);
+  // Escape closes from anywhere: focus drops to <body> when the retry button unmounts.
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   const data = state.data, completion = data?.completion, refund = data?.refund;
   const slip = validateReceiptUrl(completion?.receipts?.sales_slip_url), cash = validateReceiptUrl(completion?.receipts?.cash_receipt_url);
   const lookup = slip ? completionLookupRows(completion) : [];
   const card = [completion?.payment?.issuer_name, completion?.payment?.masked_card_number].filter(Boolean).join(' ');
-  return <div className="done-overlay" onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
+  return <div className="done-overlay">
     <section className="purchase-card done-dialog receipt-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
       <h2 id="receipt-title">결제 영수증</h2>
       {state.status === 'loading' && <p role="status" className="done-sub">영수증을 불러오는 중…</p>}
@@ -63,6 +69,7 @@ function Orders({ api, active }) {
   const [state, setState] = useState({ status: 'idle', items: [] });
   const [attempt, setAttempt] = useState(0);
   const [merchant, setMerchant] = useState(null), [open, setOpen] = useState(null);
+  const closeReceipt = useCallback(() => setOpen(null), []);
   useEffect(() => {
     if (!active) return undefined;
     let live = true;
@@ -89,7 +96,7 @@ function Orders({ api, active }) {
         <b>{won(row.amount)}</b>{row.has_receipt && <ChevronRight size={18} aria-hidden="true" />}
       </button>;
     })}</div>
-    {open && <ReceiptDialog api={api} orderId={open} onClose={() => setOpen(null)} />}
+    {open && <ReceiptDialog api={api} orderId={open} onClose={closeReceipt} />}
   </>;
 }
 

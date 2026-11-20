@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, time, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,11 +19,17 @@ def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
 
 
+_HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
+
+
 def _policy_from_row(row: dict | None) -> MealPolicy:
     if not row:
         return MealPolicy(meal_windows=UNRESTRICTED_WINDOWS)
     windows = []
     for item in row.get("meal_windows") or []:
+        # A stored window with an unreadable time must not break every payment.
+        if not all(_HHMM.fullmatch(str(item.get(key) or default)) for key, default in (("start", "00:00"), ("end", "23:59"))):
+            continue
         windows.append(MealWindow(
             name=item.get("name") or "식대",
             start=item.get("start") or "00:00",

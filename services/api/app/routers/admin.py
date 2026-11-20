@@ -374,6 +374,8 @@ def _meal_policy_data(row: dict | None) -> dict:
     if not windows:
         return {
             "enabled": False,
+            "lunch_enabled": True,
+            "dinner_enabled": True,
             "lunch_start": "11:00",
             "lunch_end": "14:00",
             "dinner_start": "17:30",
@@ -382,9 +384,13 @@ def _meal_policy_data(row: dict | None) -> dict:
     by_name = {item.get("name"): item for item in windows if isinstance(item, dict)}
     lunch = by_name.get("중식")
     dinner = by_name.get("석식")
-    enabled = bool(lunch and dinner)
+    # Restricted when at least one named meal window is stored; a window that is
+    # missing is switched off (e.g. lunch only).
+    enabled = bool(lunch or dinner)
     return {
         "enabled": enabled,
+        "lunch_enabled": bool(lunch) or not enabled,
+        "dinner_enabled": bool(dinner) or not enabled,
         "lunch_start": (lunch or {}).get("start", "11:00"),
         "lunch_end": (lunch or {}).get("end", "14:00"),
         "dinner_start": (dinner or {}).get("start", "17:30"),
@@ -395,10 +401,12 @@ def _meal_policy_data(row: dict | None) -> dict:
 def _policy_windows(payload: MealPolicyUpdateRequest) -> list[dict]:
     if not payload.enabled:
         return [{"name": "상시", "start": "00:00", "end": "23:59", "per_meal_limit": 10000000}]
-    return [
-        {"name": "중식", "start": payload.lunch_start, "end": payload.lunch_end, "per_meal_limit": 10000000},
-        {"name": "석식", "start": payload.dinner_start, "end": payload.dinner_end, "per_meal_limit": 10000000},
-    ]
+    windows = []
+    if payload.lunch_enabled:
+        windows.append({"name": "중식", "start": payload.lunch_start, "end": payload.lunch_end, "per_meal_limit": 10000000})
+    if payload.dinner_enabled:
+        windows.append({"name": "석식", "start": payload.dinner_start, "end": payload.dinner_end, "per_meal_limit": 10000000})
+    return windows
 
 
 @router.get("/meal-policy")

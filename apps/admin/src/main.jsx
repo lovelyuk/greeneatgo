@@ -2947,7 +2947,7 @@ function Dashboard({ session, onLogout }) {
   const [transactions, setTransactions] = useState(null);
   const [employees, setEmployees] = useState(null);
   const [mealPolicy, setMealPolicy] = useState(null);
-  const [mealPolicyForm, setMealPolicyForm] = useState({ enabled: false, lunch_start: '11:00', lunch_end: '14:00', dinner_start: '17:30', dinner_end: '20:30' });
+  const [mealPolicyForm, setMealPolicyForm] = useState({ enabled: false, lunch_enabled: true, dinner_enabled: true, lunch_start: '11:00', lunch_end: '14:00', dinner_start: '17:30', dinner_end: '20:30' });
   const [employeeTxModal, setEmployeeTxModal] = useState(null);
   const [employeeBulkOpen, setEmployeeBulkOpen] = useState(false);
   const [employeeManageModal, setEmployeeManageModal] = useState(null);
@@ -3201,6 +3201,8 @@ function Dashboard({ session, onLogout }) {
       setMealPolicy(mealPolicyData);
       if (mealPolicyData) setMealPolicyForm({
         enabled: !!mealPolicyData.enabled,
+        lunch_enabled: mealPolicyData.lunch_enabled !== false,
+        dinner_enabled: mealPolicyData.dinner_enabled !== false,
         lunch_start: mealPolicyData.lunch_start ?? '11:00',
         lunch_end: mealPolicyData.lunch_end ?? '14:00',
         dinner_start: mealPolicyData.dinner_start ?? '17:30',
@@ -3297,8 +3299,15 @@ function Dashboard({ session, onLogout }) {
     } catch (employeeError) { setError(employeeError.message); } finally { setBusy(false); }
   }
 
+  // Hours in which company-paid meals (ledger, prepurchase) can be used.
+  const mealPolicyProblem = !mealPolicyForm.enabled ? ''
+    : !mealPolicyForm.lunch_enabled && !mealPolicyForm.dinner_enabled ? '사용 시간대를 하나 이상 켜 주세요.'
+    : mealPolicyForm.lunch_enabled && mealPolicyForm.lunch_start >= mealPolicyForm.lunch_end ? '중식 종료 시간은 시작 시간보다 늦어야 해요.'
+    : mealPolicyForm.dinner_enabled && mealPolicyForm.dinner_start >= mealPolicyForm.dinner_end ? '석식 종료 시간은 시작 시간보다 늦어야 해요.' : '';
+
   async function saveMealPolicy(event) {
     event.preventDefault();
+    if (mealPolicyProblem) { setError(mealPolicyProblem); return; }
     setBusy(true);
     setError('');
     setMessage('');
@@ -3307,8 +3316,10 @@ function Dashboard({ session, onLogout }) {
         method: 'PUT',
         body: JSON.stringify(mealPolicyForm),
       });
-      setMessage(mealPolicyForm.enabled ? '식대 사용시간 제한을 저장했어요.' : '식대 사용시간 제한을 해제했어요.');
-      await load();
+      const saved = mealPolicyForm.enabled ? '식대 사용시간 제한을 저장했어요.' : '식대 사용시간 제한을 해제했어요.';
+      await load(); // load() clears the message, so set it afterwards
+      setMessage(saved);
+      setBusy(false);
     } catch (policyError) {
       setError(policyError.message);
     } finally {
@@ -3823,6 +3834,24 @@ function Dashboard({ session, onLogout }) {
 
     {isMerchantAdmin && merchantSection === 'payment-history' && <PaymentHistoryDashboard request={merchantRequest}/>}
 
+    {showCompanyLegacy && mealPolicy && <section className="panel meal-policy-panel merchant-regular-weight" aria-labelledby="meal-policy-title">
+      <div className="panel-title">
+        <div><h2 id="meal-policy-title">식대 사용시간 설정</h2><p className="panel-note">회사 장부·선구매 식사를 쓸 수 있는 시간을 정합니다. 직원이 직접 구매한 식권은 시간 제한을 받지 않아요.</p></div>
+        <span className="badge">{mealPolicy.enabled ? '시간 제한 사용 중' : '제한 없음'}</span>
+      </div>
+      <form className="meal-policy-form" onSubmit={saveMealPolicy}>
+        <label className="policy-toggle"><input type="checkbox" checked={mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, enabled: event.target.checked }))} /> 사용시간 제한 켜기</label>
+        <div className="meal-policy-windows">
+          {[['lunch', '중식'], ['dinner', '석식']].map(([key, label]) => <fieldset key={key} disabled={!mealPolicyForm.enabled}>
+            <legend><label className="policy-toggle"><input type="checkbox" checked={mealPolicyForm[`${key}_enabled`]} onChange={(event) => setMealPolicyForm((form) => ({ ...form, [`${key}_enabled`]: event.target.checked }))} /> {label} 사용</label></legend>
+            <label>{label} 시작<input type="time" value={mealPolicyForm[`${key}_start`]} disabled={!mealPolicyForm.enabled || !mealPolicyForm[`${key}_enabled`]} onChange={(event) => setMealPolicyForm((form) => ({ ...form, [`${key}_start`]: event.target.value }))} required /></label>
+            <label>{label} 종료<input type="time" value={mealPolicyForm[`${key}_end`]} disabled={!mealPolicyForm.enabled || !mealPolicyForm[`${key}_enabled`]} onChange={(event) => setMealPolicyForm((form) => ({ ...form, [`${key}_end`]: event.target.value }))} required /></label>
+          </fieldset>)}
+        </div>
+        {mealPolicyProblem && <p className="meal-policy-problem" role="alert">{mealPolicyProblem}</p>}
+        <div className="actions"><button type="submit" className="primary" disabled={busy || Boolean(mealPolicyProblem)}>사용시간 저장</button><span className="muted">{mealPolicyForm.enabled ? '설정한 시간 밖에는 회사 식대로 결제되지 않고, 내 식권이 있는 직원은 그것으로 결제할 수 있어요.' : '지금은 언제든 회사 식대로 결제할 수 있어요.'}</span></div>
+      </form>
+    </section>}
     {showCompanyLegacy && <section className="panel employee-panel merchant-regular-weight merchant-open-table">
       <div className="panel-title">
         <div><p className="panel-note titleless-guidance">직원 정보, 포인트 잔액과 이번 달 이용 현황을 확인합니다.</p></div>

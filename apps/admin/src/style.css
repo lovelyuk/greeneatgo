@@ -2182,3 +2182,9 @@ code { font-size: 12px; }
 /* Employee list: a bulk-registered member declined the switch in the app. */
 .badge.badge-declined { background: #FBE9D7; color: #B4540A; }
 .staged-declined { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Settlement detail: the company's dispute reason and cancelled meals. */
+.settlement-v2-dispute { display: grid; gap: 6px; }
+.settlement-v2-dispute-reason { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.settlement-v2-cancelled-row td { color: #8a8f98; }
+.settlement-v2-cancelled-row td:not(:has(button)):not(:has(.muted)) { text-decoration: line-through; text-decoration-color: rgba(138, 143, 152, .55); }

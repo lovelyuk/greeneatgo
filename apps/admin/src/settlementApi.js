@@ -72,7 +72,19 @@ export function mapSettlementTransaction(item = {}) {
     vat_amount: Number(item?.vat_amount) || 0,
     total_amount: Number(item?.total_amount) || 0,
     is_demo: Boolean(item?.is_demo),
+    // The restaurant cancelled this meal: the original stays, a reversal row points at it.
+    cancelled: Boolean(item?.cancelled),
+    original_transaction_id: item?.original_transaction_id ?? null,
+    cancel_reason: text(item?.cancel_reason).trim(),
   };
+}
+
+/** The company's latest dispute (reason + time) from the settlement's event log. */
+export function latestDispute(events) {
+  const disputes = (Array.isArray(events) ? events : []).filter((event) => event?.event_type === 'company_disputed'
+    && text(event?.payload?.reason).trim());
+  const last = disputes.at(-1);
+  return last ? { reason: text(last.payload.reason).trim(), at: last.created_at ?? null, count: disputes.length } : null;
 }
 
 export function mapSettlement(row = {}) {
@@ -115,6 +127,7 @@ export function mapSettlement(row = {}) {
     } : null,
     payments,
     transactions,
+    dispute: latestDispute(source.events),
     payment: {
       bank_name: text(supplierSource?.bank_name) || null,
       account_number: text(supplierSource?.account_number) || null,
@@ -178,6 +191,12 @@ export function canCompanyDispute(row) {
 export function canMerchantSend(row) {
   return !row?.is_demo && ['draft', 'revising'].includes(row?.settlement_status)
     && row?.tax_invoice_status === 'not_requested';
+}
+
+/** One company-ledger meal can be cancelled while the settlement is draft or being revised. */
+export function canMerchantCancelTransaction(row, transaction) {
+  return canMerchantSend(row) && transaction?.kind === 'spend' && transaction?.pay_type === 'ledger'
+    && !transaction?.cancelled && !transaction?.is_demo;
 }
 
 export function canMerchantBeginRevision(row) {

@@ -132,6 +132,8 @@ def _rpc_error(exc: SupabaseHttpError) -> HTTPException:
         ("SETTLEMENT_FORBIDDEN", 403, "FORBIDDEN", "이 정산을 처리할 권한이 없어요"),
         ("IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT", "같은 멱등 키가 다른 요청에 사용됐어요"),
         ("SETTLEMENT_STATE_CONFLICT", 409, "SETTLEMENT_STATE_CONFLICT", "현재 정산 상태에서는 처리할 수 없어요"),
+        ("SETTLEMENT_TRANSACTION_NOT_FOUND", 404, "SETTLEMENT_TRANSACTION_NOT_FOUND", "이 정산에 포함된 거래가 아니에요"),
+        ("SETTLEMENT_TRANSACTION_NOT_CANCELLABLE", 422, "SETTLEMENT_TRANSACTION_NOT_CANCELLABLE", "이 거래는 여기서 취소할 수 없어요"),
         ("SUPPLIER_PROFILE_INCOMPLETE", 422, "SUPPLIER_PROFILE_INCOMPLETE", "공급자 필수 사업자 정보를 모두 입력해 주세요"),
         ("BUSINESS_PROFILE_INCOMPLETE", 422, "BUSINESS_PROFILE_INCOMPLETE", "필수 사업자 정보를 모두 입력해 주세요"),
         ("SETTLEMENT_AMOUNTS_INVALID", 422, "SETTLEMENT_AMOUNTS_INVALID", "정산 공급가액, 부가세, 합계가 완전하지 않아요"),
@@ -516,6 +518,33 @@ def merchant_begin_revision(settlement_id: UUID, token: str = Depends(bearer_tok
         if repo.merchant_detail(settlement_id, actor.merchant_id) is None:
             raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
         return {"ok": True, "data": _public(repo.begin_revision(actor, settlement_id)), "error": None}
+    except SupabaseHttpError as exc:
+        raise _rpc_error(exc) from exc
+
+
+class SettlementTransactionCancelRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=300)
+
+
+@merchant_router.post("/{settlement_id}/transactions/{transaction_id}/cancel")
+def merchant_cancel_transaction(
+    settlement_id: UUID, transaction_id: int, payload: SettlementTransactionCancelRequest,
+    token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository),
+):
+    """Cancel one company-ledger meal while the settlement is draft or being revised.
+
+    The meal stays on record with a reversal row; the settlement total is
+    recalculated in the same database transaction (migration 0079)."""
+    actor = _actor(repo, token, "merchant_admin")
+    assert actor.merchant_id is not None
+    reason = payload.reason.strip()
+    if not reason:
+        raise _error(422, "SETTLEMENT_INPUT_INVALID", "취소 사유를 입력해 주세요")
+    try:
+        # This ordinary filtered lookup prevents generic mutation of demo evidence.
+        if repo.merchant_detail(settlement_id, actor.merchant_id) is None:
+            raise _error(404, "SETTLEMENT_NOT_FOUND", "정산을 찾을 수 없어요")
+        return {"ok": True, "data": _public(repo.cancel_transaction(actor, settlement_id, transaction_id, reason)), "error": None}
     except SupabaseHttpError as exc:
         raise _rpc_error(exc) from exc
 

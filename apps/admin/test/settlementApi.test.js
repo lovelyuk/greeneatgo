@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildPaymentPayload, canCompanyDispute, canConfirmAndRequest, canMerchantBeginRevision,
-  canMerchantIssue, canMerchantMarkPaid, canMerchantSend,
+  canMerchantCancelTransaction, canMerchantIssue, canMerchantMarkPaid, canMerchantSend, latestDispute,
   canRefreshInvoiceStatus, fetchAllSettlementSummaries, isBusinessPartyComplete,
   loadSettlementDetails, mapSettlement, openDocumentInNewWindow, paymentFormForSettlement,
   PAYMENT_STATUS_LABELS, replaceSettlementDetail, requireHttpsUrl,
@@ -50,6 +50,7 @@ test('maps public supplier information first and preserves every payment without
     id: 'tx-1', created_at: '2026-07-02T03:00:00Z', employee_name: '김직원', employee_no: 'A-1',
     department: '개발팀', kind: 'spend', pay_type: 'ledger', meal_window: '중식', item: '중식', tx_code: 'TX-1',
     supply_amount: 10000, vat_amount: 1000, total_amount: 11000, is_demo: true,
+    cancelled: false, original_transaction_id: null, cancel_reason: '',
   }]);
   assert.equal('company_id' in row, false);
   assert.equal('merchant_id' in row, false);
@@ -238,4 +239,39 @@ test('payment form defaults to remaining amount and payload exactly matches back
   });
   assert.throws(() => buildPaymentPayload({ ...form, amount: '1.5' }, 'key'), /입금액/);
   assert.throws(() => buildPaymentPayload({ ...form, depositor_name: ' ' }, 'key'), /입금자/);
+});
+
+test('latest dispute reason comes from the event log; other events and blank reasons are ignored', () => {
+  assert.equal(latestDispute(undefined), null);
+  assert.equal(latestDispute([{ event_type: 'merchant_sent', payload: { reason: 'x' } }, { event_type: 'company_disputed', payload: { reason: '  ' } }]), null);
+  const events = [
+    { event_type: 'company_disputed', payload: { reason: '첫 번째 이의' }, created_at: '2026-11-01T01:00:00Z' },
+    { event_type: 'merchant_revision_started', payload: {}, created_at: '2026-11-02T01:00:00Z' },
+    { event_type: 'company_disputed', payload: { reason: ' 15일은 식사하지 않았어요 ' }, created_at: '2026-11-03T01:00:00Z' },
+  ];
+  assert.deepEqual(latestDispute(events), { reason: '15일은 식사하지 않았어요', at: '2026-11-03T01:00:00Z', count: 2 });
+  assert.deepEqual(mapSettlement({ id: 's', events }).dispute.reason, '15일은 식사하지 않았어요');
+  assert.equal(mapSettlement({ id: 's' }).dispute, null);
+});
+
+test('a meal can be cancelled only as a live ledger spend of a draft or revising settlement', () => {
+  const spend = { id: 1, kind: 'spend', pay_type: 'ledger', cancelled: false };
+  const revising = { settlement_status: 'revising', tax_invoice_status: 'not_requested' };
+  assert.equal(canMerchantCancelTransaction(revising, spend), true);
+  assert.equal(canMerchantCancelTransaction({ ...revising, settlement_status: 'draft' }, spend), true);
+  for (const status of ['sent', 'disputed', 'confirmed', 'completed']) {
+    assert.equal(canMerchantCancelTransaction({ ...revising, settlement_status: status }, spend), false);
+  }
+  assert.equal(canMerchantCancelTransaction({ ...revising, tax_invoice_status: 'requested' }, spend), false);
+  assert.equal(canMerchantCancelTransaction({ ...revising, is_demo: true }, spend), false);
+  assert.equal(canMerchantCancelTransaction(revising, { ...spend, cancelled: true }), false);
+  assert.equal(canMerchantCancelTransaction(revising, { ...spend, kind: 'cancel' }), false);
+  assert.equal(canMerchantCancelTransaction(revising, { ...spend, pay_type: 'subsidized' }), false);
+  assert.equal(canMerchantCancelTransaction(revising, undefined), false);
+  const mapped = mapSettlement({ transactions: [
+    { id: 1, kind: 'spend', pay_type: 'ledger', cancelled: true, total_amount: 8800 },
+    { id: 2, kind: 'cancel', pay_type: 'ledger', original_transaction_id: 1, cancel_reason: ' 중복 결제 ', total_amount: -8800 },
+  ] }).transactions;
+  assert.deepEqual(mapped.map(({ cancelled, original_transaction_id, cancel_reason }) => [cancelled, original_transaction_id, cancel_reason]),
+    [[true, null, ''], [false, 1, '중복 결제']]);
 });

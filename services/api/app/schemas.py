@@ -518,12 +518,33 @@ class EmployeeBulkConfirmRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+_HHMM = r'^([01]\d|2[0-3]):[0-5]\d$'
+
+
 class MealPolicyUpdateRequest(BaseModel):
+    """Hours in which company-paid meals (ledger, prepurchase) may be used.
+
+    Each meal window can be switched off (e.g. lunch only). Vouchers an employee
+    bought with their own money are never restricted by this."""
     enabled: bool = False
-    lunch_start: str = Field(default='11:00', pattern=r'^\d{2}:\d{2}$')
-    lunch_end: str = Field(default='14:00', pattern=r'^\d{2}:\d{2}$')
-    dinner_start: str = Field(default='17:30', pattern=r'^\d{2}:\d{2}$')
-    dinner_end: str = Field(default='20:30', pattern=r'^\d{2}:\d{2}$')
+    lunch_enabled: bool = True
+    dinner_enabled: bool = True
+    lunch_start: str = Field(default='11:00', pattern=_HHMM)
+    lunch_end: str = Field(default='14:00', pattern=_HHMM)
+    dinner_start: str = Field(default='17:30', pattern=_HHMM)
+    dinner_end: str = Field(default='20:30', pattern=_HHMM)
+
+    @model_validator(mode="after")
+    def check_windows(self) -> "MealPolicyUpdateRequest":
+        if not self.enabled:
+            return self
+        if not (self.lunch_enabled or self.dinner_enabled):
+            raise ValueError("사용 시간대를 하나 이상 켜 주세요")
+        for on, start, end, name in ((self.lunch_enabled, self.lunch_start, self.lunch_end, "중식"),
+                                     (self.dinner_enabled, self.dinner_start, self.dinner_end, "석식")):
+            if on and start >= end:
+                raise ValueError(f"{name} 종료 시간은 시작 시간보다 늦어야 해요")
+        return self
 
 
 

@@ -23,12 +23,13 @@ import { currentPeriodYm, formatPeriodYm, mapCompanyUsage, shiftPeriodYm } from 
 import { filterMerchantTransactions, merchantMealPaymentIds, merchantRecentKpis, reconcileMerchantPaymentFeed } from './merchantPaymentFeed.js';
 import { BANNER_PLACEMENTS, apiItems, bannerCtr, bannerFormFromItem, bannerListQuery, bannerStatsContract, bannerStatus, imageRatioStatus, isHttpsUrl, normalizeBannerPayload, utcIsoToLocalDateTime } from './partnerBanner.js';
 import {
-  buildPaymentPayload, canCompanyDispute, canConfirmAndRequest, canMerchantBeginRevision,
+  buildPaymentPayload, canCompanyDispute, canConfirmAndRequest, canMerchantBeginRevision, canMerchantCancelTransaction,
   canMerchantIssue, canMerchantMarkPaid, canMerchantSend, canRefreshInvoiceStatus,
   fetchAllSettlementSummaries, hasInvoiceDocument, isBusinessPartyComplete,
   mapSettlement, openDocumentInNewWindow, paymentFormForSettlement, PAYMENT_STATUS_LABELS,
   replaceSettlementDetail, settlementApiRoot,
 } from './settlementApi.js';
+import RevenueBasisPanel from './RevenueBasis.jsx';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -1550,6 +1551,8 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
   const [pendingAction, setPendingAction] = useState('');
   const [confirmChecks, setConfirmChecks] = useState([false, false, false]);
   const [disputeReason, setDisputeReason] = useState('');
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
   const [paymentForm, setPaymentForm] = useState({ amount: '', depositor_name: '', deposited_at: '', memo: '' });
   const [periodForm, setPeriodForm] = useState({ period_from: '', period_to: '' });
   const actionButtonRef = useRef(null);
@@ -1762,6 +1765,24 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
     finally { setPendingAction(''); }
   }
 
+  // Restaurant: cancel one meal of a draft / revising settlement (the amount is recalculated server-side).
+  async function cancelSettlementTransaction(event) {
+    event.preventDefault();
+    if (!selected || !isMerchant || !cancelTarget || pendingAction) return;
+    const reason = cancelReason.trim();
+    if (!reason) { setActionError('취소 사유를 입력해 주세요.'); return; }
+    setPendingAction('cancel-transaction'); setActionError('');
+    try {
+      await apiFetch(`/admin/merchant/settlements/${encodeURIComponent(selected.id)}/transactions/${encodeURIComponent(cancelTarget.id)}/cancel`, token, {
+        method: 'POST', body: JSON.stringify({ reason }),
+      });
+      setDialog(null); setCancelTarget(null);
+      setEvidenceLoading(true);
+      await refreshAfterAction('거래를 취소하고 정산 금액을 다시 계산했습니다.');
+    } catch (cancelError) { setActionError(cancelError.message); }
+    finally { setPendingAction(''); }
+  }
+
   async function disputeSettlement(event) {
     event.preventDefault();
     if (!selected || isMerchant || pendingAction) return;
@@ -1849,6 +1870,7 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
   const companyCanDispute = !isMerchant && canCompanyDispute(selected);
   const merchantCanSend = isMerchant && canMerchantSend(selected);
   const merchantCanBeginRevision = isMerchant && canMerchantBeginRevision(selected);
+  const merchantCanEditTransactions = isMerchant && canMerchantSend(selected);
   const merchantCanIssue = isMerchant && canMerchantIssue(selected);
   const merchantCanMarkPaid = isMerchant && canMerchantMarkPaid(selected);
   return <AdminPage title={null} description="" showHeader={false} preview={false} className="merchant-regular-weight merchant-open-table">
@@ -1859,6 +1881,13 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
     {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
     {selected.is_demo && <div className="alert warning" role="status">시연 정산입니다. 단계 진행과 초기화는 공급자 정보의 정산·세금계산서 시연 영역에서만 할 수 있습니다.</div>}
     <div className="settlement-v2-detailbar"><button ref={backButtonRef} type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { evidenceRequestRef.current += 1; selectedIdRef.current = null; setEvidenceLoading(false); setSelectedId(null); setNotice(''); setActionError(''); }}>‹ 뒤로</button><div className="settlement-v2-detail-actions">{!selected.is_demo && <><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => handleSettlementDocument('xlsx')}><Download size={16}/> {pendingAction === 'document-xlsx' ? '엑셀 생성 중...' : '엑셀 다운로드'}</button><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => handleSettlementDocument('html')}><FileText size={16}/> {pendingAction === 'document-html' ? '여는 중...' : '보기'}</button><button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => handleSettlementDocument('pdf')}><Download size={16}/> {pendingAction === 'document-pdf' ? 'PDF 생성 중...' : 'PDF'}</button></>}{isMerchant && canRefreshInvoiceStatus(selected) && <button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={refreshInvoiceStatus}><RefreshCw size={16}/> 상태 새로고침</button>}{merchantCanSend && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => settlementWorkflowAction('send')}>{selected.settlement_status === 'revising' ? '업체에 정산서 재발송' : '업체에 정산서 발송'}</button>}{merchantCanBeginRevision && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => settlementWorkflowAction('begin-revision')}>정산서 수정 시작</button>}{merchantCanIssue && <button ref={actionButtonRef} type="button" className="primary" disabled={Boolean(pendingAction)} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('issue'); }}>세금계산서 발행</button>}{companyCanRequest && <button ref={actionButtonRef} type="button" className="primary" disabled={!recipientReady || Boolean(pendingAction)} onClick={() => { setConfirmChecks([false, false, false]); dialogReturnRef.current = actionButtonRef.current; setDialog('request'); }}>정산 내용 확인 및 세금계산서 발급 요청</button>}{companyCanDispute && <button type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { disputeIdempotencyKeyRef.current = crypto.randomUUID(); setDisputeReason(''); setActionError(''); setDialog('dispute'); }}>정산 내용 이의 제기</button>}{merchantCanMarkPaid && <button ref={actionButtonRef} type="button" className="ghost" disabled={Boolean(pendingAction)} onClick={() => { paymentIdempotencyKeyRef.current = crypto.randomUUID(); setPaymentForm(paymentFormForSettlement(selected)); setActionError(''); dialogReturnRef.current = actionButtonRef.current; setDialog('payment'); }}>입금 등록</button>}</div></div>
+    {selected.dispute && ['disputed', 'revising'].includes(selected.settlement_status) && <div className="alert warning settlement-v2-dispute" role="status">
+      <strong>{isMerchant ? '업체가 이의를 제기했습니다' : '이의를 제기한 정산서입니다'}{selected.dispute.at ? ` · ${formatKoreanTimestamp(selected.dispute.at)}` : ''}</strong>
+      <p className="settlement-v2-dispute-reason">{selected.dispute.reason}</p>
+      {isMerchant && <small>{selected.settlement_status === 'disputed'
+        ? '‘정산서 수정 시작’을 누르면 아래 사용 내역에서 잘못된 거래를 취소하거나 정산 기간을 바꿀 수 있습니다.'
+        : '아래 사용 내역에서 잘못된 거래를 취소하거나 정산 기간을 바꾼 뒤 ‘업체에 정산서 재발송’을 눌러 주세요.'}</small>}
+    </div>}
     {!isMerchant && !recipientReady && <div className="alert warning" role="alert">정산 확정에 필요한 회사 정보(사업자 정보, 세금계산서 이메일, 담당자명·연락처)가 미완성입니다. <button type="button" className="ghost" onClick={onCompanyInfo}>회사 정보에서 입력하기</button></div>}
     <article className="panel settlement-v2-overview">
       <div className="settlement-v2-overview-row"><span>정산 요약</span><div className="settlement-v2-summary-grid"><div><small>공급자</small><strong>{selected.supplier.name}</strong></div><div><small>정산금액</small><strong className="money">{krw(selected.total_amount)}</strong></div><div><small>정산</small><SettlementV2Status type="settlement" value={selected.settlement_status}/></div><div><small>세금계산서</small><SettlementV2Status type="invoice" value={selected.tax_invoice_status}/></div><div><small>입금</small><SettlementV2Status type="payment" value={selected.payment_status}/></div></div></div>
@@ -1871,11 +1900,12 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
       {selected.tax_invoice_status === 'failed' && <div className="settlement-v2-overview-row"><span>실패 사유</span><strong className="settlement-v2-error-text">{selected.invoice?.failed_reason || '확인 필요'}</strong></div>}
     </article>
     <div className="settlement-v2-tabs" role="tablist" aria-label="정산서 상세"><button id="settlement-evidence-tab" type="button" role="tab" aria-selected={detailTab === 'evidence'} aria-controls="settlement-evidence-panel" className={detailTab === 'evidence' ? 'active' : ''} onClick={() => setDetailTab('evidence')}>증빙 내역</button><button id="settlement-deposits-tab" type="button" role="tab" aria-selected={detailTab === 'deposits'} aria-controls="settlement-deposits-panel" className={detailTab === 'deposits' ? 'active' : ''} onClick={() => setDetailTab('deposits')}>입금/이체 내역</button></div>
-    {detailTab === 'evidence' && <article id="settlement-evidence-panel" aria-labelledby="settlement-evidence-tab" role="tabpanel" className="panel"><div className="panel-title"><div><h3>해당 정산 기간 사용 내역</h3><p className="panel-note">{evidenceLoading ? '사용 내역을 불러오는 중입니다.' : `${selected.period_start} ~ ${selected.period_end} · ${evidenceRows.length}건 · 합계 ${krw(evidenceTotal)}`}</p></div></div><div className="table-wrap"><table className="settlement-v2-evidence-table"><thead><tr><th>거래 날짜</th><th>거래 시간</th><th>이름</th><th>부서</th><th>사번</th><th>구분</th><th>내역</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th className="transaction-code">거래번호</th></tr></thead><tbody>{evidenceRows.map((row) => { const transactionDateTime = formatKoreanDateTimeParts(row.created_at); return <tr key={row.id}><td>{transactionDateTime.date}</td><td>{transactionDateTime.time}</td><td>{row.employee_name}</td><td>{row.department || '-'}</td><td>{row.employee_no || '-'}</td><td>{row.kind === 'spend' ? (row.pay_type === 'subsidized' ? '보조금' : '장부') : row.kind === 'refund' ? '환불' : '취소'}</td><td>{row.item}</td><td className="money">{krw(row.supply_amount)}</td><td className="money">{krw(row.vat_amount)}</td><td className="money">{krw(row.total_amount)}</td><td className="transaction-code">{row.tx_code || '-'}</td></tr>; })}</tbody></table></div>{evidenceRows.length === 0 && <SettlementV2Empty text={evidenceLoading ? '사용 내역을 불러오는 중입니다' : '해당 정산 기간의 사용 내역이 없습니다'} />}</article>}
+    {detailTab === 'evidence' && <article id="settlement-evidence-panel" aria-labelledby="settlement-evidence-tab" role="tabpanel" className="panel"><div className="panel-title"><div><h3>해당 정산 기간 사용 내역</h3><p className="panel-note">{evidenceLoading ? '사용 내역을 불러오는 중입니다.' : `${selected.period_start} ~ ${selected.period_end} · ${evidenceRows.length}건 · 합계 ${krw(evidenceTotal)}`}</p></div></div><div className="table-wrap"><table className="settlement-v2-evidence-table"><thead><tr>{merchantCanEditTransactions && <th>관리</th>}<th>거래 날짜</th><th>거래 시간</th><th>이름</th><th>부서</th><th>사번</th><th>구분</th><th>내역</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th className="transaction-code">거래번호</th></tr></thead><tbody>{evidenceRows.map((row) => { const transactionDateTime = formatKoreanDateTimeParts(row.created_at); return <tr key={row.id} className={row.cancelled || row.kind !== 'spend' ? 'settlement-v2-cancelled-row' : undefined}>{merchantCanEditTransactions && <td>{canMerchantCancelTransaction(selected, row) ? <button type="button" className="ghost" disabled={Boolean(pendingAction)} aria-label={`${row.employee_name} ${transactionDateTime.date} 거래 취소`} onClick={() => { setCancelTarget(row); setCancelReason(''); setActionError(''); setDialog('cancel-transaction'); }}>거래 취소</button> : <span className="muted">{row.cancelled ? '취소됨' : '-'}</span>}</td>}<td>{transactionDateTime.date}</td><td>{transactionDateTime.time}</td><td>{row.employee_name}</td><td>{row.department || '-'}</td><td>{row.employee_no || '-'}</td><td>{row.kind === 'spend' ? `${row.pay_type === 'subsidized' ? '보조금' : '장부'}${row.cancelled ? ' (취소됨)' : ''}` : row.kind === 'refund' ? '환불' : '취소'}</td><td>{row.item}{row.kind !== 'spend' && row.cancel_reason ? ` · 사유: ${row.cancel_reason}` : ''}</td><td className="money">{krw(row.supply_amount)}</td><td className="money">{krw(row.vat_amount)}</td><td className="money">{krw(row.total_amount)}</td><td className="transaction-code">{row.tx_code || '-'}</td></tr>; })}</tbody></table></div>{evidenceRows.length === 0 && <SettlementV2Empty text={evidenceLoading ? '사용 내역을 불러오는 중입니다' : '해당 정산 기간의 사용 내역이 없습니다'} />}</article>}
     {detailTab === 'deposits' && <article id="settlement-deposits-panel" aria-labelledby="settlement-deposits-tab" role="tabpanel" className="panel"><div className="panel-title"><div><h3>입금 내역 (금액: {krw(depositedAmount)})</h3><p className="panel-note">입금 계좌와 이체 내역입니다.{!isMerchant && ' 회사 관리자는 조회만 할 수 있습니다.'}</p></div></div><div className="settlement-v2-account"><span>은행 <strong>{selected.payment.bank_name || '미설정/확인 필요'}</strong></span><span>계좌번호 <strong>{selected.payment.account_number || '미설정/확인 필요'}</strong></span><span>예금주 <strong>{selected.payment.account_holder || '미설정/확인 필요'}</strong></span><span>입금 예정일 <strong>{selected.due_date || '확인 필요'}</strong></span></div><div className="table-wrap"><table><thead><tr><th>거래 일시</th><th className="money">입금액(원)</th><th>적요</th></tr></thead><tbody>{depositRows.map((row, index) => <tr key={`${row[0]}-${index}`}><td>{row[0]}</td><td className="money">{krw(row[1])}</td><td>{row[2]}</td></tr>)}</tbody></table></div>{depositRows.length === 0 && <SettlementV2Empty />}</article>}
+    {dialog === 'cancel-transaction' && cancelTarget && <div className="modal-backdrop" onClick={closeDialog}><section ref={dialogRef} className="invite-modal mock-tax-modal" role="dialog" aria-modal="true" aria-labelledby="settlement-cancel-dialog-title" onClick={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}><div className="modal-head"><div><span className="eyebrow">CANCEL</span><h2 id="settlement-cancel-dialog-title">거래 취소</h2></div><button type="button" className="ghost" aria-label="닫기" onClick={closeDialog} disabled={Boolean(pendingAction)}><X size={18}/></button></div><p className="panel-note">{cancelTarget.employee_name} · {formatKoreanTimestamp(cancelTarget.created_at)} · {cancelTarget.item} · {krw(cancelTarget.total_amount)}</p><p className="panel-note">취소하면 이 거래가 정산 금액에서 빠지고 직원의 식대 한도도 되돌아갑니다. 취소한 거래는 되살릴 수 없으니 확인 후 진행해 주세요.</p>{actionError && <div className="alert error" role="alert">{actionError}</div>}<form className="form" onSubmit={cancelSettlementTransaction}><label>취소 사유<textarea rows="3" maxLength="300" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} disabled={Boolean(pendingAction)} required autoFocus/></label><div className="actions"><button type="button" className="ghost" onClick={closeDialog} disabled={Boolean(pendingAction)}>닫기</button><button type="submit" className="primary" disabled={!cancelReason.trim() || Boolean(pendingAction)}>{pendingAction === 'cancel-transaction' ? '취소 처리 중...' : '이 거래 취소'}</button></div></form></section></div>}
     {dialog === 'dispute' && <div className="modal-backdrop" onClick={closeDialog}><section ref={dialogRef} className="invite-modal mock-tax-modal" role="dialog" aria-modal="true" aria-labelledby="settlement-dispute-dialog-title" onClick={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}><div className="modal-head"><div><span className="eyebrow">DISPUTE</span><h2 id="settlement-dispute-dialog-title">정산 내용 이의 제기</h2></div><button type="button" className="ghost" aria-label="닫기" onClick={closeDialog} disabled={Boolean(pendingAction)}><X size={18}/></button></div><p className="panel-note">업체가 확인하고 수정할 수 있도록 금액 또는 내역의 문제를 구체적으로 입력해 주세요.</p>{actionError && <div className="alert error" role="alert">{actionError}</div>}<form className="form" onSubmit={disputeSettlement}><label>이의 제기 사유<textarea rows="5" maxLength="1000" value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} disabled={Boolean(pendingAction)} required autoFocus/></label><div className="actions"><button type="button" className="ghost" onClick={closeDialog} disabled={Boolean(pendingAction)}>취소</button><button type="submit" className="primary" disabled={!disputeReason.trim() || Boolean(pendingAction)}>{pendingAction === 'dispute' ? '제출 중...' : '정산 내용 이의 제기'}</button></div></form></section></div>}
     {dialog === 'payment' && <div className="modal-backdrop" onClick={closeDialog}><section ref={dialogRef} className="invite-modal mock-tax-modal" role="dialog" aria-modal="true" aria-labelledby="settlement-payment-dialog-title" onClick={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}><div className="modal-head"><div><span className="eyebrow">PAYMENT</span><h2 id="settlement-payment-dialog-title">입금 내역 등록</h2></div><button type="button" className="ghost" aria-label="닫기" onClick={closeDialog} disabled={Boolean(pendingAction)}><X size={18}/></button></div><p className="panel-note">서버에 실제 입금 내역을 등록합니다. 현재 입금액 {krw(depositedAmount)}, 남은 금액 {krw(Math.max(0, selected.total_amount - depositedAmount))}</p>{actionError && <div className="alert error" role="alert" aria-live="assertive">{actionError}</div>}<form className="form" onSubmit={markPaid}><label>입금액(원)<input type="number" min="1" step="1" inputMode="numeric" value={paymentForm.amount} onChange={(event) => setPaymentForm((current) => ({ ...current, amount: event.target.value }))} disabled={Boolean(pendingAction)} required autoFocus/></label><label>입금자명<input value={paymentForm.depositor_name} onChange={(event) => setPaymentForm((current) => ({ ...current, depositor_name: event.target.value }))} disabled={Boolean(pendingAction)} required/></label><label>입금 일시<input type="datetime-local" value={paymentForm.deposited_at} onChange={(event) => setPaymentForm((current) => ({ ...current, deposited_at: event.target.value }))} disabled={Boolean(pendingAction)} required/></label><label>메모 (선택)<textarea rows="3" value={paymentForm.memo} onChange={(event) => setPaymentForm((current) => ({ ...current, memo: event.target.value }))} disabled={Boolean(pendingAction)}/></label><dl className="settlement-v2-business settlement-v2-dialog-business" aria-label="입금 등록 내용 검토"><div><dt>정산 기간</dt><dd>{selected.period_start} ~ {selected.period_end}</dd></div><div><dt>등록 금액</dt><dd>{krw(Number(paymentForm.amount) || 0)}</dd></div><div><dt>입금자</dt><dd>{paymentForm.depositor_name || '확인 필요'}</dd></div><div><dt>입금 일시</dt><dd>{paymentForm.deposited_at || '확인 필요'}</dd></div></dl><div className="modal-actions"><button type="button" className="ghost" onClick={closeDialog} disabled={Boolean(pendingAction)}>취소</button><button type="submit" className="primary" disabled={Boolean(pendingAction)}>{pendingAction === 'paid' ? '등록 중...' : '입금 등록'}</button></div></form></section></div>}
-    {dialog && !['payment', 'dispute'].includes(dialog) && <div className="modal-backdrop" onClick={closeDialog}><section ref={dialogRef} className="invite-modal mock-tax-modal" role="dialog" aria-modal="true" aria-labelledby="settlement-v2-dialog-title" onClick={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}><div className="modal-head"><div><span className="eyebrow">TAX INVOICE · POPBILL</span><h2 id="settlement-v2-dialog-title">{isMerchant ? '세금계산서 발행' : '정산 내용 확인 및 세금계산서 발급 요청'}</h2></div><button type="button" className="ghost" aria-label="닫기" onClick={closeDialog} autoFocus><X size={18}/></button></div><div className="alert warning">실제 세금계산서 발행 또는 발급 요청입니다. 표시된 사업자 정보와 금액을 확인해 주세요.</div><div className="mock-invoice-parties"><article><span>공급자</span><strong>{selected.supplier.name}</strong><small>{selected.supplier.biz_reg_no || '사업자번호 확인 필요'} · {selected.supplier.representative_name || '대표자 확인 필요'}</small></article><article><span>공급받는자</span><strong>{profileRecipient.name || '확인 필요'}</strong><small>{profileRecipient.biz_reg_no || '사업자번호 확인 필요'} · {profileRecipient.representative_name || '대표자 확인 필요'}</small></article></div><dl className="settlement-v2-business settlement-v2-dialog-business"><div><dt>상호</dt><dd>{profileRecipient.name || '확인 필요'}</dd></div><div><dt>사업자등록번호</dt><dd>{profileRecipient.biz_reg_no || '확인 필요'}</dd></div><div><dt>종사업장번호</dt><dd>{profileRecipient.branch_no || '해당 없음'}</dd></div><div><dt>대표자</dt><dd>{profileRecipient.representative_name || '확인 필요'}</dd></div><div><dt>사업장 주소</dt><dd>{profileRecipient.address || '확인 필요'}</dd></div><div><dt>업태</dt><dd>{profileRecipient.business_type || '확인 필요'}</dd></div><div><dt>종목</dt><dd>{profileRecipient.business_item || '확인 필요'}</dd></div><div><dt>수신 이메일</dt><dd>{profileRecipient.tax_invoice_email || '확인 필요'}</dd></div></dl><div className="table-wrap"><table><thead><tr><th>품목</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th>작성일자</th></tr></thead><tbody><tr><td>{selected.period_start.slice(0, 7)} 식대(월합계)</td><td className="money">{krw(selected.supply_amount)}</td><td className="money">{krw(selected.vat_amount)}</td><td className="money">{krw(selected.total_amount)}</td><td>{selected.period_end || '미확정'}</td></tr></tbody></table></div>{!isMerchant && <fieldset className="settlement-v2-confirmations"><legend>확정 전 필수 확인</legend>{['정산 기간과 정산금액을 확인했습니다.', '공급받는자 사업자 정보와 수신 이메일을 확인했습니다.', '정산 확정과 세금계산서 발급 요청이 동시에 처리됨에 동의합니다.'].map((label, index) => <label key={label}><input type="checkbox" checked={confirmChecks[index]} onChange={(event) => setConfirmChecks((current) => current.map((value, currentIndex) => currentIndex === index ? event.target.checked : value))}/><span>{label}</span></label>)}</fieldset>}<div className="modal-actions"><button type="button" className="ghost" onClick={closeDialog}>닫기</button><button type="button" className="primary" onClick={confirmInvoiceAction} disabled={Boolean(pendingAction) || (!isMerchant && (!recipientReady || !confirmChecks.every(Boolean)))}>{isMerchant ? '발행 요청' : '정산 내용 확인 및 세금계산서 발급 요청'}</button></div></section></div>}
+    {dialog && !['payment', 'dispute', 'cancel-transaction'].includes(dialog) && <div className="modal-backdrop" onClick={closeDialog}><section ref={dialogRef} className="invite-modal mock-tax-modal" role="dialog" aria-modal="true" aria-labelledby="settlement-v2-dialog-title" onClick={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}><div className="modal-head"><div><span className="eyebrow">TAX INVOICE · POPBILL</span><h2 id="settlement-v2-dialog-title">{isMerchant ? '세금계산서 발행' : '정산 내용 확인 및 세금계산서 발급 요청'}</h2></div><button type="button" className="ghost" aria-label="닫기" onClick={closeDialog} autoFocus><X size={18}/></button></div><div className="alert warning">실제 세금계산서 발행 또는 발급 요청입니다. 표시된 사업자 정보와 금액을 확인해 주세요.</div><div className="mock-invoice-parties"><article><span>공급자</span><strong>{selected.supplier.name}</strong><small>{selected.supplier.biz_reg_no || '사업자번호 확인 필요'} · {selected.supplier.representative_name || '대표자 확인 필요'}</small></article><article><span>공급받는자</span><strong>{profileRecipient.name || '확인 필요'}</strong><small>{profileRecipient.biz_reg_no || '사업자번호 확인 필요'} · {profileRecipient.representative_name || '대표자 확인 필요'}</small></article></div><dl className="settlement-v2-business settlement-v2-dialog-business"><div><dt>상호</dt><dd>{profileRecipient.name || '확인 필요'}</dd></div><div><dt>사업자등록번호</dt><dd>{profileRecipient.biz_reg_no || '확인 필요'}</dd></div><div><dt>종사업장번호</dt><dd>{profileRecipient.branch_no || '해당 없음'}</dd></div><div><dt>대표자</dt><dd>{profileRecipient.representative_name || '확인 필요'}</dd></div><div><dt>사업장 주소</dt><dd>{profileRecipient.address || '확인 필요'}</dd></div><div><dt>업태</dt><dd>{profileRecipient.business_type || '확인 필요'}</dd></div><div><dt>종목</dt><dd>{profileRecipient.business_item || '확인 필요'}</dd></div><div><dt>수신 이메일</dt><dd>{profileRecipient.tax_invoice_email || '확인 필요'}</dd></div></dl><div className="table-wrap"><table><thead><tr><th>품목</th><th className="money">공급가액</th><th className="money">부가세</th><th className="money">합계</th><th>작성일자</th></tr></thead><tbody><tr><td>{selected.period_start.slice(0, 7)} 식대(월합계)</td><td className="money">{krw(selected.supply_amount)}</td><td className="money">{krw(selected.vat_amount)}</td><td className="money">{krw(selected.total_amount)}</td><td>{selected.period_end || '미확정'}</td></tr></tbody></table></div>{!isMerchant && <fieldset className="settlement-v2-confirmations"><legend>확정 전 필수 확인</legend>{['정산 기간과 정산금액을 확인했습니다.', '공급받는자 사업자 정보와 수신 이메일을 확인했습니다.', '정산 확정과 세금계산서 발급 요청이 동시에 처리됨에 동의합니다.'].map((label, index) => <label key={label}><input type="checkbox" checked={confirmChecks[index]} onChange={(event) => setConfirmChecks((current) => current.map((value, currentIndex) => currentIndex === index ? event.target.checked : value))}/><span>{label}</span></label>)}</fieldset>}<div className="modal-actions"><button type="button" className="ghost" onClick={closeDialog}>닫기</button><button type="button" className="primary" onClick={confirmInvoiceAction} disabled={Boolean(pendingAction) || (!isMerchant && (!recipientReady || !confirmChecks.every(Boolean)))}>{isMerchant ? '발행 요청' : '정산 내용 확인 및 세금계산서 발급 요청'}</button></div></section></div>}
   </AdminPage>;
 }
 
@@ -2424,9 +2454,9 @@ function DonutCard({ rows, total }) {
   </article>;
 }
 
-function RankTable({ title, rows, valueKey, money = false, secondHeader }) {
+function RankTable({ title, rows, valueKey, money = false, secondHeader, onRowClick }) {
   return <article className="dash-card dash-detail-card"><div className="dash-table-heading"><h3>{title}</h3><span>(단위: {money ? '원' : '건'})</span></div>
-    {rows.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <div className="dash-table-wrap"><table><thead><tr><th>순위</th><th>{secondHeader}</th><th className="money">값</th></tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.name}-${index}`} className={row.isTotal ? 'dash-total-row' : ''}><td>{row.isTotal ? '' : row.rank}</td><td>{row.name}</td><td className="money">{dashNumber(row[valueKey])}</td></tr>)}</tbody></table></div>}
+    {rows.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <div className="dash-table-wrap"><table><thead><tr><th>순위</th><th>{secondHeader}</th><th className="money">값</th></tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.name}-${index}`} className={row.isTotal ? 'dash-total-row' : ''}><td>{row.isTotal ? '' : row.rank}</td><td>{onRowClick && !row.isTotal && row.name !== '기타' ? <button type="button" className="dash-rank-link" onClick={() => onRowClick(row.name)} aria-label={`${row.name} 세부 내역 보기`}>{row.name}</button> : row.name}</td><td className="money">{dashNumber(row[valueKey])}</td></tr>)}</tbody></table></div>}
   </article>;
 }
 
@@ -2623,6 +2653,9 @@ function DashboardView({ kind, token, scopeId, recentPayments = null }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
+  // Restaurant only: a company name clicked in a ranking table opens its revenue popup.
+  const [revenuePartyName, setRevenuePartyName] = useState('');
+  const revenueFetcher = useMemo(() => (path) => apiFetch(path, token), [token]);
   const scopeKey = kind === 'merchant' ? 'merchant_id' : 'company_id';
   const merchant = kind === 'merchant';
 
@@ -2679,12 +2712,13 @@ function DashboardView({ kind, token, scopeId, recentPayments = null }) {
     <PeriodPicker draft={draft} onChange={setDraft} onApply={applyPeriod} loading={loading}/>
     {error && <div className="dash-error" role="alert">{error}<button type="button" className="ghost" onClick={() => setReload((value) => value + 1)} disabled={loading}>다시 시도</button></div>}
     {loading && <div className="dash-loading" role="status" aria-label="대시보드를 불러오는 중"><div className="dash-summary-grid">{[0, 1, 2].map((key) => <div key={key} className="dash-card dash-skeleton" />)}</div><div className="dash-two-grid">{[0, 1, 2, 3].map((key) => <div key={key} className="dash-card dash-skeleton dash-skeleton-large" />)}</div></div>}
+    {merchant && scopeId && <RevenueBasisPanel period={applied} fetcher={revenueFetcher} openName={revenuePartyName} onOpened={() => setRevenuePartyName('')}/>}
     {summary && !loading && layout === 'forest' && <section className="dash-forest">
       <SummaryCard label={labels.amount} value={summary.total_amount} delta={summary.total_amount_delta_pct} money Icon={WalletCards} tone="green"/>
       <SummaryCard label={labels.count} value={summary.total_count} delta={summary.total_count_delta_pct} Icon={BarChart3} tone="orange"/>
       <DonutCard rows={mealRows} total={summary.total_count}/>
       <DashboardTabsCard tabs={theme.trendTabs.length ? theme.trendTabs : ['amount', 'count']} labels={labels} summary={summary} series={series} period={applied} color={theme.chart}/>
-      <div className="dash-forest-side"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'}/></div>
+      <div className="dash-forest-side"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'} onRowClick={merchant ? setRevenuePartyName : undefined}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'} onRowClick={merchant ? setRevenuePartyName : undefined}/></div>
     </section>}
     {summary && !loading && layout === 'compact' && <section className="dash-compact">
       <CompactChips summary={summary} labels={labels} series={series}/>
@@ -2693,7 +2727,7 @@ function DashboardView({ kind, token, scopeId, recentPayments = null }) {
     </section>}
     {summary && !loading && layout === 'classic' && <>
       <section className="dash-summary-grid"><SummaryCard label={labels.amount} value={summary.total_amount} delta={summary.total_amount_delta_pct} money Icon={WalletCards} tone="green"/><DonutCard rows={mealRows} total={summary.total_count}/><SummaryCard label={labels.count} value={summary.total_count} delta={summary.total_count_delta_pct} Icon={BarChart3} tone="orange"/></section>
-      <section className="dash-two-grid"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'}/></section>
+      <section className="dash-two-grid"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'} onRowClick={merchant ? setRevenuePartyName : undefined}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'} onRowClick={merchant ? setRevenuePartyName : undefined}/></section>
       <section className="dash-two-grid"><TrendChart title={labels.trendAmount} series={hasDashboardData ? summary.series : []} unit={summary.unit} valueKey="amount" money color="#2FB865"/><TrendChart title={labels.trendCount} series={hasDashboardData ? summary.series : []} unit={summary.unit} valueKey="count" color="#4C8BF5"/></section>
       {extras && merchant && recentPayments && <section className="dash-two-grid theme-extra-grid"><RecentPaymentsWidget items={recentPayments}/></section>}
     </>}
@@ -2913,7 +2947,7 @@ function Dashboard({ session, onLogout }) {
   const [transactions, setTransactions] = useState(null);
   const [employees, setEmployees] = useState(null);
   const [mealPolicy, setMealPolicy] = useState(null);
-  const [mealPolicyForm, setMealPolicyForm] = useState({ enabled: false, lunch_start: '11:00', lunch_end: '14:00', dinner_start: '17:30', dinner_end: '20:30' });
+  const [mealPolicyForm, setMealPolicyForm] = useState({ enabled: false, lunch_enabled: true, dinner_enabled: true, lunch_start: '11:00', lunch_end: '14:00', dinner_start: '17:30', dinner_end: '20:30' });
   const [employeeTxModal, setEmployeeTxModal] = useState(null);
   const [employeeBulkOpen, setEmployeeBulkOpen] = useState(false);
   const [employeeManageModal, setEmployeeManageModal] = useState(null);
@@ -3167,6 +3201,8 @@ function Dashboard({ session, onLogout }) {
       setMealPolicy(mealPolicyData);
       if (mealPolicyData) setMealPolicyForm({
         enabled: !!mealPolicyData.enabled,
+        lunch_enabled: mealPolicyData.lunch_enabled !== false,
+        dinner_enabled: mealPolicyData.dinner_enabled !== false,
         lunch_start: mealPolicyData.lunch_start ?? '11:00',
         lunch_end: mealPolicyData.lunch_end ?? '14:00',
         dinner_start: mealPolicyData.dinner_start ?? '17:30',
@@ -3263,8 +3299,15 @@ function Dashboard({ session, onLogout }) {
     } catch (employeeError) { setError(employeeError.message); } finally { setBusy(false); }
   }
 
+  // Hours in which company-paid meals (ledger, prepurchase) can be used.
+  const mealPolicyProblem = !mealPolicyForm.enabled ? ''
+    : !mealPolicyForm.lunch_enabled && !mealPolicyForm.dinner_enabled ? '사용 시간대를 하나 이상 켜 주세요.'
+    : mealPolicyForm.lunch_enabled && mealPolicyForm.lunch_start >= mealPolicyForm.lunch_end ? '중식 종료 시간은 시작 시간보다 늦어야 해요.'
+    : mealPolicyForm.dinner_enabled && mealPolicyForm.dinner_start >= mealPolicyForm.dinner_end ? '석식 종료 시간은 시작 시간보다 늦어야 해요.' : '';
+
   async function saveMealPolicy(event) {
     event.preventDefault();
+    if (mealPolicyProblem) { setError(mealPolicyProblem); return; }
     setBusy(true);
     setError('');
     setMessage('');
@@ -3273,8 +3316,10 @@ function Dashboard({ session, onLogout }) {
         method: 'PUT',
         body: JSON.stringify(mealPolicyForm),
       });
-      setMessage(mealPolicyForm.enabled ? '식대 사용시간 제한을 저장했어요.' : '식대 사용시간 제한을 해제했어요.');
-      await load();
+      const saved = mealPolicyForm.enabled ? '식대 사용시간 제한을 저장했어요.' : '식대 사용시간 제한을 해제했어요.';
+      await load(); // load() clears the message, so set it afterwards
+      setMessage(saved);
+      setBusy(false);
     } catch (policyError) {
       setError(policyError.message);
     } finally {
@@ -3789,6 +3834,24 @@ function Dashboard({ session, onLogout }) {
 
     {isMerchantAdmin && merchantSection === 'payment-history' && <PaymentHistoryDashboard request={merchantRequest}/>}
 
+    {showCompanyLegacy && mealPolicy && <section className="panel meal-policy-panel merchant-regular-weight" aria-labelledby="meal-policy-title">
+      <div className="panel-title">
+        <div><h2 id="meal-policy-title">식대 사용시간 설정</h2><p className="panel-note">회사 장부·선구매 식사를 쓸 수 있는 시간을 정합니다. 직원이 직접 구매한 식권은 시간 제한을 받지 않아요.</p></div>
+        <span className="badge">{mealPolicy.enabled ? '시간 제한 사용 중' : '제한 없음'}</span>
+      </div>
+      <form className="meal-policy-form" onSubmit={saveMealPolicy}>
+        <label className="policy-toggle"><input type="checkbox" checked={mealPolicyForm.enabled} onChange={(event) => setMealPolicyForm((form) => ({ ...form, enabled: event.target.checked }))} /> 사용시간 제한 켜기</label>
+        <div className="meal-policy-windows">
+          {[['lunch', '중식'], ['dinner', '석식']].map(([key, label]) => <fieldset key={key} disabled={!mealPolicyForm.enabled}>
+            <legend><label className="policy-toggle"><input type="checkbox" checked={mealPolicyForm[`${key}_enabled`]} onChange={(event) => setMealPolicyForm((form) => ({ ...form, [`${key}_enabled`]: event.target.checked }))} /> {label} 사용</label></legend>
+            <label>{label} 시작<input type="time" value={mealPolicyForm[`${key}_start`]} disabled={!mealPolicyForm.enabled || !mealPolicyForm[`${key}_enabled`]} onChange={(event) => setMealPolicyForm((form) => ({ ...form, [`${key}_start`]: event.target.value }))} required /></label>
+            <label>{label} 종료<input type="time" value={mealPolicyForm[`${key}_end`]} disabled={!mealPolicyForm.enabled || !mealPolicyForm[`${key}_enabled`]} onChange={(event) => setMealPolicyForm((form) => ({ ...form, [`${key}_end`]: event.target.value }))} required /></label>
+          </fieldset>)}
+        </div>
+        {mealPolicyProblem && <p className="meal-policy-problem" role="alert">{mealPolicyProblem}</p>}
+        <div className="actions"><button type="submit" className="primary" disabled={busy || Boolean(mealPolicyProblem)}>사용시간 저장</button><span className="muted">{mealPolicyForm.enabled ? '설정한 시간 밖에는 회사 식대로 결제되지 않고, 내 식권이 있는 직원은 그것으로 결제할 수 있어요.' : '지금은 언제든 회사 식대로 결제할 수 있어요.'}</span></div>
+      </form>
+    </section>}
     {showCompanyLegacy && <section className="panel employee-panel merchant-regular-weight merchant-open-table">
       <div className="panel-title">
         <div><p className="panel-note titleless-guidance">직원 정보, 포인트 잔액과 이번 달 이용 현황을 확인합니다.</p></div>

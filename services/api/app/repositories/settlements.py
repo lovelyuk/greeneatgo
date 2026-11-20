@@ -32,7 +32,7 @@ COMPANY_VISIBLE_SETTLEMENT_STATUSES = (
 TRANSACTION_FIELDS = (
     "id,user_id,amount,kind,tx_code,meal_window,product_name,pay_type,is_demo,"
     "settlement_tax_type,settlement_supply_amount,settlement_vat_amount,"
-    "settlement_total_amount,created_at"
+    "settlement_total_amount,created_at,original_transaction_id,flags"
 )
 
 
@@ -336,11 +336,19 @@ class SettlementRepository:
             })
             users.update({str(user["id"]): user for user in user_rows})
 
+        # A meal the restaurant cancelled: the original row stays and a reversal
+        # row points at it (0079). Mark both so the screen can pair them.
+        reversed_ids = {row.get("original_transaction_id") for row in rows
+                        if row.get("kind") in ("cancel", "refund") and row.get("original_transaction_id") is not None}
         result = []
         for row in rows:
             user = users.get(str(row.get("user_id")), {})
             sign = 1 if row.get("kind") == "spend" else -1
+            flags = row.get("flags") if isinstance(row.get("flags"), dict) else {}
             result.append({
+                "cancelled": row.get("kind") == "spend" and row.get("id") in reversed_ids,
+                "original_transaction_id": row.get("original_transaction_id"),
+                "cancel_reason": flags.get("cancel_reason") if row.get("kind") in ("cancel", "refund") else None,
                 "id": row.get("id"),
                 "created_at": row.get("created_at"),
                 "employee_name": user.get("display_name") or "직원",
@@ -413,6 +421,14 @@ class SettlementRepository:
         return self.client.rpc("merchant_begin_settlement_revision", {
             "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
             "p_settlement_id": str(settlement_id),
+        })
+
+    def cancel_transaction(
+        self, actor: UserProfile, settlement_id: str | UUID, transaction_id: int, reason: str,
+    ) -> dict[str, Any]:
+        return self.client.rpc("merchant_cancel_settlement_transaction", {
+            "p_actor_id": actor.id, "p_merchant_id": actor.merchant_id,
+            "p_settlement_id": str(settlement_id), "p_transaction_id": transaction_id, "p_reason": reason,
         })
 
     def update_period(self, actor: UserProfile, settlement_id: str | UUID, payload: Any) -> dict[str, Any]:

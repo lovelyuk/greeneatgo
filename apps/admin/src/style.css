@@ -2182,3 +2182,21 @@ code { font-size: 12px; }
 /* Employee list: a bulk-registered member declined the switch in the app. */
 .badge.badge-declined { background: #FBE9D7; color: #B4540A; }
 .staged-declined { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Settlement detail: the company's dispute reason and cancelled meals. */
+.settlement-v2-dispute { display: grid; gap: 6px; }
+.settlement-v2-dispute-reason { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.settlement-v2-cancelled-row td { color: #8a8f98; }
+.settlement-v2-cancelled-row td:not(:has(button)):not(:has(.muted)) { text-decoration: line-through; text-decoration-color: rgba(138, 143, 152, .55); }
+
+/* Company admin: hours in which company-paid meals can be used. */
+.meal-policy-panel { margin-bottom: 16px; }
+.meal-policy-windows { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.meal-policy-windows fieldset { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; padding: 14px; border: 1px solid var(--border, #e1e7e3); border-radius: 12px; min-width: 0; }
+.meal-policy-windows fieldset:disabled { opacity: .55; }
+.meal-policy-windows legend { padding: 0 6px; }
+.meal-policy-windows label { display: grid; gap: 6px; font-size: 13px; }
+.meal-policy-windows legend .policy-toggle { display: flex; }
+.meal-policy-windows input[type="time"] { width: 100%; }
+.meal-policy-problem { margin: 0; color: #c0392b; font-size: 13px; }
+.meal-policy-form .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

@@ -37,6 +37,16 @@ export function scanKeyChar(event) {
   return '';
 }
 
+// A scanner keeps re-reading a QR that is held in front of it. A code that was
+// just used is ignored for this long after it was last seen, so the "used"
+// screen is not replaced by an "already used" warning.
+export const REPEAT_SCAN_IGNORE_MS = 10000;
+
+/** True when `code` is the code just used and it was last seen within the window. */
+export function isRepeatScan(last, code, now, windowMs = REPEAT_SCAN_IGNORE_MS) {
+  return Boolean(last) && last.code === code && now - last.at >= 0 && now - last.at < windowMs;
+}
+
 export function classifyScan(raw) {
   const member = extractMemberCode(raw);
   if (member) return { kind: 'member', code: member };

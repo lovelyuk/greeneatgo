@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractMemberCode, extractKioskReceipt, classifyScan, counterResultView } from '../src/counterScan.js';
+import { extractMemberCode, extractKioskReceipt, classifyScan, counterResultView, isRepeatScan, REPEAT_SCAN_IGNORE_MS } from '../src/counterScan.js';
 
 const CODE = '81' + '1'.repeat(79);
 
@@ -57,4 +57,15 @@ test('scanner keystrokes map to code characters, also under an IME', async () =>
   // Not part of a code: control keys, space (would click a focused button), unknown.
   for (const key of ['Enter', 'Shift', 'Tab', 'ArrowDown', 'F5', ' ', 'Process', '']) assert.equal(scanKeyChar({ key, code: '' }), '', key);
   assert.equal(scanKeyChar(undefined), '');
+});
+
+test('a code held at the scanner is ignored for 10 seconds after it was last seen', () => {
+  assert.equal(REPEAT_SCAN_IGNORE_MS, 10000);
+  const last = { code: CODE, at: 1_000_000 };
+  assert.equal(isRepeatScan(last, CODE, 1_000_000), true);
+  assert.equal(isRepeatScan(last, CODE, 1_009_999), true);
+  assert.equal(isRepeatScan(last, CODE, 1_010_000), false); // a deliberate re-scan is answered
+  assert.equal(isRepeatScan(last, '81' + '2'.repeat(79), 1_000_500), false); // the next guest is never delayed
+  assert.equal(isRepeatScan(null, CODE, 1_000_000), false);
+  assert.equal(isRepeatScan(last, CODE, 999_000), false); // clock moved backwards: do not swallow scans
 });

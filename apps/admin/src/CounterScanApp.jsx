@@ -7,7 +7,7 @@
 // the QR's one-time nonce to the idempotency key, so a double scan never
 // charges twice.
 import React, { useEffect, useRef, useState } from 'react';
-import { classifyScan, counterResultView, scanKeyChar } from './counterScan.js';
+import { classifyScan, counterResultView, isRepeatScan, scanKeyChar } from './counterScan.js';
 import { installCounterManifest, keepScreenAwake, unlockAudio, LOGOUT_HOLD_MS } from './counterKiosk.js';
 import './counter.css';
 
@@ -97,7 +97,7 @@ function ReadyGuide() {
 }
 
 function CounterScanner({ session, apiBaseUrl, onLogout }) {
-  const buffer = useRef(''), idle = useRef(null), resetTimer = useRef(null), inFlight = useRef(false), submit = useRef(null);
+  const buffer = useRef(''), idle = useRef(null), resetTimer = useRef(null), inFlight = useRef(false), submit = useRef(null), lastUsed = useRef(null);
   const [state, setState] = useState({ kind: 'ready' }), [history, setHistory] = useState([]);
   const chime = useRef(typeof Audio !== 'undefined' ? new Audio('/audio/payment-success.mp3') : null);
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine !== false);
@@ -145,6 +145,10 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
     const scan = classifyScan(raw);
     if (!scan || inFlight.current) return;
     const code = scan.code;
+    // The QR is still held at the scanner: it was used a moment ago, so say
+    // nothing. Each re-read extends the quiet period; a scan after a real
+    // pause is answered by the server as before.
+    if (isRepeatScan(lastUsed.current, code, Date.now())) { lastUsed.current.at = Date.now(); return; }
     const endpoint = scan.kind === 'kiosk' ? 'kiosk-receipt/redeem' : 'member-qr/redeem';
     inFlight.current = true; clearTimeout(resetTimer.current);
     setState({ kind: 'busy' });
@@ -165,6 +169,7 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
     inFlight.current = false;
     setState(view);
     if (view.kind === 'success') {
+      lastUsed.current = { code, at: Date.now() };
       try { chime.current.currentTime = 0; await chime.current.play(); setSoundBlocked(false); } catch { setSoundBlocked(true); }
       setHistory(h => [{ at: new Date(), name: view.name, remaining: view.remaining, duplicate: view.duplicate, receipt: view.receipt }, ...h].slice(0, 8));
     }

@@ -125,13 +125,16 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
     month_used = 0
     recent_spends = []
     for row in rows:
-        if row.get("kind") != "spend":
+        # A meal the restaurant cancelled gives its amount back (0079).
+        if row.get("kind") not in ("spend", "cancel", "refund"):
             continue
         created_at = row.get("created_at")
         if created_at:
             created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
             if created >= month_start:
-                month_used += abs(int(row.get("amount") or 0))
+                amount = abs(int(row.get("amount") or 0))
+                month_used += amount if row.get("kind") == "spend" else -amount
+    month_used = max(month_used, 0)
     for row in all_rows:
         if row.get("kind") == "spend" and len(recent_spends) < 3:
             recent_spends.append(row)

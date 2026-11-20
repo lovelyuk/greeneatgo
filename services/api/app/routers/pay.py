@@ -116,16 +116,14 @@ def pay(payload: PayRequest, token: str = Depends(bearer_token)):
         now = datetime.now(timezone.utc)
         today_start = _today_start_utc(now)
         month_start = _month_start_utc(now)
-        spent_today = sum(
-            abs(int(row.get("amount") or 0))
-            for row in tx_rows
-            if row.get("kind") == "spend" and datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")) >= today_start
-        )
-        spent_month = sum(
-            abs(int(row.get("amount") or 0))
-            for row in tx_rows
-            if row.get("kind") == "spend" and datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")) >= month_start
-        )
+        # A meal the restaurant cancelled gives its amount back (0079).
+        signed = [
+            (abs(int(row.get("amount") or 0)) * (1 if row.get("kind") == "spend" else -1),
+             datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")))
+            for row in tx_rows if row.get("kind") in ("spend", "cancel", "refund") and row.get("created_at")
+        ]
+        spent_today = sum(amount_ for amount_, at in signed if at >= today_start)
+        spent_month = sum(amount_ for amount_, at in signed if at >= month_start)
         monthly_limit = _employee_monthly_limit(repo, user.id)
         if spent_month + amount > monthly_limit:
             raise _error(400, "MONTHLY_LIMIT", f"월 한도 {monthly_limit:,}원을 초과해요")

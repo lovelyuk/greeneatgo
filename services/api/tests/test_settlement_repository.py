@@ -168,6 +168,7 @@ def test_settlement_detail_includes_period_transactions_with_snapshot_amounts_an
         "item": "중식", "tx_code": "TX-1",
         "tax_type": "taxable", "supply_amount": 6455, "vat_amount": 645,
         "total_amount": 7100, "is_demo": False,
+        "cancelled": False, "original_transaction_id": None, "cancel_reason": None,
     }]
     transaction_calls = [params for table, params in client.calls if table == "normal_meal_transactions"]
     assert transaction_calls == [{

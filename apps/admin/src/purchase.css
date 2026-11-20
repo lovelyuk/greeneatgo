@@ -255,3 +255,24 @@
 .done-lookup{margin:2px 0 6px;color:var(--fg2);font-size:12px;line-height:1.7;text-align:center}
 .done-lookup span{display:inline-block;margin:0 6px;white-space:nowrap}
 .done-lookup b{color:#e8ecf5;font-weight:700;font-variant-numeric:tabular-nums;user-select:all}
+
+/* 내역: 사용/구매 segments, restaurant chips, bought-order rows, receipt dialog */
+.purchase-app .history-segments{display:flex;gap:8px;margin:14px 0 0}
+.purchase-app .history-segments button{min-width:76px;min-height:40px;padding:0 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg2);font-size:14px;font-weight:700}
+.purchase-app .history-segments button[aria-selected="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+.purchase-app .merchant-chips{display:flex;gap:8px;overflow-x:auto;margin:14px 0 4px;padding-bottom:2px}
+.purchase-app .merchant-chips button{flex:none;min-height:36px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:#fff;font-size:13px;font-weight:600;white-space:nowrap}
+.purchase-app .merchant-chips button[aria-pressed="true"]{background:var(--paper);border-color:var(--paper);color:#131a2a}
+.purchase-app .order-list{display:grid;gap:8px;margin-top:12px}
+.purchase-app .order-row{display:flex;align-items:center;gap:10px;width:100%;min-height:68px;padding:12px 10px 12px 12px;border-radius:16px;border:1px solid var(--line);background:var(--card);color:#fff;text-align:left}
+.purchase-app .order-row:disabled{opacity:1;cursor:default}
+.purchase-app .order-main{flex:1;min-width:0;display:grid;gap:3px}
+.purchase-app .order-main strong{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.purchase-app .order-main em{margin-left:8px;padding:2px 8px;border-radius:999px;background:var(--card-hi);color:var(--fg2);font-size:11px;font-style:normal;font-weight:700}
+.purchase-app .order-main small{color:var(--fg2);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.purchase-app .order-row>b{flex:none;font-size:14px}
+.purchase-app .order-row.refunded>b{color:var(--fg2);text-decoration:line-through}
+.purchase-app .order-row>svg{flex:none;color:var(--fg2)}
+.purchase-app .receipt-dialog h2{margin-bottom:0}
+.purchase-app .receipt-refund{margin:0 0 12px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card-hi);font-size:13px;font-weight:700;text-align:left}
+.purchase-app .receipt-refund span{color:var(--fg2);font-weight:600}

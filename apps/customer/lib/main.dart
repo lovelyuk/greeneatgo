@@ -29,6 +29,7 @@ import 'push_notifications.dart';
 import 'screens/coupon_wallet.dart';
 import 'screens/invite_code_entry_screen.dart';
 import 'screens/member_qr_screen.dart';
+import 'screens/purchase_receipt.dart';
 import 'screens/user_dashboard_shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -288,6 +289,22 @@ class ApiClient {
     final data = await _request('/vouchers/products');
     return VoucherCatalog.fromJson(data);
   }
+
+  /// The buyer's own paid orders (구매 내역), newest first.
+  Future<List<Map<String, dynamic>>> getPurchaseHistory() async {
+    final data = await _request('/payments/history');
+    final items = data['items'];
+    return items is List
+        ? items
+            .whereType<Map>()
+            .map((item) => item.cast<String, dynamic>())
+            .toList()
+        : const [];
+  }
+
+  /// One owned order as a receipt (completion view, slip lookup, refund).
+  Future<Map<String, dynamic>> getPurchaseReceipt(String orderId) =>
+      _request('/payments/history/${Uri.encodeComponent(orderId)}');
 
   Future<CouponWallet> getCoupons() async =>
       CouponWallet.fromJson(await _request('/coupons'));
@@ -2980,6 +2997,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       subsidizedFuture: _subsidizedFuture,
       pointBalance: pointBalance,
       onRefresh: _refreshHome,
+      purchaseHistoryLoader: api.getPurchaseHistory,
+      onOpenPurchase: (purchase) => Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => PurchaseReceiptScreen(
+            load: () => api.getPurchaseReceipt('${purchase['order_id']}'),
+          ),
+        ),
+      ),
       todayMenuCard: FutureBuilder<TodayMenu?>(
         future: _todayMenuFuture,
         builder: (context, snapshot) => _TodayMenuCard(

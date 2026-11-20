@@ -3,6 +3,7 @@ import { Home, ShoppingBag, ScanLine, ReceiptText, UserRound, Ticket, PartyPoppe
 import PurchaseCatalog, { won } from './PurchaseCatalog.jsx';
 import MemberQr from './MemberQr.jsx';
 import PurchaseHistory from './PurchaseHistory.jsx';
+import HistoryPanel from './PurchaseOrders.jsx';
 import LocalAbandonmentHistory from './LocalAbandonmentHistory.jsx';
 import { dashboardTransactions, couponCount, scanIntent } from './purchaseDashboard.js';
 import { AccountSettings, InviteCodeEntry, ReviewBoard, PartnerBanner } from './PurchaseExtras.jsx';
@@ -157,7 +158,7 @@ export default function PurchaseDashboard({ me, api, supabase, apiBaseUrl, legal
       />
     </div>
     <div hidden={tab !== 2}><QrTab api={api} refresh={refresh} me={me} active={tab === 2} /></div>
-    <div hidden={tab !== 3}>{recoveryNotice && tab === 3 && <p role="status">{recoveryNotice}</p>}<div ref={setRecoveryTarget} /><PurchaseHistory me={me} />{tab === 3 && <LocalAbandonmentHistory api={api} userId={me.user_id} />}</div>
+    <div hidden={tab !== 3}>{recoveryNotice && tab === 3 && <p role="status">{recoveryNotice}</p>}<div ref={setRecoveryTarget} /><HistoryPanel me={me} api={api} active={tab === 3} />{tab === 3 && <LocalAbandonmentHistory api={api} userId={me.user_id} />}</div>
     <div hidden={tab !== 4}><h1>내정보</h1><div className="profile-heading"><span className="avatar"><img src={avatar.src} alt={avatar.label} /></span><div><h2>{name}</h2><p>{me.company?.name || (me.role === 'employee' ? '회사 임직원' : '개인 구매자')}</p></div></div><section className="purchase-card setting-group"><p><span>휴대폰 번호</span><strong>{me.phone || '—'}</strong></p><p><span>인증수단</span><strong>이메일 (웹)</strong></p><p><span>결제수단</span><strong>{me.account_type === 'ledger' ? '회사 장부' : '식권'}</strong></p></section><section className="purchase-card setting-group" aria-label="알림 및 초대"><button onClick={() => open('계정 설정')}>계정 설정<strong>이름 · 비밀번호</strong></button>{me.role === 'customer' && <button onClick={() => open('초대코드')}>초대코드 입력<ChevronRight size={16} /></button>}</section><section className="purchase-card setting-group">{[['쿠폰함', () => open('쿠폰함')], ['식권 상품', () => go(1)], ['공지사항', () => open('공지사항')], ['구매 인증 리뷰', () => open('리뷰')]].map(([label, action]) => <button key={label} onClick={action}>{label}<ChevronRight size={16} /></button>)}</section><section className="purchase-card setting-group"><a href="/privacy.html" target="_blank" rel="noreferrer">개인정보 처리방침<ChevronRight size={16} /></a><a href="/terms.html" target="_blank" rel="noreferrer">이용약관<ChevronRight size={16} /></a><p><span>웹 버전</span><strong>구매자 웹</strong></p><button className="danger-text" onClick={logout}>로그아웃<ChevronRight size={16} /></button></section><p className="muted">결제 알림(푸시)은 앱에서만 받을 수 있어요.</p></div>
     {page === '쿠폰함' && <>{readError && <><p role="alert">{readError}</p><button onClick={refresh} disabled={loading}>다시 시도</button></>}{wallet ? <CouponWallet wallet={wallet} /> : !readError && <p role="status">쿠폰 확인 중…</p>}</>}
     {page === '공지사항' && <ReadBoard key={page} kind={page} api={api} />}

@@ -56,3 +56,12 @@ test('completion time is shown in KST, never raw ISO', () => {
   assert.equal(formatKst(null), '정보 없음');
   assert.equal(formatKst('nope'), '정보 없음');
 });
+
+test('history helpers: restaurant chips and refund badges', async () => {
+  const { merchantNames, purchaseStatusLabel } = await import('../src/purchaseExtras.js');
+  assert.deepEqual(merchantNames([{ merchant_name: '가산 한식뷔페' }, { merchant_name: ' 디지털 국수집 ' }, { merchant_name: '가산 한식뷔페' }, { merchant_name: '' }, {}, null]), ['가산 한식뷔페', '디지털 국수집']);
+  assert.deepEqual(merchantNames(undefined), []);
+  assert.equal(purchaseStatusLabel('refunded'), '환불 완료');
+  assert.equal(purchaseStatusLabel('refund_processing'), '환불 진행 중');
+  assert.equal(purchaseStatusLabel('done'), '');
+});

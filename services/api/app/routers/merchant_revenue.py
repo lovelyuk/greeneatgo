@@ -2,7 +2,10 @@
 
 * paid/issued basis  - what the restaurant reports and is paid: voucher payments
   (approved in the period, minus refunds completed in the period) plus tax
-  invoices issued in the period. Same payment definition as 결제 내역.
+  invoices issued in the period. Only money actually paid counts: company points
+  used on an order are billed to the company separately and become revenue when
+  that is invoiced, so they are left out here and reported as `point_amount`.
+  (결제 내역 shows payment + points; this figure is therefore smaller by the points.)
 * usage basis        - meals actually served in the period (the dashboard's
   existing 총 매출 figure), per company and for personal customers.
 
@@ -120,11 +123,12 @@ def _invoice_amount(row: dict) -> int:
 
 
 def _payment_amount(row: dict) -> int:
-    return _int(row.get("amount")) + _int(row.get("point_amount"))
+    """Money paid through the PG. Points are not revenue at payment time."""
+    return _int(row.get("amount"))
 
 
 def _refund_amount(row: dict) -> int:
-    return _int(row.get("refund_amount")) + _int(row.get("point_amount"))
+    return _int(row.get("refund_amount"))
 
 
 def _company_names(repo: JoinRepository, ids: set[str]) -> dict[str, str]:
@@ -142,14 +146,18 @@ def _summarize(repo: JoinRepository, data: dict) -> dict:
 
     def party(key: str) -> dict:
         return parties.setdefault(key, {
-            "key": key, "payment_amount": 0, "refund_amount": 0, "invoice_amount": 0,
+            "key": key, "payment_amount": 0, "refund_amount": 0, "invoice_amount": 0, "point_amount": 0,
             "usage_amount": 0, "usage_count": 0, "unbilled_amount": 0,
         })
 
     for row in data["payments"]:
-        party(_party_of_order(row))["payment_amount"] += _payment_amount(row)
+        item = party(_party_of_order(row))
+        item["payment_amount"] += _payment_amount(row)
+        item["point_amount"] += _int(row.get("point_amount"))
     for row in data["refunds"]:
-        party(_party_of_order(row))["refund_amount"] += _refund_amount(row)
+        item = party(_party_of_order(row))
+        item["refund_amount"] += _refund_amount(row)
+        item["point_amount"] -= _int(row.get("point_amount"))
     for row in data["invoices"]:
         party(str(row["company_id"]))["invoice_amount"] += _invoice_amount(row)
     for row in data["meals"]:
@@ -177,6 +185,8 @@ def _summarize(repo: JoinRepository, data: dict) -> dict:
             "net_payment_amount": total("net_payment_amount"),
             "invoice_amount": total("invoice_amount"), "invoice_count": len(data["invoices"]),
             "revenue_amount": total("revenue_amount"),
+            # Points used on those orders (net of refunds): excluded from revenue above.
+            "point_amount": total("point_amount"),
         },
         "usage_basis": {"amount": total("usage_amount"), "count": total("usage_count")},
         "unbilled": {"amount": total("unbilled_amount"), "count": len(data["unbilled"])},
@@ -209,10 +219,12 @@ def _detail(repo: JoinRepository, data: dict, key: str) -> dict:
 
     entries = [
         *[{"kind": "payment", "at": row.get("approved_at") or row.get("created_at"), "amount": _payment_amount(row),
+           "point_amount": _int(row.get("point_amount")),
            "label": row.get("product_name") or "식권 결제",
            "method": _METHOD_LABELS.get(str(row.get("payment_method") or "").upper(), row.get("payment_method") or ""),
            **person(row)} for row in payments],
         *[{"kind": "refund", "at": row.get("completed_at") or row.get("created_at"), "amount": -_refund_amount(row),
+           "point_amount": -_int(row.get("point_amount")),
            "label": row.get("product_name") or "환불",
            "method": _METHOD_LABELS.get(str(row.get("payment_method") or "").upper(), row.get("payment_method") or ""),
            **person(row)} for row in refunds],

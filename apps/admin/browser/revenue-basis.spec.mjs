@@ -10,6 +10,7 @@ test('restaurant dashboard shows both revenue bases and a partner detail popup',
   await expect(panel.getByText('₩3,840,000')).toBeVisible();
   await expect(panel.getByText('식권 결제 ₩1,280,000 − 환불 ₩80,000')).toBeVisible();
   await expect(panel.getByText('세금계산서 발행 ₩2,640,000 (2건)')).toBeVisible();
+  await expect(panel.getByText('포인트 사용 ₩45,000은 제외 (회사 청구 시 매출)')).toBeVisible();
   await expect(panel.getByText('식사 제공 (사용 기준)')).toBeVisible();
   await expect(panel.getByText('₩3,300,000')).toBeVisible();
   await expect(panel.getByText('미청구 장부 금액')).toBeVisible();

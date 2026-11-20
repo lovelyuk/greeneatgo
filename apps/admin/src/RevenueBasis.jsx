@@ -56,7 +56,7 @@ function DetailDialog({ party, period, fetcher, onClose }) {
         <div className="revenue-detail-body" role="tabpanel">
           {tab === 'paid' && (detail.paid.entries.length === 0 ? <p className="dash-empty">이 기간에 결제나 세금계산서 발행이 없습니다.</p> : <table>
             <thead><tr><th>날짜</th><th>시간</th><th>구분</th><th>내역</th><th>결제자</th><th>결제수단 / 승인번호</th><th className="money">금액</th></tr></thead>
-            <tbody>{detail.paid.entries.map((row, index) => <tr key={`${row.kind}-${index}`} className={row.amount < 0 ? 'revenue-negative' : undefined}><td>{row.date}</td><td>{row.time}</td><td>{row.kindLabel}</td><td>{row.label}</td><td>{row.who || '-'}</td><td>{row.note || '-'}</td><td className="money">{won(row.amount)}</td></tr>)}</tbody>
+            <tbody>{detail.paid.entries.map((row, index) => <tr key={`${row.kind}-${index}`} className={row.amount < 0 ? 'revenue-negative' : undefined}><td>{row.date}</td><td>{row.time}</td><td>{row.kindLabel}</td><td>{row.label}</td><td>{row.who || '-'}</td><td>{row.note || '-'}{row.point ? ` · 포인트 ${won(row.point)} 별도` : ''}</td><td className="money">{won(row.amount)}</td></tr>)}</tbody>
           </table>)}
           {tab === 'daily' && (detail.usage.daily.length === 0 ? <p className="dash-empty">이 기간에 식사 기록이 없습니다.</p> : <table>
             <thead><tr><th>날짜</th><th className="money">식사</th><th className="money">취소</th><th className="money">금액</th></tr></thead>
@@ -108,6 +108,7 @@ export default function RevenueBasisPanel({ period, fetcher, openName = '', onOp
       <Card tone="paid" label="매출 (결제·발행 기준)" value={paid.revenue} lines={[
         `식권 결제 ${won(paid.payment)} − 환불 ${won(paid.refund)}`,
         `세금계산서 발행 ${won(paid.invoice)} (${paid.invoiceCount}건)`,
+        ...(paid.point ? [`포인트 사용 ${won(paid.point)}은 제외 (회사 청구 시 매출)`] : []),
       ]}/>
       <Card tone="usage" label="식사 제공 (사용 기준)" value={usage.amount} lines={[`${usage.count.toLocaleString('ko-KR')}끼 · 식사한 날 기준`, '아래 그래프와 순위표는 이 기준입니다']}/>
       <Card tone="unbilled" label="미청구 장부 금액" value={unbilled.amount} lines={[unbilled.count ? `세금계산서 발행 전 정산 ${unbilled.count}건` : '세금계산서 발행 전 금액 없음', '조회 기간과 관계없는 현재 잔액']}/>

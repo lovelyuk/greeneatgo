@@ -86,15 +86,17 @@ def test_summary_shows_both_bases_per_party(harness):
     client, _, calls, _, _ = harness
     data = client.get(f"/v1/admin/merchant/revenue/summary{PERIOD}", headers=AUTH).json()["data"]
     assert data["paid_basis"] == {
-        "payment_amount": 94000, "payment_count": 3, "refund_amount": 8000, "refund_count": 1,
-        "net_payment_amount": 86000, "invoice_amount": 176000, "invoice_count": 1, "revenue_amount": 262000,
+        # o3 was paid 5,000 in money and 1,000 in company points: only the money counts.
+        "payment_amount": 93000, "payment_count": 3, "refund_amount": 8000, "refund_count": 1,
+        "net_payment_amount": 85000, "invoice_amount": 176000, "invoice_count": 1, "revenue_amount": 261000,
+        "point_amount": 1000,
     }
     assert data["usage_basis"] == {"amount": 8800 + 3000 + 8000, "count": 3}
     # ACME's running November draft and BETA's requested-but-not-issued September settlement.
     assert data["unbilled"] == {"amount": 8800 + 11000, "count": 2}
     assert [(p["name"], p["revenue_amount"], p["net_payment_amount"], p["invoice_amount"], p["usage_amount"], p["usage_count"], p["unbilled_amount"]) for p in data["parties"]] == [
         ("합성테크", 176000, 0, 176000, 8800, 1, 8800),
-        ("가온상사", 6000, 6000, 0, 3000, 1, 11000),
+        ("가온상사", 5000, 5000, 0, 3000, 1, 11000),
         ("개인 고객", 80000, 80000, 0, 8000, 1, 0),
     ]
     # Every read is scoped to the caller's restaurant and the KST period.
@@ -135,6 +137,7 @@ def test_personal_detail_lists_payments_and_refunds(harness):
     client, _, _, _, _ = harness
     data = client.get(f"/v1/admin/merchant/revenue/detail{PERIOD}&party=personal", headers=AUTH).json()["data"]
     assert data["party"] == {"key": "personal", "name": "개인 고객"}
+    assert all(e["point_amount"] == 0 for e in data["paid_basis"]["entries"])
     assert [(e["kind"], e["amount"], e["label"], e["method"], e["person_name"]) for e in data["paid_basis"]["entries"]] == [
         ("refund", -8000, "1장 식권", "네이버페이", "이손님"),
         ("payment", 8000, "1장 식권", "네이버페이", "이손님"),
@@ -158,3 +161,18 @@ def test_only_own_partner_companies_and_valid_periods_are_served(harness):
     actor.side_effect = None
     repo.client.rest_get.side_effect = SupabaseHttpError(500, "boom")
     assert client.get(f"/v1/admin/merchant/revenue/summary{PERIOD}", headers=AUTH).status_code == 502
+
+
+def test_points_are_left_out_of_revenue_and_reported_separately(harness):
+    client, tables, _, _, _ = harness
+    tables["merchant_companies"].append({"company_id": BETA})
+    # A refund that also gives 300 points back.
+    tables["refund_requests"].append({"id": "r2", "order_id": "o3", "user_id": "u2", "refund_amount": 2000, "point_amount": 300,
+                                      "status": "completed", "created_at": "2026-11-11T01:00:00+00:00", "completed_at": "2026-11-11T02:00:00+00:00"})
+    summary = client.get(f"/v1/admin/merchant/revenue/summary{PERIOD}", headers=AUTH).json()["data"]
+    beta = next(p for p in summary["parties"] if p["name"] == "가온상사")
+    assert (beta["payment_amount"], beta["refund_amount"], beta["net_payment_amount"], beta["point_amount"], beta["revenue_amount"]) == (5000, 2000, 3000, 700, 3000)
+    assert summary["paid_basis"]["point_amount"] == 700
+    detail = client.get(f"/v1/admin/merchant/revenue/detail{PERIOD}&party={BETA}", headers=AUTH).json()["data"]
+    assert [(e["kind"], e["amount"], e["point_amount"]) for e in detail["paid_basis"]["entries"]] == [("refund", -2000, -300), ("payment", 5000, 1000)]
+    assert detail["paid_basis"]["revenue_amount"] == 3000

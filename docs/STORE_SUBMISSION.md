@@ -14,6 +14,7 @@
 | Android 서명 | `android/key.properties`가 있으면 업로드 키로 release 서명. `build_apk_from_admin_env.ps1 -Bundle` → AAB |
 | Android 백업 | `android:allowBackup="false"` |
 | 심사용 로그인 | API 환경변수 `REVIEW_LOGIN_PHONE`(예 01000000000) + `REVIEW_LOGIN_CODE`(6자리): 그 번호만 문자 없이 고정 인증번호. 발송·시도 횟수 제한은 그대로 |
+| 앱 업데이트 안내 | API 환경변수 `APP_MIN_BUILD_ANDROID`/`APP_LATEST_BUILD_ANDROID`(iOS는 `_IOS`, 스토어 주소 `APP_STORE_URL_IOS`): 빌드 번호가 최소보다 낮으면 앱이 업데이트 화면만 보여주고, 최신보다 낮으면 하루 한 번 안내. 값이 없거나 0이면 안내 없음. 변경 후 Redeploy. 빌드 62 이하는 이 기능이 없어 영향받지 않음 |
 
 ## 사람이 해야 하는 일
 1. **Android 업로드 키**: `keytool -genkey -v -keystore G:\keys\greeneatgo-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload` → `android/key.properties.example`을 `key.properties`로 복사해 채움. 키와 비밀번호는 git 밖에 백업(분실 시 앱 업데이트 불가, Play App Signing 사용 권장).

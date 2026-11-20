@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'app_update.dart';
 import 'auth_helpers.dart';
 import 'data/banner_api.dart';
 import 'firebase_config.dart';
@@ -191,7 +192,7 @@ class GreeneatGoApp extends StatelessWidget {
           child: child!,
         );
       },
-      home: const AppGate(),
+      home: const AppUpdateGate(baseUrl: apiBaseUrl, child: AppGate()),
     );
   }
 }

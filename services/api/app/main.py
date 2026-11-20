@@ -5,7 +5,7 @@ from app.checkout_maintenance import CheckoutMaintenanceMiddleware
 from app.config import get_settings
 from app.logging_filters import install_payment_notification_access_log_filter
 
-from app.routers import admin, admin_dashboard, auth_pages, banners, boards, company_merchants, company_usage, consumer, coupons, health, invites, join, me, merchant_admin, pay, payments, phone_auth, platform, products, push_notifications, settlements, transactions, voucher_products
+from app.routers import admin, admin_dashboard, app_version, auth_pages, banners, boards, company_merchants, company_usage, consumer, coupons, health, invites, join, me, merchant_admin, pay, payments, phone_auth, platform, products, push_notifications, settlements, transactions, voucher_products
 
 settings = get_settings()
 install_payment_notification_access_log_filter()
@@ -25,6 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(health.router, prefix="/v1")
+app.include_router(app_version.router, prefix="/v1")
 app.include_router(auth_pages.router, prefix="/v1")
 app.include_router(phone_auth.router, prefix="/v1")
 app.include_router(pay.router, prefix="/v1")

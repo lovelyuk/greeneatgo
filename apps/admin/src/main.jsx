@@ -29,6 +29,7 @@ import {
   mapSettlement, openDocumentInNewWindow, paymentFormForSettlement, PAYMENT_STATUS_LABELS,
   replaceSettlementDetail, settlementApiRoot,
 } from './settlementApi.js';
+import RevenueBasisPanel from './RevenueBasis.jsx';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -2453,9 +2454,9 @@ function DonutCard({ rows, total }) {
   </article>;
 }
 
-function RankTable({ title, rows, valueKey, money = false, secondHeader }) {
+function RankTable({ title, rows, valueKey, money = false, secondHeader, onRowClick }) {
   return <article className="dash-card dash-detail-card"><div className="dash-table-heading"><h3>{title}</h3><span>(단위: {money ? '원' : '건'})</span></div>
-    {rows.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <div className="dash-table-wrap"><table><thead><tr><th>순위</th><th>{secondHeader}</th><th className="money">값</th></tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.name}-${index}`} className={row.isTotal ? 'dash-total-row' : ''}><td>{row.isTotal ? '' : row.rank}</td><td>{row.name}</td><td className="money">{dashNumber(row[valueKey])}</td></tr>)}</tbody></table></div>}
+    {rows.length === 0 ? <p className="dash-empty">조회 기간의 데이터가 없습니다.</p> : <div className="dash-table-wrap"><table><thead><tr><th>순위</th><th>{secondHeader}</th><th className="money">값</th></tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.name}-${index}`} className={row.isTotal ? 'dash-total-row' : ''}><td>{row.isTotal ? '' : row.rank}</td><td>{onRowClick && !row.isTotal && row.name !== '기타' ? <button type="button" className="dash-rank-link" onClick={() => onRowClick(row.name)} aria-label={`${row.name} 세부 내역 보기`}>{row.name}</button> : row.name}</td><td className="money">{dashNumber(row[valueKey])}</td></tr>)}</tbody></table></div>}
   </article>;
 }
 
@@ -2652,6 +2653,9 @@ function DashboardView({ kind, token, scopeId, recentPayments = null }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
+  // Restaurant only: a company name clicked in a ranking table opens its revenue popup.
+  const [revenuePartyName, setRevenuePartyName] = useState('');
+  const revenueFetcher = useMemo(() => (path) => apiFetch(path, token), [token]);
   const scopeKey = kind === 'merchant' ? 'merchant_id' : 'company_id';
   const merchant = kind === 'merchant';
 
@@ -2708,12 +2712,13 @@ function DashboardView({ kind, token, scopeId, recentPayments = null }) {
     <PeriodPicker draft={draft} onChange={setDraft} onApply={applyPeriod} loading={loading}/>
     {error && <div className="dash-error" role="alert">{error}<button type="button" className="ghost" onClick={() => setReload((value) => value + 1)} disabled={loading}>다시 시도</button></div>}
     {loading && <div className="dash-loading" role="status" aria-label="대시보드를 불러오는 중"><div className="dash-summary-grid">{[0, 1, 2].map((key) => <div key={key} className="dash-card dash-skeleton" />)}</div><div className="dash-two-grid">{[0, 1, 2, 3].map((key) => <div key={key} className="dash-card dash-skeleton dash-skeleton-large" />)}</div></div>}
+    {merchant && scopeId && <RevenueBasisPanel period={applied} fetcher={revenueFetcher} openName={revenuePartyName} onOpened={() => setRevenuePartyName('')}/>}
     {summary && !loading && layout === 'forest' && <section className="dash-forest">
       <SummaryCard label={labels.amount} value={summary.total_amount} delta={summary.total_amount_delta_pct} money Icon={WalletCards} tone="green"/>
       <SummaryCard label={labels.count} value={summary.total_count} delta={summary.total_count_delta_pct} Icon={BarChart3} tone="orange"/>
       <DonutCard rows={mealRows} total={summary.total_count}/>
       <DashboardTabsCard tabs={theme.trendTabs.length ? theme.trendTabs : ['amount', 'count']} labels={labels} summary={summary} series={series} period={applied} color={theme.chart}/>
-      <div className="dash-forest-side"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'}/></div>
+      <div className="dash-forest-side"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'} onRowClick={merchant ? setRevenuePartyName : undefined}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'} onRowClick={merchant ? setRevenuePartyName : undefined}/></div>
     </section>}
     {summary && !loading && layout === 'compact' && <section className="dash-compact">
       <CompactChips summary={summary} labels={labels} series={series}/>
@@ -2722,7 +2727,7 @@ function DashboardView({ kind, token, scopeId, recentPayments = null }) {
     </section>}
     {summary && !loading && layout === 'classic' && <>
       <section className="dash-summary-grid"><SummaryCard label={labels.amount} value={summary.total_amount} delta={summary.total_amount_delta_pct} money Icon={WalletCards} tone="green"/><DonutCard rows={mealRows} total={summary.total_count}/><SummaryCard label={labels.count} value={summary.total_count} delta={summary.total_count_delta_pct} Icon={BarChart3} tone="orange"/></section>
-      <section className="dash-two-grid"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'}/></section>
+      <section className="dash-two-grid"><RankTable title={labels.rankAmount} rows={amountRank} valueKey="amount" money secondHeader={merchant ? '거래처명' : '구분'} onRowClick={merchant ? setRevenuePartyName : undefined}/><RankTable title={labels.rankCount} rows={countRank} valueKey="count" secondHeader={merchant ? '거래처명' : '구분'} onRowClick={merchant ? setRevenuePartyName : undefined}/></section>
       <section className="dash-two-grid"><TrendChart title={labels.trendAmount} series={hasDashboardData ? summary.series : []} unit={summary.unit} valueKey="amount" money color="#2FB865"/><TrendChart title={labels.trendCount} series={hasDashboardData ? summary.series : []} unit={summary.unit} valueKey="count" color="#4C8BF5"/></section>
       {extras && merchant && recentPayments && <section className="dash-two-grid theme-extra-grid"><RecentPaymentsWidget items={recentPayments}/></section>}
     </>}

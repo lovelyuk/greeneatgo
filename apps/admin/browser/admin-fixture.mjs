@@ -41,6 +41,31 @@ export function adminFixtureData(role, theme = 'default') {
     '/admin/daily-menu': { merchant: { id: MERCHANT_ID, name: '합성 식당' }, today_menu: { id: 'menu-1', service_date: today, title: '오늘 뷔페 메뉴', menu_text: '제육볶음 · 잡채 · 미역국 · 샐러드', image_url: null, is_active: true }, menus: [{ id: 'menu-1', service_date: today, title: '오늘 뷔페 메뉴', menu_text: '제육볶음 · 잡채 · 미역국 · 샐러드', image_url: null, is_active: true }], service_date: today, migration_required: false },
     '/admin/merchant/companies': { items: [{ id: 'link-1', merchant_id: MERCHANT_ID, company_id: COMPANY_ID, status: 'active', settlement_cycle: 'month_end', unit_price: 8000, tax_type: 'taxable', subsidy_enabled: false, prepurchase_enabled: false, created_at: iso(60 * 24 * 40), company: { id: COMPANY_ID, name: '합성테크', biz_reg_no: '123-45-67890', status: 'active', contact_email: 'ops@example.invalid' }, invite: null, contract: { settlement_cycle: 'month_end', unit_price: 8000, cycle_label: '월말' }, contract_label: '월말 · 단가 8,000원' }] },
     '/admin/merchant/transactions': { items: tx, total_count: 128 },
+    // Revenue on the paid/issued basis next to the usage basis (restaurant dashboard).
+    '/admin/merchant/revenue/summary': {
+      paid_basis: { payment_amount: 1280000, payment_count: 21, refund_amount: 80000, refund_count: 1, net_payment_amount: 1200000, invoice_amount: 2640000, invoice_count: 2, revenue_amount: 3840000 },
+      usage_basis: { amount: 3300000, count: 417 }, unbilled: { amount: 1760000, count: 2 },
+      parties: [
+        { key: COMPANY_ID, name: '합성테크', payment_amount: 0, refund_amount: 0, net_payment_amount: 0, invoice_amount: 1760000, revenue_amount: 1760000, usage_amount: 1800000, usage_count: 225, unbilled_amount: 1320000 },
+        { key: '55555555-5555-4555-8555-555555555555', name: '가온상사', payment_amount: 120000, refund_amount: 0, net_payment_amount: 120000, invoice_amount: 880000, revenue_amount: 1000000, usage_amount: 900000, usage_count: 112, unbilled_amount: 440000 },
+        { key: 'personal', name: '개인 고객', payment_amount: 1160000, refund_amount: 80000, net_payment_amount: 1080000, invoice_amount: 0, revenue_amount: 1080000, usage_amount: 600000, usage_count: 80, unbilled_amount: 0 },
+      ],
+    },
+    '/admin/merchant/revenue/detail': {
+      party: { key: COMPANY_ID, name: '합성테크' }, detail_limit: 500,
+      paid_basis: { payment_amount: 0, refund_amount: 0, net_payment_amount: 0, invoice_amount: 1760000, revenue_amount: 1760000, entry_count: 1, entries: [
+        { kind: 'invoice', at: iso(60 * 24 * 3), amount: 1760000, label: '세금계산서 발행', method: '20261105-41000000-00000001', person_name: '-', supply_amount: 1600000, vat_amount: 160000 },
+      ] },
+      usage_basis: { amount: 17600, count: 3, cancel_count: 1, item_count: 4,
+        daily: [{ date: today, count: 2, cancel_count: 1, amount: 8800 }, { date: today.slice(0, 8) + '01', count: 1, cancel_count: 0, amount: 8800 }],
+        items: [
+          { id: 1, at: iso(30), kind: 'spend', pay_type: 'ledger', item: '중식', amount: 8800, person_name: '김하늘', department: '개발팀', employee_no: 'E001' },
+          { id: 2, at: iso(40), kind: 'spend', pay_type: 'ledger', item: '중식', amount: 8800, person_name: '이도윤', department: '개발팀', employee_no: 'E002' },
+          { id: 3, at: iso(40), kind: 'cancel', pay_type: 'ledger', item: '중식', amount: -8800, person_name: '이도윤', department: '개발팀', employee_no: 'E002' },
+          { id: 4, at: iso(60 * 24 * 2), kind: 'spend', pay_type: 'ledger', item: '석식', amount: 8800, person_name: '박서연', department: '영업팀', employee_no: 'E003' },
+        ] },
+      unbilled: { amount: 1320000, settlements: [{ period_ym: today.slice(0, 7), amount: 1320000, settlement_status: 'draft', tax_invoice_status: 'not_requested' }] },
+    },
     '/admin/merchant/qr': { merchant: { id: MERCHANT_ID, name: '합성 식당', biz_reg_no: '111-22-33333', representative_name: '홍사장', business_type: '음식점업', business_item: '한식', address: '서울시 합성구 1', owner_phone: '0212345678', tax_invoice_email: 'tax@example.invalid', bank_name: '합성은행', account_number: '000-000', account_holder: '홍사장', qr_token: 'QR-synthetic' }, qr_token: 'QR-synthetic', migration_required: false },
     '/admin/voucher-products': { items: [{ id: 'vp-1', name: '10+1 식권', voucher_count: 10, bonus_count: 1, unit_price: 8000, discount_rate: 10, sale_price: 72000, status: 'on_sale', display_order: 1, tax_type: 'taxable' }], migration_required: false },
     '/admin/coupons': { items: [{ id: 'cp-1', name: '첫 구매 1,000원', discount_type: 'fixed', discount_value: 1000, is_active: true, is_public: true }], migration_required: false },

@@ -1,0 +1,40 @@
+/* Restaurant dashboard: revenue on two bases + per-partner detail popup.
+   Colours come from the admin theme variables so every theme keeps its look. */
+.revenue-basis-section { display: grid; gap: 14px; margin-bottom: 14px; }
+.revenue-basis { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.revenue-basis-loading .dash-skeleton { min-height: 118px; }
+.revenue-basis-card { display: grid; gap: 4px; align-content: start; border-left: 4px solid var(--border, #e1e7e3); }
+.revenue-basis-paid { border-left-color: var(--accent, #2fb865); }
+.revenue-basis-usage { border-left-color: #4c8bf5; }
+.revenue-basis-unbilled { border-left-color: #e0a038; }
+.revenue-basis-label { color: var(--text-muted, #6c7a70); font-size: 13px; }
+.revenue-basis-value { color: var(--text-primary, #14351f); font-size: 26px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.revenue-basis-card small { color: var(--text-muted, #849087); font-size: 12px; line-height: 1.5; }
+.revenue-basis-table td small { color: var(--text-muted, #849087); font-size: 12px; }
+.revenue-basis-table th:not(:first-child), .revenue-basis-table td:not(:first-child) { text-align: right; }
+.revenue-party-link { padding: 0; border: 0; background: none; color: var(--text-primary, #14351f); font: inherit; font-weight: 600; text-decoration: underline; text-decoration-color: var(--border, #cfd8d2); text-underline-offset: 4px; cursor: pointer; }
+.revenue-party-link:hover, .revenue-party-link:focus-visible { text-decoration-color: currentColor; }
+.dash-rank-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; text-decoration-color: var(--border, #cfd8d2); text-underline-offset: 4px; cursor: pointer; }
+
+.revenue-detail { width: min(980px, 100%); max-height: min(86vh, 900px); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); gap: 14px; padding: 22px; border-radius: 18px; border: 1px solid var(--border, #e1e7e3); background: var(--bg-surface, #fff); color: var(--text-primary, #14351f); box-shadow: 0 28px 70px rgba(20, 30, 25, .28); }
+.revenue-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.revenue-detail-head h2 { margin: 0; font-size: 19px; color: var(--text-primary, #14351f); }
+.revenue-detail-head p { margin: 4px 0 0; color: var(--text-muted, #849087); font-size: 13px; }
+.revenue-detail-totals { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.revenue-detail-totals > div { display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--border, #e1e7e3); border-radius: 12px; }
+.revenue-detail-totals span { color: var(--text-muted, #6c7a70); font-size: 12px; }
+.revenue-detail-totals strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.revenue-detail-totals small { color: var(--text-muted, #849087); font-size: 12px; line-height: 1.45; }
+.revenue-detail-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.revenue-detail-tabs button { padding: 8px 12px; border: 1px solid var(--border, #e1e7e3); border-radius: 999px; background: transparent; color: var(--text-muted, #6c7a70); font: inherit; font-size: 13px; cursor: pointer; }
+.revenue-detail-tabs button.active { border-color: var(--text-primary, #14351f); color: var(--text-primary, #14351f); font-weight: 600; }
+.revenue-detail-body { min-height: 120px; overflow: auto; }
+.revenue-detail-body table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.revenue-detail-body th { position: sticky; top: 0; background: var(--bg-surface, #fff); text-align: left; }
+.revenue-detail-body th, .revenue-detail-body td { padding: 9px 8px; border-bottom: 1px solid var(--border, #e7ece8); white-space: nowrap; }
+.revenue-detail-body .money { text-align: right; font-variant-numeric: tabular-nums; }
+.revenue-negative td { color: var(--text-muted, #8a8f98); }
+.revenue-detail-note, .revenue-detail-loading { margin: 10px 0 0; color: var(--text-muted, #849087); font-size: 12.5px; }
+@media (min-width: 860px) {
+  .revenue-basis, .revenue-detail-totals { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

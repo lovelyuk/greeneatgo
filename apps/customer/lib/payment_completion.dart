@@ -151,9 +151,36 @@ class PaymentCompletionScreen extends StatelessWidget {
     required this.payment,
     this.onDone,
     this.onOpenReceipt,
+    this.title = '결제 완료',
+    this.headline = '결제가 완료되었습니다',
+    this.subline = '이용해 주셔서 감사합니다.',
+    this.showCheck = true,
+    this.showBack = false,
+    this.salesSlipTitle,
+    this.notice,
+    this.footer,
+    this.doneLabel = '확인',
   });
 
   final PaymentCompletionData payment;
+
+  /// Receipt view reuse (구매 내역 → 영수증): same paper receipt, other wording.
+  final String title;
+  final String headline;
+  final String subline;
+  final bool showCheck;
+  final bool showBack;
+
+  /// Server-named slip document. When set, the slip button shows for every
+  /// method that has a slip URL (KakaoPay included), under this name.
+  final String? salesSlipTitle;
+
+  /// Shown above the paper receipt (e.g. a refund notice).
+  final Widget? notice;
+
+  /// Shown below the receipt buttons (e.g. slip lookup values).
+  final Widget? footer;
+  final String doneLabel;
   final VoidCallback? onDone;
   final void Function(BuildContext context, String title, String url)?
       onOpenReceipt;
@@ -169,6 +196,13 @@ class PaymentCompletionScreen extends StatelessWidget {
     ));
   }
 
+  bool get _showSlip => salesSlipTitle == null
+      ? payment.showSalesSlip
+      : payment.salesSlipUrl.isNotEmpty;
+
+  String get _slipTitle =>
+      salesSlipTitle ?? (payment.isCard ? '카드 매출전표' : '계좌이체 전표');
+
   @override
   Widget build(BuildContext context) {
     // D3: current dark design + paper receipt (same paper tone as the home
@@ -178,14 +212,14 @@ class PaymentCompletionScreen extends StatelessWidget {
       child: Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
-        automaticallyImplyLeading: false,
+        automaticallyImplyLeading: showBack,
         backgroundColor: AppColors.bg,
         foregroundColor: AppColors.fg,
         surfaceTintColor: AppColors.bg,
         centerTitle: true,
-        title: const Text(
-          '결제 완료',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        title: Text(
+          title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
         ),
       ),
       body: SafeArea(
@@ -195,6 +229,7 @@ class PaymentCompletionScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (showCheck) ...[
               Center(
                 child: Container(
                   key: const ValueKey('payment-done-check'),
@@ -214,32 +249,34 @@ class PaymentCompletionScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 20),
-              const Text(
-                '결제가 완료되었습니다',
+              ],
+              Text(
+                headline,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                     color: AppColors.fg,
                     fontSize: 24,
                     fontWeight: FontWeight.w900),
               ),
-              const SizedBox(height: 6),
-              const Text(
-                '이용해 주셔서 감사합니다.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.fg2, fontSize: 14),
-              ),
+              if (subline.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  subline,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.fg2, fontSize: 14),
+                ),
+              ],
               const SizedBox(height: 22),
+              if (notice != null) ...[notice!, const SizedBox(height: 12)],
               _PaperReceipt(payment: payment),
-              if (payment.showSalesSlip || payment.showCashReceipt) ...[
+              if (_showSlip || payment.showCashReceipt) ...[
                 const SizedBox(height: 12),
-                if (payment.showSalesSlip)
+                if (_showSlip)
                   _DarkOutlineButton(
-                    label: payment.isCard ? '카드 매출전표 보기' : '계좌이체 전표 보기',
-                    onPressed: () => _openReceipt(
-                      context,
-                      payment.isCard ? '카드 매출전표' : '계좌이체 전표',
-                      payment.salesSlipUrl,
-                    ),
+                    key: const ValueKey('payment-sales-slip-button'),
+                    label: '$_slipTitle 보기',
+                    onPressed: () =>
+                        _openReceipt(context, _slipTitle, payment.salesSlipUrl),
                   ),
                 if (payment.showCashReceipt) ...[
                   const SizedBox(height: 8),
@@ -250,6 +287,7 @@ class PaymentCompletionScreen extends StatelessWidget {
                   ),
                 ],
               ],
+              if (footer != null) ...[const SizedBox(height: 12), footer!],
             ],
           ),
         ),
@@ -272,7 +310,7 @@ class PaymentCompletionScreen extends StatelessWidget {
                     fontWeight: FontWeight.w800),
               ),
               onPressed: onDone ?? () => Navigator.of(context).pop(true),
-              child: const Text('확인'),
+              child: Text(doneLabel),
             ),
           ),
         ),
@@ -374,7 +412,8 @@ class _ReceiptPerforation extends StatelessWidget {
 }
 
 class _DarkOutlineButton extends StatelessWidget {
-  const _DarkOutlineButton({required this.label, required this.onPressed});
+  const _DarkOutlineButton(
+      {super.key, required this.label, required this.onPressed});
   final String label;
   final VoidCallback onPressed;
 

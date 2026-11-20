@@ -57,3 +57,17 @@ export function formatKst(iso) {
   const d = new Date(t + 9 * 3600 * 1000), pad = n => String(n).padStart(2, '0');
   return `${d.getUTCFullYear()}.${pad(d.getUTCMonth() + 1)}.${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
+
+// Distinct restaurant names in list order, for the 내역 filter chips.
+export function merchantNames(rows) {
+  const names = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const name = typeof row?.merchant_name === 'string' ? row.merchant_name.trim() : '';
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+// Badge for a bought order that is no longer a plain paid order ('' = none).
+export function purchaseStatusLabel(status) {
+  return status === 'refunded' ? '환불 완료' : status === 'refund_processing' ? '환불 진행 중' : '';
+}

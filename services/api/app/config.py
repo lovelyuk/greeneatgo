@@ -55,6 +55,12 @@ def load_dotenv(path: str | Path = ".env") -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def _env_build(name: str) -> int:
+    """Build number from env; anything that is not a non-negative integer means "no prompt"."""
+    raw = (os.environ.get(name) or "").strip()
+    return int(raw) if raw.isdigit() else 0
+
+
 @dataclass(frozen=True)
 class Settings:
     supabase_url: str
@@ -85,6 +91,14 @@ class Settings:
     # App Store / Play review sign-in: one number whose OTP is fixed and never sent.
     review_login_phone: str = ""
     review_login_code: str = ""
+    # App update prompts: builds below `min` must update, builds below `latest`
+    # are offered the update. 0 = no prompt. Changed by env + redeploy, no app release.
+    app_min_build_android: int = 0
+    app_latest_build_android: int = 0
+    app_min_build_ios: int = 0
+    app_latest_build_ios: int = 0
+    app_store_url_android: str = "https://play.google.com/store/apps/details?id=com.greeneatfood.babdaeri"
+    app_store_url_ios: str = ""
     popbill_link_id: str = ""
     popbill_secret_key: str = ""
     popbill_corp_num: str = ""
@@ -167,6 +181,13 @@ class Settings:
             cors_allowed_origin_regex=os.environ.get("CORS_ALLOWED_ORIGIN_REGEX", DEFAULT_CORS_ORIGIN_REGEX).strip(),
             review_login_phone=re.sub(r"[^0-9]", "", os.environ.get("REVIEW_LOGIN_PHONE", "")),
             review_login_code=os.environ.get("REVIEW_LOGIN_CODE", "").strip(),
+            app_min_build_android=_env_build("APP_MIN_BUILD_ANDROID"),
+            app_latest_build_android=_env_build("APP_LATEST_BUILD_ANDROID"),
+            app_min_build_ios=_env_build("APP_MIN_BUILD_IOS"),
+            app_latest_build_ios=_env_build("APP_LATEST_BUILD_IOS"),
+            app_store_url_android=os.environ.get("APP_STORE_URL_ANDROID", "").strip()
+            or "https://play.google.com/store/apps/details?id=com.greeneatfood.babdaeri",
+            app_store_url_ios=os.environ.get("APP_STORE_URL_IOS", "").strip(),
             cors_allowed_origins=tuple(
                 origin.strip()
                 for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173,https://greeneatgo.vercel.app").split(",")

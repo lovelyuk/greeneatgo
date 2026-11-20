@@ -147,15 +147,22 @@ class SubsidizedLedgerTests(unittest.TestCase):
 
     @patch("app.routers.voucher_products.get_settings")
     @patch("app.routers.voucher_products.JoinRepository")
-    def test_ledger_employee_catalog_has_no_products(self, repo_class, settings):
+    def test_ledger_employee_catalog_lists_ordinary_vouchers_at_the_listed_price(self, repo_class, settings):
+        """A ledger employee (no subsidy contract) buys personal vouchers like a customer."""
         repo = repo_class.return_value
         self._employee_repo(repo)
         settings.return_value.pilot_merchant_id = "merchant-1"
         merchant = {"id": "merchant-1", "name": "돈토"}
         contract = {"company_id": "company-1", "unit_price": 8000, "subsidy_enabled": False, "status": "active"}
-        repo.client.rest_get.side_effect = [[merchant], [contract]]
-        self.assertEqual(active_products("bearer")["data"], {"purchase_mode": "none", "items": []})
-        self.assertEqual(repo.client.rest_get.call_count, 2)
+        product = {"id": "product-123", "merchant_id": "merchant-1", "name": "10+1", "voucher_count": 10,
+                   "bonus_count": 1, "sale_price": 72000, "status": "active", "kiwoom_pay_method": "TOTAL",
+                   "is_event": False}
+        repo.client.rest_get.side_effect = [[merchant], [contract], [product]]
+        data = active_products("bearer")["data"]
+        self.assertEqual(data["purchase_mode"], "voucher")
+        self.assertEqual([item["id"] for item in data["items"]], ["product-123"])
+        self.assertNotIn("employee_pay_amount", data["items"][0])
+        self.assertNotIn("company_subsidy_amount", data["items"][0])
 
     @patch("app.routers.voucher_products.get_settings")
     @patch("app.routers.voucher_products.JoinRepository")

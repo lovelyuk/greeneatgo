@@ -4,7 +4,7 @@ The counter scanner (e.g. Newland NLS-FR2780, USB HID keyboard mode) types the
 decoded QR into the restaurant's /scan page. Digits only, so a Korean IME, Caps
 Lock or keyboard layout on the counter PC/tablet cannot corrupt the token.
 
-Layout (81 digits): "81" | user uuid as 39-digit int | expiry epoch (10) |
+Layout (81 digits): "81" (or "82" = pay with a personal voucher) | user uuid as 39-digit int | expiry epoch (10) |
 nonce (10) | HMAC-SHA256 truncated to 64 bits as 20 digits.
 No server state is needed to issue; replay is blocked by using the nonce in the
 consuming RPC's idempotency key (a second redeem returns duplicate=true).
@@ -20,6 +20,10 @@ import uuid
 from dataclasses import dataclass
 
 VERSION = "81"
+# Same layout, but the holder asked to pay with a personal voucher instead of
+# the company ledger (ledger employees choose this in the app).
+PERSONAL_VERSION = "82"
+VERSIONS = (VERSION, PERSONAL_VERSION)
 TTL_SECONDS = 60
 CLOCK_SKEW_SECONDS = 5
 TOKEN_LENGTH = 2 + 39 + 10 + 10 + 20
@@ -38,6 +42,7 @@ class MealQrClaim:
     user_id: str
     nonce: str
     expires_at: int
+    pay_source: str = "company"
 
     @property
     def idempotency_key(self) -> str:
@@ -56,11 +61,11 @@ def _sign(key: bytes, body: str) -> str:
     return str(int.from_bytes(mac, "big")).zfill(20)
 
 
-def issue(user_id: str, secret: str, *, now: float | None = None) -> tuple[str, int]:
+def issue(user_id: str, secret: str, *, now: float | None = None, personal: bool = False) -> tuple[str, int]:
     uid = uuid.UUID(str(user_id))
     expires_at = int(now if now is not None else time.time()) + TTL_SECONDS
     nonce = str(secrets.randbelow(10**10)).zfill(10)
-    body = f"{VERSION}{str(uid.int).zfill(39)}{expires_at:010d}{nonce}"
+    body = f"{PERSONAL_VERSION if personal else VERSION}{str(uid.int).zfill(39)}{expires_at:010d}{nonce}"
     return body + _sign(_key(secret), body), expires_at
 
 
@@ -68,9 +73,9 @@ def normalize(raw: str) -> str:
     """Scanners may add prefixes/suffixes (CR/LF, AIM ids); keep the 81-digit run."""
     runs = [run for run in _DIGITS.findall(raw or "") if len(run) >= TOKEN_LENGTH]
     for run in runs:
-        start = run.find(VERSION)
-        while start != -1 and start + TOKEN_LENGTH <= len(run):
-            return run[start:start + TOKEN_LENGTH]
+        starts = [index for index in (run.find(version) for version in VERSIONS) if index != -1]
+        if starts and min(starts) + TOKEN_LENGTH <= len(run):
+            return run[min(starts):min(starts) + TOKEN_LENGTH]
     raise MealQrError("INVALID_MEAL_QR", "회원 QR이 아니에요. 앱의 내 QR을 찍어 주세요")
 
 
@@ -89,4 +94,7 @@ def verify(raw: str, secret: str, *, now: float | None = None) -> MealQrClaim:
         raise MealQrError("INVALID_MEAL_QR", "회원 QR을 확인하지 못했어요. 다시 찍어 주세요")
     if uid_int >= 2**128:
         raise MealQrError("INVALID_MEAL_QR", "회원 QR을 확인하지 못했어요. 다시 찍어 주세요")
-    return MealQrClaim(user_id=str(uuid.UUID(int=uid_int)), nonce=nonce, expires_at=expires_at)
+    return MealQrClaim(
+        user_id=str(uuid.UUID(int=uid_int)), nonce=nonce, expires_at=expires_at,
+        pay_source="personal" if body[:2] == PERSONAL_VERSION else "company",
+    )

@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'app_update.dart';
 import 'auth_helpers.dart';
 import 'data/banner_api.dart';
 import 'firebase_config.dart';
@@ -25,9 +26,11 @@ import 'phone_login_screen.dart' as phone_login;
 import 'join_request.dart';
 import 'load_error.dart';
 import 'push_notifications.dart';
+import 'restaurants.dart';
 import 'screens/coupon_wallet.dart';
 import 'screens/invite_code_entry_screen.dart';
 import 'screens/member_qr_screen.dart';
+import 'screens/purchase_receipt.dart';
 import 'screens/user_dashboard_shell.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -191,7 +194,7 @@ class GreeneatGoApp extends StatelessWidget {
           child: child!,
         );
       },
-      home: const AppGate(),
+      home: const AppUpdateGate(baseUrl: apiBaseUrl, child: AppGate()),
     );
   }
 }
@@ -288,6 +291,22 @@ class ApiClient {
     return VoucherCatalog.fromJson(data);
   }
 
+  /// The buyer's own paid orders (구매 내역), newest first.
+  Future<List<Map<String, dynamic>>> getPurchaseHistory() async {
+    final data = await _request('/payments/history');
+    final items = data['items'];
+    return items is List
+        ? items
+            .whereType<Map>()
+            .map((item) => item.cast<String, dynamic>())
+            .toList()
+        : const [];
+  }
+
+  /// One owned order as a receipt (completion view, slip lookup, refund).
+  Future<Map<String, dynamic>> getPurchaseReceipt(String orderId) =>
+      _request('/payments/history/${Uri.encodeComponent(orderId)}');
+
   Future<CouponWallet> getCoupons() async =>
       CouponWallet.fromJson(await _request('/coupons'));
 
@@ -343,14 +362,24 @@ class ApiClient {
   Future<Map<String, dynamic>> cancelSubsidizedVoucherOrder(String orderId) =>
       _request('/vouchers/subsidized-orders/$orderId/cancel', method: 'POST');
 
-  Future<Map<String, dynamic>> getMemberQr() =>
-      _request('/transactions/member-qr');
+  /// `personal`: a ledger employee's QR that pays with their own voucher.
+  Future<Map<String, dynamic>> getMemberQr({bool personal = false}) => _request(
+      personal ? '/transactions/member-qr?source=personal' : '/transactions/member-qr');
 
+  /// Restaurants the buyer can use, with the vouchers held at each.
+  Future<List<Restaurant>> getRestaurants() async =>
+      restaurantsFromResponse(await _request('/restaurants'));
+
+  /// `paySource` 'personal': a ledger employee pays with their own voucher
+  /// instead of the company ledger.
   Future<Map<String, dynamic>> scanTransaction(
-      {required String qrData, required String idempotencyKey}) {
+      {required String qrData,
+      required String idempotencyKey,
+      String? paySource}) {
     return _request('/transactions/scan', method: 'POST', body: {
       'qr_data': qrData,
       'idempotency_key': idempotencyKey,
+      if (paySource != null) 'pay_source': paySource,
     });
   }
 
@@ -436,6 +465,7 @@ class ApiClient {
         reason: detail['reason'] as String? ?? detail['code'] as String?,
         message: detail['message'] as String? ??
             (rawDetail is String ? rawDetail : 'API 오류가 발생했어요'),
+        details: detail,
       );
     }
     // Unified scan returns its result at the response root; other APIs use data.
@@ -446,11 +476,22 @@ class ApiClient {
 
 class ApiException implements Exception, LoadErrorMessage {
   const ApiException(
-      {required this.statusCode, required this.message, this.reason});
+      {required this.statusCode,
+      required this.message,
+      this.reason,
+      this.details = const {}});
   final int statusCode;
   @override
   final String message;
   final String? reason;
+
+  /// The server's error detail object (extra fields beyond code/message).
+  final Map<String, dynamic> details;
+
+  /// Set when the company would not pay a ledger meal: how many of the
+  /// employee's own vouchers could pay it instead.
+  int get personalVoucherBalance =>
+      (details['personal_voucher_balance'] as num?)?.round() ?? 0;
 
   bool get isNoVoucher =>
       statusCode == 402 && reason?.toLowerCase() == 'no_voucher';
@@ -2979,6 +3020,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       subsidizedFuture: _subsidizedFuture,
       pointBalance: pointBalance,
       onRefresh: _refreshHome,
+      purchaseHistoryLoader: api.getPurchaseHistory,
+      restaurantsLoader: api.getRestaurants,
+      onOpenPurchase: (purchase) => Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => PurchaseReceiptScreen(
+            load: () => api.getPurchaseReceipt('${purchase['order_id']}'),
+          ),
+        ),
+      ),
       todayMenuCard: FutureBuilder<TodayMenu?>(
         future: _todayMenuFuture,
         builder: (context, snapshot) => _TodayMenuCard(
@@ -3011,10 +3061,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // QR tab: show my QR to the counter scanner first; scanning the store
       // QR stays available as a fallback (scanner down / ledger employees).
       qrPageBuilder: (close) => me['account_type'] == 'ledger'
-          ? UnifiedQrScanScreen(
+          ? LedgerPayChoiceScreen(
               session: session,
-              isConsumer: isConsumer,
+              personalBalance:
+                  (me['personal_voucher_balance'] as num?)?.round() ?? 0,
+              subsidizedFuture: _subsidizedFuture,
               onClose: close,
+              onBuyVoucher: () async {
+                await Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => VoucherPurchaseScreen(
+                        session: session,
+                        pointBalance:
+                            (me['point_balance'] as num?)?.round() ?? 0,
+                        onPurchaseCompleted: _refreshHome)));
+                await onRefresh();
+              },
             )
           : MemberQrScreen(
               loadCode: () => ApiClient(session).getMemberQr(),
@@ -3860,16 +3921,260 @@ class _TodayMenuCard extends StatelessWidget {
   }
 }
 
+/// Who pays a ledger employee's meal.
+enum PaySource { company, personal }
+
+/// After the company refused a ledger meal (limit, time window, ...): offer
+/// the employee's own voucher when they hold one and did not already choose it.
+/// A missing voucher is handled by the purchase prompt instead.
+bool shouldOfferPersonalVoucher(ApiException error, PaySource? source) =>
+    source != PaySource.personal &&
+    !error.isNoVoucher &&
+    error.personalVoucherBalance > 0;
+
+/// The 회사 장부 / 내 식권 switch at the top of a ledger employee's QR tab.
+class PaySourceToggle extends StatelessWidget {
+  const PaySourceToggle({
+    super.key,
+    required this.value,
+    required this.personalBalance,
+    required this.onChanged,
+  });
+
+  final PaySource value;
+  final int personalBalance;
+  final ValueChanged<PaySource> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: Row(children: [
+          _option(PaySource.company, '회사 장부', '회사가 결제해요'),
+          _option(PaySource.personal, '내 식권', '보유 $personalBalance장'),
+        ]),
+      );
+
+  Widget _option(PaySource source, String label, String caption) {
+    final selected = value == source;
+    return Expanded(
+      child: Material(
+        color: selected ? AppColors.blue : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          key: ValueKey('pay-source-${source.name}'),
+          borderRadius: BorderRadius.circular(12),
+          onTap: selected ? null : () => onChanged(source),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            child: Column(children: [
+              Text(label,
+                  style: TextStyle(
+                      color: selected ? Colors.white : AppColors.fg,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(caption,
+                  style: TextStyle(
+                      color: selected
+                          ? Colors.white.withValues(alpha: 0.82)
+                          : AppColors.fg2,
+                      fontSize: 11.5)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// QR tab of a ledger employee: pay with the company ledger (scan the store
+/// QR) or with a voucher bought with their own money (show my QR at the
+/// counter, or scan the store QR).
+class LedgerPayChoiceScreen extends StatefulWidget {
+  const LedgerPayChoiceScreen({
+    super.key,
+    required this.session,
+    required this.personalBalance,
+    required this.subsidizedFuture,
+    required this.onBuyVoucher,
+    this.onClose,
+  });
+
+  final User session;
+  final int personalBalance;
+
+  /// Employees whose company subsidizes vouchers keep the single flow.
+  final Future<bool> subsidizedFuture;
+  final Future<void> Function() onBuyVoucher;
+  final VoidCallback? onClose;
+
+  @override
+  State<LedgerPayChoiceScreen> createState() => _LedgerPayChoiceScreenState();
+}
+
+class _LedgerPayChoiceScreenState extends State<LedgerPayChoiceScreen> {
+  PaySource _source = PaySource.company;
+  bool _subsidized = false;
+  late int _balance = widget.personalBalance;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.subsidizedFuture.then((value) {
+      if (mounted && value) setState(() => _subsidized = true);
+    }).catchError((_) {});
+  }
+
+  @override
+  void didUpdateWidget(LedgerPayChoiceScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.personalBalance != widget.personalBalance) {
+      _balance = widget.personalBalance;
+    }
+  }
+
+  Future<int?> _readBalance() async {
+    final value =
+        ((await ApiClient(widget.session).getMe())['personal_voucher_balance']
+                as num?)
+            ?.round();
+    if (value != null && mounted && value != _balance) {
+      setState(() => _balance = value);
+    }
+    return value;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_subsidized) {
+      return UnifiedQrScanScreen(
+          session: widget.session, isConsumer: false, onClose: widget.onClose);
+    }
+    final toggle = PaySourceToggle(
+      value: _source,
+      personalBalance: _balance,
+      onChanged: (source) => setState(() => _source = source),
+    );
+    if (_source == PaySource.company) {
+      return UnifiedQrScanScreen(
+        key: const ValueKey('ledger-company-scan'),
+        session: widget.session,
+        isConsumer: false,
+        onClose: widget.onClose,
+        header: toggle,
+      );
+    }
+    if (_balance <= 0) {
+      return _NoPersonalVoucher(
+        toggle: toggle,
+        onClose: widget.onClose,
+        onBuy: () async {
+          await widget.onBuyVoucher();
+          try {
+            await _readBalance();
+          } catch (_) {}
+        },
+      );
+    }
+    return MemberQrScreen(
+      key: const ValueKey('ledger-personal-qr'),
+      header: toggle,
+      loadCode: () => ApiClient(widget.session).getMemberQr(personal: true),
+      readBalance: _readBalance,
+      onClose: widget.onClose,
+      onScanStoreQr: () async {
+        await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => UnifiedQrScanScreen(
+                  session: widget.session,
+                  isConsumer: true,
+                  paySource: PaySource.personal,
+                )));
+        try {
+          await _readBalance();
+        } catch (_) {}
+      },
+    );
+  }
+}
+
+class _NoPersonalVoucher extends StatelessWidget {
+  const _NoPersonalVoucher(
+      {required this.toggle, required this.onBuy, this.onClose});
+  final Widget toggle;
+  final VoidCallback onBuy;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          backgroundColor: AppColors.bg,
+          foregroundColor: AppColors.fg,
+          surfaceTintColor: AppColors.bg,
+          leading: onClose == null
+              ? null
+              : IconButton(
+                  tooltip: '홈으로',
+                  onPressed: onClose,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
+          title: const Text('QR 사용하기'),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 112),
+          children: [
+            toggle,
+            const SizedBox(height: 16),
+            DarkCard(
+              child: Column(children: [
+                const Icon(Icons.confirmation_number_outlined,
+                    color: AppColors.blueSoft, size: 38),
+                const SizedBox(height: 12),
+                const Text('내 식권이 없어요',
+                    textAlign: TextAlign.center, style: AppTextStyles.body),
+                const SizedBox(height: 6),
+                const Text('식권을 사 두면 회사 한도를 넘긴 날에도 결제할 수 있어요.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.caption),
+                const SizedBox(height: 16),
+                FilledButton(
+                  key: const ValueKey('buy-personal-voucher'),
+                  style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.blue,
+                      foregroundColor: Colors.white),
+                  onPressed: onBuy,
+                  child: const Text('식권 구매하기'),
+                ),
+              ]),
+            ),
+          ],
+        ),
+      );
+}
+
 class UnifiedQrScanScreen extends StatefulWidget {
   const UnifiedQrScanScreen({
     super.key,
     required this.session,
     required this.isConsumer,
     this.onClose,
+    this.header,
+    this.paySource,
   });
   final User session;
   final bool isConsumer;
   final VoidCallback? onClose;
+
+  /// Shown above the scanner (ledger employees: the pay-source switch).
+  final Widget? header;
+
+  /// Set to pay with a personal voucher instead of the company ledger.
+  final PaySource? paySource;
 
   @override
   State<UnifiedQrScanScreen> createState() => _UnifiedQrScanScreenState();
@@ -3907,6 +4212,7 @@ class _UnifiedQrScanScreenState extends State<UnifiedQrScanScreen> {
               session: widget.session,
               isConsumer: widget.isConsumer,
               qrData: qrData,
+              paySource: widget.paySource,
             )));
     if (!mounted) return;
     if (paid == true) {
@@ -3965,6 +4271,7 @@ class _UnifiedQrScanScreenState extends State<UnifiedQrScanScreen> {
           ),
           body: UnifiedQrScanContent(
             isConsumer: widget.isConsumer,
+            header: widget.header,
             error: _error,
             onRetry: () {
               setState(() => _error = null);
@@ -3999,8 +4306,10 @@ class UnifiedQrScanContent extends StatelessWidget {
     required this.scanner,
     required this.onRetry,
     this.error,
+    this.header,
   });
 
+  final Widget? header;
   final bool isConsumer;
   final Widget scanner;
   final String? error;
@@ -4010,6 +4319,7 @@ class UnifiedQrScanContent extends StatelessWidget {
   Widget build(BuildContext context) => ListView(
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 112),
         children: [
+          if (header != null) ...[header!, const SizedBox(height: 16)],
           const Text('SCAN & PAY', style: AppTextStyles.overline),
           const SizedBox(height: 8),
           const Text('매장 QR을 스캔해요', style: AppTextStyles.screenTitle),
@@ -4079,10 +4389,12 @@ class UnifiedPaymentResultScreen extends StatefulWidget {
       {super.key,
       required this.session,
       required this.isConsumer,
-      required this.qrData});
+      required this.qrData,
+      this.paySource});
   final User session;
   final bool isConsumer;
   final String qrData;
+  final PaySource? paySource;
 
   @override
   State<UnifiedPaymentResultScreen> createState() =>
@@ -4096,7 +4408,37 @@ class _UnifiedPaymentResultScreenState
   bool _loading = true;
   bool _noVoucher = false;
   bool _purchaseOpened = false;
+  bool _personalOffered = false;
+  late PaySource? _paySource = widget.paySource;
   VoucherPurchaseMode? _recoveryPurchaseMode;
+
+  /// The company would not pay (limit, time window, ...) and the employee
+  /// holds their own vouchers: ask once whether to use one instead.
+  Future<void> _offerPersonalVoucher(ApiException error) async {
+    final use = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('내 식권으로 결제할까요?',
+            style: TextStyle(color: AppColors.fg, fontSize: 18)),
+        content: Text(
+            '${error.message}\n\n내 식권 ${error.personalVoucherBalance}장 중 1장을 사용해요. 회사 장부에는 기록되지 않아요.',
+            style: const TextStyle(color: AppColors.fg2, height: 1.5)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('아니요')),
+          FilledButton(
+              key: const ValueKey('use-personal-voucher'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('내 식권으로 결제')),
+        ],
+      ),
+    );
+    if (use != true || !mounted) return;
+    _paySource = PaySource.personal;
+    await _pay();
+  }
 
   @override
   void initState() {
@@ -4114,8 +4456,11 @@ class _UnifiedPaymentResultScreenState
       _noVoucher = false;
     });
     try {
-      final result = await ApiClient(widget.session)
-          .scanTransaction(qrData: widget.qrData, idempotencyKey: _key());
+      final result = await ApiClient(widget.session).scanTransaction(
+          qrData: widget.qrData,
+          idempotencyKey: _key(),
+          paySource:
+              _paySource == PaySource.personal ? 'personal' : null);
       await SystemSound.play(SystemSoundType.alert);
       if (mounted) setState(() => _result = result);
     } on ApiException catch (error) {
@@ -4145,6 +4490,11 @@ class _UnifiedPaymentResultScreenState
         _purchaseOpened = true;
         WidgetsBinding.instance.addPostFrameCallback(
             (_) => _openPurchase(retryAfterPurchase: true));
+      } else if (shouldOfferPersonalVoucher(error, _paySource) &&
+          !_personalOffered) {
+        _personalOffered = true;
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _offerPersonalVoucher(error));
       }
     } catch (error) {
       if (mounted) {
@@ -4320,7 +4670,10 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
                   ),
             title: Text(voucherFilterTitle(_filter)),
           ),
-          body: FutureBuilder<VoucherCatalog>(
+          body: Column(children: [
+            const RestaurantPurchaseChip(),
+            Expanded(
+              child: FutureBuilder<VoucherCatalog>(
             future: _catalog,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
@@ -4340,6 +4693,9 @@ class _VoucherPurchaseScreenState extends State<VoucherPurchaseScreen> {
                 onShowAll: () => setState(() => _filter = VoucherFilter.all),
               );
             },
+              ),
+            ),
+          ]
           ),
         ),
       );

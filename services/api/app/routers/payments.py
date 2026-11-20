@@ -20,7 +20,7 @@ from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.voucher_products import _expire_stale_subsidized_orders, _is_exposed, _load_products
 from app.schemas import PaymentConfirmRequest
 from app.services.kiwoom_payment import KiwoomHashInput, KiwoomPaymentError, request_payment_hash
-from app.services.payment_completion import present_payment_completion
+from app.services.payment_completion import payment_receipt_details, payment_receipt_title, present_payment_completion
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 short_redirect_router = APIRouter(include_in_schema=False)
@@ -728,6 +728,110 @@ def recovery(
         if exc.status in (401, 403):
             raise _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요") from exc
         raise _error(502, "SUPABASE_ERROR", "결제 주문 상태를 확인하지 못했어요") from exc
+
+
+_PURCHASE_STATUSES = "in.(done,refund_processing,refunded)"
+_PURCHASE_LIST_SELECT = (
+    "order_id,product_name,merchant_name,merchant_id,amount,status,pay_type,payment_method,"
+    "approved_at,created_at,voucher_count,paid_voucher_count,bonus_voucher_count"
+)
+_METHOD_LABELS = {"CARD": "카드", "BANK": "계좌이체", "NAVERPAY": "네이버페이", "KAKAOPAY": "카카오페이"}
+
+
+def _purchase_row(order: dict) -> dict:
+    method = (order.get("payment_method") or "").upper() or None
+    amount = order.get("amount")
+    return {
+        "order_id": order.get("order_id"),
+        "product_name": order.get("product_name"),
+        "merchant_id": order.get("merchant_id"),
+        "merchant_name": order.get("merchant_name") or "",
+        "amount": amount if isinstance(amount, int) else 0,
+        "status": order.get("status"),
+        "pay_type": order.get("pay_type"),
+        "method": method,
+        "method_label": _METHOD_LABELS.get(method or "", method),
+        "voucher_count": order.get("voucher_count"),
+        "approved_at": order.get("approved_at") or order.get("created_at"),
+        # Point-only orders never reached the payment provider: nothing to show a slip for.
+        "has_receipt": isinstance(amount, int) and amount > 0,
+    }
+
+
+@router.get("/history")
+def order_history(
+    response: Response,
+    limit: int = Query(default=50, ge=1, le=100),
+    token: str = Depends(bearer_token),
+):
+    """The signed-in buyer's own paid (and refunded) orders, newest first."""
+    repo = JoinRepository()
+    try:
+        _, profile = _customer(repo, token, allow_employee=True)
+        rows = repo.client.rest_get("payment_orders", {
+            "select": _PURCHASE_LIST_SELECT, "user_id": f"eq.{profile.id}",
+            "status": _PURCHASE_STATUSES, "order": "approved_at.desc.nullslast,created_at.desc",
+            "limit": str(limit),
+        })
+        response.headers["Cache-Control"] = "private, no-store"
+        return {"ok": True, "data": {"items": [_purchase_row(row) for row in rows]}, "error": None}
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요") from exc
+        raise _error(502, "SUPABASE_ERROR", "구매 내역을 불러오지 못했어요") from exc
+
+
+@router.get("/history/{order_id}")
+def order_receipt(
+    response: Response,
+    order_id: str = Path(min_length=6, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+    token: str = Depends(bearer_token),
+):
+    """One owned paid order as a receipt: the completion view shown right after
+    payment, our own record for the provider's slip lookup, and any refund."""
+    repo, settings = JoinRepository(), get_settings()
+    try:
+        _, profile = _customer(repo, token, allow_employee=True)
+        rows = repo.client.rest_get("payment_orders", {
+            "select": ORDER_SELECT, "order_id": f"eq.{order_id}",
+            "user_id": f"eq.{profile.id}", "status": _PURCHASE_STATUSES, "limit": "1",
+        })
+        if not rows:
+            raise _error(404, "ORDER_NOT_FOUND", "결제 내역을 찾을 수 없어요")
+        order = rows[0]
+        refund = None
+        if order.get("status") in {"refund_processing", "refunded"}:
+            refunds = repo.client.rest_get("refund_requests", {
+                "select": "status,refund_amount,point_amount,completed_at",
+                "order_id": f"eq.{order['id']}", "user_id": f"eq.{profile.id}",
+                "order": "completed_at.desc.nullslast", "limit": "1",
+            })
+            done = order.get("status") == "refunded"
+            refund = {
+                "status": "completed" if done else "processing",
+                "refund_amount": refunds[0].get("refund_amount") if refunds else None,
+                "point_amount": refunds[0].get("point_amount") if refunds else None,
+                "completed_at": refunds[0].get("completed_at") if refunds and done else None,
+            }
+        completion = present_payment_completion(
+            order, base_url=settings.kiwoompay_base_url, cpid=settings.kiwoompay_cpid,
+        )
+        response.headers["Cache-Control"] = "private, no-store"
+        return {"ok": True, "data": {
+            "summary": _purchase_row(order),
+            "completion": completion,
+            "receipt": payment_receipt_details(order),
+            "slip_title": payment_receipt_title(order),
+            "refund": refund,
+        }, "error": None}
+    except HTTPException:
+        raise
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인 정보가 올바르지 않아요") from exc
+        raise _error(502, "SUPABASE_ERROR", "영수증을 불러오지 못했어요") from exc
 
 
 @router.post("/confirm")

@@ -1,7 +1,7 @@
 name: greeneatgo_customer
 description: greeneatGo employee Flutter app
 publish_to: none
-version: 0.1.7+62
+version: 0.1.8+63
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -22,6 +22,7 @@ dependencies:
   shared_preferences: ^2.5.3
   cached_network_image: ^3.4.1
   qr_flutter: ^4.1.0
+  package_info_plus: ^8.1.0
 
 dev_dependencies:
   flutter_test:

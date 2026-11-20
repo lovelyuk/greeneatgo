@@ -2,12 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../load_error.dart';
+import '../restaurants.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/dashboard_components.dart';
 
 typedef AsyncAction = Future<void> Function();
 typedef DashboardPageBuilder = Widget Function(VoidCallback close);
+typedef PurchaseHistoryLoader = Future<List<Map<String, dynamic>>> Function();
+typedef PurchaseOpener = Future<void> Function(Map<String, dynamic> purchase);
+typedef RestaurantsLoader = Future<List<Restaurant>> Function();
+
+const selectedRestaurantKey = 'selected_restaurant_id';
 
 class UserDashboardShell extends StatefulWidget {
   const UserDashboardShell({
@@ -33,6 +42,9 @@ class UserDashboardShell extends StatefulWidget {
     this.couponCountFuture,
     this.pointBalance,
     this.subsidizedFuture,
+    this.purchaseHistoryLoader,
+    this.onOpenPurchase,
+    this.restaurantsLoader,
   });
 
   final Map<String, dynamic> data;
@@ -60,6 +72,15 @@ class UserDashboardShell extends StatefulWidget {
   /// subsidized vouchers (purchase_mode 'subsidized'); drives the avatar.
   final Future<bool>? subsidizedFuture;
 
+  /// 내역 → 구매: loads the buyer's paid orders; null hides the 구매 segment.
+  final PurchaseHistoryLoader? purchaseHistoryLoader;
+
+  /// Opens the receipt of one bought order.
+  final PurchaseOpener? onOpenPurchase;
+
+  /// Restaurants the buyer can use; null hides the restaurant bar and picker.
+  final RestaurantsLoader? restaurantsLoader;
+
   @override
   State<UserDashboardShell> createState() => _UserDashboardShellState();
 }
@@ -67,6 +88,59 @@ class UserDashboardShell extends StatefulWidget {
 class _UserDashboardShellState extends State<UserDashboardShell> {
   int _index = 0;
   bool _actionInFlight = false;
+  List<Restaurant> _restaurants = const [];
+  String? _savedRestaurantId;
+
+  Restaurant? get _restaurant => pickRestaurant(_restaurants, _savedRestaurantId);
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadRestaurants(restoreChoice: true));
+  }
+
+  @override
+  void didUpdateWidget(UserDashboardShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // New account data (refresh, purchase, meal): balances per restaurant changed.
+    if (!identical(oldWidget.data, widget.data)) unawaited(_loadRestaurants());
+  }
+
+  /// A failed load keeps what is shown: the bar is a convenience, never a gate.
+  Future<void> _loadRestaurants({bool restoreChoice = false}) async {
+    final loader = widget.restaurantsLoader;
+    if (loader == null) return;
+    String? saved = _savedRestaurantId;
+    if (restoreChoice) {
+      try {
+        saved = (await SharedPreferences.getInstance())
+            .getString(selectedRestaurantKey);
+      } catch (_) {}
+    }
+    try {
+      final restaurants = await loader();
+      if (!mounted) return;
+      setState(() {
+        _restaurants = restaurants;
+        _savedRestaurantId = saved;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _pickRestaurant() async {
+    if (_restaurants.isEmpty) return;
+    final picked = await showRestaurantPicker(
+      context,
+      restaurants: _restaurants,
+      selectedId: _restaurant?.id,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _savedRestaurantId = picked.id);
+    try {
+      await (await SharedPreferences.getInstance())
+          .setString(selectedRestaurantKey, picked.id);
+    } catch (_) {}
+  }
 
   Future<void> _runAction(AsyncAction action) async {
     if (_actionInFlight) return;
@@ -230,6 +304,9 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
         onRefresh: widget.onRefresh,
         todayMenuCard: widget.todayMenuCard,
         partnerBanner: widget.partnerBanner,
+        restaurant: _restaurant,
+        restaurants: _restaurants,
+        onPickRestaurant: _pickRestaurant,
       ),
       if (_index == 1 && widget.purchasePageBuilder != null)
         Padding(
@@ -245,7 +322,11 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
         )
       else
         const SizedBox.shrink(),
-      _HistoryTab(transactions: _transactions),
+      _HistoryTab(
+        transactions: _transactions,
+        purchaseHistoryLoader: widget.purchaseHistoryLoader,
+        onOpenPurchase: widget.onOpenPurchase,
+      ),
       _ProfileTab(
         data: widget.data,
         subsidizedFuture: widget.subsidizedFuture,
@@ -279,7 +360,11 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
           error: AppColors.danger,
         ),
       ),
-      child: PopScope(
+      child: RestaurantScope(
+        restaurants: _restaurants,
+        selected: _restaurant,
+        onPick: _pickRestaurant,
+        child: PopScope(
         canPop: _index == 0,
         onPopInvokedWithResult: (didPop, _) {
           if (!didPop && _index != 0) _closeActionPage();
@@ -315,6 +400,7 @@ class _UserDashboardShellState extends State<UserDashboardShell> {
             ),
           ),
         ),
+        ),
       ),
     );
   }
@@ -339,8 +425,14 @@ class _HomeTab extends StatelessWidget {
     required this.onEvents,
     required this.onAnnouncements,
     required this.onReviews,
+    this.restaurant,
+    this.restaurants = const [],
+    this.onPickRestaurant,
   });
 
+  final Restaurant? restaurant;
+  final List<Restaurant> restaurants;
+  final VoidCallback? onPickRestaurant;
   final Map<String, dynamic> data;
   final List<Map<String, dynamic>> transactions;
   final Widget? pendingBanner;
@@ -383,6 +475,13 @@ class _HomeTab extends StatelessWidget {
     final ticketLabel = isVoucher ? '$voucherBalance' : '-';
     final ticketCaption =
         isVoucher ? '보유 식권 · QR 한 번에 1장 사용' : '회사 장부 결제 · 매장 계약 단가 적용';
+    // Ledger employees may also hold vouchers bought with their own money.
+    final personalBalance = data['personal_voucher_balance'];
+    final others = restaurants
+        .where((r) => r.id != restaurant?.id && r.voucherBalance > 0)
+        .toList();
+    final othersCount =
+        others.fold<int>(0, (sum, r) => sum + r.voucherBalance);
     final monthUsage = isVoucher
         ? monthVoucherCount == 0
             ? '사용 내역 없음'
@@ -409,7 +508,40 @@ class _HomeTab extends StatelessWidget {
             const SizedBox(height: 12),
             pendingBanner!,
           ],
+          if (restaurant != null && onPickRestaurant != null) ...[
+            const SizedBox(height: 14),
+            RestaurantBar(restaurant: restaurant!, onPick: onPickRestaurant!),
+          ],
           const SizedBox(height: 16),
+          if (!isVoucher && personalBalance is num)
+            // Employee: the wallet shows personal vouchers unless the company
+            // subsidizes vouchers (then the catalog decides, as before).
+            FutureBuilder<bool>(
+              future: subsidizedFuture,
+              builder: (context, subsidized) => FutureBuilder<int>(
+                future: couponCountFuture,
+                builder: (context, couponSnapshot) {
+                  final personal = subsidized.data != true;
+                  return MealTicketCard(
+                    remainingCountLabel:
+                        personal ? '${personalBalance.round()}' : ticketLabel,
+                    couponCountLabel: couponSnapshot.connectionState ==
+                                ConnectionState.done &&
+                            couponSnapshot.hasData
+                        ? '${couponSnapshot.data}'
+                        : '-',
+                    pointBalanceLabel:
+                        pointBalance == null ? '-' : _points(pointBalance!),
+                    caption: personal ? '내 식권 · 회사 장부로도 결제할 수 있어요' : ticketCaption,
+                    monthUsage: monthUsage,
+                    onTapQr: onScanQr,
+                    onBuyTicket: personal ? onBuyVoucher : null,
+                    state: TicketState.active,
+                  );
+                },
+              ),
+            )
+          else
           FutureBuilder<int>(
             future: couponCountFuture,
             builder: (context, couponSnapshot) => MealTicketCard(
@@ -430,6 +562,38 @@ class _HomeTab extends StatelessWidget {
                   : TicketState.active,
             ),
           ),
+          if (others.isNotEmpty && onPickRestaurant != null) ...[
+            const SizedBox(height: 10),
+            Material(
+              color: const Color(0xFF0F1524),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: const BorderSide(color: Color(0xFF2B3854)),
+              ),
+              child: InkWell(
+                key: const ValueKey('other-restaurant-vouchers'),
+                borderRadius: BorderRadius.circular(14),
+                onTap: onPickRestaurant,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                  child: Row(children: [
+                    Expanded(
+                      child: Text(
+                          '다른 식당 식권 ${others.length}곳 · $othersCount장',
+                          style: const TextStyle(
+                              color: AppColors.flipStrong, fontSize: 13)),
+                    ),
+                    const Text('모두 보기 ›',
+                        style: TextStyle(
+                            color: AppColors.blueSoft,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           _HomeShortcuts(
             onCoupons: onCoupons,
@@ -582,62 +746,391 @@ class _AppHeader extends StatelessWidget {
       );
 }
 
-class _HistoryTab extends StatelessWidget {
-  const _HistoryTab({required this.transactions});
+/// 내역 tab: meals used (사용) and vouchers bought (구매). Bought rows open the
+/// receipt again; a chip row narrows either list to one restaurant.
+class _HistoryTab extends StatefulWidget {
+  const _HistoryTab({
+    required this.transactions,
+    this.purchaseHistoryLoader,
+    this.onOpenPurchase,
+  });
   final List<Map<String, dynamic>> transactions;
+  final PurchaseHistoryLoader? purchaseHistoryLoader;
+  final PurchaseOpener? onOpenPurchase;
+
+  @override
+  State<_HistoryTab> createState() => _HistoryTabState();
+}
+
+class _HistoryTabState extends State<_HistoryTab> {
+  bool _showPurchases = false;
+  String? _merchant;
+  Future<List<Map<String, dynamic>>>? _purchases;
+
+  void _select(bool purchases) {
+    setState(() {
+      _showPurchases = purchases;
+      _merchant = null;
+      if (purchases) _purchases ??= widget.purchaseHistoryLoader?.call();
+    });
+  }
+
+  void _reloadPurchases() => setState(() {
+        _purchases = widget.purchaseHistoryLoader?.call();
+      });
+
+  List<String> _merchantNames(List<Map<String, dynamic>> rows) {
+    final names = <String>[];
+    for (final row in rows) {
+      final name = _text(row['merchant_name']);
+      if (name.isNotEmpty && !names.contains(name)) names.add(name);
+    }
+    return names;
+  }
+
+  List<Map<String, dynamic>> _filtered(List<Map<String, dynamic>> rows) {
+    final merchant = _merchant;
+    if (merchant == null) return rows;
+    return rows.where((row) => _text(row['merchant_name']) == merchant).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final canShowPurchases = widget.purchaseHistoryLoader != null;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 22, 18, 112),
+      children: [
+        const Text('이용내역', style: AppTextStyles.screenTitle),
+        if (canShowPurchases) ...[
+          const SizedBox(height: 16),
+          Row(children: [
+            _HistorySegment(
+              key: const ValueKey('history-segment-usage'),
+              label: '사용',
+              selected: !_showPurchases,
+              onTap: () => _select(false),
+            ),
+            const SizedBox(width: 8),
+            _HistorySegment(
+              key: const ValueKey('history-segment-purchases'),
+              label: '구매',
+              selected: _showPurchases,
+              onTap: () => _select(true),
+            ),
+          ]),
+        ],
+        if (_showPurchases) ..._purchaseSection() else ..._usageSection(),
+      ],
+    );
+  }
+
+  Widget _merchantChips(List<String> names) => Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: SingleChildScrollView(
+          key: const ValueKey('history-merchant-chips'),
+          scrollDirection: Axis.horizontal,
+          child: Row(children: [
+            _MerchantChip(
+              label: '전체',
+              selected: _merchant == null,
+              onTap: () => setState(() => _merchant = null),
+            ),
+            for (final name in names) ...[
+              const SizedBox(width: 8),
+              _MerchantChip(
+                label: name,
+                selected: _merchant == name,
+                onTap: () => setState(() => _merchant = name),
+              ),
+            ],
+          ]),
+        ),
+      );
+
+  List<Widget> _usageSection() {
+    final names = _merchantNames(widget.transactions);
+    final transactions = _filtered(widget.transactions);
     final total = transactions.fold<int>(
         0, (sum, tx) => sum + _integer(tx['amount']).abs());
     final grouped = <String, List<Map<String, dynamic>>>{};
     for (final tx in transactions) {
       grouped.putIfAbsent(_dayLabel(tx['created_at']), () => []).add(tx);
     }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 22, 18, 112),
-      children: [
-        const Text('이용내역', style: AppTextStyles.screenTitle),
-        const SizedBox(height: 22),
-        _MonthSelector(month: DateTime.now()),
-        const SizedBox(height: 12),
-        DarkCard(
-          child: Row(
-            children: [
-              _SummaryCell(label: '사용', value: '${transactions.length}건'),
-              const _VerticalLine(),
-              _SummaryCell(label: '금액', value: _won(total)),
-              const _VerticalLine(),
-              _SummaryCell(label: '내 부담', value: _won(total)),
-            ],
+    return [
+      const SizedBox(height: 22),
+      _MonthSelector(month: DateTime.now()),
+      if (names.isNotEmpty) _merchantChips(names),
+      const SizedBox(height: 12),
+      DarkCard(
+        child: Row(
+          children: [
+            _SummaryCell(label: '사용', value: '${transactions.length}건'),
+            const _VerticalLine(),
+            _SummaryCell(label: '금액', value: _won(total)),
+            const _VerticalLine(),
+            _SummaryCell(label: '내 부담', value: _won(total)),
+          ],
+        ),
+      ),
+      if (transactions.isEmpty)
+        const Padding(
+          padding: EdgeInsets.only(top: 16),
+          child: _EmptyState(message: '아직 이용 내역이 없어요.\n식당에서 QR로 첫 식사를 결제해 보세요.'),
+        )
+      else
+        for (final group in grouped.entries) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 22, bottom: 2),
+            child: Text(group.key,
+                style: AppTextStyles.caption.copyWith(color: AppColors.fg)),
+          ),
+          for (var i = 0; i < group.value.length; i++)
+            TxListItem(
+              showDivider: i != 0,
+              slot: _slot(group.value[i]),
+              title: _title(group.value[i]),
+              subtitle: _transactionSubtitle(group.value[i]),
+              amount: '-${_amountLabel(group.value[i])}',
+              style: AmountStyle.neg,
+            ),
+        ],
+    ];
+  }
+
+  List<Widget> _purchaseSection() => [
+        FutureBuilder<List<Map<String, dynamic>>>(
+          future: _purchases,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Padding(
+                padding: EdgeInsets.only(top: 56),
+                child: Center(
+                    child: CircularProgressIndicator(color: AppColors.blue)),
+              );
+            }
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.only(top: 28),
+                child: Column(children: [
+                  Text(friendlyLoadError(snapshot.error!),
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.caption),
+                  const SizedBox(height: 14),
+                  OutlinedButton(
+                    key: const ValueKey('history-purchases-retry'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.fg,
+                      side: const BorderSide(color: AppColors.line),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      textStyle: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontWeight: FontWeight.w700),
+                    ),
+                    onPressed: _reloadPurchases,
+                    child: const Text('다시 시도'),
+                  ),
+                ]),
+              );
+            }
+            final all = snapshot.data ?? const <Map<String, dynamic>>[];
+            final names = _merchantNames(all);
+            final purchases = _filtered(all);
+            if (all.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.only(top: 16),
+                child: _EmptyState(
+                    message: '아직 구매 내역이 없어요.\n식권을 구매하면 여기에서 영수증을 볼 수 있어요.'),
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (names.isNotEmpty) _merchantChips(names),
+                const SizedBox(height: 12),
+                for (final purchase in purchases)
+                  _PurchaseRow(
+                    purchase: purchase,
+                    onTap: widget.onOpenPurchase == null ||
+                            _text(purchase['order_id']).isEmpty
+                        ? null
+                        : () async {
+                            await widget.onOpenPurchase!(purchase);
+                          },
+                  ),
+              ],
+            );
+          },
+        ),
+      ];
+}
+
+class _HistorySegment extends StatelessWidget {
+  const _HistorySegment(
+      {super.key,
+      required this.label,
+      required this.selected,
+      required this.onTap});
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        selected: selected,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 76, minHeight: 40),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.blue : AppColors.card,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                  color: selected ? AppColors.blue : AppColors.line),
+            ),
+            child: Text(label,
+                style: TextStyle(
+                    color: selected ? Colors.white : AppColors.fg2,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700)),
           ),
         ),
-        if (transactions.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 16),
-            child:
-                _EmptyState(message: '아직 이용 내역이 없어요.\n식당에서 QR로 첫 식사를 결제해 보세요.'),
-          )
-        else
-          for (final group in grouped.entries) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 22, bottom: 2),
-              child: Text(group.key,
-                  style: AppTextStyles.caption.copyWith(color: AppColors.fg)),
+      );
+}
+
+class _MerchantChip extends StatelessWidget {
+  const _MerchantChip(
+      {required this.label, required this.selected, required this.onTap});
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        selected: selected,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 36),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.paper : AppColors.card,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                  color: selected ? AppColors.paper : AppColors.line),
             ),
-            for (var i = 0; i < group.value.length; i++)
-              TxListItem(
-                showDivider: i != 0,
-                slot: _slot(group.value[i]),
-                title: _title(group.value[i]),
-                subtitle: _transactionSubtitle(group.value[i]),
-                amount: '-${_amountLabel(group.value[i])}',
-                style: AmountStyle.neg,
+            child: Text(label,
+                style: TextStyle(
+                    color: selected ? AppColors.ink : AppColors.fg,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ),
+      );
+}
+
+/// One bought order: product, restaurant · time · method, amount, receipt chevron.
+class _PurchaseRow extends StatelessWidget {
+  const _PurchaseRow({required this.purchase, required this.onTap});
+  final Map<String, dynamic> purchase;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _text(purchase['status']);
+    final refunded = status == 'refunded' || status == 'refund_processing';
+    final details = [
+      _text(purchase['merchant_name']),
+      _purchaseTime(purchase['approved_at']),
+      _text(purchase['method_label']),
+    ].where((part) => part.isNotEmpty).join(' · ');
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: AppColors.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.line),
+        ),
+        child: InkWell(
+          key: ValueKey('purchase-row-${_text(purchase['order_id'])}'),
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 13, 10, 13),
+            child: Row(children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Flexible(
+                        child: Text(
+                            _text(purchase['product_name'], fallback: '식권 구매'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: AppColors.fg,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700)),
+                      ),
+                      if (refunded) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: AppColors.cardHi,
+                              borderRadius: BorderRadius.circular(999)),
+                          child: Text(
+                              status == 'refunded' ? '환불 완료' : '환불 진행 중',
+                              style: const TextStyle(
+                                  color: AppColors.fg2,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ]),
+                    const SizedBox(height: 3),
+                    Text(details,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption),
+                  ],
+                ),
               ),
-          ],
-      ],
+              const SizedBox(width: 10),
+              Text(_won(_integer(purchase['amount'])),
+                  style: TextStyle(
+                      color: refunded ? AppColors.fg2 : AppColors.fg,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      decoration:
+                          refunded ? TextDecoration.lineThrough : null)),
+              if (onTap != null)
+                const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.fg2, size: 22),
+            ]),
+          ),
+        ),
+      ),
     );
   }
+}
+
+String _purchaseTime(Object? raw) {
+  final parsed = DateTime.tryParse('${raw ?? ''}');
+  if (parsed == null) return '';
+  final date = parsed.isUtc ? parsed.toLocal() : parsed;
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${date.month}.${two(date.day)} ${two(date.hour)}:${two(date.minute)}';
 }
 
 // Kept only as a legacy data presentation reference; the dashboard no longer

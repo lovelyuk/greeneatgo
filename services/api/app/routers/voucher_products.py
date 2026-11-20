@@ -29,6 +29,22 @@ def _expire_stale_subsidized_orders(repo: JoinRepository, user_id: str) -> None:
     repo.client.rpc("expire_stale_subsidized_orders", {"p_user_id": user_id})
 
 
+def _subsidy_contract(repo: JoinRepository, profile, merchant_id: str) -> dict | None:
+    """The employee's active subsidy contract at this restaurant, if any.
+
+    With a contract the employee buys company-subsidized vouchers. Without one
+    (ledger company, or no link) the employee buys ordinary vouchers at the
+    listed price, exactly like a personal customer."""
+    if profile is None or profile.role != "employee" or not profile.company_id:
+        return None
+    links = repo.client.rest_get("merchant_companies", {
+        "select": "company_id,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,status",
+        "merchant_id": f"eq.{merchant_id}", "company_id": f"eq.{profile.company_id}",
+        "status": "eq.active", "limit": "1",
+    })
+    return links[0] if links and links[0].get("subsidy_enabled") else None
+
+
 def _subsidized_context(repo: JoinRepository, token: str):
     auth = repo.auth_user_from_token(token)
     profile = repo.get_profile(auth.id, email=auth.email)
@@ -549,12 +565,7 @@ def active_products(token: str | None = Depends(optional_bearer_token)):
         merchant = resolve_voucher_merchant(repo, get_settings().pilot_merchant_id)
         if not merchant:
             return {"ok": True, "data": {"purchase_mode": "none", "items": []}, "error": None}
-        contract = None
-        if profile is not None and profile.role == "employee":
-            links = repo.client.rest_get("merchant_companies", {"select": "company_id,unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,status", "merchant_id": f"eq.{merchant['id']}", "company_id": f"eq.{profile.company_id}", "status": "eq.active", "limit": "1"})
-            if not links or not links[0].get("subsidy_enabled"):
-                return {"ok": True, "data": {"purchase_mode": "none", "items": []}, "error": None}
-            contract = links[0]
+        contract = _subsidy_contract(repo, profile, merchant["id"])
         rows, _ = _load_products(repo, {
             "merchant_id": f"eq.{merchant['id']}",
             "status": "eq.active", "deleted_at": "is.null", "order": "display_order.asc,created_at.asc",
@@ -614,22 +625,15 @@ def quote_purchase(payload: VoucherQuoteRequest, token: str = Depends(bearer_tok
         product = products[0]
         _require_classified_product(product)
         coupon = _selected_coupon(repo, merchant["id"], payload.coupon_id, payload.user_coupon_id, profile.id)
-        if profile.role == "customer":
+        contract = _subsidy_contract(repo, profile, merchant["id"])
+        if contract is None:
+            # Personal customer, or an employee without a subsidy contract here
+            # (ledger company): the listed price, no company points.
             if payload.requested_point_amount not in (None, 0):
-                raise _error(422, "POINTS_NOT_AVAILABLE", "개인 식권 계정에는 포인트를 사용할 수 없어요")
+                raise _error(422, "POINTS_NOT_AVAILABLE", "개인 식권에는 포인트를 사용할 수 없어요")
             gross, available, points_allowed = krw_amount(product["sale_price"]), 0, False
             purchase_mode = "voucher"
         else:
-            if not profile.company_id:
-                raise _error(404, "SUBSIDY_NOT_AVAILABLE", "보조금 계약 대상이 아니에요")
-            links = repo.client.rest_get("merchant_companies", {
-                "select": "unit_price,subsidy_enabled,company_subsidy_amount,restaurant_subsidy_amount,status",
-                "merchant_id": f"eq.{merchant['id']}", "company_id": f"eq.{profile.company_id}",
-                "status": "eq.active", "limit": "1",
-            })
-            if not links or not links[0].get("subsidy_enabled"):
-                raise _error(404, "SUBSIDY_NOT_AVAILABLE", "보조금 계약 대상이 아니에요")
-            contract = links[0]
             paid = int(product["voucher_count"])
             gross = krw_amount(product["sale_price"]) - (
                 int(contract.get("company_subsidy_amount") or 0)
@@ -659,11 +663,15 @@ def purchase(payload: VoucherPurchaseRequest, token: str = Depends(bearer_token)
     try:
         auth = repo.auth_user_from_token(token)
         profile = repo.get_profile(auth.id, email=auth.email)
-        if profile is None or profile.status != "active" or profile.role != "customer":
-            raise _error(403, "VOUCHER_ACCOUNT_ONLY", "개인 식권 계정만 식권을 구매할 수 있어요")
+        if profile is None or profile.status != "active" or profile.role not in {"customer", "employee"}:
+            raise _error(403, "VOUCHER_ACCOUNT_ONLY", "식권을 구매할 수 있는 계정이 아니에요")
         merchant = resolve_voucher_merchant(repo, settings.pilot_merchant_id)
         if not merchant:
             raise _error(404, "MERCHANT_NOT_FOUND", "식당을 찾을 수 없어요")
+        # Employees whose company subsidizes this restaurant keep buying through
+        # the subsidized purchase (company price); everyone else buys here.
+        if _subsidy_contract(repo, profile, merchant["id"]) is not None:
+            raise _error(409, "SUBSIDIZED_PURCHASE_REQUIRED", "회사 지원 식권으로 구매해 주세요")
         products, _ = _load_products(repo, {
             "id": f"eq.{payload.product_id}",
             "merchant_id": f"eq.{merchant['id']}", "status": "eq.active", "deleted_at": "is.null", "limit": "1",

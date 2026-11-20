@@ -430,6 +430,11 @@ class ApiResponse(BaseModel):
     error: ApiError | None = None
 
 
+class BulkInviteResponse(BaseModel):
+    invite_id: str = Field(pattern=r"^[0-9a-fA-F-]{36}$")
+    accept: bool
+
+
 class JoinRequest(BaseModel):
     invite_code: str = Field(min_length=4, max_length=64)
 

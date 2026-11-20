@@ -2178,3 +2178,7 @@ code { font-size: 12px; }
 /* Company-managed restaurant partnerships (이용 식당) */
 .inline-form { display: flex; gap: 8px; margin: 8px 0 12px; }
 .inline-form input { flex: 1; min-width: 0; }
+
+/* Employee list: a bulk-registered member declined the switch in the app. */
+.badge.badge-declined { background: #FBE9D7; color: #B4540A; }
+.staged-declined { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }

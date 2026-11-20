@@ -210,8 +210,15 @@ def list_employees(token: str = Depends(bearer_token)):
             try:
                 staged_invites = _paged_rest_get(repo,
                     "employee_bulk_invites",
-                    {"select": "id,display_name,employee_no,phone,department,status,created_at", "company_id": f"eq.{actor.company_id}", "status": "eq.invited", "order": "created_at.desc"},
+                    {"select": "*", "company_id": f"eq.{actor.company_id}", "status": "in.(invited,declined)", "order": "created_at.desc"},
                 )
+                staged_invites = [{
+                    "id": row["id"], "display_name": row.get("display_name"), "employee_no": row.get("employee_no"),
+                    "phone": row.get("phone"), "department": row.get("department"), "status": row.get("status"),
+                    "created_at": row.get("created_at"),
+                    # 'declined': the member was asked in the app and refused (0078).
+                    "declined_at": row.get("declined_at"),
+                } for row in staged_invites]
             except SupabaseHttpError as exc:
                 if "employee_bulk_invites" not in exc.body and "PGRST205" not in exc.body:
                     raise
@@ -280,6 +287,33 @@ def list_employees(token: str = Depends(bearer_token)):
         if exc.status in (401, 403):
             raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
         raise _error(502, "SUPABASE_ERROR", "직원 목록을 불러오는 중 오류가 발생했어요") from exc
+
+
+@router.post("/employees/bulk-invites/{invite_id}/reinvite")
+def reinvite_bulk_invite(invite_id: str, token: str = Depends(bearer_token)):
+    """Offer the company again to a registered member who declined in the app."""
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        invite_id = invite_id.removeprefix("bulk:")
+        try:
+            uuid.UUID(invite_id)
+        except ValueError as exc:
+            raise _error(404, "INVITE_NOT_FOUND", "초대를 찾을 수 없어요") from exc
+        changed = repo.client.rpc("reinvite_employee_bulk_invite", {
+            "p_company_id": actor.company_id, "p_invite_id": invite_id,
+        })
+        if changed is not True:
+            raise _error(404, "INVITE_NOT_FOUND", "다시 초대할 수 있는 상태가 아니에요")
+        return {"ok": True, "data": {"status": "invited"}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "다시 초대하지 못했어요") from exc
 
 
 @router.patch("/employees/{user_id}/limit")

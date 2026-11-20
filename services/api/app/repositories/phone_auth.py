@@ -170,13 +170,36 @@ class PhoneAuthRepository:
         phone = probe["phone"]
         account_id = str(probe["user_id"])
         deterministic_id = firebase_uid_to_internal_uuid(phone_firebase_uid(phone))
-        return {
+        company_name = self._link_bulk_invite_on_signup(account_id)
+        data = {
             "custom_token": create_phone_custom_token(
                 phone,
                 internal_id=None if account_id == deterministic_id else account_id,
             ),
             "account_id": account_id,
         }
+        if company_name:
+            # The company admin had registered this number in bulk: the new
+            # account is already that company's employee.
+            data["employee_company_name"] = company_name
+        return data
+
+    def _link_bulk_invite_on_signup(self, account_id: str) -> str | None:
+        """Link a just-created account to the company that pre-registered its number.
+
+        The number was proven by SMS a moment ago. The database only links an
+        account created within minutes that owns nothing; anything else is left
+        for the in-app question. A failure here never fails the signup.
+        """
+        try:
+            result = self.client.rpc("respond_employee_bulk_invite", {
+                "p_user_id": account_id, "p_invite_id": None, "p_accept": True, "p_fresh_only": True,
+            })
+        except SupabaseHttpError:
+            return None
+        if isinstance(result, dict) and result.get("status") == "accepted":
+            return result.get("company_name")
+        return None
 
     def change(self, *, verification_token: str, actor_id: str) -> dict[str, Any]:
         result = self.client.rpc("phone_auth_change", {

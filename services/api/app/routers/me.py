@@ -92,6 +92,21 @@ def _voucher_month_usage(repo: JoinRepository, user_id: str) -> tuple[int, int]:
         offset += page_size
 
 
+def _employee_invite_offer(repo: JoinRepository, user_id: str) -> dict | None:
+    """The company that registered this personal member's verified number, if any.
+
+    Optional extra: a missing function (migration 0078 not applied) or any
+    database error just means no offer."""
+    try:
+        offer = repo.client.rpc("employee_bulk_invite_offer", {"p_user_id": user_id})
+    except SupabaseHttpError:
+        return None
+    if not isinstance(offer, dict) or not offer.get("invite_id") or not offer.get("company_name"):
+        return None
+    return {"invite_id": offer["invite_id"], "company_name": offer["company_name"],
+            "display_name": offer.get("display_name"), "department": offer.get("department")}
+
+
 def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
     all_rows = repo.client.rest_get(
         "normal_meal_transactions",
@@ -413,6 +428,10 @@ def me(token: str = Depends(bearer_token)):
             admin_theme = _admin_theme(repo, profile.id)
     except SupabaseHttpError as exc:
         raise _error(502, "SUPABASE_ERROR", "사용자 정보를 불러오는 중 오류가 발생했어요") from exc
+    employee_invite_offer = (
+        _employee_invite_offer(repo, profile.id)
+        if profile.role == "customer" and profile.status == "active" else None
+    )
 
     return {
         "ok": True,
@@ -427,6 +446,9 @@ def me(token: str = Depends(bearer_token)):
             "role": profile.role,
             "account_type": "ledger" if profile.role == "employee" else ("voucher" if profile.role == "customer" else None),
             "status": profile.status,
+            # Personal member whose verified number a company registered in bulk:
+            # the app asks "OO 직원으로 전환할까요?" (POST /join/bulk-invite/respond).
+            "employee_invite_offer": employee_invite_offer,
             "invite_code": invite_code,
             "company": company,
             "admin_theme": admin_theme,

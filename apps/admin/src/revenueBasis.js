@@ -30,6 +30,8 @@ export function mapRevenueSummary(data = {}) {
       invoice: number(paid.invoice_amount),
       invoiceCount: number(paid.invoice_count),
       paymentCount: number(paid.payment_count),
+      // Company points used on those orders: billed separately, not revenue here.
+      point: number(paid.point_amount),
     },
     usage: { amount: number(data?.usage_basis?.amount), count: number(data?.usage_basis?.count) },
     unbilled: { amount: number(data?.unbilled?.amount), count: number(data?.unbilled?.count) },
@@ -69,6 +71,7 @@ export function mapRevenueDetail(data = {}) {
     // Payment method for payments/refunds, NTS approval number for invoices.
     note: text(row?.method),
     amount: number(row?.amount),
+    point: number(row?.point_amount),
   }));
   const items = (Array.isArray(usage.items) ? usage.items : []).map((row) => ({
     id: row?.id,

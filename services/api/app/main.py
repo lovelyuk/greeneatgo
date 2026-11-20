@@ -5,7 +5,7 @@ from app.checkout_maintenance import CheckoutMaintenanceMiddleware
 from app.config import get_settings
 from app.logging_filters import install_payment_notification_access_log_filter
 
-from app.routers import admin, admin_dashboard, app_version, auth_pages, banners, boards, company_merchants, company_usage, consumer, coupons, health, invites, join, me, merchant_admin, pay, payments, phone_auth, platform, products, push_notifications, restaurants, settlements, transactions, voucher_products
+from app.routers import admin, admin_dashboard, app_version, auth_pages, banners, boards, company_merchants, company_usage, consumer, coupons, health, invites, join, me, merchant_admin, merchant_revenue, pay, payments, phone_auth, platform, products, push_notifications, restaurants, settlements, transactions, voucher_products
 
 settings = get_settings()
 install_payment_notification_access_log_filter()
@@ -48,6 +48,7 @@ app.include_router(admin_dashboard.router, prefix="/v1")
 app.include_router(company_usage.router, prefix="/v1")
 app.include_router(platform.router, prefix="/v1")
 app.include_router(invites.router, prefix="/v1")
+app.include_router(merchant_revenue.router, prefix="/v1")
 app.include_router(merchant_admin.router, prefix="/v1")
 app.include_router(settlements.company_router, prefix="/v1")
 app.include_router(settlements.company_alias_router, prefix="/v1")

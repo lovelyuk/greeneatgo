@@ -25,6 +25,7 @@ import 'phone_auth.dart';
 import 'phone_login_screen.dart' as phone_login;
 import 'join_request.dart';
 import 'load_error.dart';
+import 'employee_invite.dart';
 import 'push_notifications.dart';
 import 'restaurants.dart';
 import 'screens/coupon_wallet.dart';
@@ -382,6 +383,12 @@ class ApiClient {
       if (paySource != null) 'pay_source': paySource,
     });
   }
+
+  /// Answer the company that registered this member's number in bulk.
+  Future<Map<String, dynamic>> respondEmployeeInvite(
+          {required String inviteId, required bool accept}) =>
+      _request('/join/bulk-invite/respond',
+          method: 'POST', body: {'invite_id': inviteId, 'accept': accept});
 
   Future<Map<String, dynamic>> requestJoin(
       {required String inviteCode,
@@ -2867,6 +2874,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _subsidizedFuture = _loadSubsidized();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_loadPendingPayment());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _askEmployeeInvite());
+  }
+
+  /// A company registered this member's number: ask once per app start
+  /// whether to become its employee, and tell the server the answer.
+  Future<void> _askEmployeeInvite() async {
+    if (!mounted) return;
+    final offer = EmployeeInviteOffer.fromMe(me);
+    if (!shouldAskEmployeeInvite(offer)) return;
+    final accept = await showEmployeeInviteDialog(context, offer!);
+    if (accept == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ApiClient(widget.session)
+          .respondEmployeeInvite(inviteId: offer.inviteId, accept: accept);
+      messenger.showSnackBar(SnackBar(
+          content: Text(accept
+              ? '${offer.companyName} 직원으로 전환했어요.'
+              : '전환하지 않았어요. 회사 관리자에게 거절로 표시돼요.')));
+    } catch (error) {
+      messenger
+          .showSnackBar(SnackBar(content: Text(friendlyLoadError(error))));
+    }
+    if (mounted) await widget.onRefresh();
   }
 
   Future<void> _refreshHome() async {
@@ -2922,6 +2953,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didUpdateWidget(HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.me, widget.me)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _askEmployeeInvite());
+    }
     if (oldWidget.session.uid != widget.session.uid) {
       _pendingLoad = null;
       _couponCountFuture = _loadCouponCount();
@@ -4051,7 +4085,7 @@ class _LedgerPayChoiceScreenState extends State<LedgerPayChoiceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_subsidized) {
+    if (_subsidized && _balance <= 0) {
       return UnifiedQrScanScreen(
           session: widget.session, isConsumer: false, onClose: widget.onClose);
     }

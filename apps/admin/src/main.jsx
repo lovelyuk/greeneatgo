@@ -3234,6 +3234,17 @@ function Dashboard({ session, onLogout }) {
     setEmployeeManageForm({ department: employee.department ?? '', display_name: employee.display_name ?? '', employee_no: employee.employee_no ?? '', phone: employee.phone ?? '', charge_amount: '', target_balance: '' });
   }
 
+  // A registered member declined the switch in the app: offer it again.
+  async function reinviteEmployee(employee) {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      await apiFetch(`/admin/employees/bulk-invites/${encodeURIComponent(employee.id)}/reinvite`, token, { method: 'POST' });
+      await load(); // load() clears the message, so set it afterwards
+      setMessage(`${employee.display_name ?? '직원'}님을 다시 초대했어요. 앱을 열면 전환 여부를 다시 물어봐요.`);
+      setBusy(false);
+    } catch (reinviteError) { setError(reinviteError.message); } finally { setBusy(false); }
+  }
+
   async function saveEmployeeManage(event) {
     event.preventDefault();
     if (!employeeManageModal) return;
@@ -3784,7 +3795,9 @@ function Dashboard({ session, onLogout }) {
         <div className="employee-panel-actions"><button className="primary bulk-open-button" onClick={() => setEmployeeBulkOpen(true)} disabled={employees?.bulk_migration_required}>+ 직원 일괄등록</button><span className="badge">{employees?.items?.length ?? 0}명</span></div>
       </div>
       {employees?.bulk_migration_required && <div className="alert error">0017_employee_bulk_invites.sql 적용 후 직원 일괄등록을 사용할 수 있어요.</div>}
-      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하거나 직원이 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className="badge">{employee.is_staged ? '초대대기' : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.is_staged ? <span className="muted">최초 가입 대기</span> : <button className="ghost icon-button" disabled={busy} onClick={() => openEmployeeManage(employee)} aria-label={`${employee.display_name ?? '직원'} 관리`} title="직원 관리"><Settings size={18}/></button>}</td></tr>)}</tbody></table></div>}
+      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하면 직원이 앱에 가입할 때 바로 연결되고, 명단에 없는 직원은 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className={`badge${employee.is_staged && employee.status === 'declined' ? ' badge-declined' : ''}`}>{employee.is_staged ? (employee.status === 'declined' ? '직원 거절' : '초대대기') : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.is_staged ? (employee.status === 'declined'
+        ? <span className="staged-declined"><span className="muted">직원이 전환을 거절했어요{employee.declined_at ? ` (${new Date(employee.declined_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })})` : ''}</span><button type="button" className="ghost" disabled={busy} onClick={() => reinviteEmployee(employee)}>다시 초대</button></span>
+        : <span className="muted">최초 가입 대기</span>) : <button className="ghost icon-button" disabled={busy} onClick={() => openEmployeeManage(employee)} aria-label={`${employee.display_name ?? '직원'} 관리`} title="직원 관리"><Settings size={18}/></button>}</td></tr>)}</tbody></table></div>}
     </section>}
 
     {!isPlatformAdmin && isMerchantAdmin && merchantContentSection === 'companies' && <section className="panel merchant-regular-weight merchant-open-table">

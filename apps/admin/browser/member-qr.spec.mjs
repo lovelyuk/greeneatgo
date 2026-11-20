@@ -155,6 +155,7 @@ test('counter: kiosk paper receipt QR (24 hex) goes to the kiosk endpoint, secon
   await base(page);
   const R = '6ad6e86b3bea82fef79ff23b';
   const calls = [];
+  await page.clock.install();
   await page.route('**/api-fixture/transactions/**', route => {
     const url = new URL(route.request().url());
     calls.push([url.pathname.replace('/api-fixture', ''), route.request().postDataJSON()]);
@@ -171,9 +172,54 @@ test('counter: kiosk paper receipt QR (24 hex) goes to the kiosk endpoint, secon
   await expect(page.getByRole('heading', { name: '키오스크 식권 사용 완료' })).toBeVisible();
   expect(calls[0]).toEqual(['/transactions/kiosk-receipt/redeem', { code: R }]);
   await expect(page.getByRole('list', { name: '최근 사용' })).toContainText('키오스크 영수증');
+  // Still held at the scanner: re-reads are ignored without asking the server.
+  await page.keyboard.type(R + '\n');
+  await page.waitForTimeout(400);
+  expect(calls.length).toBe(1);
+  await expect(page.getByRole('heading', { name: '키오스크 식권 사용 완료' })).toBeVisible();
+  // Scanned again after a real pause: the server answers and the warning shows.
+  await page.clock.fastForward(11000);
   await page.keyboard.type(R + '\n');
   await expect(page.getByRole('heading', { name: '이미 사용된 영수증이에요' })).toBeVisible();
   expect(calls.length).toBe(2);
+});
+
+test('counter: a QR held at the scanner stays "used"; the next guest is served at once; a later re-scan warns', async ({ page }) => {
+  await base(page);
+  const OTHER = '81' + '0'.repeat(37) + '87654321' + '2'.repeat(34);
+  const bodies = [];
+  await page.route('**/api-fixture/transactions/member-qr/redeem', route => {
+    const body = route.request().postDataJSON();
+    const duplicate = bodies.some(b => b.code === body.code);
+    bodies.push(body);
+    return route.fulfill({ json: { ok: true, data: { result: 'success', duplicate, pay_type: 'voucher', member_name: body.code === CODE ? '김구매' : '이손님', remaining: 4, amount: 7000 } } });
+  });
+  await page.clock.install();
+  await page.goto('/counter');
+  await page.getByLabel('이메일').fill('owner@example.invalid');
+  await page.getByLabel('비밀번호').fill('mock-only-password');
+  await page.getByRole('button', { name: '로그인' }).click();
+  await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible();
+  await page.keyboard.type(CODE + '\n', { delay: 1 });
+  await expect(page.getByRole('heading', { name: '식권 1장 사용 완료' })).toBeVisible();
+  // Re-reads every few seconds for longer than the window: each one extends it.
+  for (let i = 0; i < 4; i++) {
+    await page.clock.fastForward(4000);
+    await page.keyboard.type(CODE + '\n', { delay: 1 });
+    await page.clock.fastForward(300);
+    await expect(page.getByRole('heading', { name: '이미 사용 처리된 QR이에요' })).toHaveCount(0);
+  }
+  expect(bodies.length).toBe(1);
+  await expect(page.getByRole('list', { name: '최근 사용' }).getByRole('listitem')).toHaveCount(1);
+  // Another guest right behind is not held up.
+  await page.keyboard.type(OTHER + '\n', { delay: 1 });
+  await expect(page.locator('.counter-name')).toHaveText('이손님님');
+  expect(bodies.length).toBe(2);
+  // The first QR again after a real pause: asked, and reported as already used.
+  await page.clock.fastForward(11000);
+  await page.keyboard.type(CODE + '\n', { delay: 1 });
+  await expect(page.getByRole('heading', { name: '이미 사용 처리된 QR이에요' })).toBeVisible();
+  expect(bodies.length).toBe(3);
 });
 
 test('counter reads the scanner without a text field: no Enter suffix, focus on a button, IME-masked keys', async ({ page }) => {
@@ -195,8 +241,10 @@ test('counter reads the scanner without a text field: no Enter suffix, focus on 
   await expect(page.getByRole('heading', { name: '식권 1장 사용 완료' })).toBeVisible();
   expect(bodies).toEqual([{ code: CODE }]);
   // Focus parked on the logout button (a tap, or a TV remote) must not swallow the scan or log out.
+  // (Different guests' codes: a repeat of the code just used is ignored for 10 s.)
+  const SECOND = '81' + '0'.repeat(37) + '22222222' + '3'.repeat(34), THIRD = '81' + '0'.repeat(37) + '33333333' + '4'.repeat(34);
   await page.getByRole('button', { name: '길게 눌러 로그아웃' }).focus();
-  await page.keyboard.type(CODE + '\n', { delay: 1 });
+  await page.keyboard.type(SECOND + '\n', { delay: 1 });
   await expect.poll(() => bodies.length).toBe(2);
   await expect(page.getByLabel('이메일')).toHaveCount(0);
   await page.waitForTimeout(400); // let the second answer land; scans during a request are ignored by design
@@ -204,7 +252,7 @@ test('counter reads the scanner without a text field: no Enter suffix, focus on 
   await page.evaluate(code => {
     for (const d of code) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Process', code: 'Digit' + d, bubbles: true }));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
-  }, CODE);
+  }, THIRD);
   await expect.poll(() => bodies.length).toBe(3);
-  expect(bodies[2]).toEqual({ code: CODE });
+  expect(bodies[2]).toEqual({ code: THIRD });
 });

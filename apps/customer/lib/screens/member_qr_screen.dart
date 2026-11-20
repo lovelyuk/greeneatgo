@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../load_error.dart';
+import '../restaurants.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 
@@ -27,6 +28,7 @@ class MemberQrScreen extends StatefulWidget {
     this.onClose,
     this.onScanStoreQr,
     this.pollInterval = const Duration(seconds: 4),
+    this.header,
   });
 
   final MemberQrLoader loadCode;
@@ -34,6 +36,9 @@ class MemberQrScreen extends StatefulWidget {
   final VoidCallback? onClose;
   final VoidCallback? onScanStoreQr;
   final Duration pollInterval;
+
+  /// Shown above the title (ledger employees: the 회사 장부 / 내 식권 choice).
+  final Widget? header;
 
   @override
   State<MemberQrScreen> createState() => _MemberQrScreenState();
@@ -156,6 +161,10 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
         body: ListView(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 112),
           children: [
+            if (widget.header != null) ...[
+              widget.header!,
+              const SizedBox(height: 16),
+            ],
             const Text('MY QR', style: AppTextStyles.overline),
             const SizedBox(height: 8),
             const Text('내 식권 QR', style: AppTextStyles.screenTitle),
@@ -164,6 +173,8 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
                 style: AppTextStyles.caption),
             const SizedBox(height: 18),
             _body(),
+            // One QR for every restaurant: show what is held where.
+            const RestaurantBalanceList(),
             if (widget.onScanStoreQr != null) ...[
               const SizedBox(height: 16),
               // Q3: guidance card (no theme-coloured outlined button).

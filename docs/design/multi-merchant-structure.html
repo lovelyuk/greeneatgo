@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>밥대리 · 여러 식당 구조 시안</title>
+<style>
+@font-face{font-family:Pretendard;font-weight:500;src:url('../../apps/admin/public/fonts/Pretendard-Medium.otf')}
+@font-face{font-family:Pretendard;font-weight:600;src:url('../../apps/admin/public/fonts/Pretendard-SemiBold.otf')}
+@font-face{font-family:Pretendard;font-weight:700;src:url('../../apps/admin/public/fonts/Pretendard-Bold.otf')}
+@font-face{font-family:Pretendard;font-weight:800;src:url('../../apps/admin/public/fonts/Pretendard-ExtraBold.otf')}
+:root{--bg:#0A0D14;--card:#131A2A;--hi:#1B2436;--line:#212B3E;--fg:#fff;--fg2:#8A93A6;--blue:#2C5FFF;--soft:#5B87FF;--digit:#7EA2FF;--paper:#F4F1E9;--gold:#C9A227}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#05070B;font-family:Pretendard,sans-serif;font-weight:500;color:var(--fg);padding:28px}
+.board{display:flex;gap:26px;align-items:flex-start;width:max-content;padding:6px}
+.slot{width:390px}
+.cap{height:86px}
+.cap b{display:block;font-size:19px;font-weight:800}
+.cap small{display:block;margin-top:6px;font-size:13.5px;line-height:1.45;color:#A9B4CA}
+.cap i{font-style:normal;display:inline-block;margin-right:8px;padding:2px 9px;border-radius:99px;background:var(--blue);font-size:12px;font-weight:700;vertical-align:2px}
+.cap i.same{background:#2A3550}
+.phone{position:relative;width:390px;height:800px;background:var(--bg);border-radius:34px;border:1px solid #1c2435;overflow:hidden}
+.pad{padding:22px 18px 0}
+.head{display:flex;align-items:center;gap:12px}
+.ava{width:44px;height:44px;border-radius:14px;background:linear-gradient(160deg,#2C5FFF,#6C8DFF);display:grid;place-items:center;font-size:20px}
+.head h1{font-size:18px;font-weight:700}.head p{font-size:12.5px;color:var(--fg2);margin-top:2px}
+.burger{margin-left:auto;width:22px;height:14px;border-top:2px solid #fff;border-bottom:2px solid #fff;position:relative}
+.burger:after{content:"";position:absolute;left:0;right:0;top:4px;border-top:2px solid #fff}
+.store{display:flex;align-items:center;gap:10px;margin-top:16px;padding:11px 14px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.store .pin{width:30px;height:30px;border-radius:10px;background:#18223A;display:grid;place-items:center;color:var(--soft);font-size:15px}
+.store b{font-size:15px;font-weight:700}.store small{display:block;font-size:11.5px;color:var(--fg2);margin-top:1px}
+.store .chev{margin-left:auto;color:var(--soft);font-size:13px;font-weight:700;white-space:nowrap}
+.new{outline:2px solid #FFB020;outline-offset:3px;position:relative}
+.new:before{content:attr(data-n);position:absolute;right:-6px;top:-13px;background:#FFB020;color:#1b1400;font-size:11px;font-weight:800;padding:2px 8px;border-radius:99px;z-index:3}
+.card{margin-top:14px;padding:18px;border-radius:22px;background:var(--card);border:1px solid var(--line)}
+.over{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.16em;color:var(--fg2);font-weight:700}
+.bal{display:flex;align-items:flex-end;gap:8px;margin-top:12px}
+.tile{width:58px;height:74px;border-radius:12px;background:#101728;border:1px solid var(--line);display:grid;place-items:center;font-size:50px;font-weight:800;color:var(--digit);position:relative}
+.tile:after{content:"";position:absolute;left:0;right:0;top:50%;border-top:1px solid #0A0D14}
+.bal span{font-size:15px;color:var(--fg2);padding-bottom:6px}
+.meta{margin-top:12px;font-size:12.5px;color:var(--fg2)}.meta b{color:#fff;font-weight:700}
+.acts{display:flex;gap:10px;margin-top:14px}
+.btn{flex:1;height:46px;border-radius:14px;display:grid;place-items:center;font-size:14.5px;font-weight:700;border:1px solid var(--line);background:#101728}
+.btn.p{background:var(--blue);border-color:var(--blue)}
+.others{margin-top:12px;padding:11px 14px;border-radius:14px;background:#0F1524;border:1px dashed #2B3854;display:flex;align-items:center;font-size:13px;color:#C9D6FF}
+.others em{font-style:normal;margin-left:auto;color:var(--soft);font-weight:700}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);text-align:center;font-size:12px;color:#C8CFDD}
+.quick div:before{content:"";display:block;width:38px;height:38px;margin:0 auto 7px;border-radius:12px;background:#18223A}
+.tag{display:inline-block;padding:4px 10px;border-radius:99px;background:#16224A;color:var(--soft);font-size:11px;font-weight:800;letter-spacing:.1em}
+.card h3{font-size:17px;font-weight:700;margin-top:10px}.card p.s{font-size:12.5px;color:var(--fg2);margin-top:5px}
+.tabs{position:absolute;left:14px;right:14px;bottom:14px;height:62px;border-radius:22px;background:#111827;border:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);align-items:center;text-align:center;font-size:11px;color:#6F7A90}
+.tabs div:before{content:"";display:block;width:18px;height:18px;margin:0 auto 5px;border-radius:5px;background:#3A4560}
+.tabs .on{color:var(--soft)}.tabs .on:before{background:var(--soft)}
+.top{display:flex;align-items:center;gap:14px;font-size:19px;font-weight:700}.top:before{content:"←";font-size:20px}
+.sub{margin-top:10px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg2)}
+.sub b{color:#fff;font-weight:700}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:99px;background:var(--card);border:1px solid var(--line);font-size:13px;font-weight:600;white-space:nowrap}
+.chip.on{background:var(--paper);color:#131A2A;border-color:var(--paper)}
+.tk{position:relative;margin-top:12px;height:116px;border-radius:16px;background:linear-gradient(120deg,#2A4FD6,#4A6FF0);padding:16px 16px 16px 56px}
+.tk:before{content:"TICKET";position:absolute;left:14px;top:50%;transform:translateY(-50%) rotate(-90deg);transform-origin:center;font-size:10px;letter-spacing:.3em;color:#C9D6FF;width:20px;white-space:nowrap;display:grid;place-items:center}
+.tk:after{content:"";position:absolute;left:44px;top:10px;bottom:10px;border-left:1.5px dashed rgba(255,255,255,.35)}
+.tk small{font-size:11.5px;color:#D5DEFF}.tk b{display:block;font-size:27px;font-weight:800;margin-top:2px}
+.tk span{display:block;font-size:12px;color:#E4EAFF;margin-top:2px}
+.tk em{position:absolute;right:14px;top:14px;font-style:normal;font-size:11px;font-weight:700;background:rgba(255,255,255,.2);padding:4px 10px;border-radius:99px}
+.sheetbg{position:absolute;inset:0;background:rgba(3,5,10,.72)}
+.sheet{position:absolute;left:0;right:0;bottom:0;height:640px;background:#0F1524;border-radius:26px 26px 0 0;border-top:1px solid var(--line);padding:12px 18px}
+.grab{width:42px;height:4px;border-radius:9px;background:#33405C;margin:0 auto 14px}
+.sheet h2{font-size:19px;font-weight:800}
+.search{margin-top:12px;height:44px;border-radius:14px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;padding:0 14px;font-size:14px;color:#66728A}
+.grp{margin:16px 0 8px;font-size:12px;font-weight:700;color:var(--fg2);letter-spacing:.06em}
+.row{display:flex;align-items:center;gap:12px;padding:12px;border-radius:16px;background:var(--card);border:1px solid var(--line);margin-bottom:8px}
+.row.sel{border-color:var(--blue);background:#141E3A}
+.thumb{width:46px;height:46px;border-radius:13px;background:linear-gradient(140deg,#24304A,#1A2338);display:grid;place-items:center;font-size:20px;flex:none}
+.row b{font-size:15px;font-weight:700}.row small{display:block;font-size:12px;color:var(--fg2);margin-top:2px}
+.row .r{margin-left:auto;text-align:right;font-size:12px;color:var(--fg2);white-space:nowrap}
+.row .r strong{display:block;font-size:15px;color:var(--digit);font-weight:800}
+.row .r.none strong{color:#5F6F92;font-size:13px}
+.qrbox{margin-top:14px;padding:20px;border-radius:22px;background:var(--card);border:1px solid var(--line);text-align:center}
+.qr{width:200px;height:200px;margin:0 auto;border-radius:16px;background:#fff;padding:14px}
+.qr div{width:100%;height:100%;background:
+ linear-gradient(#111 0 0) 0 0/44px 44px no-repeat,linear-gradient(#111 0 0) 100% 0/44px 44px no-repeat,linear-gradient(#111 0 0) 0 100%/44px 44px no-repeat,
+ repeating-conic-gradient(#111 0 25%,#fff 0 50%) 0 0/17px 17px}
+.qrbox p{font-size:12.5px;color:var(--fg2);margin-top:12px}.qrbox p b{color:var(--soft)}
+.own{margin-top:12px;border-radius:18px;background:var(--card);border:1px solid var(--line);padding:6px 14px}
+.own div{display:flex;justify-content:space-between;padding:10px 0;font-size:13.5px;border-bottom:1px solid #1A2334}
+.own div:last-child{border:0}.own b{color:var(--digit);font-weight:800}
+.note{margin-top:10px;font-size:12.5px;color:#A9B4CA;line-height:1.5}
+.month{text-align:center;font-size:15px;font-weight:700;margin-top:16px}
+.chips{display:flex;gap:8px;margin-top:14px;padding:4px}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);text-align:center;margin-top:14px;padding:14px 0;border-radius:18px;background:var(--card);border:1px solid var(--line);font-size:12px;color:var(--fg2)}
+.sum b{display:block;font-size:16px;color:#fff;margin-top:5px;font-weight:700}
+.hist{margin-top:12px}
+.hist .row{padding:13px 14px}.hist .row small em{font-style:normal;color:var(--soft);font-weight:700}
+.hist .amt{margin-left:auto;font-size:14px;font-weight:700;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="board" id="board"></div>
+<script>
+const head = `<div class="head"><div class="ava">🙂</div><div><h1>김밥대님</h1><p>일반 사용자</p></div><div class="burger"></div></div>`;
+const quick = `<div class="card quick"><div>쿠폰함</div><div>이벤트</div><div>공지사항</div><div>리뷰</div></div>`;
+const menu = `<div class="card"><span class="tag">TODAY BUFFET</span><h3>제육볶음 · 된장찌개 · 계란말이</h3><p class="s">가산 한식뷔페 · 오늘 11:30~14:00</p></div>`;
+const tabs = on => `<div class="tabs">${['홈','구매','QR','내역','내정보'].map(t => `<div class="${t === on ? 'on' : ''}">${t}</div>`).join('')}</div>`;
+const wallet = (n, extra = '') => `<div class="card"><div class="over"><span>MEAL TICKETS</span><span>남은 식권</span></div>
+  <div class="bal"><div class="tile">${n}</div><span>장</span></div>
+  <div class="meta">쿠폰 <b>1장</b> · 포인트 <b>0P</b> · 이번 달 <b>6회 사용</b></div>
+  <div class="acts"><div class="btn">식권 구매</div><div class="btn p">QR 사용하기</div></div>${extra}</div>`;
+const storeBar = (multi, mark) => `<div class="store ${mark ? 'new' : ''}" ${mark ? `data-n="${mark}"` : ''}><div class="pin">⌂</div><div><b>가산 한식뷔페</b><small>가산디지털1로 145 · 식권 8,000원</small></div>${multi ? '<span class="chev">식당 변경 ▾</span>' : ''}</div>`;
+const slots = [
+  { tag: '1곳일 때', same: true, title: '홈 · 식당이 1곳인 지금', desc: '지금 화면과 같고, 식당 이름 한 줄만 추가돼요. 바꿀 식당이 없으니 변경 버튼은 숨겨요.',
+    body: `<div class="pad">${head}${storeBar(false, '추가')}${wallet(4)}${quick}${menu}</div>${tabs('홈')}` },
+  { tag: '여러 곳', title: '홈 · 식당이 늘어난 뒤', desc: '같은 자리에 "식당 변경"이 생겨요. 지갑·메뉴·공지는 고른 식당 것만 보여요.',
+    body: `<div class="pad">${head}${storeBar(true, '변경 버튼')}${wallet(4, '<div class="others new" data-n="추가">다른 식당 식권 2곳 · 5장<em>모두 보기 ›</em></div>')}${quick}${menu}</div>${tabs('홈')}` },
+  { tag: '여러 곳', title: '식당 고르기 (새 화면)', desc: '식권이 있는 식당을 위에, 나머지는 아래에. 검색으로 찾아요.',
+    body: `<div class="pad">${head}${storeBar(true)}${wallet(4)}</div><div class="sheetbg"></div><div class="sheet"><div class="grab"></div><h2>식당 고르기</h2>
+      <div class="search">식당 이름이나 동네로 찾기</div>
+      <div class="grp">내 식권이 있는 식당</div>
+      <div class="row sel"><div class="thumb">🍚</div><div><b>가산 한식뷔페</b><small>가산동 · 한식 뷔페</small></div><div class="r"><strong>4장</strong>보유</div></div>
+      <div class="row"><div class="thumb">🍜</div><div><b>디지털 국수집</b><small>가산동 · 면 요리</small></div><div class="r"><strong>3장</strong>보유</div></div>
+      <div class="row"><div class="thumb">🍱</div><div><b>구로 도시락</b><small>구로동 · 도시락</small></div><div class="r"><strong>2장</strong>보유</div></div>
+      <div class="grp">다른 식당</div>
+      <div class="row"><div class="thumb">🥘</div><div><b>독산 백반</b><small>독산동 · 식권 7,500원</small></div><div class="r none"><strong>구경하기 ›</strong></div></div>
+      <div class="row"><div class="thumb">🍛</div><div><b>금천 카레</b><small>시흥동 · 식권 8,500원</small></div><div class="r none"><strong>구경하기 ›</strong></div></div></div>` },
+  { tag: '여러 곳', title: '구매 · 고른 식당의 상품', desc: '어느 식당 식권을 사는지 맨 위에 보여요. 식권은 그 식당에서만 써요.',
+    body: `<div class="pad"><div class="top">식권 구매</div>
+      <div class="sub new" data-n="추가"><span class="chip on">⌂ 가산 한식뷔페 ▾</span><span>이 식당에서만 쓸 수 있어요</span></div>
+      <div class="tk"><em>구매하기 ›</em><small>1장 식권</small><b>8,000원</b><span>가산 한식뷔페</span></div>
+      <div class="tk"><em>구매하기 ›</em><small>11장 식권 · 보너스 1장</small><b>80,000원</b><span>가산 한식뷔페</span></div>
+      <div class="tk" style="background:linear-gradient(120deg,#5A45D6,#7A63F0)"><em>구매하기 ›</em><small>22장 식권 · 보너스 3장</small><b>152,000원</b><span>가산 한식뷔페</span></div></div>${tabs('구매')}` },
+  { tag: '여러 곳', same: true, title: 'QR · 지금처럼 하나만', desc: '손님은 식당을 고르지 않아요. 찍은 카운터의 식당 식권이 1장 빠져요.',
+    body: `<div class="pad"><div class="top">QR 사용하기</div>
+      <div class="qrbox"><div class="qr"><div></div></div><p><b>58초 후 새 QR로 바뀌어요</b></p><p>어느 식당에서나 이 QR 하나를 보여 주세요</p></div>
+      <div class="own new" data-n="추가"><div><span>가산 한식뷔페</span><b>4장</b></div><div><span>디지털 국수집</span><b>3장</b></div><div><span>구로 도시락</span><b>2장</b></div></div>
+      <p class="note">식권이 없는 식당에서 찍으면 "이 식당 식권이 없어요"와 구매 버튼이 나와요.</p></div>${tabs('QR')}` },
+  { tag: '여러 곳', title: '내역 · 식당별로 보기', desc: '줄마다 식당 이름이 붙고, 위 칩으로 한 식당만 골라 봐요.',
+    body: `<div class="pad"><div class="top" style="font-size:19px">이용내역</div><div class="month">‹  2026년 11월  ›</div>
+      <div class="chips new" data-n="추가"><span class="chip on">전체</span><span class="chip">가산 한식뷔페</span><span class="chip">디지털 국수집</span></div>
+      <div class="sum"><div>사용<b>6건</b></div><div>금액<b>47,000원</b></div><div>내 부담<b>47,000원</b></div></div>
+      <div class="hist">
+        <div class="row"><div class="thumb">🍚</div><div><b>식권 1장 사용</b><small><em>가산 한식뷔페</em> · 11.19 12:08</small></div><span class="amt">8,000원</span></div>
+        <div class="row"><div class="thumb">🍜</div><div><b>식권 1장 사용</b><small><em>디지털 국수집</em> · 11.18 12:31</small></div><span class="amt">7,500원</span></div>
+        <div class="row"><div class="thumb">🍚</div><div><b>식권 11장 구매</b><small><em>가산 한식뷔페</em> · 11.17 09:02</small></div><span class="amt">80,000원</span></div>
+        <div class="row"><div class="thumb">🍱</div><div><b>식권 1장 사용</b><small><em>구로 도시락</em> · 11.14 18:40</small></div><span class="amt">7,500원</span></div>
+      </div></div>${tabs('내역')}` },
+];
+document.getElementById('board').innerHTML = slots.map((s, i) => `<section class="slot" id="s${i + 1}"><div class="cap"><b><i class="${s.same ? 'same' : ''}">${s.tag}</i>${s.title}</b><small>${s.desc}</small></div><div class="phone">${s.body}</div></section>`).join('');
+</script>
+</body>
+</html>

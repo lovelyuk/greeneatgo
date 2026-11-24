@@ -29,7 +29,14 @@ class MemberQrScreen extends StatefulWidget {
     this.onScanStoreQr,
     this.pollInterval = const Duration(seconds: 4),
     this.header,
+    this.title = '내 식권 QR',
+    this.guide = '카운터 스캐너에 화면을 대 주세요. 한 번에 식권 1장이 사용돼요.',
+    this.usedTitle = '식권 1장 사용 완료',
+    this.usedCaption = _remainingVouchers,
+    this.showRestaurantBalances = true,
   });
+
+  static String? _remainingVouchers(int remaining) => '남은 식권 $remaining장';
 
   final MemberQrLoader loadCode;
   final BalanceReader readBalance;
@@ -39,6 +46,18 @@ class MemberQrScreen extends StatefulWidget {
 
   /// Shown above the title (ledger employees: the 회사 장부 / 내 식권 choice).
   final Widget? header;
+
+  /// Wording. The defaults describe a voucher QR; a company-ledger QR passes its own.
+  final String title;
+  final String guide;
+  final String usedTitle;
+
+  /// Line under [usedTitle], given the value [readBalance] returned after the
+  /// use. Null result: no line (a company-ledger meal has no voucher count).
+  final String? Function(int remaining) usedCaption;
+
+  /// The per-restaurant voucher list makes no sense for a company-ledger QR.
+  final bool showRestaurantBalances;
 
   @override
   State<MemberQrScreen> createState() => _MemberQrScreenState();
@@ -167,14 +186,13 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
             ],
             const Text('MY QR', style: AppTextStyles.overline),
             const SizedBox(height: 8),
-            const Text('내 식권 QR', style: AppTextStyles.screenTitle),
+            Text(widget.title, style: AppTextStyles.screenTitle),
             const SizedBox(height: 6),
-            const Text('카운터 스캐너에 화면을 대 주세요. 한 번에 식권 1장이 사용돼요.',
-                style: AppTextStyles.caption),
+            Text(widget.guide, style: AppTextStyles.caption),
             const SizedBox(height: 18),
             _body(),
             // One QR for every restaurant: show what is held where.
-            const RestaurantBalanceList(),
+            if (widget.showRestaurantBalances) const RestaurantBalanceList(),
             if (widget.onScanStoreQr != null) ...[
               const SizedBox(height: 16),
               // Q3: guidance card (no theme-coloured outlined button).
@@ -243,13 +261,15 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
                 color: AppColors.fg, size: 38),
           ),
           const SizedBox(height: 14),
-          const Text('식권 1장 사용 완료',
-              style: TextStyle(
+          Text(widget.usedTitle,
+              style: const TextStyle(
                   color: AppColors.fg,
                   fontSize: 20,
                   fontWeight: FontWeight.w800)),
-          const SizedBox(height: 6),
-          Text('남은 식권 $_usedRemaining장', style: AppTextStyles.caption),
+          if (widget.usedCaption(_usedRemaining!) case final caption?) ...[
+            const SizedBox(height: 6),
+            Text(caption, style: AppTextStyles.caption),
+          ],
           const SizedBox(height: 16),
           FilledButton(
               onPressed: () => unawaited(_start()),

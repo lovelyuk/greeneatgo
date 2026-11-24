@@ -4089,10 +4089,16 @@ class LedgerPayChoiceScreen extends StatefulWidget {
     this.onClose,
     this.companyMeal,
     this.now = DateTime.now,
+    this.loadCompanyCode,
+    this.readCompanyUsage,
   });
 
   final User session;
   final int personalBalance;
+
+  /// Test seams for the company QR (default: the API).
+  final Future<Map<String, dynamic>> Function()? loadCompanyCode;
+  final Future<int?> Function()? readCompanyUsage;
 
   /// `/me.company_meal`. When it says the company allowance cannot pay now,
   /// 회사 장부 is disabled and 내 식권 is selected.
@@ -4166,11 +4172,43 @@ class _LedgerPayChoiceScreenState extends State<LedgerPayChoiceScreen> {
     return value;
   }
 
+  /// A number that goes DOWN when the company pays a meal (this month's company
+  /// spending, negated): [MemberQrScreen] watches it to show "used".
+  Future<int?> _readCompanyUsage() async {
+    final used =
+        ((await ApiClient(widget.session).getMe())['month_used'] as num?)
+            ?.round();
+    return used == null ? null : -used;
+  }
+
+  /// QR first; the camera (scan the store QR) is only the fallback button.
+  Widget _companyQr({Widget? header, required bool subsidized}) =>
+      MemberQrScreen(
+        key: ValueKey(
+            subsidized ? 'subsidized-company-qr' : 'ledger-company-qr'),
+        header: header,
+        title: subsidized ? '내 식권 QR' : '회사 장부 QR',
+        guide: subsidized
+            ? '카운터 스캐너에 화면을 대 주세요. 한 번에 식권 1장이 사용돼요.'
+            : '카운터 스캐너에 화면을 대 주세요. 회사 장부로 한 끼가 결제돼요.',
+        usedTitle: subsidized ? '식권 1장 사용 완료' : '회사 장부로 결제 완료',
+        usedCaption: (_) => null,
+        showRestaurantBalances: false,
+        loadCode: widget.loadCompanyCode ??
+            () => ApiClient(widget.session).getMemberQr(),
+        readBalance: widget.readCompanyUsage ?? _readCompanyUsage,
+        onClose: widget.onClose,
+        onScanStoreQr: () async {
+          await Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => UnifiedQrScanScreen(
+                  session: widget.session, isConsumer: false)));
+        },
+      );
+
   @override
   Widget build(BuildContext context) {
     if (_subsidized && _balance <= 0) {
-      return UnifiedQrScanScreen(
-          session: widget.session, isConsumer: false, onClose: widget.onClose);
+      return _companyQr(subsidized: true);
     }
     final toggle = PaySourceToggle(
       value: _source,
@@ -4179,13 +4217,7 @@ class _LedgerPayChoiceScreenState extends State<LedgerPayChoiceScreen> {
       onChanged: (source) => setState(() => _source = source),
     );
     if (_source == PaySource.company) {
-      return UnifiedQrScanScreen(
-        key: const ValueKey('ledger-company-scan'),
-        session: widget.session,
-        isConsumer: false,
-        onClose: widget.onClose,
-        header: toggle,
-      );
+      return _companyQr(header: toggle, subsidized: false);
     }
     if (_balance <= 0) {
       return _NoPersonalVoucher(

@@ -60,6 +60,13 @@ const MESSAGES = {
   MEAL_QR_EXPIRED: ['QR 시간이 지났어요', '손님 앱에서 새 QR을 띄워 다시 찍어 주세요.'],
   INVALID_MEAL_QR: ['회원 QR이 아니에요', '앱의 QR 탭 → 내 QR 보여주기 화면을 찍어 주세요.'],
   LEDGER_NOT_SUPPORTED: ['장부 결제 회원이에요', '손님이 앱으로 매장 QR을 찍어 결제해 주세요.'],
+  MONTHLY_LIMIT: ['회사 식대 월 한도를 넘었어요', '손님 앱에서 내 식권으로 바꿔 다시 찍어 주세요.'],
+  DAILY_LIMIT: ['회사 식대 하루 한도를 넘었어요', '손님 앱에서 내 식권으로 바꿔 다시 찍어 주세요.'],
+  MEAL_LIMIT: ['회사 식대 한도를 넘었어요', '손님 앱에서 내 식권으로 바꿔 다시 찍어 주세요.'],
+  OUT_OF_WINDOW: ['회사 식대 사용 시간이 아니에요', '손님 앱에서 내 식권으로 바꿔 다시 찍어 주세요.'],
+  WEEKEND_BLOCKED: ['주말에는 회사 식대를 쓸 수 없어요', '손님 앱에서 내 식권으로 바꿔 다시 찍어 주세요.'],
+  NOT_AFFILIATED: ['제휴 회사 직원이 아니에요', '이 식당과 계약된 회사의 직원만 회사 장부로 결제할 수 있어요.'],
+  COMPANY_NOT_ACTIVE: ['회사가 아직 활성화되지 않았어요', '회사 담당자 확인이 필요해요.'],
   ACCOUNT_INACTIVE: ['사용할 수 없는 회원이에요', '관리자에게 문의해 주세요.'],
   FORBIDDEN: ['식당관리자 계정이 아니에요', '식당관리자 계정으로 다시 로그인해 주세요.'],
   UNAUTHENTICATED: ['로그인이 만료됐어요', '다시 로그인해 주세요.'],
@@ -83,6 +90,18 @@ export function counterResultView(ok, payload) {
         name: '영수증 식권',
         remaining: null,
         detail: `영수증 …${String(d.receipt_id || '').slice(-6)}`,
+      };
+    }
+    if (d.pay_type === 'ledger') {
+      // A company-ledger employee showed their QR: the company pays, no voucher count.
+      const amount = Number.isSafeInteger(d.amount) ? `${d.amount.toLocaleString('ko-KR')}원` : '';
+      return {
+        kind: 'success',
+        duplicate: Boolean(d.duplicate),
+        title: d.duplicate ? '이미 사용 처리된 QR이에요' : '회사 장부 결제 완료',
+        name: d.member_name ? `${d.member_name}님` : '회원',
+        remaining: null,
+        detail: d.duplicate ? '같은 QR이 다시 찍혀 추가 결제하지 않았어요.' : [d.company_name, amount].filter(Boolean).join(' · '),
       };
     }
     const remaining = Number.isSafeInteger(d.remaining) ? d.remaining : null;

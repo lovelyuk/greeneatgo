@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:greeneatgo_customer/company_meal.dart';
 import 'package:greeneatgo_customer/main.dart'
-    show LedgerPayChoiceScreen, PaySource, PaySourceToggle;
+    show LedgerPayChoiceScreen, PaySource, PaySourceToggle, UnifiedQrScanScreen;
 
 class _FakeUser implements User {
   @override
@@ -105,18 +105,26 @@ void main() {
         now: () => _noonKst,
       ),
     ));
-    // First frame already shows the blocked state (no flash of the camera).
-    expect(find.byKey(const ValueKey('ledger-company-scan')), findsNothing);
+    // First frame already shows the blocked state (no flash of the company QR).
+    expect(find.byKey(const ValueKey('ledger-company-qr')), findsNothing);
     expect(find.byKey(const ValueKey('buy-personal-voucher')), findsOneWidget);
     expect(find.text('지금은 회사 식대를 쓸 수 없어요 · 이번 달 한도 200,000원을 모두 썼어요'),
         findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('pay-source-company')));
     await tester.pump();
-    expect(find.byKey(const ValueKey('ledger-company-scan')), findsNothing);
+    expect(find.byKey(const ValueKey('ledger-company-qr')), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('QR tab opens on 회사 장부 when the company can pay', (tester) async {
+  Map<String, dynamic> code() => {
+        'code': '81${'7' * 79}',
+        'expires_at': DateTime.now().millisecondsSinceEpoch ~/ 1000 + 60,
+        'ttl': 60,
+      };
+
+  testWidgets('회사 장부 shows my QR first; the camera is only the fallback',
+      (tester) async {
+    var used = 0;
     await tester.pumpWidget(MaterialApp(
       home: LedgerPayChoiceScreen(
         session: _FakeUser(),
@@ -125,11 +133,52 @@ void main() {
         onBuyVoucher: () async {},
         companyMeal: _status({'windows': [], 'weekend_allowed': true}),
         now: () => _noonKst,
+        loadCompanyCode: () async => code(),
+        readCompanyUsage: () async => -used,
       ),
     ));
-    expect(find.byKey(const ValueKey('ledger-company-scan')), findsOneWidget);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('ledger-company-qr')), findsOneWidget);
+    expect(find.byKey(const ValueKey('member-qr-image')), findsOneWidget);
+    expect(find.text('회사 장부 QR'), findsOneWidget);
     expect(find.text('회사가 결제해요'), findsOneWidget);
     expect(find.byKey(const ValueKey('pay-source-company-blocked')), findsNothing);
+    // No camera on this screen: scanning the store QR is a button below the QR.
+    expect(find.byType(UnifiedQrScanScreen), findsNothing);
+    await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('scan-store-qr-button')), 200);
+    expect(find.text('카운터에 스캐너가 없을 때 사용해요'), findsOneWidget);
+
+    // The counter scans it: the company's spending goes up, the screen says paid.
+    used = 8300;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('member-qr-used')), findsOneWidget);
+    expect(find.text('회사 장부로 결제 완료'), findsOneWidget);
+    expect(find.textContaining('남은 식권'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('subsidized employees also get the QR, without the pay-source switch',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: LedgerPayChoiceScreen(
+        session: _FakeUser(),
+        personalBalance: 0,
+        subsidizedFuture: Future.value(true),
+        onBuyVoucher: () async {},
+        loadCompanyCode: () async => code(),
+        readCompanyUsage: () async => 0,
+      ),
+    ));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('subsidized-company-qr')), findsOneWidget);
+    expect(find.byKey(const ValueKey('member-qr-image')), findsOneWidget);
+    expect(find.text('내 식권 QR'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pay-source-company')), findsNothing);
+    expect(find.byType(UnifiedQrScanScreen), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 }

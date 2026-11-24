@@ -18,6 +18,12 @@ test('result view: success, duplicate and errors are explicit', () => {
   assert.equal(ok.kind, 'success'); assert.equal(ok.title, '식권 1장 사용 완료'); assert.equal(ok.detail, '남은 식권 4장'); assert.equal(ok.name, '김구매님');
   const dup = counterResultView(true, { data: { member_name: '김구매', remaining: 4, duplicate: true } });
   assert.match(dup.title, /이미 사용 처리/);
+  // A company-ledger employee's QR: the company pays, there is no voucher count.
+  const ledger = counterResultView(true, { data: { pay_type: 'ledger', member_name: '이직원', company_name: '합성테크', amount: 8300, remaining: null, duplicate: false } });
+  assert.deepEqual([ledger.kind, ledger.title, ledger.name, ledger.remaining, ledger.detail], ['success', '회사 장부 결제 완료', '이직원님', null, '합성테크 · 8,300원']);
+  assert.equal(counterResultView(true, { data: { pay_type: 'ledger', duplicate: true } }).title, '이미 사용 처리된 QR이에요');
+  assert.equal(counterResultView(false, { detail: { code: 'OUT_OF_WINDOW', message: 'x' } }).title, '회사 식대 사용 시간이 아니에요');
+  assert.equal(counterResultView(false, { detail: { code: 'MONTHLY_LIMIT' } }).detail, '손님 앱에서 내 식권으로 바꿔 다시 찍어 주세요.');
   assert.equal(counterResultView(false, { detail: { code: 'NO_VOUCHER' } }).title, '남은 식권이 없어요');
   assert.equal(counterResultView(false, { detail: { code: 'MEAL_QR_EXPIRED' } }).title, 'QR 시간이 지났어요');
   assert.equal(counterResultView(false, { detail: { code: 'WHATEVER', message: '서버 메시지' } }).detail, '서버 메시지');

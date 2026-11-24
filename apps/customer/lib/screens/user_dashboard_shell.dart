@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../company_meal.dart';
 import '../load_error.dart';
 import '../restaurants.dart';
 import '../theme/app_colors.dart';
@@ -522,6 +523,28 @@ class _HomeTab extends StatelessWidget {
                 future: couponCountFuture,
                 builder: (context, couponSnapshot) {
                   final personal = subsidized.data != true;
+                  final couponLabel = couponSnapshot.connectionState ==
+                              ConnectionState.done &&
+                          couponSnapshot.hasData
+                      ? '${couponSnapshot.data}'
+                      : '-';
+                  // Ledger employee: 회사 / 개인 tabs. Wait for the subsidy check so a
+                  // subsidized employee never sees the tabs flash.
+                  if (personal &&
+                      (subsidizedFuture == null ||
+                          subsidized.connectionState ==
+                              ConnectionState.done)) {
+                    return LedgerMealCard(
+                      status: CompanyMealStatus.fromMe(data),
+                      personalBalance: personalBalance.round(),
+                      couponCountLabel: couponLabel,
+                      pointBalanceLabel:
+                          pointBalance == null ? '-' : _points(pointBalance!),
+                      monthUsage: monthUsage,
+                      onTapQr: onScanQr,
+                      onBuyTicket: onBuyVoucher,
+                    );
+                  }
                   return MealTicketCard(
                     remainingCountLabel:
                         personal ? '${personalBalance.round()}' : ticketLabel,

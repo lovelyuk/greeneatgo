@@ -171,8 +171,16 @@ void main() {
           'display_name': '김직원', 'role': 'employee', 'account_type': 'ledger', 'voucher_balance': null,
           'personal_voucher_balance': 4, 'month_used': 16000, 'recent_transactions': [],
         }));
-    // The wallet card counts the employee's own vouchers (4), not '-'.
-    expect(find.bySemanticsLabel(RegExp('남은 식권 4.*내 식권 · 회사 장부로도 결제할 수 있어요')), findsOneWidget);
+    // The wallet card opens on the 회사 tab (no voucher count, no buy button);
+    // the 개인 tab counts the employee's own vouchers (4) and offers buying.
+    await tester.pump();
+    expect(find.byKey(const ValueKey('meal-card-tabs')), findsOneWidget);
+    expect(find.byKey(const ValueKey('company-meal-unknown')), findsOneWidget);
+    expect(find.byKey(const ValueKey('buy-ticket-button')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('meal-tab-personal')));
+    await tester.pump();
+    expect(find.bySemanticsLabel(RegExp('남은 식권 4.*내 식권 · QR 한 번에 1장 사용')), findsOneWidget);
+    expect(find.byKey(const ValueKey('buy-ticket-button')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
 
     PaySource? chosen;

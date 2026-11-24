@@ -27,7 +27,14 @@ void main() {
   Future<bool?> ask(WidgetTester tester, String buttonKey) async {
     bool? answer;
     var answered = false;
+    // Same button theme as the app: FilledButton has an unbounded minimum width.
+    // Without it the test passed while the accept button was missing on the device.
     await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
+        ),
+      ),
       home: Builder(
         builder: (context) => TextButton(
           onPressed: () async {
@@ -43,6 +50,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('테스트회사 직원으로 전환할까요?'), findsOneWidget);
     expect(find.textContaining('거절하면 회사 관리자에게 거절한 것으로 표시돼요.'), findsOneWidget);
+    // All three choices are on screen, inside the dialog, with a real size.
+    final dialog = tester.getRect(find.byKey(const ValueKey('employee-invite-dialog')));
+    for (final key in ['employee-invite-accept', 'employee-invite-decline', 'employee-invite-later']) {
+      final rect = tester.getRect(find.byKey(ValueKey(key)));
+      expect(rect.width > 60 && rect.height >= 44, isTrue, reason: '$key $rect');
+      expect(dialog.contains(rect.topLeft) && dialog.contains(rect.bottomRight), isTrue, reason: '$key $rect in $dialog');
+    }
+    expect(find.text('전환하기'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     // Tapping outside does not answer for the member.
     await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();

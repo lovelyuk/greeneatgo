@@ -2,6 +2,10 @@ package com.greeneatfood.babdaeri.counter;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.provider.Settings;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
@@ -73,6 +77,43 @@ public class MainActivity extends Activity {
         if (state == null || web.restoreState(state) == null) {
             web.loadUrl(COUNTER_URL);
         }
+        AutoStart.startWakeService(this);
+        askAutoStartOnce();
+    }
+
+    /**
+     * Opening by itself when the TV is switched on needs the "다른 앱 위에 표시"
+     * permission. Asked once; the counter works the same without it.
+     */
+    private void askAutoStartOnce() {
+        if (AutoStart.allowed(this)) return;
+        final SharedPreferences prefs = getSharedPreferences("counter", MODE_PRIVATE);
+        if (prefs.getBoolean("autostart_asked", false)) return;
+        prefs.edit().putBoolean("autostart_asked", true).apply();
+        new AlertDialog.Builder(this)
+                .setTitle("TV를 켜면 자동으로 열까요?")
+                .setMessage("다음 화면에서 '밥대리 카운터'의 '다른 앱 위에 표시'를 허용하면, TV를 켤 때 카운터가 바로 열려요.\n\n"
+                        + "나중에 하려면: TV 설정 → 앱 → 특수 앱 액세스 → 다른 앱 위에 표시")
+                .setPositiveButton("설정 열기", (dialog, which) -> openOverlaySettings())
+                .setNegativeButton("나중에", null)
+                .show();
+    }
+
+    private void openOverlaySettings() {
+        Intent[] candidates = {
+                new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())),
+                new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION),
+                new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())),
+        };
+        for (Intent intent : candidates) {
+            try {
+                startActivity(intent);
+                return;
+            } catch (RuntimeException notOnThisDevice) {
+                // Try the next screen: TV builds do not all have the same settings pages.
+            }
+        }
+        Toast.makeText(this, "TV 설정 → 앱 → 특수 앱 액세스 → 다른 앱 위에 표시에서 허용해 주세요", Toast.LENGTH_LONG).show();
     }
 
     private static FrameLayout.LayoutParams match() {

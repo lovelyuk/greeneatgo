@@ -63,41 +63,62 @@ Future<bool?> showEmployeeInviteDialog(
                 fontSize: 14,
                 height: 1.5),
           ),
-          actionsAlignment: MainAxisAlignment.spaceBetween,
-          actionsPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          actionsPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+          // The buttons are stacked at full width. The app theme gives FilledButton an
+          // unbounded minimum width, so placing it in a shrink-wrapped Row next to the
+          // other buttons made it disappear on the device.
           actions: [
-            TextButton(
-              key: const ValueKey('employee-invite-later'),
-              style: TextButton.styleFrom(
-                  foregroundColor: AppColors.fg2,
-                  textStyle: const TextStyle(fontFamily: 'Pretendard')),
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('나중에'),
+            SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  FilledButton(
+                    key: const ValueKey('employee-invite-accept'),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.blue,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(50),
+                        textStyle: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700)),
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    child: const Text('전환하기'),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    Expanded(
+                      child: TextButton(
+                        key: const ValueKey('employee-invite-later'),
+                        style: TextButton.styleFrom(
+                            foregroundColor: AppColors.fg2,
+                            minimumSize: const Size.fromHeight(44),
+                            textStyle:
+                                const TextStyle(fontFamily: 'Pretendard')),
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('나중에'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextButton(
+                        key: const ValueKey('employee-invite-decline'),
+                        style: TextButton.styleFrom(
+                            foregroundColor: AppColors.danger,
+                            minimumSize: const Size.fromHeight(44),
+                            textStyle: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontWeight: FontWeight.w700)),
+                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                        child: const Text('거절'),
+                      ),
+                    ),
+                  ]),
+                ],
+              ),
             ),
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              TextButton(
-                key: const ValueKey('employee-invite-decline'),
-                style: TextButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                    textStyle: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontWeight: FontWeight.w700)),
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('거절'),
-              ),
-              const SizedBox(width: 6),
-              FilledButton(
-                key: const ValueKey('employee-invite-accept'),
-                style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.blue,
-                    foregroundColor: Colors.white,
-                    textStyle: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontWeight: FontWeight.w700)),
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: const Text('전환하기'),
-              ),
-            ]),
           ],
         ),
       ),

@@ -512,6 +512,16 @@ class EmployeeBulkRow(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class EmployeeInviteCreateRequest(BaseModel):
+    """One employee added by hand (same rules as one row of the bulk file)."""
+    name: str = Field(min_length=1, max_length=80)
+    phone: str = Field(min_length=1, max_length=40)
+    department: str | None = Field(default=None, max_length=120)
+    employee_no: str | None = Field(default=None, max_length=40)
+
+    model_config = {"extra": "forbid"}
+
+
 class EmployeeBulkConfirmRequest(BaseModel):
     valid_rows: list[EmployeeBulkRow] = Field(min_length=1, max_length=500)
 

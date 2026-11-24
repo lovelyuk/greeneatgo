@@ -11,8 +11,8 @@ from app.auth import bearer_token
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.products import FALLBACK_DAILY_MENU, today_kst
-from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeLimitUpdateRequest, EmployeePointAdjustRequest, EmployeePointChargeRequest, EmployeeProfileUpdateRequest, ImageDeleteRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest
-from app.services.employee_bulk import BulkFileError, RawEmployeeRow, build_template, read_employee_file, validate_rows
+from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeInviteCreateRequest, EmployeeLimitUpdateRequest, EmployeePointAdjustRequest, EmployeePointChargeRequest, EmployeeProfileUpdateRequest, ImageDeleteRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest
+from app.services.employee_bulk import BulkFileError, RawEmployeeRow, build_template, normalize_phone, read_employee_file, validate_rows
 from app.services.join_flow import JoinFlowError
 from app.services.product_images import ProductImageError, managed_image_path, normalize_product_image
 from app.services.push_notifications import send_individual_point_push
@@ -183,6 +183,84 @@ def confirm_employee_bulk(payload: EmployeeBulkConfirmRequest, token: str = Depe
         if any(code in exc.body for code in ("DUPLICATE_", "INVALID_BULK")) or exc.status == 409:
             raise _error(422, "BULK_ROWS_CHANGED", "다른 등록과 중복됐어요. 파일을 다시 업로드해 주세요") from exc
         raise _error(502, "SUPABASE_ERROR", "직원 초대를 저장하지 못했어요") from exc
+
+
+_INVITE_REASONS = {
+    "이름 누락": "이름을 입력해 주세요",
+    "전화번호 형식 오류": "전화번호 형식을 확인해 주세요 (예: 010-1234-5678)",
+    "이미 등록된 번호": "이미 등록된 번호예요",
+    "이미 등록된 사번": "이미 등록된 사번이에요",
+}
+
+
+@router.post("/employees/invites")
+def create_employee_invite(payload: EmployeeInviteCreateRequest, token: str = Depends(bearer_token)):
+    """Add one employee by hand. Same validation and storage as one bulk-file row,
+    so joining works the same way (new signup links at once, an existing member is asked)."""
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        assert actor.company_id is not None
+        phones, employee_nos = _bulk_existing(repo, actor.company_id)
+        checked = validate_rows(
+            [RawEmployeeRow(row=2, department=payload.department, name=payload.name,
+                            employee_no=payload.employee_no, phone=normalize_phone(payload.phone))],
+            company_id=actor.company_id, existing_phones=phones, existing_employee_nos=employee_nos,
+        )
+        if checked["errors"] or len(checked["valid"]) != 1:
+            reason = checked["errors"][0]["reason"] if checked["errors"] else ""
+            raise _error(422, "EMPLOYEE_INVITE_INVALID", _INVITE_REASONS.get(reason, "입력한 내용을 확인해 주세요"))
+        row = checked["valid"][0]
+        created_count = repo.client.rpc("confirm_employee_bulk_invites", {
+            "p_company_id": actor.company_id,
+            "p_rows": [{"department": row["department"], "display_name": row["name"],
+                        "employee_no": row["employee_no"], "phone": row["phone"]}],
+        })
+        if int(created_count or 0) != 1:
+            raise _error(422, "EMPLOYEE_INVITE_INVALID", "이미 등록된 번호예요")
+        return {"ok": True, "data": {"invite": {
+            "display_name": row["name"], "phone": row["phone"], "department": row["department"],
+            "employee_no": row["employee_no"], "status": "invited"}}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        if any(code in exc.body for code in ("DUPLICATE_", "INVALID_BULK")) or exc.status == 409:
+            raise _error(422, "EMPLOYEE_INVITE_INVALID", "이미 등록된 번호 또는 사번이에요") from exc
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "직원을 등록하지 못했어요") from exc
+
+
+@router.delete("/employees/bulk-invites/{invite_id}")
+def delete_bulk_invite(invite_id: str, token: str = Depends(bearer_token)):
+    """Remove a registered-but-not-joined row (typo, person who will not join).
+
+    Only rows of the admin's own company that nobody has claimed: the status filter
+    is part of the delete, so a row claimed a moment earlier is left alone."""
+    repo = JoinRepository()
+    try:
+        actor = _company_admin(repo, token)
+        invite_id = invite_id.removeprefix("bulk:")
+        try:
+            uuid.UUID(invite_id)
+        except ValueError as exc:
+            raise _error(404, "INVITE_NOT_FOUND", "등록 정보를 찾을 수 없어요") from exc
+        deleted = repo.client.rest_delete("employee_bulk_invites", {
+            "id": f"eq.{invite_id}", "company_id": f"eq.{actor.company_id}", "status": "in.(invited,declined)",
+        })
+        if not deleted:
+            raise _error(404, "INVITE_NOT_FOUND", "이미 가입했거나 삭제된 직원이에요")
+        return {"ok": True, "data": {"deleted": True}, "error": None}
+    except HTTPException:
+        raise
+    except JoinFlowError as exc:
+        raise _handle_join_error(exc) from exc
+    except SupabaseHttpError as exc:
+        if exc.status in (401, 403):
+            raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        raise _error(502, "SUPABASE_ERROR", "삭제하지 못했어요") from exc
 
 
 @router.get("/employees")

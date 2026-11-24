@@ -1018,6 +1018,53 @@ function NotificationPanel({ token, history, migrationRequired, onSent, setMessa
   </section>;
 }
 
+// Add one employee by hand (same rules as one row of the bulk file).
+const EMPTY_EMPLOYEE_INVITE = { name: '', phone: '', department: '', employee_no: '' };
+function EmployeeAddModal({ token, onClose, onAdded }) {
+  const [form, setForm] = useState(EMPTY_EMPLOYEE_INVITE);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [added, setAdded] = useState([]);
+  const nameRef = useRef(null);
+  const digits = form.phone.replace(/[^0-9]/g, '');
+  const problem = !form.name.trim() ? '이름을 입력해 주세요.' : !/^010\d{8}$/.test(digits) ? '전화번호를 확인해 주세요. (예: 010-1234-5678)' : '';
+  useEffect(() => {
+    nameRef.current?.focus();
+    const onKey = (event) => { if (event.key === 'Escape' && !busy) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy]);
+  const field = (key) => ({ value: form[key], onChange: (event) => { setForm((current) => ({ ...current, [key]: event.target.value })); setError(''); } });
+  async function save(keepOpen) {
+    if (problem) { setError(problem); return; }
+    setBusy(true); setError('');
+    try {
+      const body = { name: form.name.trim(), phone: digits, department: form.department.trim() || null, employee_no: form.employee_no.trim() || null };
+      await apiFetch('/admin/employees/invites', token, { method: 'POST', body: JSON.stringify(body) });
+      await onAdded(body.name, keepOpen);
+      if (keepOpen) { setAdded((current) => [...current, body.name]); setForm(EMPTY_EMPLOYEE_INVITE); nameRef.current?.focus(); }
+    } catch (saveError) { setError(saveError.message); } finally { setBusy(false); }
+  }
+  return <div className="modal-backdrop bulk-backdrop" onClick={() => !busy && onClose()}>
+    <section className="employee-bulk-modal employee-add-modal" role="dialog" aria-modal="true" aria-labelledby="employee-add-title" onClick={(event) => event.stopPropagation()}>
+      <header className="bulk-header"><div><h2 id="employee-add-title">직원 추가</h2><p>등록한 번호로 앱에 가입하면 초대코드 없이 바로 연결돼요.</p></div><button type="button" className="ghost icon-button" onClick={onClose} disabled={busy} aria-label="닫기"><X size={20}/></button></header>
+      <form className="bulk-body employee-add-form" onSubmit={(event) => { event.preventDefault(); save(false); }}>
+        <label>이름<input ref={nameRef} {...field('name')} maxLength={80} autoComplete="off" required /></label>
+        <label>전화번호<input {...field('phone')} inputMode="tel" maxLength={20} placeholder="010-1234-5678" autoComplete="off" required /></label>
+        <label>부서 <span className="muted">(선택)</span><input {...field('department')} maxLength={120} autoComplete="off" /></label>
+        <label>사번 <span className="muted">(선택 · 비우면 자동으로 정해져요)</span><input {...field('employee_no')} maxLength={40} autoComplete="off" /></label>
+        {error && <p className="employee-add-error" role="alert">{error}</p>}
+        {added.length > 0 && <p className="employee-add-done" role="status">{added.length}명 추가했어요: {added.join(', ')}</p>}
+        <footer className="employee-add-actions">
+          <button type="button" className="ghost" onClick={onClose} disabled={busy}>{added.length ? '닫기' : '취소'}</button>
+          <button type="button" className="ghost" onClick={() => save(true)} disabled={busy}>저장하고 계속 추가</button>
+          <button type="submit" className="primary" disabled={busy}>저장</button>
+        </footer>
+      </form>
+    </section>
+  </div>;
+}
+
 function EmployeeBulkModal({ token, onClose, onConfirmed }) {
   const inputRef = useRef(null);
   const [preview, setPreview] = useState(null);
@@ -2950,6 +2997,7 @@ function Dashboard({ session, onLogout }) {
   const [mealPolicyForm, setMealPolicyForm] = useState({ enabled: false, lunch_enabled: true, dinner_enabled: true, lunch_start: '11:00', lunch_end: '14:00', dinner_start: '17:30', dinner_end: '20:30' });
   const [employeeTxModal, setEmployeeTxModal] = useState(null);
   const [employeeBulkOpen, setEmployeeBulkOpen] = useState(false);
+  const [employeeAddOpen, setEmployeeAddOpen] = useState(false);
   const [employeeManageModal, setEmployeeManageModal] = useState(null);
   const [employeeManageForm, setEmployeeManageForm] = useState({ department: '', display_name: '', employee_no: '', phone: '', charge_amount: '', target_balance: '' });
   const [merchantQr, setMerchantQr] = useState(null);
@@ -3268,6 +3316,19 @@ function Dashboard({ session, onLogout }) {
   function openEmployeeManage(employee) {
     setEmployeeManageModal(employee);
     setEmployeeManageForm({ department: employee.department ?? '', display_name: employee.display_name ?? '', employee_no: employee.employee_no ?? '', phone: employee.phone ?? '', charge_amount: '', target_balance: '' });
+  }
+
+  // Remove a registered-but-not-joined row (typo, person who will not join).
+  async function deleteStagedEmployee(employee) {
+    const name = employee.display_name ?? '직원';
+    if (!window.confirm(`${name}님의 등록을 삭제할까요?\n아직 가입하지 않은 등록 정보만 지워져요.`)) return;
+    setBusy(true); setError(''); setMessage('');
+    try {
+      await apiFetch(`/admin/employees/bulk-invites/${encodeURIComponent(employee.id)}`, token, { method: 'DELETE' });
+      await load(); // load() clears the message, so set it afterwards
+      setMessage(`${name}님의 등록을 삭제했어요.`);
+      setBusy(false);
+    } catch (deleteError) { setError(deleteError.message); } finally { setBusy(false); }
   }
 
   // A registered member declined the switch in the app: offer it again.
@@ -3737,6 +3798,7 @@ function Dashboard({ session, onLogout }) {
       </section>
     </div>}
 
+    {employeeAddOpen && <EmployeeAddModal token={token} onClose={() => setEmployeeAddOpen(false)} onAdded={async (name, keepOpen) => { if (!keepOpen) setEmployeeAddOpen(false); await load(); setMessage(`${name}님을 등록했어요. 앱에 가입하면 바로 연결돼요.`); }} />}
     {employeeBulkOpen && <EmployeeBulkModal token={token} onClose={() => setEmployeeBulkOpen(false)} onConfirmed={async (count) => { setEmployeeBulkOpen(false); setMessage(`직원 ${count}명의 초대를 등록했어요.`); await load(); }} />}
 
     {contractModal && <div className="modal-backdrop" onClick={() => setContractModal(null)}>
@@ -3855,12 +3917,12 @@ function Dashboard({ session, onLogout }) {
     {showCompanyLegacy && <section className="panel employee-panel merchant-regular-weight merchant-open-table">
       <div className="panel-title">
         <div><p className="panel-note titleless-guidance">직원 정보, 포인트 잔액과 이번 달 이용 현황을 확인합니다.</p></div>
-        <div className="employee-panel-actions"><button className="primary bulk-open-button" onClick={() => setEmployeeBulkOpen(true)} disabled={employees?.bulk_migration_required}>+ 직원 일괄등록</button><span className="badge">{employees?.items?.length ?? 0}명</span></div>
+        <div className="employee-panel-actions"><button type="button" className="primary" onClick={() => setEmployeeAddOpen(true)} disabled={employees?.bulk_migration_required}>+ 직원 추가</button><button className="ghost bulk-open-button" onClick={() => setEmployeeBulkOpen(true)} disabled={employees?.bulk_migration_required}>직원 일괄등록</button><span className="badge">{employees?.items?.length ?? 0}명</span></div>
       </div>
       {employees?.bulk_migration_required && <div className="alert error">0017_employee_bulk_invites.sql 적용 후 직원 일괄등록을 사용할 수 있어요.</div>}
-      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 일괄등록하면 직원이 앱에 가입할 때 바로 연결되고, 명단에 없는 직원은 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className={`badge${employee.is_staged && employee.status === 'declined' ? ' badge-declined' : ''}`}>{employee.is_staged ? (employee.status === 'declined' ? '직원 거절' : '초대대기') : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.is_staged ? (employee.status === 'declined'
-        ? <span className="staged-declined"><span className="muted">직원이 전환을 거절했어요{employee.declined_at ? ` (${new Date(employee.declined_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })})` : ''}</span><button type="button" className="ghost" disabled={busy} onClick={() => reinviteEmployee(employee)}>다시 초대</button></span>
-        : <span className="muted">최초 가입 대기</span>) : <button className="ghost icon-button" disabled={busy} onClick={() => openEmployeeManage(employee)} aria-label={`${employee.display_name ?? '직원'} 관리`} title="직원 관리"><Settings size={18}/></button>}</td></tr>)}</tbody></table></div>}
+      {(employees?.items?.length ?? 0) === 0 ? <p className="empty-state">등록된 직원이 없어요. 직원을 추가하거나 일괄등록하면 앱에 가입할 때 바로 연결되고, 명단에 없는 직원은 초대코드로 가입하면 여기에 표시됩니다.</p> : <div className="table-wrap"><table><thead><tr><th>상태</th><th>부서</th><th>이름</th><th>사번</th><th>전화번호</th><th>포인트 잔액</th><th>관리</th></tr></thead><tbody>{employees.items.map((employee) => <tr key={employee.id}><td><span className={`badge${employee.is_staged && employee.status === 'declined' ? ' badge-declined' : ''}`}>{employee.is_staged ? (employee.status === 'declined' ? '직원 거절' : '초대대기') : employee.status === 'active' ? '사용중' : employee.status}</span></td><td>{employee.department || '-'}</td><td><strong>{employee.display_name || '이름 없음'}</strong></td><td>{employee.employee_no || '-'}</td><td>{employee.phone || '-'}</td><td>{employee.is_staged ? '-' : `${Number(employee.point_balance ?? 0).toLocaleString()} P`}</td><td>{employee.is_staged ? (employee.status === 'declined'
+        ? <span className="staged-declined"><span className="muted">직원이 전환을 거절했어요{employee.declined_at ? ` (${new Date(employee.declined_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })})` : ''}</span><button type="button" className="ghost" disabled={busy} onClick={() => reinviteEmployee(employee)}>다시 초대</button><button type="button" className="ghost danger-text" disabled={busy} onClick={() => deleteStagedEmployee(employee)} aria-label={`${employee.display_name ?? '직원'} 등록 삭제`}>삭제</button></span>
+        : <span className="staged-declined"><span className="muted">최초 가입 대기</span><button type="button" className="ghost danger-text" disabled={busy} onClick={() => deleteStagedEmployee(employee)} aria-label={`${employee.display_name ?? '직원'} 등록 삭제`}>삭제</button></span>) : <button className="ghost icon-button" disabled={busy} onClick={() => openEmployeeManage(employee)} aria-label={`${employee.display_name ?? '직원'} 관리`} title="직원 관리"><Settings size={18}/></button>}</td></tr>)}</tbody></table></div>}
     </section>}
 
     {!isPlatformAdmin && isMerchantAdmin && merchantContentSection === 'companies' && <section className="panel merchant-regular-weight merchant-open-table">

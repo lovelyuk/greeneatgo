@@ -1,7 +1,7 @@
 name: greeneatgo_customer
 description: greeneatGo employee Flutter app
 publish_to: none
-version: 0.1.8+66
+version: 0.1.8+68
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

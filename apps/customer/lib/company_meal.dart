@@ -55,7 +55,12 @@ class CompanyMealStatus {
     required this.limitMessage,
     required this.windows,
     required this.weekendAllowed,
+    this.remainingTodayCount,
   });
+
+  /// Company-paid meals still allowed today; null when the company set no
+  /// daily count.
+  final int? remainingTodayCount;
 
   final String? limitMessage;
   final List<CompanyMealWindow> windows;
@@ -76,6 +81,7 @@ class CompanyMealStatus {
       limitMessage: message.isEmpty ? null : message,
       windows: windows,
       weekendAllowed: raw['weekend_allowed'] != false,
+      remainingTodayCount: (raw['remaining_today_count'] as num?)?.toInt(),
     );
   }
 

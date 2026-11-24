@@ -294,7 +294,7 @@ class VoucherCoreTests(unittest.TestCase):
         self.assertIsInstance(detail, dict)
         self.assertEqual(detail.get("reason"), "no_voucher")  # type: ignore[union-attr]
 
-    @patch("app.routers.transactions.pay")
+    @patch("app.routers.transactions.charge_ledger_meal")
     @patch("app.routers.transactions.get_settings")
     @patch("app.routers.transactions.JoinRepository")
     def test_employee_scan_uses_contract_price_without_product_selection(self, repo_class, settings, legacy_pay):
@@ -308,16 +308,16 @@ class VoucherCoreTests(unittest.TestCase):
         repo.client.rest_get.side_effect = [
             [merchant], [merchant], [{"unit_price": 8300, "status": "active"}], [{"name": "테스트회사"}],
         ]
-        legacy_pay.return_value = {"data": {"payment": {"id": "tx-1"}}}
+        legacy_pay.return_value = {"id": "tx-1"}
 
         result = scan(TransactionScanRequest(
             qr_data="QR-DONTO", idempotency_key="scan-key-employee",
         ), "bearer")
 
-        request = legacy_pay.call_args.args[0]
-        self.assertEqual(request.amount, 8300)
-        self.assertNotIn("product_id", request.model_dump())
-        self.assertEqual(result["pay_type"], "ledger")
+        _, charged_user, charged_merchant, amount, gps, key, quantity = legacy_pay.call_args.args
+        self.assertEqual((charged_user.id, charged_merchant["id"], amount, gps, key, quantity),
+                         ("user-1", "merchant-1", 8300, None, "scan-key-employee", 1))
+        self.assertEqual((result["pay_type"], result["quantity"], result["transaction"]), ("ledger", 1, {"id": "tx-1"}))
 
     def test_scan_ignores_removed_product_selection_fields_from_old_clients(self):
         payload = TransactionScanRequest.model_validate({

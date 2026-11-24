@@ -101,8 +101,8 @@ class ScanSourceTests(unittest.TestCase):
 
     def test_company_refusal_reports_the_personal_voucher_balance(self, repo_class, _settings):
         self._repo(repo_class, vouchers=2)
-        for code in ("DAILY_LIMIT", "MONTHLY_LIMIT", "MEAL_LIMIT", "OUT_OF_WINDOW", "WEEKEND_BLOCKED", "NOT_AFFILIATED"):
-            with patch("app.routers.transactions.pay", side_effect=self._limit(code)), self.assertRaises(HTTPException) as caught:
+        for code in ("DAILY_LIMIT", "MONTHLY_LIMIT", "MEAL_LIMIT", "OUT_OF_WINDOW", "WEEKEND_BLOCKED", "NOT_AFFILIATED", "DAILY_COUNT_LIMIT"):
+            with patch("app.routers.transactions.charge_ledger_meal", side_effect=self._limit(code)), self.assertRaises(HTTPException) as caught:
                 scan(TransactionScanRequest(qr_data="QR-DONTO", idempotency_key="key-12345678"), "bearer")
             self.assertEqual(caught.exception.status_code, 400)
             self.assertEqual(caught.exception.detail["code"], code)
@@ -111,7 +111,7 @@ class ScanSourceTests(unittest.TestCase):
 
     def test_other_errors_and_a_failed_balance_read_do_not_invent_an_offer(self, repo_class, _settings):
         repo = self._repo(repo_class)
-        with patch("app.routers.transactions.pay", side_effect=self._limit("IDEMPOTENCY_CONFLICT")), self.assertRaises(HTTPException) as caught:
+        with patch("app.routers.transactions.charge_ledger_meal", side_effect=self._limit("IDEMPOTENCY_CONFLICT")), self.assertRaises(HTTPException) as caught:
             scan(TransactionScanRequest(qr_data="QR-DONTO", idempotency_key="key-12345678"), "bearer")
         self.assertNotIn("personal_voucher_balance", caught.exception.detail)
         original = repo.client.rest_get.side_effect
@@ -122,14 +122,14 @@ class ScanSourceTests(unittest.TestCase):
             return original(table, params)
 
         repo.client.rest_get.side_effect = failing
-        with patch("app.routers.transactions.pay", side_effect=self._limit()), self.assertRaises(HTTPException) as caught:
+        with patch("app.routers.transactions.charge_ledger_meal", side_effect=self._limit()), self.assertRaises(HTTPException) as caught:
             scan(TransactionScanRequest(qr_data="QR-DONTO", idempotency_key="key-12345678"), "bearer")
         self.assertEqual(caught.exception.detail["personal_voucher_balance"], 0)
 
     def test_personal_source_pays_with_the_voucher_and_never_calls_the_ledger(self, repo_class, _settings):
         repo = self._repo(repo_class)
         repo.client.rpc.return_value = {"id": "tx", "remaining": 1, "duplicate": False}
-        with patch("app.routers.transactions.pay") as ledger:
+        with patch("app.routers.transactions.charge_ledger_meal") as ledger:
             out = scan(TransactionScanRequest(qr_data="QR-DONTO", idempotency_key="key-12345678", pay_source="personal"), "bearer")
         ledger.assert_not_called()
         self.assertEqual(repo.client.rpc.call_args.args[0], "consume_voucher")

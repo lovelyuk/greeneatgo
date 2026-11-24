@@ -6,6 +6,9 @@ Lock or keyboard layout on the counter PC/tablet cannot corrupt the token.
 
 Layout (81 digits): "81" (or "82" = pay with a personal voucher) | user uuid as 39-digit int | expiry epoch (10) |
 nonce (10) | HMAC-SHA256 truncated to 64 bits as 20 digits.
+Several meals in one scan: versions "83" (company) / "84" (personal voucher) with the
+same layout, where the first two nonce digits are the quantity (02-10) and the other
+eight are random. The quantity is inside the signed body, so it cannot be altered.
 No server state is needed to issue; replay is blocked by using the nonce in the
 consuming RPC's idempotency key (a second redeem returns duplicate=true).
 """
@@ -23,7 +26,11 @@ VERSION = "81"
 # Same layout, but the holder asked to pay with a personal voucher instead of
 # the company ledger (ledger employees choose this in the app).
 PERSONAL_VERSION = "82"
-VERSIONS = (VERSION, PERSONAL_VERSION)
+# Same again with a quantity in the first two nonce digits.
+MULTI_VERSION = "83"
+MULTI_PERSONAL_VERSION = "84"
+VERSIONS = (VERSION, PERSONAL_VERSION, MULTI_VERSION, MULTI_PERSONAL_VERSION)
+MAX_QUANTITY = 10
 TTL_SECONDS = 60
 CLOCK_SKEW_SECONDS = 5
 TOKEN_LENGTH = 2 + 39 + 10 + 10 + 20
@@ -43,6 +50,7 @@ class MealQrClaim:
     nonce: str
     expires_at: int
     pay_source: str = "company"
+    quantity: int = 1
 
     @property
     def idempotency_key(self) -> str:
@@ -61,11 +69,20 @@ def _sign(key: bytes, body: str) -> str:
     return str(int.from_bytes(mac, "big")).zfill(20)
 
 
-def issue(user_id: str, secret: str, *, now: float | None = None, personal: bool = False) -> tuple[str, int]:
+def issue(user_id: str, secret: str, *, now: float | None = None, personal: bool = False,
+          quantity: int = 1) -> tuple[str, int]:
+    if not 1 <= quantity <= MAX_QUANTITY:
+        raise ValueError("quantity out of range")
     uid = uuid.UUID(str(user_id))
     expires_at = int(now if now is not None else time.time()) + TTL_SECONDS
-    nonce = str(secrets.randbelow(10**10)).zfill(10)
-    body = f"{PERSONAL_VERSION if personal else VERSION}{str(uid.int).zfill(39)}{expires_at:010d}{nonce}"
+    if quantity == 1:
+        # One meal keeps the original versions, so nothing changes for single scans.
+        version = PERSONAL_VERSION if personal else VERSION
+        nonce = str(secrets.randbelow(10**10)).zfill(10)
+    else:
+        version = MULTI_PERSONAL_VERSION if personal else MULTI_VERSION
+        nonce = f"{quantity:02d}{str(secrets.randbelow(10**8)).zfill(8)}"
+    body = f"{version}{str(uid.int).zfill(39)}{expires_at:010d}{nonce}"
     return body + _sign(_key(secret), body), expires_at
 
 
@@ -94,7 +111,14 @@ def verify(raw: str, secret: str, *, now: float | None = None) -> MealQrClaim:
         raise MealQrError("INVALID_MEAL_QR", "회원 QR을 확인하지 못했어요. 다시 찍어 주세요")
     if uid_int >= 2**128:
         raise MealQrError("INVALID_MEAL_QR", "회원 QR을 확인하지 못했어요. 다시 찍어 주세요")
+    version = body[:2]
+    quantity = 1
+    if version in (MULTI_VERSION, MULTI_PERSONAL_VERSION):
+        quantity = int(nonce[:2])
+        if not 2 <= quantity <= MAX_QUANTITY:
+            raise MealQrError("INVALID_MEAL_QR", "회원 QR을 확인하지 못했어요. 다시 찍어 주세요")
     return MealQrClaim(
         user_id=str(uuid.UUID(int=uid_int)), nonce=nonce, expires_at=expires_at,
-        pay_source="personal" if body[:2] == PERSONAL_VERSION else "company",
+        pay_source="personal" if version in (PERSONAL_VERSION, MULTI_PERSONAL_VERSION) else "company",
+        quantity=quantity,
     )

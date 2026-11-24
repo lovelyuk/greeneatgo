@@ -365,8 +365,16 @@ class ApiClient {
       _request('/vouchers/subsidized-orders/$orderId/cancel', method: 'POST');
 
   /// `personal`: a ledger employee's QR that pays with their own voucher.
-  Future<Map<String, dynamic>> getMemberQr({bool personal = false}) => _request(
-      personal ? '/transactions/member-qr?source=personal' : '/transactions/member-qr');
+  /// `quantity`: how many meals one scan of the code pays for.
+  Future<Map<String, dynamic>> getMemberQr(
+      {bool personal = false, int quantity = 1}) {
+    final query = [
+      if (personal) 'source=personal',
+      if (quantity > 1) 'quantity=$quantity',
+    ].join('&');
+    return _request(
+        query.isEmpty ? '/transactions/member-qr' : '/transactions/member-qr?$query');
+  }
 
   /// Restaurants the buyer can use, with the vouchers held at each.
   Future<List<Restaurant>> getRestaurants() async =>
@@ -377,11 +385,13 @@ class ApiClient {
   Future<Map<String, dynamic>> scanTransaction(
       {required String qrData,
       required String idempotencyKey,
-      String? paySource}) {
+      String? paySource,
+      int quantity = 1}) {
     return _request('/transactions/scan', method: 'POST', body: {
       'qr_data': qrData,
       'idempotency_key': idempotencyKey,
       if (paySource != null) 'pay_source': paySource,
+      if (quantity > 1) 'quantity': quantity,
     });
   }
 
@@ -3114,17 +3124,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               },
             )
           : MemberQrScreen(
-              loadCode: () => ApiClient(session).getMemberQr(),
+              loadCode: (quantity) =>
+                  ApiClient(session).getMemberQr(quantity: quantity),
               readBalance: () async =>
                   ((await ApiClient(session).getMe())['voucher_balance']
                           as num?)
                       ?.round(),
               onClose: close,
-              onScanStoreQr: () async {
+              onScanStoreQr: (quantity) async {
                 await Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => UnifiedQrScanScreen(
                           session: session,
                           isConsumer: isConsumer,
+                          quantity: quantity,
                         )));
                 await onRefresh();
               },
@@ -3963,10 +3975,11 @@ enum PaySource { company, personal }
 /// After the company refused a ledger meal (limit, time window, ...): offer
 /// the employee's own voucher when they hold one and did not already choose it.
 /// A missing voucher is handled by the purchase prompt instead.
-bool shouldOfferPersonalVoucher(ApiException error, PaySource? source) =>
+bool shouldOfferPersonalVoucher(ApiException error, PaySource? source,
+        {int quantity = 1}) =>
     source != PaySource.personal &&
     !error.isNoVoucher &&
-    error.personalVoucherBalance > 0;
+    error.personalVoucherBalance >= quantity;
 
 /// The 회사 장부 / 내 식권 switch at the top of a ledger employee's QR tab.
 ///
@@ -4097,7 +4110,7 @@ class LedgerPayChoiceScreen extends StatefulWidget {
   final int personalBalance;
 
   /// Test seams for the company QR (default: the API).
-  final Future<Map<String, dynamic>> Function()? loadCompanyCode;
+  final Future<Map<String, dynamic>> Function(int quantity)? loadCompanyCode;
   final Future<int?> Function()? readCompanyUsage;
 
   /// `/me.company_meal`. When it says the company allowance cannot pay now,
@@ -4181,6 +4194,16 @@ class _LedgerPayChoiceScreenState extends State<LedgerPayChoiceScreen> {
     return used == null ? null : -used;
   }
 
+  /// Subsidized vouchers held (goes down when one is used). Falls back to the
+  /// company usage when the server does not report the count.
+  Future<int?> _readSubsidizedBalance() async {
+    final me = await ApiClient(widget.session).getMe();
+    final held = (me['subsidized_voucher_balance'] as num?)?.round();
+    if (held != null) return held;
+    final used = (me['month_used'] as num?)?.round();
+    return used == null ? null : -used;
+  }
+
   /// QR first; the camera (scan the store QR) is only the fallback button.
   Widget _companyQr({Widget? header, required bool subsidized}) =>
       MemberQrScreen(
@@ -4188,20 +4211,39 @@ class _LedgerPayChoiceScreenState extends State<LedgerPayChoiceScreen> {
             subsidized ? 'subsidized-company-qr' : 'ledger-company-qr'),
         header: header,
         title: subsidized ? '내 식권 QR' : '회사 장부 QR',
-        guide: subsidized
-            ? '카운터 스캐너에 화면을 대 주세요. 한 번에 식권 1장이 사용돼요.'
-            : '카운터 스캐너에 화면을 대 주세요. 회사 장부로 한 끼가 결제돼요.',
-        usedTitle: subsidized ? '식권 1장 사용 완료' : '회사 장부로 결제 완료',
-        usedCaption: (_) => null,
+        guide: (quantity) => subsidized
+            ? '카운터 스캐너에 화면을 대 주세요. 한 번에 식권 $quantity장이 사용돼요.'
+            : quantity == 1
+                ? '카운터 스캐너에 화면을 대 주세요. 회사 장부로 한 끼가 결제돼요.'
+                : '카운터 스캐너에 화면을 대 주세요. 회사 장부로 $quantity끼가 결제돼요.',
+        usedTitle: (quantity) => subsidized
+            ? '식권 $quantity장 사용 완료'
+            : quantity == 1
+                ? '회사 장부로 결제 완료'
+                : '회사 장부로 $quantity끼 결제 완료',
+        // Subsidized vouchers: the count that is left (a negative number is the
+        // usage fallback, not a count). Company ledger: nothing to count.
+        usedCaption: (remaining) =>
+            subsidized && remaining >= 0 ? '남은 식권 $remaining장' : null,
         showRestaurantBalances: false,
+        // Company ledger: as many meals as the company's daily count still
+        // allows. Subsidized: as many vouchers as are held.
+        maxQuantity: subsidized
+            ? null
+            : (widget.companyMeal?.remainingTodayCount ?? maxQrQuantity),
+        unit: subsidized ? '장' : '끼',
         loadCode: widget.loadCompanyCode ??
-            () => ApiClient(widget.session).getMemberQr(),
-        readBalance: widget.readCompanyUsage ?? _readCompanyUsage,
+            (quantity) =>
+                ApiClient(widget.session).getMemberQr(quantity: quantity),
+        readBalance: widget.readCompanyUsage ??
+            (subsidized ? _readSubsidizedBalance : _readCompanyUsage),
         onClose: widget.onClose,
-        onScanStoreQr: () async {
+        onScanStoreQr: (quantity) async {
           await Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => UnifiedQrScanScreen(
-                  session: widget.session, isConsumer: false)));
+                  session: widget.session,
+                  isConsumer: false,
+                  quantity: quantity)));
         },
       );
 
@@ -4234,15 +4276,17 @@ class _LedgerPayChoiceScreenState extends State<LedgerPayChoiceScreen> {
     return MemberQrScreen(
       key: const ValueKey('ledger-personal-qr'),
       header: toggle,
-      loadCode: () => ApiClient(widget.session).getMemberQr(personal: true),
+      loadCode: (quantity) => ApiClient(widget.session)
+          .getMemberQr(personal: true, quantity: quantity),
       readBalance: _readBalance,
       onClose: widget.onClose,
-      onScanStoreQr: () async {
+      onScanStoreQr: (quantity) async {
         await Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => UnifiedQrScanScreen(
                   session: widget.session,
                   isConsumer: true,
                   paySource: PaySource.personal,
+                  quantity: quantity,
                 )));
         try {
           await _readBalance();
@@ -4315,10 +4359,14 @@ class UnifiedQrScanScreen extends StatefulWidget {
     this.onClose,
     this.header,
     this.paySource,
+    this.quantity = 1,
   });
   final User session;
   final bool isConsumer;
   final VoidCallback? onClose;
+
+  /// How many meals the scan pays for (chosen on the QR screen).
+  final int quantity;
 
   /// Shown above the scanner (ledger employees: the pay-source switch).
   final Widget? header;
@@ -4363,6 +4411,7 @@ class _UnifiedQrScanScreenState extends State<UnifiedQrScanScreen> {
               isConsumer: widget.isConsumer,
               qrData: qrData,
               paySource: widget.paySource,
+              quantity: widget.quantity,
             )));
     if (!mounted) return;
     if (paid == true) {
@@ -4421,6 +4470,7 @@ class _UnifiedQrScanScreenState extends State<UnifiedQrScanScreen> {
           ),
           body: UnifiedQrScanContent(
             isConsumer: widget.isConsumer,
+            quantity: widget.quantity,
             header: widget.header,
             error: _error,
             onRetry: () {
@@ -4457,10 +4507,12 @@ class UnifiedQrScanContent extends StatelessWidget {
     required this.onRetry,
     this.error,
     this.header,
+    this.quantity = 1,
   });
 
   final Widget? header;
   final bool isConsumer;
+  final int quantity;
   final Widget scanner;
   final String? error;
   final VoidCallback onRetry;
@@ -4475,7 +4527,12 @@ class UnifiedQrScanContent extends StatelessWidget {
           const Text('매장 QR을 스캔해요', style: AppTextStyles.screenTitle),
           const SizedBox(height: 6),
           Text(
-            isConsumer ? '보유 식권 1장이 사용됩니다.' : '회사 장부의 계약 단가로 결제됩니다.',
+            isConsumer
+                ? '보유 식권 $quantity장이 사용됩니다.'
+                : quantity > 1
+                    ? '회사 장부의 계약 단가로 $quantity끼가 결제됩니다.'
+                    : '회사 장부의 계약 단가로 결제됩니다.',
+            key: const ValueKey('scan-quantity-note'),
             style: AppTextStyles.caption,
           ),
           const SizedBox(height: 18),
@@ -4540,11 +4597,13 @@ class UnifiedPaymentResultScreen extends StatefulWidget {
       required this.session,
       required this.isConsumer,
       required this.qrData,
-      this.paySource});
+      this.paySource,
+      this.quantity = 1});
   final User session;
   final bool isConsumer;
   final String qrData;
   final PaySource? paySource;
+  final int quantity;
 
   @override
   State<UnifiedPaymentResultScreen> createState() =>
@@ -4572,7 +4631,7 @@ class _UnifiedPaymentResultScreenState
         title: const Text('내 식권으로 결제할까요?',
             style: TextStyle(color: AppColors.fg, fontSize: 18)),
         content: Text(
-            '${error.message}\n\n내 식권 ${error.personalVoucherBalance}장 중 1장을 사용해요. 회사 장부에는 기록되지 않아요.',
+            '${error.message}\n\n내 식권 ${error.personalVoucherBalance}장 중 ${widget.quantity}장을 사용해요. 회사 장부에는 기록되지 않아요.',
             style: const TextStyle(color: AppColors.fg2, height: 1.5)),
         actions: [
           TextButton(
@@ -4610,7 +4669,8 @@ class _UnifiedPaymentResultScreenState
           qrData: widget.qrData,
           idempotencyKey: _key(),
           paySource:
-              _paySource == PaySource.personal ? 'personal' : null);
+              _paySource == PaySource.personal ? 'personal' : null,
+          quantity: widget.quantity);
       await SystemSound.play(SystemSoundType.alert);
       if (mounted) setState(() => _result = result);
     } on ApiException catch (error) {
@@ -4640,7 +4700,8 @@ class _UnifiedPaymentResultScreenState
         _purchaseOpened = true;
         WidgetsBinding.instance.addPostFrameCallback(
             (_) => _openPurchase(retryAfterPurchase: true));
-      } else if (shouldOfferPersonalVoucher(error, _paySource) &&
+      } else if (shouldOfferPersonalVoucher(error, _paySource,
+              quantity: widget.quantity) &&
           !_personalOffered) {
         _personalOffered = true;
         WidgetsBinding.instance

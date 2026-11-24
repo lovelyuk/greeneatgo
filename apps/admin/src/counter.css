@@ -10,6 +10,7 @@
 .counter-stage p{margin:0;font-size:clamp(17px,2.4vw,26px);color:#c9d0de}
 .counter-stage .counter-name{font-size:clamp(22px,3.4vw,36px);color:#fff;font-weight:800}
 .counter-icon{width:clamp(96px,14vw,150px);height:clamp(96px,14vw,150px);border-radius:50%;display:grid;place-items:center;font-size:clamp(52px,8vw,84px);font-weight:800;background:var(--card);margin-bottom:12px}
+.counter-stage .counter-quantity{font-size:clamp(72px,15vw,190px);line-height:1;font-weight:900;color:#fff;letter-spacing:-.04em}.counter-stage .counter-quantity small{font-size:.38em;font-weight:800;margin-left:.08em;color:var(--mint)}
 .counter-success{background:#06311f}.counter-success .counter-icon{background:var(--ok)}
 .counter-error{background:#3a0d10}.counter-error .counter-icon{background:var(--err)}
 .counter-ready .counter-icon{background:var(--blue)}

@@ -419,6 +419,8 @@ class TransactionScanRequest(BaseModel):
     # Ledger employees only: "personal" pays with the employee's own voucher
     # instead of the company ledger. Ignored for other accounts.
     pay_source: Literal["company", "personal"] | None = None
+    # How many meals this one scan pays for (the diner picks it before scanning).
+    quantity: int = Field(default=1, ge=1, le=10)
 
 class ApiError(BaseModel):
     code: str
@@ -543,6 +545,8 @@ class MealPolicyUpdateRequest(BaseModel):
     lunch_end: str = Field(default='14:00', pattern=_HHMM)
     dinner_start: str = Field(default='17:30', pattern=_HHMM)
     dinner_end: str = Field(default='20:30', pattern=_HHMM)
+    # Company-paid meals one employee may have per day; None = no limit.
+    daily_count_limit: int | None = Field(default=None, ge=1, le=20)
 
     @model_validator(mode="after")
     def check_windows(self) -> "MealPolicyUpdateRequest":

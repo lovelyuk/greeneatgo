@@ -6,8 +6,8 @@ from app.auth import bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.routers.pay import charge_ledger_meal, pay
-from app.schemas import GPSPoint, KioskReceiptRedeemRequest, MemberQrRedeemRequest, PayRequest, TransactionScanRequest
+from app.routers.pay import _map_rpc_error as _map_pay_error, charge_ledger_meal
+from app.schemas import KioskReceiptRedeemRequest, MemberQrRedeemRequest, TransactionScanRequest
 from app.services import kiosk_receipt, meal_qr
 from app.services.vouchers import parse_qr_data, resolve_voucher_merchant
 
@@ -24,7 +24,7 @@ def _merchant(repo: JoinRepository, qr_data: str) -> dict:
     except ValueError as exc:
         raise _error(400, "INVALID_QR", "QR을 다시 스캔해 주세요") from exc
     rows = repo.client.rest_get("merchants", {
-        "select": "id,name,qr_token,avg_price,status", column: f"eq.{value}", "status": "eq.active", "limit": "1",
+        "select": "id,name,qr_token,avg_price,lat,lng,status", column: f"eq.{value}", "status": "eq.active", "limit": "1",
     })
     if not rows:
         raise _error(400, "INVALID_QR", "QR을 다시 스캔해 주세요")
@@ -35,6 +35,10 @@ def _map_rpc_error(exc: SupabaseHttpError) -> HTTPException:
     body = exc.body or ""
     if "NO_VOUCHER" in body:
         return _error(402, "NO_VOUCHER", "보유 식권이 없습니다", result="fail", reason="no_voucher")
+    if "INVALID_QUANTITY" in body:
+        return _error(400, "INVALID_QUANTITY", "한 번에 1~10장까지 사용할 수 있어요")
+    if "consume_vouchers_many" in body or "consume_subsidized_vouchers_many" in body:
+        return _error(400, "MIGRATION_REQUIRED", "여러 장 사용은 아직 준비 중이에요")
     if "IDEMPOTENCY_CONFLICT" in body:
         return _error(409, "IDEMPOTENCY_CONFLICT", "이미 다른 결제에 사용된 요청 키예요")
     if "TAX_TYPE_UNCLASSIFIED" in body:
@@ -46,6 +50,7 @@ def _map_rpc_error(exc: SupabaseHttpError) -> HTTPException:
 COMPANY_REFUSAL_CODES = frozenset({
     "MONTHLY_LIMIT", "DAILY_LIMIT", "MEAL_LIMIT", "OUT_OF_WINDOW", "WEEKEND_BLOCKED",
     "NOT_AFFILIATED", "PRICE_NOT_CONFIGURED", "PREPURCHASE_INVENTORY_EMPTY", "COMPANY_NOT_ACTIVE",
+    "DAILY_COUNT_LIMIT",
 })
 
 
@@ -60,17 +65,18 @@ def personal_voucher_balance(repo: JoinRepository, user_id: str, merchant_id: st
     return len(repo.client.rest_get("vouchers", params))
 
 
-def _consume_personal_voucher(repo: JoinRepository, profile, merchant: dict, idempotency_key: str) -> dict:
-    result = repo.client.rpc("consume_voucher", {
-        "p_user_id": profile.id, "p_merchant_id": merchant["id"],
-        "p_idempotency_key": idempotency_key,
-    })
-    return {"result": "success", "pay_type": "voucher", "remaining": result["remaining"],
+def _consume_personal_voucher(repo: JoinRepository, profile, merchant: dict, idempotency_key: str,
+                              quantity: int = 1) -> dict:
+    args = {"p_user_id": profile.id, "p_merchant_id": merchant["id"], "p_idempotency_key": idempotency_key}
+    # One voucher keeps the original function; several go through the all-or-nothing wrapper (0083).
+    result = (repo.client.rpc("consume_voucher", args) if quantity == 1
+              else repo.client.rpc("consume_vouchers_many", {**args, "p_quantity": quantity}))
+    return {"result": "success", "pay_type": "voucher", "remaining": result["remaining"], "quantity": quantity,
         "transaction": result, "merchant": {"id": merchant["id"], "name": merchant["name"]}}
 
 
 def consume_meal(repo: JoinRepository, profile, merchant: dict, idempotency_key: str, gps=None,
-                 pay_source: str | None = None) -> dict:
+                 pay_source: str | None = None, quantity: int = 1) -> dict:
     """Use one voucher (or a ledger meal) for profile at merchant.
 
     Shared by the buyer-scans-store-QR path and the counter-scans-member-QR path
@@ -78,7 +84,7 @@ def consume_meal(repo: JoinRepository, profile, merchant: dict, idempotency_key:
     lets an employee pay with a voucher they bought themselves; that meal has no
     company_id, so it never reaches the company's bill or limits."""
     if profile.role == "employee" and pay_source == "personal":
-        return _consume_personal_voucher(repo, profile, merchant, idempotency_key)
+        return _consume_personal_voucher(repo, profile, merchant, idempotency_key, quantity)
     if profile.role == "employee" and profile.company_id:
         links = repo.client.rest_get("merchant_companies", {
             "select": "unit_price,status,subsidy_enabled", "merchant_id": f"eq.{merchant['id']}",
@@ -88,12 +94,14 @@ def consume_meal(repo: JoinRepository, profile, merchant: dict, idempotency_key:
         if amount is None or amount <= 0:
             raise _error(400, "PRICE_NOT_CONFIGURED", "식당 계약 단가가 설정되지 않았어요")
         if links[0].get("subsidy_enabled"):
-            result = repo.client.rpc("consume_subsidized_voucher", {"p_user_id": profile.id, "p_company_id": profile.company_id, "p_merchant_id": merchant["id"], "p_idempotency_key": idempotency_key})
+            args = {"p_user_id": profile.id, "p_company_id": profile.company_id, "p_merchant_id": merchant["id"], "p_idempotency_key": idempotency_key}
+            result = (repo.client.rpc("consume_subsidized_voucher", args) if quantity == 1
+                      else repo.client.rpc("consume_subsidized_vouchers_many", {**args, "p_quantity": quantity}))
             companies = repo.client.rest_get("companies", {"select": "name", "id": f"eq.{profile.company_id}", "limit": "1"})
-            return {"result": "success", "pay_type": "subsidized", "company_name": companies[0]["name"] if companies else None, "remaining": result["remaining"], "transaction": result}
+            return {"result": "success", "pay_type": "subsidized", "quantity": quantity, "company_name": companies[0]["name"] if companies else None, "remaining": result["remaining"], "transaction": result}
         return {"ledger_amount": amount}  # ledger: caller pays with the buyer's own token
     if profile.role == "customer":
-        return _consume_personal_voucher(repo, profile, merchant, idempotency_key)
+        return _consume_personal_voucher(repo, profile, merchant, idempotency_key, quantity)
     raise _error(403, "ACCOUNT_TYPE_NOT_SUPPORTED", "이 계정은 QR 결제를 사용할 수 없어요")
 
 
@@ -111,16 +119,18 @@ def scan(payload: TransactionScanRequest, token: str = Depends(bearer_token)):
             raise _error(400, "INVALID_QR", "QR을 다시 스캔해 주세요")
 
         try:
-            used = consume_meal(repo, profile, merchant, payload.idempotency_key, pay_source=payload.pay_source)
+            used = consume_meal(repo, profile, merchant, payload.idempotency_key, pay_source=payload.pay_source,
+                                quantity=payload.quantity)
             if "ledger_amount" not in used:
                 return used
-            # Ledger employee (no subsidy): legacy pay path with GPS/policy checks.
-            amount = used["ledger_amount"]
-            legacy = pay(PayRequest(
-                qr_token=merchant["qr_token"], amount=amount,
-                gps=GPSPoint(lat=payload.gps.lat, lng=payload.gps.lng) if payload.gps else None,
-                idempotency_key=payload.idempotency_key,
-            ), token)
+            # Ledger employee (no subsidy): company ledger with GPS/policy checks.
+            try:
+                payment = charge_ledger_meal(repo, profile, merchant, used["ledger_amount"], payload.gps,
+                                             payload.idempotency_key, payload.quantity)
+            except SupabaseHttpError as exc:
+                if exc.status in (401, 403):
+                    raise
+                raise _map_pay_error(exc) from exc
         except HTTPException as exc:
             # The company will not pay this meal. Tell the app how many personal
             # vouchers the employee holds here so it can offer them instead.
@@ -138,9 +148,9 @@ def scan(payload: TransactionScanRequest, token: str = Depends(bearer_token)):
         companies = repo.client.rest_get("companies", {
             "select": "name", "id": f"eq.{profile.company_id}", "limit": "1",
         })
-        return {"result": "success", "pay_type": "ledger",
+        return {"result": "success", "pay_type": "ledger", "quantity": payload.quantity,
             "company_name": companies[0]["name"] if companies else None,
-            "remaining": None, "transaction": legacy["data"]["payment"]}
+            "remaining": None, "transaction": payment}
     except HTTPException:
         raise
     except SupabaseHttpError as exc:
@@ -150,10 +160,13 @@ def scan(payload: TransactionScanRequest, token: str = Depends(bearer_token)):
 
 
 @router.get("/member-qr")
-def member_qr(source: str = "company", token: str = Depends(bearer_token)):
+def member_qr(source: str = "company", quantity: int = 1, token: str = Depends(bearer_token)):
     """Issue the buyer's 60-second meal QR (shown in the app/web, read by the counter scanner).
 
-    `source=personal` (employees): the QR pays with the holder's own voucher."""
+    `source=personal` (employees): the QR pays with the holder's own voucher.
+    `quantity`: how many meals one scan of this QR pays for."""
+    if not 1 <= quantity <= meal_qr.MAX_QUANTITY:
+        raise _error(422, "INVALID_QUANTITY", "한 번에 1~10장까지 사용할 수 있어요")
     repo = JoinRepository()
     try:
         auth = repo.auth_user_from_token(token)
@@ -163,19 +176,23 @@ def member_qr(source: str = "company", token: str = Depends(bearer_token)):
     if profile is None or profile.status != "active" or profile.role not in {"customer", "employee"}:
         raise _error(403, "ACCOUNT_TYPE_NOT_SUPPORTED", "이 계정은 QR 결제를 사용할 수 없어요")
     personal = source == "personal" and profile.role == "employee"
-    code, expires_at = meal_qr.issue(profile.id, get_settings().meal_qr_secret, personal=personal)
+    code, expires_at = meal_qr.issue(profile.id, get_settings().meal_qr_secret, personal=personal, quantity=quantity)
     return {"ok": True, "data": {
         "code": code, "expires_at": expires_at, "ttl": meal_qr.TTL_SECONDS,
-        "pay_source": "personal" if personal else "company",
+        "pay_source": "personal" if personal else "company", "quantity": quantity,
     }, "error": None}
 
 
 @router.post("/member-qr/redeem")
 def redeem_member_qr(payload: MemberQrRedeemRequest, token: str = Depends(bearer_token)):
-    """Restaurant counter: redeem a scanned member QR for exactly one meal at this merchant."""
+    """Restaurant counter: redeem a scanned member QR at this merchant.
+
+    The code says how many meals it pays for (1 unless the diner chose more); all of
+    them are recorded or none."""
     from app.routers.merchant_admin import JoinFlowError, _merchant_admin
 
     repo = JoinRepository()
+    claim = None
     try:
         try:
             _, merchant_id = _merchant_admin(repo, token)
@@ -194,12 +211,19 @@ def redeem_member_qr(payload: MemberQrRedeemRequest, token: str = Depends(bearer
         member = repo.get_profile(claim.user_id)
         if member is None or member.status != "active":
             raise _error(403, "ACCOUNT_INACTIVE", "사용할 수 없는 회원이에요")
-        used = consume_meal(repo, member, merchant, claim.idempotency_key, pay_source=claim.pay_source)
+        used = consume_meal(repo, member, merchant, claim.idempotency_key, pay_source=claim.pay_source,
+                            quantity=claim.quantity)
         if "ledger_amount" in used:
             # Company-ledger employee: the signed QR names the employee, so the counter can
             # charge the company ledger by the same rules as the store-QR path (limits, meal
             # hours, weekend, contract). No GPS: the scan happens at the restaurant's counter.
-            payment = charge_ledger_meal(repo, member, merchant, used["ledger_amount"], None, claim.idempotency_key)
+            try:
+                payment = charge_ledger_meal(repo, member, merchant, used["ledger_amount"], None,
+                                             claim.idempotency_key, claim.quantity)
+            except SupabaseHttpError as exc:
+                if exc.status in (401, 403):
+                    raise
+                raise _map_pay_error(exc) from exc   # limits, contract, count: the company's reason
             companies = repo.client.rest_get("companies", {"select": "name", "id": f"eq.{member.company_id}", "limit": "1"})
             return {
                 "ok": True,
@@ -207,6 +231,7 @@ def redeem_member_qr(payload: MemberQrRedeemRequest, token: str = Depends(bearer
                     "result": "success",
                     "duplicate": bool(payment.get("duplicate")),
                     "pay_type": "ledger",
+                    "quantity": claim.quantity,
                     "member_name": member.display_name,
                     "company_name": companies[0]["name"] if companies else None,
                     "remaining": None,
@@ -223,6 +248,7 @@ def redeem_member_qr(payload: MemberQrRedeemRequest, token: str = Depends(bearer
                 "result": "success",
                 "duplicate": bool(tx.get("duplicate")),
                 "pay_type": used["pay_type"],
+                "quantity": claim.quantity,
                 "member_name": member.display_name,
                 "remaining": used.get("remaining"),
                 "amount": tx.get("total_amount", tx.get("amount")),
@@ -236,6 +262,9 @@ def redeem_member_qr(payload: MemberQrRedeemRequest, token: str = Depends(bearer
     except SupabaseHttpError as exc:
         if exc.status in (401, 403):
             raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
+        if claim is not None and claim.quantity > 1 and "NO_VOUCHER" in (exc.body or ""):
+            # Fewer vouchers here than the diner chose: none was used.
+            raise _error(402, "NOT_ENOUGH_VOUCHERS", f"이 식당에서 쓸 수 있는 식권이 {claim.quantity}장보다 적어요") from exc
         raise _map_rpc_error(exc) from exc
 
 

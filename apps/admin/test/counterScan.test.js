@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractMemberCode, extractKioskReceipt, classifyScan, counterResultView, isRepeatScan, REPEAT_SCAN_IGNORE_MS } from '../src/counterScan.js';
+import { extractMemberCode, extractKioskReceipt, classifyScan, counterResultView, counterHistoryText, isRepeatScan, REPEAT_SCAN_IGNORE_MS } from '../src/counterScan.js';
 
 const CODE = '81' + '1'.repeat(79);
 
@@ -74,4 +74,43 @@ test('a code held at the scanner is ignored for 10 seconds after it was last see
   assert.equal(isRepeatScan(last, '81' + '2'.repeat(79), 1_000_500), false); // the next guest is never delayed
   assert.equal(isRepeatScan(null, CODE, 1_000_000), false);
   assert.equal(isRepeatScan(last, CODE, 999_000), false); // clock moved backwards: do not swallow scans
+});
+
+test('every member-QR version is read: one meal, personal voucher, and the several-meal codes', () => {
+  for (const version of ['81', '82', '83', '84']) {
+    const code = version + '7'.repeat(79);
+    assert.equal(extractMemberCode(code), code, version);
+    assert.equal(extractMemberCode(']Q1' + code + '\r\n'), code, version);
+    assert.deepEqual(classifyScan(code), { kind: 'member', code });
+  }
+  // A personal-voucher code that happens to contain "81" inside is still read whole.
+  const inner = '82' + '81' + '7'.repeat(77);
+  assert.equal(extractMemberCode(inner), inner);
+  assert.equal(extractMemberCode('85' + '7'.repeat(79)), null);
+  assert.equal(extractMemberCode('83' + '7'.repeat(40)), null);
+});
+
+test('the counter shows how many meals one scan paid for', () => {
+  const three = counterResultView(true, { data: { pay_type: 'voucher', quantity: 3, member_name: '김구매', remaining: 2 } });
+  assert.deepEqual([three.title, three.quantity, three.detail], ['식권 3장 사용 완료', 3, '남은 식권 2장']);
+  const one = counterResultView(true, { data: { pay_type: 'voucher', member_name: '김구매', remaining: 4 } });
+  assert.deepEqual([one.title, one.quantity], ['식권 1장 사용 완료', 1]);
+  const ledger = counterResultView(true, { data: { pay_type: 'ledger', quantity: 2, member_name: '이직원', company_name: '합성테크', amount: 16000 } });
+  assert.deepEqual([ledger.title, ledger.quantity, ledger.ledger, ledger.detail], ['회사 장부 2끼 결제 완료', 2, true, '합성테크 · 16,000원']);
+  assert.equal(counterResultView(true, { data: { pay_type: 'ledger', member_name: '이직원' } }).title, '회사 장부 결제 완료');
+  // A repeat never claims a new use, whatever the quantity; nonsense quantities fall back to 1.
+  assert.equal(counterResultView(true, { data: { pay_type: 'voucher', quantity: 3, duplicate: true } }).title, '이미 사용 처리된 QR이에요');
+  for (const quantity of [0, -2, 1.5, '3', null]) assert.equal(counterResultView(true, { data: { pay_type: 'voucher', quantity } }).quantity, 1);
+  const refused = counterResultView(false, { detail: { code: 'DAILY_COUNT_LIMIT', message: 'x' } });
+  assert.deepEqual([refused.kind, refused.title], ['error', '오늘 회사 식대 횟수를 넘었어요']);
+});
+
+test('recent list lines', () => {
+  assert.equal(counterHistoryText({ remaining: 4, quantity: 1 }), '남은 식권 4장');
+  assert.equal(counterHistoryText({ remaining: 2, quantity: 3 }), '3장 · 남은 식권 2장');
+  assert.equal(counterHistoryText({ ledger: true, quantity: 1, remaining: null }), '회사 장부');
+  assert.equal(counterHistoryText({ ledger: true, quantity: 2, remaining: null }), '2끼 · 회사 장부');
+  assert.equal(counterHistoryText({ duplicate: true, quantity: 3 }), '중복 스캔');
+  assert.equal(counterHistoryText({ receipt: true }), '키오스크 영수증');
+  assert.equal(counterHistoryText({ remaining: null }), '남은 식권 —장');
 });

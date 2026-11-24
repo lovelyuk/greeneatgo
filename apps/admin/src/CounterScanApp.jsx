@@ -7,7 +7,7 @@
 // the QR's one-time nonce to the idempotency key, so a double scan never
 // charges twice.
 import React, { useEffect, useRef, useState } from 'react';
-import { classifyScan, counterResultView, isRepeatScan, scanKeyChar } from './counterScan.js';
+import { classifyScan, counterResultView, isRepeatScan, scanKeyChar, counterHistoryText } from './counterScan.js';
 import { installCounterManifest, keepScreenAwake, unlockAudio, LOGOUT_HOLD_MS } from './counterKiosk.js';
 import './counter.css';
 
@@ -171,7 +171,7 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
     if (view.kind === 'success') {
       lastUsed.current = { code, at: Date.now() };
       try { chime.current.currentTime = 0; await chime.current.play(); setSoundBlocked(false); } catch { setSoundBlocked(true); }
-      setHistory(h => [{ at: new Date(), name: view.name, remaining: view.remaining, duplicate: view.duplicate, receipt: view.receipt }, ...h].slice(0, 8));
+      setHistory(h => [{ at: new Date(), name: view.name, remaining: view.remaining, duplicate: view.duplicate, receipt: view.receipt, quantity: view.quantity, ledger: view.ledger }, ...h].slice(0, 8));
     }
     if (view.code === 'UNAUTHENTICATED') return;
     resetTimer.current = setTimeout(() => setState({ kind: 'ready' }), RESET_AFTER_MS);
@@ -192,11 +192,11 @@ function CounterScanner({ session, apiBaseUrl, onLogout }) {
     <section className="counter-stage" aria-live="assertive">
       {state.kind === 'ready' && <ReadyGuide />}
       {state.kind === 'busy' && <h1>확인 중…</h1>}
-      {state.kind === 'success' && <><div className="counter-icon" aria-hidden="true">✓</div><h1>{state.title}</h1><p className="counter-name">{state.name}</p><p>{state.detail}</p></>}
+      {state.kind === 'success' && <><div className="counter-icon" aria-hidden="true">✓</div>{state.quantity > 1 && !state.duplicate && <p className="counter-quantity" data-testid="counter-quantity">{state.quantity}<small>{state.ledger ? '끼' : '장'}</small></p>}<h1>{state.title}</h1><p className="counter-name">{state.name}</p><p>{state.detail}</p></>}
       {state.kind === 'error' && <><div className="counter-icon" aria-hidden="true">!</div><h1>{state.title}</h1><p>{state.detail}</p>{state.code === 'UNAUTHENTICATED' && <button type="button" onClick={onLogout}>다시 로그인</button>}</>}
     </section>
     {history.length > 0 && <ol className="counter-history" aria-label="최근 사용">
-      {history.map((h, i) => <li key={i}><time>{h.at.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>{h.name}</span><span>{h.receipt ? '키오스크 영수증' : h.duplicate ? '중복 스캔' : `남은 식권 ${h.remaining ?? '—'}장`}</span></li>)}
+      {history.map((h, i) => <li key={i}><time>{h.at.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>{h.name}</span><span>{counterHistoryText(h)}</span></li>)}
     </ol>}
   </main>;
 }

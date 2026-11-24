@@ -126,12 +126,13 @@ def _employee_company(repo: JoinRepository, company_id: str | None, usage: dict)
         rows = repo.client.rest_get("companies", {"select": "id,name,status", "id": f"eq.{company_id}", "limit": "1"})
         if not rows:
             return None, None
-        from app.routers.pay import _policy_from_row  # same parsing as the payment path
+        from app.routers.pay import _policy_from_row, daily_count_limit_of, meal_policy_row  # same as the payment path
 
-        policy_rows = repo.client.rest_get("meal_policies", {
-            "select": "meal_windows,daily_limit,weekend_allowed", "company_id": f"eq.{company_id}", "group_id": "is.null", "limit": "1"})
+        policy_row = meal_policy_row(repo, company_id)
         status = company_meal_status(
-            policy=_policy_from_row(policy_rows[0] if policy_rows else None),
+            count_today=int(usage.get("today_count") or 0),
+            daily_count_limit=daily_count_limit_of(policy_row),
+            policy=_policy_from_row(policy_row),
             now=datetime.now(timezone.utc),
             spent_today=int(usage.get("today_used") or 0),
             spent_month=int(usage.get("month_used") or 0),
@@ -156,6 +157,10 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
     personal_voucher_balance = len(repo.client.rest_get("vouchers", {
         "select": "id", "user_id": f"eq.{user_id}", "status": "eq.unused", "company_id": "is.null", "limit": "1000",
     }))
+    # Vouchers bought with the company's subsidy: the app caps "how many" on the QR with it.
+    subsidized_voucher_balance = len(repo.client.rest_get("vouchers", {
+        "select": "id", "user_id": f"eq.{user_id}", "status": "eq.unused", "company_id": "not.is.null", "limit": "1000",
+    }))
     limit_rows = repo.client.rest_get("app_users", {"select": "monthly_limit", "id": f"eq.{user_id}", "limit": "1"})
     monthly_limit = int((limit_rows[0].get("monthly_limit") if limit_rows else None) or 200000)
     month_start = _month_start_utc()
@@ -163,6 +168,7 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
     balance = sum(int(row.get("amount") or 0) for row in rows)
     month_used = 0
     today_used = 0
+    today_count = 0   # company-ledger meals today (a cancelled one gives its turn back)
     recent_spends = []
     for row in rows:
         # A meal the restaurant cancelled gives its amount back (0079).
@@ -176,8 +182,11 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
                 month_used += amount if row.get("kind") == "spend" else -amount
                 if created >= today_start:
                     today_used += amount if row.get("kind") == "spend" else -amount
+                    if row.get("pay_type") == "ledger":
+                        today_count += 1 if row.get("kind") == "spend" else -1
     month_used = max(month_used, 0)
     today_used = max(today_used, 0)
+    today_count = max(today_count, 0)
     for row in all_rows:
         if row.get("kind") == "spend" and len(recent_spends) < 3:
             recent_spends.append(row)
@@ -206,9 +215,11 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
         "remaining_limit": max(monthly_limit - month_used, 0),
         "month_used": month_used,
         "today_used": today_used,
+        "today_count": today_count,
         "recent_transactions": recent_transactions,
         "voucher_balance": None,
         "personal_voucher_balance": personal_voucher_balance,
+        "subsidized_voucher_balance": subsidized_voucher_balance,
         "voucher_use_history": [],
         "voucher_month_used_count": 0,
         "voucher_month_used_amount": 0,
@@ -512,6 +523,7 @@ def me(token: str = Depends(bearer_token)):
             "voucher_balance": usage["voucher_balance"],
             # Employees: vouchers bought with their own money (pay choice in the QR tab).
             "personal_voucher_balance": usage.get("personal_voucher_balance"),
+            "subsidized_voucher_balance": usage.get("subsidized_voucher_balance"),
             "voucher_use_history": usage["voucher_use_history"],
             "voucher_month_used_count": usage["voucher_month_used_count"],
             "voucher_month_used_amount": usage["voucher_month_used_amount"],

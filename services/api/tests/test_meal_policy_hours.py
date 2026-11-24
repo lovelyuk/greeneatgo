@@ -32,7 +32,8 @@ def test_both_windows_restrict_company_meals_to_those_hours():
     assert "중식 11:30~13:30, 석식 18:00~19:30" in refused.message
     assert _meal_policy_data({"meal_windows": windows}) == {
         "enabled": True, "lunch_enabled": True, "dinner_enabled": True,
-        "lunch_start": "11:30", "lunch_end": "13:30", "dinner_start": "18:00", "dinner_end": "19:30"}
+        "lunch_start": "11:30", "lunch_end": "13:30", "dinner_start": "18:00", "dinner_end": "19:30",
+        "daily_count_limit": None}
 
 
 def test_one_window_can_be_switched_off():

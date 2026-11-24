@@ -20,6 +20,7 @@ INVOICE_FIELDS = (
     "popbill_status,nts_status,nts_confirm_num,requested_at,issue_requested_at,issued_at,nts_sent_at,"
     "nts_accepted_at,failure_code,failed_at,created_at,updated_at"
 )
+MERCHANT_INVOICE_EXTRA_FIELDS = ",failure_reason:failure_message"
 LIST_INVOICE_FIELDS = (
     "settlement_id,document_type,write_date,recipient_snapshot,"
     "nts_confirm_num,issued_at"
@@ -273,8 +274,13 @@ class SettlementRepository:
         if not rows:
             return None
         row = rows[0]
+        # The issuing merchant sees why Popbill rejected the invoice (sanitized when
+        # stored, D-28); the company keeps the generic projection only.
+        invoice_fields = INVOICE_FIELDS + (
+            MERCHANT_INVOICE_EXTRA_FIELDS if tenant_column == "merchant_id" else ""
+        )
         invoices = self.client.rest_get("tax_invoices", {
-            "select": INVOICE_FIELDS,
+            "select": invoice_fields,
             "settlement_id": f"eq.{settlement_id}", "order": "created_at.asc,id.asc",
         })
         events = self.client.rest_get("settlement_events", {

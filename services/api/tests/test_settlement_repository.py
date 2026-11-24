@@ -154,6 +154,20 @@ def test_company_detail_includes_same_ordered_public_payment_history_as_merchant
         })
 
 
+def test_only_the_merchant_detail_reads_the_invoice_failure_reason():
+    company_client = DetailClient()
+    repository_with(company_client).company_detail("settlement-1", "company-own")
+    merchant_client = DetailClient()
+    repository_with(merchant_client).merchant_detail("settlement-1", "merchant-own")
+
+    def invoice_fields(client):
+        params = next(params for table, params in client.calls if table == "tax_invoices")
+        return params["select"].split(",")
+
+    assert "failure_reason:failure_message" in invoice_fields(merchant_client)
+    assert not any("failure_message" in field for field in invoice_fields(company_client))
+
+
 def test_settlement_detail_includes_period_transactions_with_snapshot_amounts_and_people():
     client = DetailClient()
     detail = repository_with(client).merchant_detail(

@@ -573,6 +573,24 @@ def test_popbill_issue_failure_never_attempts_reconciliation(config: PopbillConf
         make_service(config, sdk).issue(invoice)
     assert exc.value.code == "POPBILL_ISSUE_REJECTED"
     assert [call[0] for call in sdk.calls] == ["registIssue"]
+    assert exc.value.provider_code == -999
+    assert exc.value.provider_message == "PII ***"
+
+
+def test_issue_rejection_keeps_a_sanitized_provider_message(config: PopbillConfig, invoice: dict[str, Any]) -> None:
+    sdk = FakeTaxinvoiceSDK()
+    sdk.raise_on["registIssue"] = PopbillException(
+        -11000005,
+        "작성일자가 발행기한을 초과했습니다.\r\n키 super-secret-value LINK-ID https://popbill.example/x?a=1 "
+        + "가" * 400,
+    )
+    with pytest.raises(PopbillError) as exc:
+        make_service(config, sdk).issue(invoice)
+    message = exc.value.provider_message
+    assert exc.value.code == "POPBILL_ISSUE_REJECTED" and exc.value.provider_code == -11000005
+    assert message.startswith("작성일자가 발행기한을 초과했습니다. 키 *** *** *** 가")
+    assert "super-secret-value" not in message and "LINK-ID" not in message and "http" not in message
+    assert "\n" not in message and len(message) == 200
 
 
 def test_ambiguous_issue_reconciles_only_with_key_and_authoritative_info(

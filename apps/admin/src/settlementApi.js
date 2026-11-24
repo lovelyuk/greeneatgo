@@ -123,7 +123,7 @@ export function mapSettlement(row = {}) {
       nts_sent_at: invoiceSource.nts_sent_at ?? null,
       nts_accepted_at: invoiceSource.nts_accepted_at ?? null,
       approval_number: invoiceSource.nts_confirm_num ?? null,
-      failed_reason: invoiceSource.failure_message ?? null,
+      failed_reason: invoiceSource.failure_reason ?? invoiceSource.failure_message ?? null,
     } : null,
     payments,
     transactions,

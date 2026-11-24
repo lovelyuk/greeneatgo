@@ -124,13 +124,54 @@ class PopbillConfig:
         )
 
 
-class PopbillError(Exception):
-    """A caller-safe error. Raw provider messages and request data are never retained."""
+_PROVIDER_MESSAGE_LIMIT = 200
+_URL = re.compile(r"https?://\S+", re.IGNORECASE)
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
-    def __init__(self, code: str, message: str, *, provider_code: int | str | None = None) -> None:
+
+def safe_provider_message(value: Any, *, redact: tuple[str, ...] = ()) -> str | None:
+    """Popbill's rejection text, made safe to store and show to the issuing merchant.
+
+    Control characters are dropped, whitespace collapsed, configured credentials, URLs
+    and e-mail addresses masked, and the result capped at 200 characters.
+    """
+    if not isinstance(value, str):
+        return None
+    text = "".join(" " if unicodedata.category(ch).startswith("C") else ch for ch in value)
+    for secret in redact:
+        if isinstance(secret, str) and len(secret) >= 4:
+            text = text.replace(secret, "***")
+    text = _URL.sub("***", text)
+    text = _EMAIL.sub("***", text)
+    text = " ".join(text.split())
+    return text[:_PROVIDER_MESSAGE_LIMIT] or None
+
+
+def safe_provider_code(value: Any) -> int | str | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and re.fullmatch(r"-?\d{1,12}", value.strip()):
+        return value.strip()
+    return None
+
+
+class PopbillError(Exception):
+    """A caller-safe error. Request data is never retained.
+
+    provider_message is only set for an explicit issue rejection, already passed through
+    safe_provider_message (so it can be stored as the failure reason).
+    """
+
+    def __init__(
+        self, code: str, message: str, *, provider_code: int | str | None = None,
+        provider_message: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.provider_code = provider_code
+        self.provider_message = provider_message
 
 
 @dataclass(frozen=True)
@@ -334,7 +375,13 @@ class PopbillService:
             )
         except PopbillException as exc:
             # Only an explicit issue exception is an authoritative rejection.
-            raise self._safe_error(exc, operation="issue") from None
+            error = self._safe_error(exc, operation="issue")
+            if error.code == "POPBILL_ISSUE_REJECTED":
+                error.provider_message = safe_provider_message(
+                    getattr(exc, "message", None),
+                    redact=(self._config.link_id, self._config.secret_key),
+                )
+            raise error from None
         except (TimeoutError, ConnectionError, OSError):
             # These failures may happen after the provider accepted the request.
             if self._reconcile_issued_key(key):

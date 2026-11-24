@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:greeneatgo_customer/company_meal.dart';
 
@@ -132,6 +134,64 @@ void main() {
     await pump(tester, data: const {}, now: kst(12, 0));
     expect(find.byKey(const ValueKey('company-meal-unknown')), findsOneWidget);
     expect(find.text('회사 장부로 결제해요'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+  testWidgets('the blocked title stays on one line on a 360dp phone', (tester) async {
+    final pretendard = FontLoader('Pretendard')
+      ..addFont(rootBundle.load('assets/fonts/Pretendard-Regular.otf'))
+      ..addFont(rootBundle.load('assets/fonts/Pretendard-SemiBold.otf'))
+      ..addFont(rootBundle.load('assets/fonts/Pretendard-Bold.otf'))
+      ..addFont(rootBundle.load('assets/fonts/Pretendard-ExtraBold.otf'));
+    await pretendard.load();
+    tester.view.physicalSize = const Size(360, 760);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(fontFamily: 'Pretendard'),
+      home: Scaffold(
+        backgroundColor: const Color(0xFF0B0F17),
+        body: SingleChildScrollView(
+          // Same side padding as the home page.
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+          child: RepaintBoundary(
+            key: const ValueKey('blocked-card'),
+            child: LedgerMealCard(
+              status: CompanyMealStatus.fromMe(me()),
+              personalBalance: 2,
+              couponCountLabel: '1',
+              pointBalanceLabel: '500P',
+              monthUsage: '16,000원',
+              onTapQr: () {},
+              onBuyTicket: () {},
+              now: () => kst(15, 0),
+            ),
+          ),
+        ),
+      ),
+    ));
+    final title = find.byKey(const ValueKey('company-meal-title'));
+    expect(tester.widget<Text>(title).data, '지금은 회사 식대를 쓸 수 없어요');
+    final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(of: title, matching: find.byType(RichText)));
+    int lines(double fontSize) {
+      final painter = TextPainter(
+        text: TextSpan(
+            text: '지금은 회사 식대를 쓸 수 없어요',
+            style: paragraph.text.style!.copyWith(fontSize: fontSize)),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: paragraph.constraints.maxWidth);
+      final count = painter.computeLineMetrics().length;
+      painter.dispose();
+      return count;
+    }
+
+    expect(paragraph.text.style!.fontSize, 15);
+    expect(lines(15), 1);
+    // The old size wrapped onto a second line.
+    expect(lines(17), 2);
+    await expectLater(find.byKey(const ValueKey('blocked-card')),
+        matchesGoldenFile('goldens/company_meal_blocked_360.png'));
     await tester.pumpWidget(const SizedBox());
   });
 }

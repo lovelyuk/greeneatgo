@@ -17,7 +17,13 @@ from app.settlement_schemas import (
     SettlementPeriodUpdateRequest,
 )
 from app.services.join_flow import JoinFlowError
-from app.services.popbill_service import PopbillConfig, PopbillError, PopbillService
+from app.services.popbill_service import (
+    PopbillConfig,
+    PopbillError,
+    PopbillService,
+    safe_provider_code,
+    safe_provider_message,
+)
 from app.services.settlement_documents import (
     XLSX_MEDIA_TYPE,
     build_settlement_html,
@@ -86,6 +92,29 @@ def _provider(value):
 def _require_test_for_demo(is_demo: bool) -> None:
     if is_demo and PopbillConfig.from_settings(get_settings()).is_test is not True:
         raise _error(409, "SETTLEMENT_DEMO_TEST_MODE_REQUIRED", "데모 문서는 팝빌 테스트 환경에서만 처리할 수 있어요")
+
+
+def _popbill_test_mode() -> bool:
+    """Read Popbill's test flag at call time; any failure counts as live mode (fail closed)."""
+    try:
+        return PopbillConfig.from_settings(get_settings()).is_test is True
+    except Exception:
+        return False
+
+
+def _rejection_message(exc: PopbillError) -> str:
+    """Failure reason stored on the invoice: Popbill's code and (sanitized) message."""
+    if exc.code == "POPBILL_INVALID_INPUT":
+        # Raised by our own validation before any provider call; the text is ours.
+        return f"입력값 확인 필요: {safe_provider_message(str(exc)) or '-'}"[:300]
+    code = safe_provider_code(exc.provider_code)
+    message = exc.provider_message if isinstance(exc.provider_message, str) else None
+    message = safe_provider_message(message) if message else None
+    parts = ["팝빌 거절"]
+    if code is not None:
+        parts.append(f"[{code}]")
+    parts.append(message or "사유 미수신")
+    return " ".join(parts)[:300]
 
 
 def _error(status: int, code: str, message: str) -> HTTPException:
@@ -687,7 +716,7 @@ def _merchant_issue_invoice(
             repo.finalize_invoice_issue(
                 actor, settlement_id, attempt_token, outcome,
                 "POPBILL_ISSUE_REJECTED" if outcome == "rejected" else None,
-                "Popbill rejected the request" if outcome == "rejected" else None,
+                _rejection_message(exc) if outcome == "rejected" else None,
             )
         except SupabaseHttpError as db_exc:
             raise _rpc_error(db_exc) from db_exc
@@ -701,9 +730,12 @@ def _merchant_issue_invoice(
 
 @merchant_router.post("/{settlement_id}/tax-invoice/issue")
 def merchant_issue_invoice(settlement_id: UUID, token: str = Depends(bearer_token), repo: SettlementRepository = Depends(get_settlement_repository), service: PopbillService = Depends(get_popbill_service)):
-    # Delayed issuance has legal meaning and remains disabled for the ordinary path.
+    # Delayed issuance has legal meaning: in live mode the ordinary path keeps the
+    # deadline guard and never sends forceIssue. In Popbill test mode (read now, fail
+    # closed) the guard is lifted and the invoice is sent with forceIssue so past
+    # periods can be exercised before launch (DECISIONS D-28).
     return _merchant_issue_invoice(
-        settlement_id, token, repo, service, allow_delayed_issue=False,
+        settlement_id, token, repo, service, allow_delayed_issue=_popbill_test_mode(),
     )
 
 

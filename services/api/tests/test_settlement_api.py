@@ -505,7 +505,28 @@ def test_popbill_issue_success_rejection_and_ambiguous_are_finalized_safely(clie
     response = client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue")
     assert response.status_code == 422
     assert response.json()["detail"] == {"code": "POPBILL_ISSUE_REJECTED", "message": "세금계산서 발행이 거절됐어요"}
-    assert repo.calls[-1][1:] == ("rejected", "22222222-2222-2222-2222-222222222222", "POPBILL_ISSUE_REJECTED", "Popbill rejected the request")
+    # The exception text is never stored; only the code and the sanitized provider message.
+    assert repo.calls[-1][1:] == ("rejected", "22222222-2222-2222-2222-222222222222", "POPBILL_ISSUE_REJECTED", "팝빌 거절 [-1] 사유 미수신")
+
+    repo.calls.clear()
+    provider = FakePopbill(PopbillError(
+        "POPBILL_ISSUE_REJECTED", "Popbill rejected the request", provider_code=-11000005,
+        provider_message="작성일자가 발행기한을 초과했습니다.",
+    ))
+    app.dependency_overrides[get_popbill_service] = lambda: provider
+    response = client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue")
+    assert response.status_code == 422
+    assert repo.calls[-1][1:] == (
+        "rejected", "22222222-2222-2222-2222-222222222222", "POPBILL_ISSUE_REJECTED",
+        "팝빌 거절 [-11000005] 작성일자가 발행기한을 초과했습니다.",
+    )
+
+    repo.calls.clear()
+    provider = FakePopbill(PopbillError("POPBILL_INVALID_INPUT", "Invalid write_date"))
+    app.dependency_overrides[get_popbill_service] = lambda: provider
+    response = client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue")
+    assert response.status_code == 422
+    assert repo.calls[-1][3:] == ("POPBILL_ISSUE_REJECTED", "입력값 확인 필요: Invalid write_date")
 
     repo.calls.clear()
     provider = FakePopbill(PopbillError("POPBILL_RECONCILIATION_REQUIRED", "ambiguous"))
@@ -535,6 +556,19 @@ def test_popbill_issue_preflight_blocks_mismatched_corporation_before_claim(clie
     assert provider.calls == []
 
 
+def test_merchant_detail_shows_the_stored_rejection_reason(client_factory):
+    client, repo = client_factory("merchant_admin")
+    repo.detail["tax_invoices"][0].update({
+        "failure_code": "POPBILL_ISSUE_REJECTED",
+        "failure_reason": "팝빌 거절 [-11000005] 작성일자가 발행기한을 초과했습니다.",
+    })
+    response = client.get(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}")
+    assert response.status_code == 200
+    invoice = response.json()["data"]["tax_invoices"][0]
+    assert invoice["failure_reason"] == "팝빌 거절 [-11000005] 작성일자가 발행기한을 초과했습니다."
+    assert "invoicer_mgt_key" not in invoice
+
+
 def test_ordinary_issue_deadline_only_blocks_after_following_month_has_elapsed():
     detail = {
         "tax_invoices": [
@@ -550,10 +584,53 @@ def test_ordinary_issue_deadline_only_blocks_after_following_month_has_elapsed()
     )
 
 
+def _popbill_settings(is_test):
+    return SimpleNamespace(
+        popbill_link_id="", popbill_secret_key="", popbill_corp_num="",
+        popbill_user_id="", popbill_is_test=is_test, popbill_ip_restrict_on=True,
+        popbill_use_static_ip=False, popbill_use_local_time=True,
+    )
+
+
+def test_ordinary_late_issue_in_test_mode_is_sent_as_delayed_issue(client_factory, monkeypatch):
+    client, repo = client_factory("merchant_admin")
+    provider = FakePopbill()
+    app.dependency_overrides[get_popbill_service] = lambda: provider
+    monkeypatch.setattr(settlements_router, "get_settings", lambda: _popbill_settings(True))
+    monkeypatch.setattr(settlements_router, "_ordinary_issue_deadline_passed", lambda detail: True)
+
+    response = client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue")
+
+    assert response.status_code == 200
+    assert [call[0] for call in repo.calls] == ["merchant_detail", "readiness", "claim", "finalize"]
+    assert [call for call in provider.calls if call[0] == "issue"][0][2] is True
+
+
+def test_ordinary_issue_fails_closed_to_live_mode_when_settings_cannot_be_read(client_factory, monkeypatch):
+    client, repo = client_factory("merchant_admin")
+    provider = FakePopbill()
+    app.dependency_overrides[get_popbill_service] = lambda: provider
+
+    def broken():
+        raise RuntimeError("settings unavailable")
+
+    monkeypatch.setattr(settlements_router, "get_settings", broken)
+    monkeypatch.setattr(settlements_router, "_ordinary_issue_deadline_passed", lambda detail: True)
+    assert settlements_router._popbill_test_mode() is False
+
+    response = client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue")
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "TAX_INVOICE_ISSUE_DEADLINE_PASSED"
+    assert provider.calls == []
+
+
 def test_ordinary_late_issue_stops_before_readiness_claim_and_provider(
     client_factory, monkeypatch,
 ):
     client, repo = client_factory("merchant_admin")
+    # Live Popbill mode keeps the statutory deadline guard.
+    monkeypatch.setattr(settlements_router, "get_settings", lambda: _popbill_settings(False))
     repo.detail["tax_invoices"][0]["write_date"] = "2026-06-30"
     provider = FakePopbill()
     app.dependency_overrides[get_popbill_service] = lambda: provider

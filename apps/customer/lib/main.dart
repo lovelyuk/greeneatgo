@@ -16,6 +16,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'app_update.dart';
 import 'auth_helpers.dart';
+import 'company_meal.dart';
 import 'data/banner_api.dart';
 import 'firebase_config.dart';
 import 'payment_completion.dart';
@@ -3100,6 +3101,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               personalBalance:
                   (me['personal_voucher_balance'] as num?)?.round() ?? 0,
               subsidizedFuture: _subsidizedFuture,
+              companyMeal: CompanyMealStatus.fromMe(me),
               onClose: close,
               onBuyVoucher: () async {
                 await Navigator.of(context).push(MaterialPageRoute(
@@ -3967,58 +3969,106 @@ bool shouldOfferPersonalVoucher(ApiException error, PaySource? source) =>
     error.personalVoucherBalance > 0;
 
 /// The 회사 장부 / 내 식권 switch at the top of a ledger employee's QR tab.
+///
+/// [companyBlockedReason] set: the company allowance cannot pay right now
+/// (limit used up, outside meal hours, weekend, ...). The 회사 장부 option is
+/// greyed out, cannot be chosen, and the reason is shown under the switch.
 class PaySourceToggle extends StatelessWidget {
   const PaySourceToggle({
     super.key,
     required this.value,
     required this.personalBalance,
     required this.onChanged,
+    this.companyBlockedReason,
   });
 
   final PaySource value;
   final int personalBalance;
   final ValueChanged<PaySource> onChanged;
+  final String? companyBlockedReason;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.line),
+  Widget build(BuildContext context) {
+    final reason = companyBlockedReason;
+    final blocked = reason != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Row(children: [
+            _option(PaySource.company, '회사 장부',
+                blocked ? '지금 사용 불가' : '회사가 결제해요',
+                enabled: !blocked),
+            _option(PaySource.personal, '내 식권', '보유 $personalBalance장'),
+          ]),
         ),
-        child: Row(children: [
-          _option(PaySource.company, '회사 장부', '회사가 결제해요'),
-          _option(PaySource.personal, '내 식권', '보유 $personalBalance장'),
-        ]),
-      );
+        if (reason != null)
+          Padding(
+            key: const ValueKey('pay-source-company-blocked'),
+            padding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.schedule_rounded,
+                    color: AppColors.gold, size: 16),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text('지금은 회사 식대를 쓸 수 없어요 · $reason',
+                      style: const TextStyle(
+                          color: AppColors.fg2, fontSize: 12.5, height: 1.4)),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 
-  Widget _option(PaySource source, String label, String caption) {
-    final selected = value == source;
+  Widget _option(PaySource source, String label, String caption,
+      {bool enabled = true}) {
+    final selected = enabled && value == source;
+    final dim = AppColors.fg2.withValues(alpha: 0.45);
     return Expanded(
-      child: Material(
-        color: selected ? AppColors.blue : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          key: ValueKey('pay-source-${source.name}'),
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        selected: selected,
+        child: Material(
+          color: selected ? AppColors.blue : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
-          onTap: selected ? null : () => onChanged(source),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 9),
-            child: Column(children: [
-              Text(label,
-                  style: TextStyle(
-                      color: selected ? Colors.white : AppColors.fg,
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: 2),
-              Text(caption,
-                  style: TextStyle(
-                      color: selected
-                          ? Colors.white.withValues(alpha: 0.82)
-                          : AppColors.fg2,
-                      fontSize: 11.5)),
-            ]),
+          child: InkWell(
+            key: ValueKey('pay-source-${source.name}'),
+            borderRadius: BorderRadius.circular(12),
+            onTap: selected || !enabled ? null : () => onChanged(source),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              child: Column(children: [
+                Text(label,
+                    style: TextStyle(
+                        color: !enabled
+                            ? dim
+                            : selected
+                                ? Colors.white
+                                : AppColors.fg,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(caption,
+                    style: TextStyle(
+                        color: !enabled
+                            ? dim
+                            : selected
+                                ? Colors.white.withValues(alpha: 0.82)
+                                : AppColors.fg2,
+                        fontSize: 11.5)),
+              ]),
+            ),
           ),
         ),
       ),
@@ -4037,10 +4087,17 @@ class LedgerPayChoiceScreen extends StatefulWidget {
     required this.subsidizedFuture,
     required this.onBuyVoucher,
     this.onClose,
+    this.companyMeal,
+    this.now = DateTime.now,
   });
 
   final User session;
   final int personalBalance;
+
+  /// `/me.company_meal`. When it says the company allowance cannot pay now,
+  /// 회사 장부 is disabled and 내 식권 is selected.
+  final CompanyMealStatus? companyMeal;
+  final DateTime Function() now;
 
   /// Employees whose company subsidizes vouchers keep the single flow.
   final Future<bool> subsidizedFuture;
@@ -4052,13 +4109,38 @@ class LedgerPayChoiceScreen extends StatefulWidget {
 }
 
 class _LedgerPayChoiceScreenState extends State<LedgerPayChoiceScreen> {
-  PaySource _source = PaySource.company;
+  // Judged synchronously from the /me already on screen: no flash of the
+  // company tab before it turns grey.
+  late String? _blocked =
+      companyMealBlockReason(widget.companyMeal, widget.now());
+  late PaySource _source =
+      _blocked == null ? PaySource.company : PaySource.personal;
   bool _subsidized = false;
   late int _balance = widget.personalBalance;
+  Timer? _clock;
+
+  /// Meal hours are judged on the device clock: re-judge while the tab is open.
+  void _rejudge() {
+    final blocked = companyMealBlockReason(widget.companyMeal, widget.now());
+    if (blocked == _blocked) return;
+    setState(() {
+      _blocked = blocked;
+      if (blocked != null) _source = PaySource.personal;
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
+    _clock = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted) _rejudge();
+    });
     widget.subsidizedFuture.then((value) {
       if (mounted && value) setState(() => _subsidized = true);
     }).catchError((_) {});
@@ -4070,6 +4152,7 @@ class _LedgerPayChoiceScreenState extends State<LedgerPayChoiceScreen> {
     if (oldWidget.personalBalance != widget.personalBalance) {
       _balance = widget.personalBalance;
     }
+    if (oldWidget.companyMeal != widget.companyMeal) _rejudge();
   }
 
   Future<int?> _readBalance() async {
@@ -4092,6 +4175,7 @@ class _LedgerPayChoiceScreenState extends State<LedgerPayChoiceScreen> {
     final toggle = PaySourceToggle(
       value: _source,
       personalBalance: _balance,
+      companyBlockedReason: _blocked,
       onChanged: (source) => setState(() => _source = source),
     );
     if (_source == PaySource.company) {

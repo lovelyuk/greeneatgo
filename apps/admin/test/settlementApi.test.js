@@ -58,6 +58,14 @@ test('maps public supplier information first and preserves every payment without
   assert.equal('events' in row, false);
 });
 
+test('failed invoice shows the stored Popbill rejection reason before the generic message', () => {
+  const failed = (invoice) => mapSettlement({ ...detail, tax_invoice_status: 'failed', tax_invoices: [{ ...detail.tax_invoices[0], ...invoice }] });
+  assert.equal(failed({ failure_reason: '팝빌 거절 [-11000005] 발행기한 초과', failure_message: '세금계산서 처리에 실패했어요' }).invoice.failed_reason,
+    '팝빌 거절 [-11000005] 발행기한 초과');
+  assert.equal(failed({ failure_message: '세금계산서 처리에 실패했어요' }).invoice.failed_reason, '세금계산서 처리에 실패했어요');
+  assert.equal(failed({}).invoice.failed_reason, null);
+});
+
 test('transaction meal window is carried and has display priority over product names', () => {
   const row = mapSettlement({ transactions: [
     { id: 'lunch', meal_window: '중식', product_name: '김치찌개', item: '식대 사용' },

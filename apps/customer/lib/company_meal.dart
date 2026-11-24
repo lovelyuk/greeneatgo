@@ -113,6 +113,17 @@ class CompanyMealStatus {
   }
 }
 
+/// Why the company allowance cannot pay right now, or null when it can (or the
+/// server sent no status: then the company tab stays as it was).
+///
+/// Restaurant contracts are checked only after the store QR is scanned, so they
+/// are not part of this answer.
+String? companyMealBlockReason(CompanyMealStatus? status, DateTime now) {
+  final view = status?.at(now);
+  if (view == null || view.available) return null;
+  return view.detail.trim().isEmpty ? view.title : view.detail;
+}
+
 enum MealCardTab { company, personal }
 
 /// Home card for ledger employees: 회사 / 개인 tabs (회사 first).

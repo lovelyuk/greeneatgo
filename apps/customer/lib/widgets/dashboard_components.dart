@@ -25,6 +25,10 @@ class MealTicketCard extends StatelessWidget {
     this.couponCountLabel = '-',
     this.pointBalanceLabel = '-',
     this.state = TicketState.active,
+    this.top,
+    this.balance,
+    this.balanceSemantics,
+    this.headerLabel = '남은 식권',
   });
 
   final String remainingCountLabel;
@@ -35,6 +39,14 @@ class MealTicketCard extends StatelessWidget {
   final String couponCountLabel;
   final String pointBalanceLabel;
   final TicketState state;
+
+  /// Shown above the card header (ledger employees: 회사 / 개인 tabs).
+  final Widget? top;
+
+  /// Replaces the big voucher count (ledger employees: company allowance status).
+  final Widget? balance;
+  final String? balanceSemantics;
+  final String headerLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +62,7 @@ class MealTicketCard extends StatelessWidget {
     return Semantics(
       container: true,
       label:
-          '남은 식권 $balanceSemantics, 보유 쿠폰 $couponCountLabel, 보유 포인트 $pointBalanceLabel, $caption, 이번 달 사용 $monthUsage',
+          '${this.balanceSemantics ?? '남은 식권 $balanceSemantics'}, 보유 쿠폰 $couponCountLabel, 보유 포인트 $pointBalanceLabel, $caption, 이번 달 사용 $monthUsage',
       child: Container(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
         decoration: BoxDecoration(
@@ -67,15 +79,19 @@ class MealTicketCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const ExcludeSemantics(
+            if (top != null) top!,
+            ExcludeSemantics(
               child: Row(
                 children: [
-                  Expanded(child: Text('MEAL TICKETS', style: label)),
-                  Text('남은 식권', style: label),
+                  const Expanded(child: Text('MEAL TICKETS', style: label)),
+                  Text(headerLabel, style: label),
                 ],
               ),
             ),
             const SizedBox(height: 14),
+            if (balance != null)
+              ExcludeSemantics(child: balance!)
+            else
             ExcludeSemantics(
               child: Align(
                 alignment: Alignment.centerLeft,

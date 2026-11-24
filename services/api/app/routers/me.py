@@ -9,6 +9,7 @@ from app.repositories.supabase_http import SupabaseHttpError
 from app.admin_themes import ADMIN_THEME_ROLES, DEFAULT_ADMIN_THEME, normalize_admin_theme
 from app.schemas import AdminPreferencesUpdateRequest, CompanyBusinessProfileUpdateRequest, ProfileNameUpdateRequest
 from app.services.join_flow import JoinFlowError
+from app.services.company_meal_status import company_meal_status
 from app.services.vouchers import decorate_bonus_voucher_transactions
 
 router = APIRouter(tags=["me"])
@@ -107,6 +108,40 @@ def _employee_invite_offer(repo: JoinRepository, user_id: str) -> dict | None:
             "display_name": offer.get("display_name"), "department": offer.get("department")}
 
 
+def _today_start_utc() -> datetime:
+    kst = timezone(timedelta(hours=9))
+    local = datetime.now(timezone.utc).astimezone(kst)
+    return datetime(local.year, local.month, local.day, tzinfo=kst).astimezone(timezone.utc)
+
+
+def _employee_company(repo: JoinRepository, company_id: str | None, usage: dict) -> tuple[dict | None, dict | None]:
+    """An employee's company name and whether the company allowance can be used now.
+
+    Employees get the name only (business details stay with the company admin).
+    A read failure never breaks /me: the home card then shows no status."""
+    if not company_id:
+        return None, None
+    try:
+        rows = repo.client.rest_get("companies", {"select": "id,name,status", "id": f"eq.{company_id}", "limit": "1"})
+        if not rows:
+            return None, None
+        from app.routers.pay import _policy_from_row  # same parsing as the payment path
+
+        policy_rows = repo.client.rest_get("meal_policies", {
+            "select": "meal_windows,daily_limit,weekend_allowed", "company_id": f"eq.{company_id}", "group_id": "is.null", "limit": "1"})
+        status = company_meal_status(
+            policy=_policy_from_row(policy_rows[0] if policy_rows else None),
+            now=datetime.now(timezone.utc),
+            spent_today=int(usage.get("today_used") or 0),
+            spent_month=int(usage.get("month_used") or 0),
+            monthly_limit=int(usage.get("monthly_limit") or 0),
+            company_active=rows[0].get("status") == "active",
+        )
+        return {"id": rows[0]["id"], "name": rows[0].get("name")}, status
+    except (SupabaseHttpError, ValueError, TypeError, KeyError):
+        return None, None
+
+
 def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
     all_rows = repo.client.rest_get(
         "normal_meal_transactions",
@@ -121,8 +156,10 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
     limit_rows = repo.client.rest_get("app_users", {"select": "monthly_limit", "id": f"eq.{user_id}", "limit": "1"})
     monthly_limit = int((limit_rows[0].get("monthly_limit") if limit_rows else None) or 200000)
     month_start = _month_start_utc()
+    today_start = _today_start_utc()
     balance = sum(int(row.get("amount") or 0) for row in rows)
     month_used = 0
+    today_used = 0
     recent_spends = []
     for row in rows:
         # A meal the restaurant cancelled gives its amount back (0079).
@@ -134,7 +171,10 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
             if created >= month_start:
                 amount = abs(int(row.get("amount") or 0))
                 month_used += amount if row.get("kind") == "spend" else -amount
+                if created >= today_start:
+                    today_used += amount if row.get("kind") == "spend" else -amount
     month_used = max(month_used, 0)
+    today_used = max(today_used, 0)
     for row in all_rows:
         if row.get("kind") == "spend" and len(recent_spends) < 3:
             recent_spends.append(row)
@@ -162,6 +202,7 @@ def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
         "monthly_limit": monthly_limit,
         "remaining_limit": max(monthly_limit - month_used, 0),
         "month_used": month_used,
+        "today_used": today_used,
         "recent_transactions": recent_transactions,
         "voucher_balance": None,
         "personal_voucher_balance": personal_voucher_balance,
@@ -415,6 +456,7 @@ def me(token: str = Depends(bearer_token)):
 
     invite_code = None
     company = None
+    company_meal = None
     admin_theme = None
     usage = {"balance": None, "monthly_limit": None, "remaining_limit": None, "month_used": None,
              "recent_transactions": [], "voucher_balance": None, "voucher_use_history": [],
@@ -425,6 +467,7 @@ def me(token: str = Depends(bearer_token)):
             company = _company_profile(repo, profile.company_id)
         if profile.role == "employee":
             usage = _employee_usage(repo, profile.id)
+            company, company_meal = _employee_company(repo, profile.company_id, usage)
         elif profile.role == "customer":
             usage = _customer_usage(repo, profile.id)
         if profile.role in ADMIN_THEME_ROLES:
@@ -454,6 +497,9 @@ def me(token: str = Depends(bearer_token)):
             "employee_invite_offer": employee_invite_offer,
             "invite_code": invite_code,
             "company": company,
+            # Ledger employees: can the company allowance be used right now, and if not why
+            # (limits, weekend, meal hours). The app shows it on the home card.
+            "company_meal": company_meal,
             "admin_theme": admin_theme,
             "balance": usage["balance"],
             "monthly_limit": usage["monthly_limit"],

@@ -6,7 +6,7 @@ from app.auth import bearer_token
 from app.config import get_settings
 from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
-from app.routers.pay import pay
+from app.routers.pay import charge_ledger_meal, pay
 from app.schemas import GPSPoint, KioskReceiptRedeemRequest, MemberQrRedeemRequest, PayRequest, TransactionScanRequest
 from app.services import kiosk_receipt, meal_qr
 from app.services.vouchers import parse_qr_data, resolve_voucher_merchant
@@ -186,7 +186,7 @@ def redeem_member_qr(payload: MemberQrRedeemRequest, token: str = Depends(bearer
         except meal_qr.MealQrError as exc:
             raise _error(400, exc.code, exc.message) from exc
         merchants = repo.client.rest_get("merchants", {
-            "select": "id,name,qr_token,status", "id": f"eq.{merchant_id}", "status": "eq.active", "limit": "1",
+            "select": "id,name,qr_token,lat,lng,status", "id": f"eq.{merchant_id}", "status": "eq.active", "limit": "1",
         })
         if not merchants:
             raise _error(403, "MERCHANT_NOT_ACTIVE", "식당이 활성 상태가 아니에요")
@@ -196,7 +196,26 @@ def redeem_member_qr(payload: MemberQrRedeemRequest, token: str = Depends(bearer
             raise _error(403, "ACCOUNT_INACTIVE", "사용할 수 없는 회원이에요")
         used = consume_meal(repo, member, merchant, claim.idempotency_key, pay_source=claim.pay_source)
         if "ledger_amount" in used:
-            raise _error(400, "LEDGER_NOT_SUPPORTED", "장부 결제 회원은 앱에서 매장 QR을 찍어 주세요")
+            # Company-ledger employee: the signed QR names the employee, so the counter can
+            # charge the company ledger by the same rules as the store-QR path (limits, meal
+            # hours, weekend, contract). No GPS: the scan happens at the restaurant's counter.
+            payment = charge_ledger_meal(repo, member, merchant, used["ledger_amount"], None, claim.idempotency_key)
+            companies = repo.client.rest_get("companies", {"select": "name", "id": f"eq.{member.company_id}", "limit": "1"})
+            return {
+                "ok": True,
+                "data": {
+                    "result": "success",
+                    "duplicate": bool(payment.get("duplicate")),
+                    "pay_type": "ledger",
+                    "member_name": member.display_name,
+                    "company_name": companies[0]["name"] if companies else None,
+                    "remaining": None,
+                    "amount": payment.get("amount"),
+                    "transaction_id": payment.get("id"),
+                    "used_at": payment.get("created_at"),
+                },
+                "error": None,
+            }
         tx = used.get("transaction") or {}
         return {
             "ok": True,

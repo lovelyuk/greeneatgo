@@ -105,63 +105,7 @@ def pay(payload: PayRequest, token: str = Depends(bearer_token)):
         if not merchants:
             raise _error(404, "MERCHANT_NOT_FOUND", "식당 QR을 찾을 수 없어요")
         merchant = merchants[0]
-
-        amount = payload.amount
-
-        policy_rows = repo.client.rest_get(
-            "meal_policies",
-            {"select": "meal_windows,daily_limit,weekend_allowed", "company_id": f"eq.{user.company_id}", "group_id": "is.null", "limit": "1"},
-        )
-        policy = _policy_from_row(policy_rows[0] if policy_rows else None)
-
-        tx_rows = repo.client.rest_get(
-            "normal_meal_transactions",
-            {"select": "amount,kind,created_at,pay_type", "user_id": f"eq.{user.id}"},
-        )
-        # Meals paid with a personal voucher are not company spending (0077).
-        tx_rows = [row for row in tx_rows if row.get("pay_type") != "voucher"]
-        now = datetime.now(timezone.utc)
-        today_start = _today_start_utc(now)
-        month_start = _month_start_utc(now)
-        # A meal the restaurant cancelled gives its amount back (0079).
-        signed = [
-            (abs(int(row.get("amount") or 0)) * (1 if row.get("kind") == "spend" else -1),
-             datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")))
-            for row in tx_rows if row.get("kind") in ("spend", "cancel", "refund") and row.get("created_at")
-        ]
-        spent_today = sum(amount_ for amount_, at in signed if at >= today_start)
-        spent_month = sum(amount_ for amount_, at in signed if at >= month_start)
-        monthly_limit = _employee_monthly_limit(repo, user.id)
-        if spent_month + amount > monthly_limit:
-            raise _error(400, "MONTHLY_LIMIT", f"월 한도 {monthly_limit:,}원을 초과해요")
-
-        draft = prepare_payment_draft(PaymentContext(
-            user_id=user.id,
-            company_id=user.company_id,
-            merchant=MerchantSnapshot(id=merchant["id"], name=merchant["name"], lat=merchant.get("lat"), lng=merchant.get("lng")),
-            amount=amount,
-            spent_today=spent_today,
-            policy=policy,
-            now=datetime.now(timezone.utc),
-            gps_lat=payload.gps.lat if payload.gps else None,
-            gps_lng=payload.gps.lng if payload.gps else None,
-        ))
-        if not draft.ok:
-            raise _error(400, draft.code or "POLICY_BLOCKED", draft.message or "결제 정책에 맞지 않아요")
-
-        result = repo.client.rpc("process_meal_pay", {
-            "p_user_id": user.id,
-            "p_company_id": user.company_id,
-            "p_merchant_id": merchant["id"],
-            "p_amount": amount,
-            "p_tx_code": draft.tx_code,
-            "p_meal_window": draft.meal_window,
-            "p_flags": draft.flags,
-            "p_idempotency_key": payload.idempotency_key,
-            "p_product_id": None,
-            "p_product_name": None,
-            "p_product_price": None,
-        })
+        result = charge_ledger_meal(repo, user, merchant, payload.amount, payload.gps, payload.idempotency_key)
         return {"ok": True, "data": {"merchant": merchant, "payment": result}, "error": None}
     except HTTPException:
         raise
@@ -169,3 +113,69 @@ def pay(payload: PayRequest, token: str = Depends(bearer_token)):
         if exc.status in (401, 403):
             raise _error(401, "UNAUTHENTICATED", "로그인이 필요해요") from exc
         raise _map_rpc_error(exc) from exc
+
+
+def charge_ledger_meal(repo: JoinRepository, user, merchant: dict, amount: int, gps, idempotency_key: str) -> dict:
+    """One company-ledger meal for `user` at `merchant`: policy, limits, then the RPC.
+
+    Shared by the employee scanning the store QR (`/pay`, called with the
+    employee's own login) and the counter scanning the employee's member QR
+    (the signed QR identifies the employee). Both are charged by the same rules.
+    Raises HTTPException for a refusal and SupabaseHttpError for the caller to map."""
+    if user is None or user.status != "active" or user.role != "employee" or not user.company_id:
+        raise _error(403, "FORBIDDEN", "활성 직원 계정만 결제할 수 있어요")
+    policy_rows = repo.client.rest_get(
+        "meal_policies",
+        {"select": "meal_windows,daily_limit,weekend_allowed", "company_id": f"eq.{user.company_id}", "group_id": "is.null", "limit": "1"},
+    )
+    policy = _policy_from_row(policy_rows[0] if policy_rows else None)
+
+    tx_rows = repo.client.rest_get(
+        "normal_meal_transactions",
+        {"select": "amount,kind,created_at,pay_type", "user_id": f"eq.{user.id}"},
+    )
+    # Meals paid with a personal voucher are not company spending (0077).
+    tx_rows = [row for row in tx_rows if row.get("pay_type") != "voucher"]
+    now = datetime.now(timezone.utc)
+    today_start = _today_start_utc(now)
+    month_start = _month_start_utc(now)
+    # A meal the restaurant cancelled gives its amount back (0079).
+    signed = [
+        (abs(int(row.get("amount") or 0)) * (1 if row.get("kind") == "spend" else -1),
+         datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")))
+        for row in tx_rows if row.get("kind") in ("spend", "cancel", "refund") and row.get("created_at")
+    ]
+    spent_today = sum(amount_ for amount_, at in signed if at >= today_start)
+    spent_month = sum(amount_ for amount_, at in signed if at >= month_start)
+    monthly_limit = _employee_monthly_limit(repo, user.id)
+    if spent_month + amount > monthly_limit:
+        raise _error(400, "MONTHLY_LIMIT", f"월 한도 {monthly_limit:,}원을 초과해요")
+
+    draft = prepare_payment_draft(PaymentContext(
+        user_id=user.id,
+        company_id=user.company_id,
+        merchant=MerchantSnapshot(id=merchant["id"], name=merchant["name"], lat=merchant.get("lat"), lng=merchant.get("lng")),
+        amount=amount,
+        spent_today=spent_today,
+        policy=policy,
+        now=datetime.now(timezone.utc),
+        gps_lat=gps.lat if gps else None,
+        gps_lng=gps.lng if gps else None,
+    ))
+    if not draft.ok:
+        raise _error(400, draft.code or "POLICY_BLOCKED", draft.message or "결제 정책에 맞지 않아요")
+
+    result = repo.client.rpc("process_meal_pay", {
+        "p_user_id": user.id,
+        "p_company_id": user.company_id,
+        "p_merchant_id": merchant["id"],
+        "p_amount": amount,
+        "p_tx_code": draft.tx_code,
+        "p_meal_window": draft.meal_window,
+        "p_flags": draft.flags,
+        "p_idempotency_key": idempotency_key,
+        "p_product_id": None,
+        "p_product_name": None,
+        "p_product_price": None,
+    })
+    return result

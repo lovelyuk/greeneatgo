@@ -105,16 +105,67 @@ class RedeemMemberQrTests(unittest.TestCase):
         self.assertEqual(caught.exception.detail["code"], "INVALID_MEAL_QR")
         repo.client.rpc.assert_not_called()
 
-    def test_ledger_employee_is_refused_without_charging(self, repo_class, _settings):
+    def _ledger_repo(self, repo_class):
         repo = _repo(repo_class, member_role="employee")
-        repo.client.rest_get.side_effect = [
-            [{"id": "merchant-1", "name": "돈토식당", "qr_token": "QR-DONTO", "status": "active"}],
-            [{"unit_price": 8300, "status": "active", "subsidy_enabled": False}],
-        ]
+        tables = {
+            "merchants": [{"id": "merchant-1", "name": "돈토식당", "qr_token": "QR-DONTO", "lat": None, "lng": None, "status": "active"}],
+            "merchant_companies": [{"unit_price": 8300, "status": "active", "subsidy_enabled": False}],
+            "meal_policies": [], "normal_meal_transactions": [], "app_users": [{"monthly_limit": 200000}],
+            "companies": [{"name": "합성테크"}],
+        }
+        self.reads = []
+
+        def rest_get(table, params):
+            self.reads.append((table, params))
+            return tables[table]
+
+        repo.client.rest_get.side_effect = rest_get
+        return repo
+
+    def test_ledger_employee_qr_charges_the_company_ledger_at_the_counter(self, repo_class, _settings):
+        repo = self._ledger_repo(repo_class)
+        repo.client.rpc.return_value = {"id": 77, "tx_code": "ABC", "amount": 8300, "duplicate": False, "created_at": "2026-11-24T03:00:00Z"}
+        code, _ = meal_qr.issue(USER, SECRET)
+        draft = SimpleNamespace(ok=True, code=None, message=None, tx_code="ABC", meal_window="중식", flags={})
+        with patch("app.routers.pay.prepare_payment_draft", return_value=draft) as prepare:
+            out = redeem_member_qr(MemberQrRedeemRequest(code=code), "bearer")["data"]
+        name, args = repo.client.rpc.call_args.args
+        self.assertEqual(name, "process_meal_pay")
+        # The employee and company come from the signed QR and the member's profile, the
+        # price from the contract, the key from the QR nonce (a re-read cannot charge twice).
+        self.assertEqual((args["p_user_id"], args["p_company_id"], args["p_merchant_id"], args["p_amount"]),
+                         (USER, "company-1", "merchant-1", 8300))
+        self.assertEqual(args["p_idempotency_key"], meal_qr.verify(code, SECRET).idempotency_key)
+        context = prepare.call_args.args[0]
+        self.assertEqual((context.user_id, context.amount, context.gps_lat), (USER, 8300, None))
+        self.assertEqual((out["pay_type"], out["member_name"], out["company_name"], out["amount"], out["duplicate"],
+                          out["remaining"], out["transaction_id"]), ("ledger", "김구매", "합성테크", 8300, False, None, 77))
+        # The limit and policy reads are the member's, never the counter account's.
+        self.assertIn(f"eq.{USER}", [params.get("user_id") for table, params in self.reads if table == "normal_meal_transactions"])
+
+    def test_ledger_employee_qr_is_refused_by_the_same_company_rules(self, repo_class, _settings):
+        repo = self._ledger_repo(repo_class)
+        code, _ = meal_qr.issue(USER, SECRET)
+        blocked = SimpleNamespace(ok=False, code="OUT_OF_WINDOW", message="식대 사용 시간이 아니에요")
+        with patch("app.routers.pay.prepare_payment_draft", return_value=blocked):
+            with self.assertRaises(HTTPException) as caught:
+                redeem_member_qr(MemberQrRedeemRequest(code=code), "bearer")
+        self.assertEqual((caught.exception.status_code, caught.exception.detail["code"]), (400, "OUT_OF_WINDOW"))
+        repo.client.rpc.assert_not_called()
+
+    def test_ledger_employee_over_the_monthly_limit_is_not_charged(self, repo_class, _settings):
+        repo = self._ledger_repo(repo_class)
+        repo.client.rest_get.side_effect = None
+        tables = {
+            "merchants": [{"id": "merchant-1", "name": "돈토식당", "qr_token": "QR-DONTO", "status": "active"}],
+            "merchant_companies": [{"unit_price": 8300, "status": "active", "subsidy_enabled": False}],
+            "meal_policies": [], "app_users": [{"monthly_limit": 5000}], "normal_meal_transactions": [],
+        }
+        repo.client.rest_get.side_effect = lambda table, params: tables[table]
         code, _ = meal_qr.issue(USER, SECRET)
         with self.assertRaises(HTTPException) as caught:
             redeem_member_qr(MemberQrRedeemRequest(code=code), "bearer")
-        self.assertEqual(caught.exception.detail["code"], "LEDGER_NOT_SUPPORTED")
+        self.assertEqual(caught.exception.detail["code"], "MONTHLY_LIMIT")
         repo.client.rpc.assert_not_called()
 
     def test_subsidized_employee_uses_subsidized_rpc(self, repo_class, _settings):

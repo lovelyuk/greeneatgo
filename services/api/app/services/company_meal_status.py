@@ -25,6 +25,8 @@ def company_meal_status(
     spent_month: int,
     monthly_limit: int,
     company_active: bool = True,
+    count_today: int = 0,
+    daily_count_limit: int | None = None,
 ) -> dict:
     windows = [
         {"name": window.name, "start": window.start, "end": window.end}
@@ -43,6 +45,8 @@ def company_meal_status(
             f"이번 달 한도 {monthly_limit:,}원을 모두 썼어요" if monthly_limit > 0 else "회사 식대 한도가 0원으로 설정돼 있어요")}
     elif policy.daily_limit is not None and spent_today >= policy.daily_limit:
         limit_block = {"code": "DAILY_LIMIT", "message": f"오늘 한도 {policy.daily_limit:,}원을 모두 썼어요"}
+    elif daily_count_limit is not None and count_today >= daily_count_limit:
+        limit_block = {"code": "DAILY_COUNT_LIMIT", "message": f"오늘 사용 횟수 {daily_count_limit}번을 모두 썼어요"}
 
     timing = evaluate_payment_policy(amount=0, spent_today=0, policy=policy, now=now)
     code = limit_block["code"] if limit_block else (None if timing.ok else timing.code)
@@ -54,4 +58,9 @@ def company_meal_status(
         "windows": windows,
         "weekend_allowed": bool(policy.weekend_allowed),
         "current_window": timing.meal_window if timing.ok and windows else None,
+        # Company-paid meals per day (None = no limit) and how many are left today:
+        # the app caps "how many meals" on the company QR with it.
+        "daily_count_limit": daily_count_limit,
+        "count_today": count_today,
+        "remaining_today_count": None if daily_count_limit is None else max(daily_count_limit - count_today, 0),
     }

@@ -10,8 +10,12 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 
 /// Loads a fresh 60-second member QR code from the server
-/// (`GET /transactions/member-qr` → `{code, expires_at, ttl}`).
-typedef MemberQrLoader = Future<Map<String, dynamic>> Function();
+/// (`GET /transactions/member-qr` → `{code, expires_at, ttl, quantity}`).
+/// [quantity]: how many meals one scan of this code pays for.
+typedef MemberQrLoader = Future<Map<String, dynamic>> Function(int quantity);
+
+/// Most meals one scan may pay for, whatever is held.
+const maxQrQuantity = 10;
 
 /// Reads the current voucher balance so the screen can show "used" once the
 /// counter scanner redeems the code.
@@ -30,27 +34,43 @@ class MemberQrScreen extends StatefulWidget {
     this.pollInterval = const Duration(seconds: 4),
     this.header,
     this.title = '내 식권 QR',
-    this.guide = '카운터 스캐너에 화면을 대 주세요. 한 번에 식권 1장이 사용돼요.',
-    this.usedTitle = '식권 1장 사용 완료',
+    this.guide = _voucherGuide,
+    this.usedTitle = _voucherUsed,
     this.usedCaption = _remainingVouchers,
     this.showRestaurantBalances = true,
+    this.maxQuantity,
+    this.unit = '장',
   });
 
   static String? _remainingVouchers(int remaining) => '남은 식권 $remaining장';
+  static String _voucherGuide(int quantity) =>
+      '카운터 스캐너에 화면을 대 주세요. 한 번에 식권 $quantity장이 사용돼요.';
+  static String _voucherUsed(int quantity) => '식권 $quantity장 사용 완료';
 
   final MemberQrLoader loadCode;
   final BalanceReader readBalance;
   final VoidCallback? onClose;
-  final VoidCallback? onScanStoreQr;
+
+  /// Opens the camera fallback with the quantity chosen here.
+  final void Function(int quantity)? onScanStoreQr;
   final Duration pollInterval;
+
+  /// Most the holder may choose. Null: the number [readBalance] returned when
+  /// the screen opened (vouchers held). Always capped at [maxQrQuantity]; with
+  /// 1 the chooser is hidden.
+  final int? maxQuantity;
+
+  /// Counter word for the quantity: 장 (vouchers) or 끼 (company-paid meals).
+  final String unit;
 
   /// Shown above the title (ledger employees: the 회사 장부 / 내 식권 choice).
   final Widget? header;
 
-  /// Wording. The defaults describe a voucher QR; a company-ledger QR passes its own.
+  /// Wording, given the chosen quantity. The defaults describe a voucher QR; a
+  /// company-ledger QR passes its own.
   final String title;
-  final String guide;
-  final String usedTitle;
+  final String Function(int quantity) guide;
+  final String Function(int quantity) usedTitle;
 
   /// Line under [usedTitle], given the value [readBalance] returned after the
   /// use. Null result: no line (a company-ledger meal has no voucher count).
@@ -69,6 +89,9 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
   String? _error;
   int? _startBalance;
   int? _usedRemaining;
+  int _quantity = 1;
+  int _usedQuantity = 1;
+  int _generation = 0; // drops answers for a quantity that is no longer chosen
   Timer? _refresh;
   Timer? _poll;
   Timer? _tick;
@@ -88,17 +111,46 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
     super.dispose();
   }
 
-  Future<void> _start() async {
+  int get _max =>
+      (widget.maxQuantity ?? _startBalance ?? 1).clamp(1, maxQrQuantity);
+
+  @override
+  void didUpdateWidget(MemberQrScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The allowance shrank while the screen was open (a meal was just paid).
+    if (_quantity > _max && _usedRemaining == null) {
+      _quantity = _max;
+      _code = null;
+      unawaited(_load());
+    }
+  }
+
+  void _setQuantity(int next) {
+    final value = next.clamp(1, _max);
+    if (value == _quantity) return;
+    // The quantity is inside the code: never leave the old code on screen
+    // under the new number.
+    setState(() {
+      _quantity = value;
+      _code = null;
+      _error = null;
+    });
+    unawaited(_load());
+  }
+
+  Future<void> _start({bool resetQuantity = false}) async {
     setState(() {
       _usedRemaining = null;
       _error = null;
       _code = null;
+      if (resetQuantity) _quantity = 1;
     });
     try {
       _startBalance = await widget.readBalance();
     } catch (_) {
       _startBalance = null;
     }
+    if (_quantity > _max) _quantity = _max;
     await _load();
     _poll?.cancel();
     _poll = Timer.periodic(widget.pollInterval, (_) => unawaited(_checkUsed()));
@@ -106,13 +158,22 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
 
   Future<void> _load() async {
     _refresh?.cancel();
+    final asked = _quantity;
+    final generation = ++_generation;
     try {
-      final data = await widget.loadCode();
+      final data = await widget.loadCode(asked);
+      if (generation != _generation) return;
       final code = data['code'];
       final expires = data['expires_at'];
       final ttl = (data['ttl'] as num?)?.toInt() ?? 60;
       if (code is! String || !_memberCode.hasMatch(code) || expires is! num) {
         throw const FormatException('QR을 만들지 못했어요.');
+      }
+      // A server that does not know quantities answers with a one-meal code:
+      // never show that under "3장".
+      if (asked > 1 && (data['quantity'] as num?)?.toInt() != asked) {
+        _quantity = 1;
+        throw const FormatException('여러 장 사용은 아직 준비 중이에요. 1장으로 다시 만들어 주세요.');
       }
       if (!mounted) return;
       setState(() {
@@ -125,7 +186,7 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
       _refresh = Timer(Duration(seconds: (ttl - 10).clamp(5, 3600)),
           () => unawaited(_load()));
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() => _error = error is FormatException
           ? error.message
           : friendlyLoadError(error));
@@ -157,7 +218,10 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
     _refresh?.cancel();
     _poll?.cancel();
     _tick?.cancel();
-    setState(() => _usedRemaining = now);
+    setState(() {
+      _usedRemaining = now;
+      _usedQuantity = _quantity;
+    });
     unawaited(HapticFeedback.mediumImpact());
   }
 
@@ -188,8 +252,19 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
             const SizedBox(height: 8),
             Text(widget.title, style: AppTextStyles.screenTitle),
             const SizedBox(height: 6),
-            Text(widget.guide, style: AppTextStyles.caption),
+            Text(widget.guide(_quantity),
+                key: const ValueKey('member-qr-guide'),
+                style: AppTextStyles.caption),
             const SizedBox(height: 18),
+            if (_max > 1 && _usedRemaining == null) ...[
+              _QuantityStepper(
+                quantity: _quantity,
+                max: _max,
+                unit: widget.unit,
+                onChanged: _setQuantity,
+              ),
+              const SizedBox(height: 12),
+            ],
             _body(),
             // One QR for every restaurant: show what is held where.
             if (widget.showRestaurantBalances) const RestaurantBalanceList(),
@@ -205,7 +280,7 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
                 child: InkWell(
                   key: const ValueKey('scan-store-qr-button'),
                   borderRadius: BorderRadius.circular(18),
-                  onTap: widget.onScanStoreQr,
+                  onTap: () => widget.onScanStoreQr!(_quantity),
                   child: Padding(
                     padding: const EdgeInsets.all(14),
                     child: Row(children: [
@@ -261,7 +336,7 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
                 color: AppColors.fg, size: 38),
           ),
           const SizedBox(height: 14),
-          Text(widget.usedTitle,
+          Text(widget.usedTitle(_usedQuantity),
               style: const TextStyle(
                   color: AppColors.fg,
                   fontSize: 20,
@@ -272,7 +347,7 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
           ],
           const SizedBox(height: 16),
           FilledButton(
-              onPressed: () => unawaited(_start()),
+              onPressed: () => unawaited(_start(resetQuantity: true)),
               child: const Text('QR 다시 보기')),
         ],
       );
@@ -323,11 +398,86 @@ class _MemberQrScreenState extends State<MemberQrScreen> {
           key: const ValueKey('member-qr-timer'),
           style: const TextStyle(color: AppColors.blueSoft, fontSize: 13),
         ),
+        if (_quantity > 1) ...[
+          const SizedBox(height: 8),
+          Text('이 QR은 $_quantity${widget.unit}용이에요',
+              key: const ValueKey('member-qr-quantity-note'),
+              style: const TextStyle(
+                  color: AppColors.fg,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800)),
+        ],
         const SizedBox(height: 4),
         const Text('화면을 캡처해서 쓸 수 없어요.', style: AppTextStyles.caption),
       ],
     );
   }
+}
+
+/// − 2장 + : how many meals one scan of the QR pays for.
+class _QuantityStepper extends StatelessWidget {
+  const _QuantityStepper({
+    required this.quantity,
+    required this.max,
+    required this.unit,
+    required this.onChanged,
+  });
+  final int quantity;
+  final int max;
+  final String unit;
+  final ValueChanged<int> onChanged;
+
+  Widget _button(String key, String tooltip, IconData icon, int next) {
+    final enabled = next >= 1 && next <= max;
+    return IconButton.filledTonal(
+      key: ValueKey(key),
+      tooltip: tooltip,
+      constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+      onPressed: enabled ? () => onChanged(next) : null,
+      icon: Icon(icon),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const ValueKey('qr-quantity'),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(AppRadii.card),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('사용할 수량',
+                    style: TextStyle(
+                        color: AppColors.fg,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text('최대 $max$unit',
+                    style:
+                        const TextStyle(color: AppColors.fg2, fontSize: 12.5)),
+              ],
+            ),
+          ),
+          _button('qr-quantity-minus', '줄이기', Icons.remove_rounded, quantity - 1),
+          SizedBox(
+            width: 64,
+            child: Text('$quantity$unit',
+                key: const ValueKey('qr-quantity-value'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: AppColors.fg,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800)),
+          ),
+          _button('qr-quantity-plus', '늘리기', Icons.add_rounded, quantity + 1),
+        ]),
+      );
 }
 
 class _Card extends StatelessWidget {

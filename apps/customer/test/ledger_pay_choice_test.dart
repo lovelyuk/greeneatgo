@@ -133,7 +133,7 @@ void main() {
         onBuyVoucher: () async {},
         companyMeal: _status({'windows': [], 'weekend_allowed': true}),
         now: () => _noonKst,
-        loadCompanyCode: () async => code(),
+        loadCompanyCode: (_) async => code(),
         readCompanyUsage: () async => -used,
       ),
     ));
@@ -168,7 +168,7 @@ void main() {
         personalBalance: 0,
         subsidizedFuture: Future.value(true),
         onBuyVoucher: () async {},
-        loadCompanyCode: () async => code(),
+        loadCompanyCode: (_) async => code(),
         readCompanyUsage: () async => 0,
       ),
     ));
@@ -179,6 +179,117 @@ void main() {
     expect(find.text('내 식권 QR'), findsOneWidget);
     expect(find.byKey(const ValueKey('pay-source-company')), findsNothing);
     expect(find.byType(UnifiedQrScanScreen), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  Map<String, dynamic> many(int quantity) => {
+        'code': '${quantity > 1 ? '83' : '81'}${'7' * 79}',
+        'quantity': quantity,
+        'expires_at': DateTime.now().millisecondsSinceEpoch ~/ 1000 + 60,
+        'ttl': 60,
+      };
+
+  testWidgets('회사 장부: choose how many meals, up to what the company still allows today',
+      (tester) async {
+    var used = 0;
+    final asked = <int>[];
+    await tester.pumpWidget(MaterialApp(
+      home: LedgerPayChoiceScreen(
+        session: _FakeUser(),
+        personalBalance: 0,
+        subsidizedFuture: Future.value(false),
+        onBuyVoucher: () async {},
+        companyMeal: _status({'windows': [], 'weekend_allowed': true, 'daily_count_limit': 3, 'remaining_today_count': 2}),
+        now: () => _noonKst,
+        loadCompanyCode: (quantity) async {
+          asked.add(quantity);
+          return many(quantity);
+        },
+        readCompanyUsage: () async => -used,
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('최대 2끼'), findsOneWidget);
+    expect(find.text('1끼'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('qr-quantity-plus')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(asked, [1, 2]);
+    expect(find.text('카운터 스캐너에 화면을 대 주세요. 회사 장부로 2끼가 결제돼요.'), findsOneWidget);
+    expect(find.text('이 QR은 2끼용이에요'), findsOneWidget);
+    expect(tester.widget<IconButton>(find.byKey(const ValueKey('qr-quantity-plus'))).onPressed, isNull);
+    used = 16600;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(find.text('회사 장부로 2끼 결제 완료'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('회사 장부: one meal left today, or a daily count of one, shows no chooser',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: LedgerPayChoiceScreen(
+        session: _FakeUser(),
+        personalBalance: 0,
+        subsidizedFuture: Future.value(false),
+        onBuyVoucher: () async {},
+        companyMeal: _status({'windows': [], 'weekend_allowed': true, 'daily_count_limit': 1, 'remaining_today_count': 1}),
+        now: () => _noonKst,
+        loadCompanyCode: (quantity) async => many(quantity),
+        readCompanyUsage: () async => 0,
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('member-qr-image')), findsOneWidget);
+    expect(find.byKey(const ValueKey('qr-quantity')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('회사 장부 with no daily count: up to 10 meals', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: LedgerPayChoiceScreen(
+        session: _FakeUser(),
+        personalBalance: 0,
+        subsidizedFuture: Future.value(false),
+        onBuyVoucher: () async {},
+        companyMeal: _status({'windows': [], 'weekend_allowed': true}),
+        now: () => _noonKst,
+        loadCompanyCode: (quantity) async => many(quantity),
+        readCompanyUsage: () async => 0,
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('최대 10끼'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('subsidized vouchers: the chooser is capped by the vouchers held', (tester) async {
+    var held = 2;
+    await tester.pumpWidget(MaterialApp(
+      home: LedgerPayChoiceScreen(
+        session: _FakeUser(),
+        personalBalance: 0,
+        subsidizedFuture: Future.value(true),
+        onBuyVoucher: () async {},
+        loadCompanyCode: (quantity) async => many(quantity),
+        readCompanyUsage: () async => held,
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('최대 2장'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('qr-quantity-plus')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('카운터 스캐너에 화면을 대 주세요. 한 번에 식권 2장이 사용돼요.'), findsOneWidget);
+    held = 0;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(find.text('식권 2장 사용 완료'), findsOneWidget);
+    expect(find.text('남은 식권 0장'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 }

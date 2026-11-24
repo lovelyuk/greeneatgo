@@ -37,6 +37,63 @@ test('buyer QR tab shows a locally drawn member QR that turns into "used" when t
   await expect(page.getByLabel('매장 QR 내용')).toBeVisible();
 });
 
+test('buyer picks how many vouchers one scan uses; the count is asked of the server and capped by the balance', async ({ page }) => {
+  await base(page);
+  let balance = 3;
+  const asked = [];
+  await page.route('**/api-fixture/**', async route => {
+    const url = new URL(route.request().url()), path = url.pathname.replace('/api-fixture', '');
+    if (path === '/transactions/member-qr') {
+      const quantity = Number(url.searchParams.get('quantity') || 1);
+      asked.push(quantity);
+      return route.fulfill({ json: { ok: true, data: { code: (quantity > 1 ? '83' : '81') + CODE.slice(2), quantity, expires_at: Math.floor(Date.now() / 1000) + 60, ttl: 60 } } });
+    }
+    if (path === '/me') return route.fulfill({ json: { ok: true, data: { user_id: user.id, role: 'customer', status: 'active', display_name: '김구매', account_type: 'voucher', voucher_balance: balance, point_balance: 0, voucher_use_history: [], recent_transactions: [] } } });
+    return route.fulfill({ json: { ok: true, data: path === '/vouchers/products' ? { purchase_mode: 'voucher', items: [] } : {} } });
+  });
+  await page.goto('/shop');
+  await page.getByLabel('이메일', { exact: true }).fill('fixture@example.invalid');
+  await page.getByLabel('비밀번호', { exact: true }).fill('mock-only-password');
+  await page.getByRole('button', { name: '로그인', exact: true }).click();
+  await page.getByRole('navigation', { name: '구매자 탭' }).getByRole('button', { name: 'QR', exact: true }).click();
+  const group = page.getByRole('group', { name: '사용할 식권 수' });
+  await expect(group.getByText('1장')).toBeVisible();
+  await expect(group.getByRole('button', { name: '한 장 줄이기' })).toBeDisabled();
+  await expect(page.getByText('한 번 찍으면 식권 1장이 사용돼요.')).toBeVisible();
+  await group.getByRole('button', { name: '한 장 늘리기' }).click();
+  await group.getByRole('button', { name: '한 장 늘리기' }).click();
+  await expect(group.getByText('3장')).toBeVisible();
+  await expect(group.getByRole('button', { name: '한 장 늘리기' })).toBeDisabled();   // holds 3
+  await expect(page.getByText('한 번 찍으면 식권 3장이 사용돼요.')).toBeVisible();
+  expect(asked).toEqual([1, 2, 3]);
+  balance = 0; // the counter used all three
+  await expect(page.getByRole('status').filter({ hasText: '식권 3장 사용 완료' })).toBeVisible({ timeout: 8000 });
+  await expect(page.getByText('남은 식권 0장')).toBeVisible();
+});
+
+test('counter shows a large count when one scan uses several vouchers', async ({ page }) => {
+  await base(page);
+  const MULTI = '83' + CODE.slice(2);
+  const bodies = [];
+  await page.route('**/api-fixture/transactions/member-qr/redeem', async route => {
+    bodies.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true, data: { result: 'success', duplicate: false, pay_type: 'voucher', quantity: 3, member_name: '김구매', remaining: 2, amount: 21000 } } });
+  });
+  await page.goto('/counter');
+  await page.getByLabel('이메일').fill('owner@example.invalid');
+  await page.getByLabel('비밀번호').fill('mock-only-password');
+  await page.getByRole('button', { name: '로그인' }).click();
+  await expect(page.getByRole('heading', { name: 'QR은 스캐너에 대 주세요' })).toBeVisible();
+  await page.keyboard.type(MULTI + '\n', { delay: 1 });
+  await expect(page.getByRole('heading', { name: '식권 3장 사용 완료' })).toBeVisible();
+  await expect(page.getByTestId('counter-quantity')).toHaveText('3장');
+  const size = await page.getByTestId('counter-quantity').evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+  expect(size).toBeGreaterThanOrEqual(72);
+  await expect(page.getByRole('list', { name: '최근 사용' })).toContainText('3장 · 남은 식권 2장');
+  expect(bodies).toEqual([{ code: MULTI }]);
+  await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/counter-3.png` : 'test-results/counter-3.png' });
+});
+
 test('counter: scanner keyboard input + Enter redeems once, shows result, ignores a repeat in-flight scan', async ({ page }) => {
   await base(page);
   const bodies = [];

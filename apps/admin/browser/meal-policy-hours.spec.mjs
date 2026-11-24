@@ -28,8 +28,30 @@ test('company admin edits meal hours: lunch only, validation, saved body', async
   await panel.getByRole('button', { name: '사용시간 저장' }).click();
   await expect(page.getByText('식대 사용시간 제한을 저장했어요.')).toBeVisible();
   expect(calls.filter((call) => call.method === 'PUT' && call.path === '/admin/meal-policy').map((call) => call.body)).toEqual([
-    { enabled: true, lunch_enabled: true, dinner_enabled: false, lunch_start: '11:30', lunch_end: '13:30', dinner_start: '17:30', dinner_end: '20:30' },
+    { enabled: true, lunch_enabled: true, dinner_enabled: false, lunch_start: '11:30', lunch_end: '13:30', dinner_start: '17:30', dinner_end: '20:30', daily_count_limit: null },
   ]);
+});
+
+test('company admin sets how many company meals an employee may have per day', async ({ page, context }) => {
+  const calls = await adminLogin(page, context, { role: 'company_admin' });
+  await page.getByRole('navigation', { name: '업체 관리자 메뉴' }).getByRole('button', { name: '사원 관리' }).click();
+  const panel = page.getByRole('region', { name: '식대 사용시간 설정' });
+  const count = panel.getByLabel('하루 사용 횟수');
+  await expect(count).toHaveValue('');                    // empty = no limit
+  await expect(panel).toContainText('직원이 직접 구매한 식권은 세지 않아요.');
+  await count.fill('0');
+  await expect(panel.getByRole('alert')).toHaveText('하루 사용 횟수는 1~20 사이 숫자로 입력해 주세요. 제한이 없으면 비워 두세요.');
+  await expect(panel.getByRole('button', { name: '사용시간 저장' })).toBeDisabled();
+  await count.fill('21');
+  await expect(panel.getByRole('button', { name: '사용시간 저장' })).toBeDisabled();
+  await count.fill('2');
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await panel.getByRole('button', { name: '사용시간 저장' }).click();
+  await expect(page.getByText('식대 사용시간 제한을 저장했어요. 하루 사용 횟수는 2번이에요.')).toBeVisible();
+  const saved = calls.filter((call) => call.method === 'PUT' && call.path === '/admin/meal-policy').map((call) => call.body);
+  expect(saved.length).toBe(1);
+  expect(saved[0].daily_count_limit).toBe(2);
+  expect(saved[0].enabled).toBe(true);
 });
 
 test('turning the restriction off locks the hours and saves enabled=false', async ({ page, context }) => {

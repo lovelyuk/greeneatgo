@@ -12,6 +12,7 @@ from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.products import FALLBACK_DAILY_MENU, today_kst
 from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeInviteCreateRequest, EmployeeLimitUpdateRequest, EmployeePointAdjustRequest, EmployeePointChargeRequest, EmployeeProfileUpdateRequest, ImageDeleteRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest
+from app.routers.pay import daily_count_limit_of, meal_policy_row
 from app.services.subsidy_charge import is_subsidy_charge, without_subsidy_charges
 from app.services.employee_bulk import BulkFileError, RawEmployeeRow, build_template, normalize_phone, read_employee_file, validate_rows
 from app.services.join_flow import JoinFlowError
@@ -459,6 +460,7 @@ def _meal_policy_data(row: dict | None) -> dict:
             "lunch_end": "14:00",
             "dinner_start": "17:30",
             "dinner_end": "20:30",
+            "daily_count_limit": daily_count_limit_of(row),
         }
     by_name = {item.get("name"): item for item in windows if isinstance(item, dict)}
     lunch = by_name.get("중식")
@@ -474,6 +476,8 @@ def _meal_policy_data(row: dict | None) -> dict:
         "lunch_end": (lunch or {}).get("end", "14:00"),
         "dinner_start": (dinner or {}).get("start", "17:30"),
         "dinner_end": (dinner or {}).get("end", "20:30"),
+        # Company-paid meals one employee may have per day; None = no limit.
+        "daily_count_limit": daily_count_limit_of(row),
     }
 
 
@@ -493,11 +497,8 @@ def get_meal_policy(token: str = Depends(bearer_token)):
     repo = JoinRepository()
     try:
         actor = _company_admin(repo, token)
-        rows = repo.client.rest_get(
-            "meal_policies",
-            {"select": "id,meal_windows,daily_limit,weekend_allowed", "company_id": f"eq.{actor.company_id}", "group_id": "is.null", "limit": "1"},
-        )
-        return {"ok": True, "data": _meal_policy_data(rows[0] if rows else None), "error": None}
+        row = meal_policy_row(repo, actor.company_id, "id,meal_windows,daily_limit,weekend_allowed")
+        return {"ok": True, "data": _meal_policy_data(row), "error": None}
     except JoinFlowError as exc:
         raise _handle_join_error(exc) from exc
     except SupabaseHttpError as exc:
@@ -516,11 +517,23 @@ def update_meal_policy(payload: MealPolicyUpdateRequest, token: str = Depends(be
             "meal_windows": _policy_windows(payload),
             "daily_limit": None,
             "weekend_allowed": True,
+            "daily_count_limit": payload.daily_count_limit,
         }
-        if rows:
-            row = repo.client.rest_patch("meal_policies", {"id": f"eq.{rows[0]['id']}"}, body)[0]
-        else:
-            row = repo.client.rest_post("meal_policies", body)[0]
+
+        def save(values: dict) -> dict:
+            if rows:
+                return repo.client.rest_patch("meal_policies", {"id": f"eq.{rows[0]['id']}"}, values)[0]
+            return repo.client.rest_post("meal_policies", values)[0]
+
+        try:
+            row = save(body)
+        except SupabaseHttpError as exc:
+            # Column from migration 0083 not there yet: hours still save, a count cannot.
+            if "daily_count_limit" not in (exc.body or ""):
+                raise
+            if payload.daily_count_limit is not None:
+                raise _error(400, "MIGRATION_REQUIRED", "하루 사용 횟수 설정은 아직 준비 중이에요") from exc
+            row = save({key: value for key, value in body.items() if key != "daily_count_limit"})
         return {"ok": True, "data": _meal_policy_data(row), "error": None}
     except JoinFlowError as exc:
         raise _handle_join_error(exc) from exc

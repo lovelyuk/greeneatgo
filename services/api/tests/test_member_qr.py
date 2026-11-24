@@ -130,7 +130,8 @@ class RedeemMemberQrTests(unittest.TestCase):
         with patch("app.routers.pay.prepare_payment_draft", return_value=draft) as prepare:
             out = redeem_member_qr(MemberQrRedeemRequest(code=code), "bearer")["data"]
         name, args = repo.client.rpc.call_args.args
-        self.assertEqual(name, "process_meal_pay")
+        self.assertEqual(name, "process_meal_pay_many")
+        self.assertEqual(args["p_quantity"], 1)
         # The employee and company come from the signed QR and the member's profile, the
         # price from the contract, the key from the QR nonce (a re-read cannot charge twice).
         self.assertEqual((args["p_user_id"], args["p_company_id"], args["p_merchant_id"], args["p_amount"]),

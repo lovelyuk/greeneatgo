@@ -2199,6 +2199,10 @@ code { font-size: 12px; }
 .meal-policy-windows legend .policy-toggle { display: flex; }
 .meal-policy-windows input[type="time"] { width: 100%; }
 .meal-policy-problem { margin: 0; color: #c0392b; font-size: 13px; }
+.meal-policy-count { display: grid; gap: 6px; font-size: 13px; }
+.meal-policy-count > div { display: flex; align-items: center; gap: 8px; }
+.meal-policy-count input { width: 120px; }
+.meal-policy-count p { margin: 0; }
 .meal-policy-form .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 /* Company admin: add one employee by hand. */

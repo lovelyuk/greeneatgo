@@ -2200,3 +2200,13 @@ code { font-size: 12px; }
 .meal-policy-windows input[type="time"] { width: 100%; }
 .meal-policy-problem { margin: 0; color: #c0392b; font-size: 13px; }
 .meal-policy-form .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* Company admin: add one employee by hand. */
+.employee-add-modal { width: min(480px, 100%); }
+.employee-add-form { display: grid; gap: 14px; padding: 20px 24px 24px; }
+.employee-add-form label { display: grid; gap: 6px; font-size: 13px; font-weight: 700; }
+.employee-add-form label .muted { font-weight: 400; }
+.employee-add-error { margin: 0; color: #c0392b; font-size: 13px; }
+.employee-add-done { margin: 0; color: var(--text-muted, #5c7a66); font-size: 13px; }
+.employee-add-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.danger-text { color: #c0392b; }

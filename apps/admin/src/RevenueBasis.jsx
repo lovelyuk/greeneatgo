@@ -44,7 +44,7 @@ function DetailDialog({ party, period, fetcher, onClose }) {
       {!detail && !error && <p className="revenue-detail-loading" role="status">세부 내역을 불러오는 중입니다.</p>}
       {detail && <>
         <div className="revenue-detail-totals">
-          <div><span>매출 (결제·발행 기준)</span><strong>{won(detail.paid.revenue)}</strong><small>결제 {won(detail.paid.payment)} − 환불 {won(detail.paid.refund)} + 세금계산서 {won(detail.paid.invoice)}</small></div>
+          <div><span>매출 (결제·발행 기준)</span><strong>{won(detail.paid.revenue)}</strong><small>결제 {won(detail.paid.payment)} − 환불 {won(detail.paid.refund)}{detail.paid.subsidy ? ` + 회사 보조금 ${won(detail.paid.subsidy)}` : ''} + 세금계산서 {won(detail.paid.invoice)}</small></div>
           <div><span>식사 제공 (사용 기준)</span><strong>{won(detail.usage.amount)}</strong><small>{detail.usage.count.toLocaleString('ko-KR')}끼{detail.usage.cancelCount ? ` · 취소 ${detail.usage.cancelCount}건` : ''}</small></div>
           <div><span>미청구 장부 금액</span><strong>{won(detail.unbilled.amount)}</strong><small>{detail.unbilled.settlements.length ? detail.unbilled.settlements.map((row) => `${row.month} ${won(row.amount)}`).join(' · ') : '세금계산서 발행 전 금액 없음'}</small></div>
         </div>
@@ -107,6 +107,7 @@ export default function RevenueBasisPanel({ period, fetcher, openName = '', onOp
     <div className="revenue-basis">
       <Card tone="paid" label="매출 (결제·발행 기준)" value={paid.revenue} lines={[
         `식권 결제 ${won(paid.payment)} − 환불 ${won(paid.refund)}`,
+        ...(paid.subsidy || paid.subsidyCount ? [`회사 보조금 ${won(paid.subsidy)} (${paid.subsidyCount.toLocaleString('ko-KR')}장 · 식권 구매일 기준)`] : []),
         `세금계산서 발행 ${won(paid.invoice)} (${paid.invoiceCount}건)`,
         ...(paid.point ? [`포인트 사용 ${won(paid.point)}은 제외 (회사 청구 시 매출)`] : []),
       ]}/>

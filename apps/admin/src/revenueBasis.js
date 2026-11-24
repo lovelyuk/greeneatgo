@@ -11,6 +11,7 @@ function mapParty(row = {}) {
     name: text(row.name) || '거래처',
     revenue_amount: number(row.revenue_amount),
     net_payment_amount: number(row.net_payment_amount),
+    subsidy_amount: number(row.subsidy_amount),
     invoice_amount: number(row.invoice_amount),
     usage_amount: number(row.usage_amount),
     usage_count: number(row.usage_count),
@@ -29,6 +30,9 @@ export function mapRevenueSummary(data = {}) {
       netPayment: number(paid.net_payment_amount),
       invoice: number(paid.invoice_amount),
       invoiceCount: number(paid.invoice_count),
+      // Company subsidies charged when a subsidized voucher is bought (net of refunds).
+      subsidy: number(paid.subsidy_amount),
+      subsidyCount: number(paid.subsidy_count),
       paymentCount: number(paid.payment_count),
       // Company points used on those orders: billed separately, not revenue here.
       point: number(paid.point_amount),
@@ -46,7 +50,7 @@ export function partyByName(parties, name) {
   return (Array.isArray(parties) ? parties : []).find((party) => party.name === wanted) ?? null;
 }
 
-const KIND_LABELS = { payment: '식권 결제', refund: '환불', invoice: '세금계산서' };
+const KIND_LABELS = { payment: '식권 결제', refund: '환불', invoice: '세금계산서', subsidy: '회사 보조금', subsidy_refund: '보조금 환불' };
 const MEAL_LABELS = { ledger: '장부', subsidized: '보조금', voucher: '식권' };
 
 export function dateTimeParts(value) {
@@ -87,6 +91,7 @@ export function mapRevenueDetail(data = {}) {
     name: text(data?.party?.name) || '거래처',
     paid: {
       revenue: number(paid.revenue_amount), payment: number(paid.payment_amount), refund: number(paid.refund_amount),
+      subsidy: number(paid.subsidy_amount),
       invoice: number(paid.invoice_amount), entries, entryCount: number(paid.entry_count) || entries.length,
     },
     usage: {

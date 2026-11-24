@@ -89,7 +89,7 @@ def test_summary_shows_both_bases_per_party(harness):
         # o3 was paid 5,000 in money and 1,000 in company points: only the money counts.
         "payment_amount": 93000, "payment_count": 3, "refund_amount": 8000, "refund_count": 1,
         "net_payment_amount": 85000, "invoice_amount": 176000, "invoice_count": 1, "revenue_amount": 261000,
-        "point_amount": 1000,
+        "point_amount": 1000, "subsidy_amount": 0, "subsidy_count": 0,
     }
     assert data["usage_basis"] == {"amount": 8800 + 3000 + 8000, "count": 3}
     # ACME's running November draft and BETA's requested-but-not-issued September settlement.
@@ -119,7 +119,7 @@ def test_company_detail_lists_invoices_meals_and_unbilled_settlements(harness):
     assert paid["entries"][0] == {
         "kind": "invoice", "at": "2026-11-05T05:00:00+00:00", "amount": 176000, "label": "세금계산서 발행",
         "method": "20261105-1", "person_name": "-", "department": None, "employee_no": None,
-        "supply_amount": 160000, "vat_amount": 16000, "write_date": "2026-10-31",
+        "supply_amount": 160000, "vat_amount": 16000, "write_date": "2026-10-31", "purchase_charge_amount": 0,
     }
     usage = data["usage_basis"]
     assert (usage["amount"], usage["count"], usage["cancel_count"], usage["item_count"]) == (8800, 2, 1, 3)

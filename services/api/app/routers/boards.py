@@ -16,6 +16,7 @@ from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.merchant_admin import _merchant_admin
 from app.routers.push_notifications import _audience
 from app.services.push_notifications import send_push_notifications
+from app.services.subsidy_charge import without_subsidy_charges
 from app.services.vouchers import resolve_voucher_merchant
 
 router = APIRouter(tags=["boards"])
@@ -153,7 +154,7 @@ def announcements():
 @router.get("/vouchers/reviewable-transactions")
 def reviewable_transactions(token: str = Depends(bearer_token)):
     repo = JoinRepository(); profile = _customer(repo, token); merchant = _pilot_merchant(repo)
-    txs = repo.client.rest_get("normal_meal_transactions", {"select": "id,merchant_id,amount,kind,created_at", "user_id": f"eq.{profile.id}", "merchant_id": f"eq.{merchant['id']}", "kind": "eq.spend", "order": "created_at.desc"})
+    txs = without_subsidy_charges(repo.client.rest_get("normal_meal_transactions", {"select": "id,merchant_id,amount,kind,created_at,flags", "user_id": f"eq.{profile.id}", "merchant_id": f"eq.{merchant['id']}", "kind": "eq.spend", "order": "created_at.desc"}))
     if not txs: return {"ok": True, "data": {"items": []}, "error": None}
     reviews = repo.client.rest_get("normal_reviews", {"select": "transaction_id", "transaction_id": f"in.({','.join(str(t['id']) for t in txs)})"})
     reviewed = {int(row["transaction_id"]) for row in reviews}
@@ -163,7 +164,7 @@ def reviewable_transactions(token: str = Depends(bearer_token)):
 @router.post("/reviews", status_code=201)
 def create_review(payload: ReviewCreate, token: str = Depends(bearer_token)):
     repo = JoinRepository(); profile = _customer(repo, token)
-    txs = repo.client.rest_get("normal_meal_transactions", {"select": "id,user_id,merchant_id,kind", "id": f"eq.{payload.transaction_id}", "limit": "1"})
+    txs = without_subsidy_charges(repo.client.rest_get("normal_meal_transactions", {"select": "id,user_id,merchant_id,kind,flags", "id": f"eq.{payload.transaction_id}", "limit": "1"}))
     if not txs or txs[0].get("user_id") != profile.id: raise error(403, "TRANSACTION_NOT_OWNED", "본인의 이용 내역만 리뷰할 수 있어요")
     tx = txs[0]
     if tx.get("kind") != "spend" or not tx.get("merchant_id"): raise error(422, "TRANSACTION_NOT_COMPLETED", "이용 완료된 거래만 리뷰할 수 있어요")

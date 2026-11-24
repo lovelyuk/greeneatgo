@@ -311,8 +311,15 @@ class _CompanyMealPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title,
+                  key: const ValueKey('company-meal-title'),
                   style: TextStyle(
-                      fontFamily: 'Pretendard', color: color, fontSize: 17, fontWeight: FontWeight.w800, height: 1.25)),
+                      fontFamily: 'Pretendard',
+                      color: color,
+                      // 「지금은 회사 식대를 쓸 수 없어요」 is longer than the other titles:
+                      // a smaller size keeps it on one line on 360dp phones.
+                      fontSize: available == false ? 15 : 17,
+                      fontWeight: FontWeight.w800,
+                      height: 1.25)),
               const SizedBox(height: 4),
               Text(detail,
                   style: const TextStyle(

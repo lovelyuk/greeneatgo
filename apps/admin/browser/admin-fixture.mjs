@@ -43,11 +43,11 @@ export function adminFixtureData(role, theme = 'default') {
     '/admin/merchant/transactions': { items: tx, total_count: 128 },
     // Revenue on the paid/issued basis next to the usage basis (restaurant dashboard).
     '/admin/merchant/revenue/summary': {
-      paid_basis: { payment_amount: 1280000, payment_count: 21, refund_amount: 80000, refund_count: 1, net_payment_amount: 1200000, invoice_amount: 2640000, invoice_count: 2, revenue_amount: 3840000, point_amount: 45000 },
+      paid_basis: { payment_amount: 1280000, payment_count: 21, refund_amount: 80000, refund_count: 1, net_payment_amount: 1200000, subsidy_amount: 30000, subsidy_count: 30, invoice_amount: 2640000, invoice_count: 2, revenue_amount: 3870000, point_amount: 45000 },
       usage_basis: { amount: 3300000, count: 417 }, unbilled: { amount: 1760000, count: 2 },
       parties: [
         { key: COMPANY_ID, name: '합성테크', payment_amount: 0, refund_amount: 0, net_payment_amount: 0, invoice_amount: 1760000, revenue_amount: 1760000, usage_amount: 1800000, usage_count: 225, unbilled_amount: 1320000 },
-        { key: '55555555-5555-4555-8555-555555555555', name: '가온상사', payment_amount: 120000, refund_amount: 0, net_payment_amount: 120000, invoice_amount: 880000, revenue_amount: 1000000, usage_amount: 900000, usage_count: 112, unbilled_amount: 440000 },
+        { key: '55555555-5555-4555-8555-555555555555', name: '가온상사', payment_amount: 120000, refund_amount: 0, net_payment_amount: 120000, subsidy_amount: 30000, invoice_amount: 880000, revenue_amount: 1030000, usage_amount: 900000, usage_count: 112, unbilled_amount: 440000 },
         { key: 'personal', name: '개인 고객', payment_amount: 1160000, refund_amount: 80000, net_payment_amount: 1080000, invoice_amount: 0, revenue_amount: 1080000, usage_amount: 600000, usage_count: 80, unbilled_amount: 0 },
       ],
     },

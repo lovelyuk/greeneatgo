@@ -10,6 +10,7 @@ from app.admin_themes import ADMIN_THEME_ROLES, DEFAULT_ADMIN_THEME, normalize_a
 from app.schemas import AdminPreferencesUpdateRequest, CompanyBusinessProfileUpdateRequest, ProfileNameUpdateRequest
 from app.services.join_flow import JoinFlowError
 from app.services.company_meal_status import company_meal_status
+from app.services.subsidy_charge import without_subsidy_charges
 from app.services.vouchers import decorate_bonus_voucher_transactions
 
 router = APIRouter(tags=["me"])
@@ -145,8 +146,10 @@ def _employee_company(repo: JoinRepository, company_id: str | None, usage: dict)
 def _employee_usage(repo: JoinRepository, user_id: str) -> dict:
     all_rows = repo.client.rest_get(
         "normal_meal_transactions",
-        {"select": "id,amount,kind,tx_code,meal_window,product_name,merchant_id,created_at,pay_type", "user_id": f"eq.{user_id}", "order": "created_at.desc"},
+        {"select": "id,amount,kind,tx_code,meal_window,product_name,merchant_id,created_at,pay_type,flags", "user_id": f"eq.{user_id}", "order": "created_at.desc"},
     )
+    # A subsidy charged to the company at purchase (0080) is not something the employee ate or spent.
+    all_rows = without_subsidy_charges(all_rows)
     # Meals paid with a personal voucher are the employee's own money: they are
     # listed, but never count toward the company balance or monthly limit.
     rows = [row for row in all_rows if row.get("pay_type") != "voucher"]

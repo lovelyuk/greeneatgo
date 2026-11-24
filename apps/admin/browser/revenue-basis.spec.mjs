@@ -7,8 +7,10 @@ test('restaurant dashboard shows both revenue bases and a partner detail popup',
   const calls = await adminLogin(page, context, { role: 'merchant_admin' });
   const panel = page.getByRole('region', { name: '매출 기준별 현황' });
   await expect(panel.getByText('매출 (결제·발행 기준)')).toBeVisible();
-  await expect(panel.getByText('₩3,840,000')).toBeVisible();
+  await expect(panel.getByText('₩3,870,000')).toBeVisible();
   await expect(panel.getByText('식권 결제 ₩1,280,000 − 환불 ₩80,000')).toBeVisible();
+  // A company subsidy counts on the day the subsidized voucher is bought.
+  await expect(panel.getByText('회사 보조금 ₩30,000 (30장 · 식권 구매일 기준)')).toBeVisible();
   await expect(panel.getByText('세금계산서 발행 ₩2,640,000 (2건)')).toBeVisible();
   await expect(panel.getByText('포인트 사용 ₩45,000은 제외 (회사 청구 시 매출)')).toBeVisible();
   await expect(panel.getByText('식사 제공 (사용 기준)')).toBeVisible();
@@ -19,7 +21,7 @@ test('restaurant dashboard shows both revenue bases and a partner detail popup',
   await expect(page.getByRole('heading', { name: '거래처별 매출 합계' })).toBeVisible();
 
   const row = panel.getByRole('row', { name: /가온상사/ });
-  await expect(row).toContainText('₩1,000,000');
+  await expect(row).toContainText('₩1,030,000');
   await expect(row).toContainText('₩900,000 · 112끼');
   await expect(row).toContainText('₩440,000');
   await expect(panel.getByRole('row', { name: /개인 고객/ })).toContainText('-');

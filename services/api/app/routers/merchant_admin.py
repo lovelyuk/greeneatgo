@@ -22,6 +22,7 @@ from app.services.company_invites import send_company_invitation
 from app.services.refunds import calculate_refund
 from app.services.kiwoom_payment import KiwoomCancellationOutcomeUnknown, KiwoomPaymentError, cancel_payment
 from app.services.payment_completion import payment_receipt_details, payment_receipt_links, payment_receipt_title
+from app.services.subsidy_charge import company_charge as _subsidy_company_charge, without_subsidy_charges
 from app.services.vouchers import decorate_bonus_voucher_transactions
 
 router = APIRouter(prefix="/admin/merchant", tags=["merchant-admin"])
@@ -315,7 +316,8 @@ def _load_vendor_transactions(repo: JoinRepository, merchant_id: str, company_id
             continue
         amount = _tx_amount(row)
         if row.get("pay_type") == "subsidized":
-            company_charge = int(row.get("company_subsidy_amount") or 0)
+            # What the company is billed: 0 for a meal whose subsidy was charged at purchase (0080).
+            company_charge = _subsidy_company_charge(row)
             amount = company_charge if row.get("kind") == "spend" else -company_charge
         items.append({
             **row,
@@ -375,7 +377,7 @@ def _ensure_settlements(repo: JoinRepository, merchant_id: str, company_id: str)
     tx_rows = repo.client.rest_get(
         "normal_meal_transactions",
         {
-            "select": "id,amount,kind,pay_type,company_subsidy_amount,created_at",
+            "select": "id,amount,kind,pay_type,company_subsidy_amount,settlement_total_amount,created_at",
             "merchant_id": f"eq.{merchant_id}",
             "company_id": f"eq.{company_id}",
             "pay_type": "in.(ledger,subsidized)",
@@ -390,7 +392,7 @@ def _ensure_settlements(repo: JoinRepository, merchant_id: str, company_id: str)
             continue
         bucket = aggregates.setdefault(ym, {"tx_count": 0, "total_amount": 0})
         bucket["tx_count"] += 1
-        charge = int(row.get("company_subsidy_amount") or 0) if row.get("pay_type") == "subsidized" else _tx_amount(row)
+        charge = _subsidy_company_charge(row) if row.get("pay_type") == "subsidized" else _tx_amount(row)
         bucket["total_amount"] += -charge if row.get("kind") in {"refund", "cancel"} else charge
     existing = repo.client.rest_get(
         "normal_settlements",
@@ -1380,7 +1382,7 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
             start, end, pattern = _analytics_bounds(selected, granularity)
         start_iso, end_iso = start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
         txs = _paged_get(repo, "meal_transactions", {
-            "select": "id,user_id,company_id,amount,kind,pay_type,voucher_id,is_demo,settlement_total_amount,created_at", "merchant_id": f"eq.{merchant_id}",
+            "select": "id,user_id,company_id,amount,kind,pay_type,voucher_id,is_demo,settlement_total_amount,flags,created_at", "merchant_id": f"eq.{merchant_id}",
             "and": f"(created_at.gte.{start_iso},created_at.lt.{end_iso})", "order": "created_at.desc",
         })
         payments = _paged_get(repo, "payment_orders", {
@@ -1403,6 +1405,7 @@ def payment_history(date_: str = Query(alias="date"), granularity: str = Query(p
             row["pay_type"] = order.get("pay_type") or "direct"
             row["product_name"] = order.get("product_name") or "환불"
             row["payment_method"] = order.get("payment_method")
+        txs = without_subsidy_charges(txs)  # a purchase charge is a billing entry, not a meal
         decorate_bonus_voucher_transactions(repo, txs)
         for row in txs:
             if row.get("is_demo"):
@@ -1534,6 +1537,7 @@ def list_transactions(token: str = Depends(bearer_token)):
                 "limit": "50",
             },
         )
+        rows = without_subsidy_charges(rows)  # no "new payment" chime when a subsidized voucher is bought
         for row in rows:
             if row.get("is_demo"):
                 total = int(row.get("settlement_total_amount") or 0)

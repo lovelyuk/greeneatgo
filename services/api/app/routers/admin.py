@@ -12,6 +12,7 @@ from app.repositories.join_repository import JoinRepository
 from app.repositories.supabase_http import SupabaseHttpError
 from app.routers.products import FALLBACK_DAILY_MENU, today_kst
 from app.schemas import DailyMenuUpsertRequest, EmployeeBulkConfirmRequest, EmployeeInviteCreateRequest, EmployeeLimitUpdateRequest, EmployeePointAdjustRequest, EmployeePointChargeRequest, EmployeeProfileUpdateRequest, ImageDeleteRequest, ImageUploadRequest, JoinDecisionRequest, MealPolicyUpdateRequest
+from app.services.subsidy_charge import is_subsidy_charge, without_subsidy_charges
 from app.services.employee_bulk import BulkFileError, RawEmployeeRow, build_template, normalize_phone, read_employee_file, validate_rows
 from app.services.join_flow import JoinFlowError
 from app.services.product_images import ProductImageError, managed_image_path, normalize_product_image
@@ -310,7 +311,7 @@ def list_employees(token: str = Depends(bearer_token)):
             tx_rows = _paged_rest_get(repo,
                 "meal_transactions",
                 {
-                    "select": "user_id,amount,kind,is_demo,settlement_total_amount,created_at",
+                    "select": "user_id,amount,kind,is_demo,settlement_total_amount,flags,created_at",
                     "company_id": f"eq.{actor.company_id}",
                     "created_at": f"gte.{start_iso}",
                     "order": "id.asc",
@@ -319,7 +320,7 @@ def list_employees(token: str = Depends(bearer_token)):
         stats = {user_id: {"used": 0, "recent": None} for user_id in user_ids}
         for tx in tx_rows:
             user_id = tx.get("user_id")
-            if user_id not in stats or tx.get("kind") != "spend":
+            if user_id not in stats or tx.get("kind") != "spend" or is_subsidy_charge(tx):
                 continue
             created = tx.get("created_at")
             if not created:
@@ -583,8 +584,9 @@ def employee_transactions(user_id: str, token: str = Depends(bearer_token)):
             raise _error(404, "EMPLOYEE_NOT_FOUND", "직원을 찾을 수 없어요")
         tx_rows = repo.client.rest_get(
             "meal_transactions",
-            {"select": "id,amount,kind,tx_code,meal_window,is_demo,settlement_total_amount,product_name,product_price,merchant_id,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "100"},
+            {"select": "id,amount,kind,tx_code,meal_window,is_demo,settlement_total_amount,product_name,product_price,merchant_id,flags,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "100"},
         )
+        tx_rows = without_subsidy_charges(tx_rows)  # the employee's meals, not billing entries
         for tx in tx_rows:
             if tx.get("is_demo"):
                 total = int(tx.get("settlement_total_amount") or 0)

@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from app.repositories.join_repository import JoinRepository
+from app.repositories.supabase_http import SupabaseHttpError
 from app.services.join_flow import JoinErrorCode, JoinFlowError, UserProfile
 
 
@@ -287,10 +288,18 @@ class SettlementRepository:
             "select": "id,event_type,payload,created_at", "settlement_id": f"eq.{settlement_id}",
             "order": "created_at.asc,id.asc",
         })
-        company = self.client.rest_get("companies", {
-            "select": "id,name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,contact_name,contact_phone,status,contact_email,created_at",
-            "id": f"eq.{row['company_id']}", "limit": "1",
-        })
+        company_select = "id,name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,contact_name,contact_phone,status,contact_email,created_at"
+        try:
+            company = self.client.rest_get("companies", {
+                "select": company_select + ",sub_biz_no", "id": f"eq.{row['company_id']}", "limit": "1",
+            })
+        except SupabaseHttpError as exc:
+            if "sub_biz_no" not in (exc.body or ""):
+                raise
+            # Migration 0084 (종사업장번호) not applied yet.
+            company = [{**item, "sub_biz_no": None} for item in self.client.rest_get("companies", {
+                "select": company_select, "id": f"eq.{row['company_id']}", "limit": "1",
+            })]
         supplier = self.client.rest_get("merchants", {
             "select": "name,biz_reg_no,representative_name,address,business_type,business_item,tax_invoice_email,contact_phone:owner_phone,bank_name,account_number,account_holder",
             "id": f"eq.{row['merchant_id']}", "limit": "1",

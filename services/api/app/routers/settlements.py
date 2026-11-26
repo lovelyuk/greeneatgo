@@ -703,6 +703,10 @@ def _merchant_issue_invoice(
         result = _refresh_status(actor, settlement_id, repo, service, key)
         return {"ok": True, "data": _public({**result, "reconciled": True}), "error": None}
     attempt_token = claim["attempt_token"]
+    # 종사업장번호 is not part of the stored recipient copy: it is read from the company now.
+    sub_biz_no = ((detail.get("business_information") or {}).get("sub_biz_no") or "").strip()
+    if sub_biz_no and isinstance(invoice.get("recipient_snapshot"), dict):
+        invoice = {**invoice, "recipient_snapshot": {**invoice["recipient_snapshot"], "tax_reg_id": sub_biz_no}}
     try:
         issued = service.issue(invoice, allow_delayed_issue=allow_delayed_issue)
     except PopbillError as exc:

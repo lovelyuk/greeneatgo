@@ -13,6 +13,14 @@ const BUSINESS_PARTY_REQUIRED_FIELDS = [
   'business_item', 'tax_invoice_email', 'contact_name', 'contact_phone',
 ];
 
+/** "114-81-93597 (종사업장 0001)" for a branch office, the plain number otherwise. */
+export function bizNoWithBranch(company) {
+  const number = text(company?.biz_reg_no).trim();
+  const branch = text(company?.sub_biz_no).trim();
+  if (!number) return '-';
+  return branch ? `${number} (종사업장 ${branch})` : number;
+}
+
 function text(value) {
   return typeof value === 'string' ? value : '';
 }
@@ -22,7 +30,7 @@ export function mapBusinessParty(snapshot = {}) {
   return {
     name: text(snapshot.name),
     biz_reg_no: text(snapshot.biz_reg_no || snapshot.registration_number),
-    branch_no: snapshot.branch_no ?? snapshot.branch_number ?? null,
+    branch_no: snapshot.sub_biz_no ?? snapshot.tax_reg_id ?? snapshot.branch_no ?? snapshot.branch_number ?? null,
     representative_name: text(snapshot.representative_name || snapshot.representative),
     address: text(snapshot.address),
     business_type: text(snapshot.business_type),

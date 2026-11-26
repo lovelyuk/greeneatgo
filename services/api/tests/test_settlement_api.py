@@ -800,3 +800,27 @@ def test_generated_membership_lookup_failure_is_translated_fail_closed(client_fa
     response = client.post(path) if path.endswith("/issue") else client.get(path)
     assert response.status_code == 502
     assert not any(call[0] in ("claim", "management_key") for call in repo.calls)
+
+
+def test_issue_sends_the_companys_branch_office_number_to_the_provider(client_factory):
+    client, repo = client_factory("merchant_admin")
+    seen = []
+
+    class Recording(FakePopbill):
+        def issue(self, invoice, *, allow_delayed_issue=False):
+            seen.append(dict(invoice.get("recipient_snapshot") or {}))
+            return super().issue(invoice, allow_delayed_issue=allow_delayed_issue)
+
+    stored = dict(repo.claim["tax_invoice"])
+    stored.setdefault("recipient_snapshot", {"registration_number": "987-65-43210", "name": "x"})
+    repo.claim = {**repo.claim, "tax_invoice": stored}
+    app.dependency_overrides[get_popbill_service] = lambda: Recording()
+    # Head office: nothing is added.
+    repo.detail = {**repo.detail, "business_information": {"id": "c", "sub_biz_no": None}}
+    assert client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue").status_code == 200
+    assert "tax_reg_id" not in seen[-1]
+    # Branch office: its number goes along, and the stored copy is left as it was.
+    repo.detail = {**repo.detail, "business_information": {"id": "c", "sub_biz_no": "0006"}}
+    assert client.post(f"/v1/admin/merchant/settlements/{SETTLEMENT_ID}/tax-invoice/issue").status_code == 200
+    assert seen[-1]["tax_reg_id"] == "0006"
+    assert "tax_reg_id" not in repo.claim["tax_invoice"]["recipient_snapshot"]

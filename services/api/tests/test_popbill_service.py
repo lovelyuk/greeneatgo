@@ -659,3 +659,20 @@ def test_non_ambiguous_unknown_exception_does_not_reconcile(config: PopbillConfi
         make_service(config, sdk).issue(invoice)
     assert exc.value.code == "POPBILL_TEMPORARILY_UNAVAILABLE"
     assert [call[0] for call in sdk.calls] == ["registIssue"]
+
+
+def test_branch_office_number_is_sent_as_the_buyer_tax_reg_id(config: PopbillConfig, invoice: dict[str, Any]) -> None:
+    sdk = FakeTaxinvoiceSDK()
+    make_service(config, sdk).issue(invoice)
+    assert "invoiceeTaxRegID" not in sdk.calls[0][1][1]          # head office: field absent
+
+    sdk = FakeTaxinvoiceSDK()
+    invoice["recipient_snapshot"]["tax_reg_id"] = "0001"
+    make_service(config, sdk).issue(invoice)
+    assert sdk.calls[0][1][1]["invoiceeTaxRegID"] == "0001"
+
+    for bad in ("1", "00001", "00a1", 1, " 0001"):
+        invoice["recipient_snapshot"]["tax_reg_id"] = bad
+        with pytest.raises(PopbillError) as caught:
+            make_service(config, FakeTaxinvoiceSDK()).issue(invoice)
+        assert caught.value.code == "POPBILL_INVALID_INPUT"

@@ -15,6 +15,8 @@ from app.services.vouchers import decorate_bonus_voucher_transactions
 
 router = APIRouter(tags=["me"])
 COMPANY_PROFILE_SELECT = "id,name,biz_reg_no,status,representative_name,business_type,business_item,address,contact_name,contact_email,contact_phone,tax_invoice_email,created_at"
+# `sub_biz_no` (종사업장번호) arrives with migration 0084.
+COMPANY_SUB_BIZ_SELECT = COMPANY_PROFILE_SELECT + ",sub_biz_no"
 COMPANY_PROFILE_OPTIONAL_FIELDS = ("representative_name", "business_type", "business_item", "address", "contact_name", "tax_invoice_email")
 
 
@@ -24,10 +26,14 @@ def _error(status: int, code: str, message: str) -> HTTPException:
 
 def _company_profile(repo: JoinRepository, company_id: str) -> dict | None:
     try:
-        rows = repo.client.rest_get(
-            "companies",
-            {"select": COMPANY_PROFILE_SELECT, "id": f"eq.{company_id}", "limit": "1"},
-        )
+        try:
+            rows = repo.client.rest_get(
+                "companies", {"select": COMPANY_SUB_BIZ_SELECT, "id": f"eq.{company_id}", "limit": "1"})
+        except SupabaseHttpError as exc:
+            if "sub_biz_no" not in (exc.body or ""):
+                raise
+            rows = [{**row, "sub_biz_no": None} for row in repo.client.rest_get(
+                "companies", {"select": COMPANY_PROFILE_SELECT, "id": f"eq.{company_id}", "limit": "1"})]
     except SupabaseHttpError as exc:
         if not any(field in exc.body for field in COMPANY_PROFILE_OPTIONAL_FIELDS) and "PGRST204" not in exc.body:
             raise
@@ -301,11 +307,17 @@ def update_company_profile(payload: CompanyBusinessProfileUpdateRequest, token: 
         profile = repo.get_profile(auth_user.id, email=auth_user.email)
         if profile is None or profile.role != "company_admin" or profile.status != "active" or not profile.company_id:
             raise _error(403, "FORBIDDEN", "회사관리자만 회사 정보를 수정할 수 있어요")
-        rows = repo.client.rest_patch(
-            "companies",
-            {"id": f"eq.{profile.company_id}"},
-            payload.model_dump(),
-        )
+        values = payload.model_dump()
+        try:
+            rows = repo.client.rest_patch("companies", {"id": f"eq.{profile.company_id}"}, values)
+        except SupabaseHttpError as exc:
+            # Column from migration 0084 not there yet: the rest of the profile still saves.
+            if "sub_biz_no" not in (exc.body or ""):
+                raise
+            if values.get("sub_biz_no"):
+                raise _error(400, "MIGRATION_REQUIRED", "종사업장번호는 아직 저장할 수 없어요") from exc
+            values.pop("sub_biz_no", None)
+            rows = repo.client.rest_patch("companies", {"id": f"eq.{profile.company_id}"}, values)
         if not rows:
             raise _error(404, "COMPANY_NOT_FOUND", "회사 정보를 찾을 수 없어요")
         return {"ok": True, "data": {"company": _company_profile(repo, profile.company_id)}, "error": None}

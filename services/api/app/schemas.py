@@ -117,6 +117,8 @@ class AdminPreferencesUpdateRequest(BaseModel):
 class CompanyBusinessProfileUpdateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     biz_reg_no: str = Field(min_length=1, max_length=40)
+    # 종사업장번호: four digits, only for a branch office of the same business number.
+    sub_biz_no: str | None = Field(default=None, pattern=r"^\d{4}$")
     representative_name: str | None = Field(default=None, max_length=80)
     business_type: str | None = Field(default=None, max_length=80)
     business_item: str | None = Field(default=None, max_length=120)
@@ -125,7 +127,7 @@ class CompanyBusinessProfileUpdateRequest(BaseModel):
     contact_phone: str | None = Field(default=None, max_length=40)
     tax_invoice_email: str | None = Field(default=None, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
-    @field_validator("name", "biz_reg_no", "representative_name", "business_type", "business_item", "address", "contact_name", "contact_phone", "tax_invoice_email", mode="before")
+    @field_validator("name", "biz_reg_no", "sub_biz_no", "representative_name", "business_type", "business_item", "address", "contact_name", "contact_phone", "tax_invoice_email", mode="before")
     @classmethod
     def trim_company_profile_field(cls, value: object) -> object:
         if isinstance(value, str):

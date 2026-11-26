@@ -29,6 +29,16 @@ _TEXT_LIMITS = {
 }
 
 
+def _tax_reg_id(recipient: Mapping[str, Any]) -> dict[str, str]:
+    """Popbill's 종사업장 식별번호 for the buyer: sent only when it is exactly four digits."""
+    value = recipient.get("tax_reg_id")
+    if value in (None, ""):
+        return {}
+    if not isinstance(value, str) or len(value) != 4 or not value.isdigit():
+        raise PopbillError("POPBILL_INVALID_INPUT", "Invalid recipient tax_reg_id")
+    return {"invoiceeTaxRegID": value}
+
+
 class PartySnapshotInput(TypedDict):
     registration_number: str
     name: str
@@ -592,6 +602,7 @@ class PopbillService:
             "invoiceeContactName1": _party_text(recipient, "contact_name"),
             "invoiceeTEL1": _party_text(recipient, "contact_phone"),
             "invoiceeEmail1": _party_text(recipient, "tax_email"),
+            **_tax_reg_id(recipient),
             "detailList": [{
                 "serialNum": 1,
                 "purchaseDT": write_date,

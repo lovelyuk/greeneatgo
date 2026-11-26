@@ -27,8 +27,7 @@ import {
   canMerchantIssue, canMerchantMarkPaid, canMerchantSend, canRefreshInvoiceStatus,
   fetchAllSettlementSummaries, hasInvoiceDocument, isBusinessPartyComplete,
   mapSettlement, openDocumentInNewWindow, paymentFormForSettlement, PAYMENT_STATUS_LABELS,
-  replaceSettlementDetail, settlementApiRoot,
-} from './settlementApi.js';
+  replaceSettlementDetail, settlementApiRoot, bizNoWithBranch } from './settlementApi.js';
 import RevenueBasisPanel from './RevenueBasis.jsx';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -1628,6 +1627,7 @@ function SettlementV2Screen({ viewer, token, companyProfile = null, onCompanyInf
     ...row.recipient,
     name: companyProfile.name ?? '',
     biz_reg_no: companyProfile.biz_reg_no ?? '',
+    branch_no: companyProfile.sub_biz_no ?? null,
     representative_name: companyProfile.representative_name ?? '',
     address: companyProfile.address ?? '',
     business_type: companyProfile.business_type ?? '',
@@ -2205,7 +2205,7 @@ function MerchantCompanyListScreen({ items, onDetail }) {
     <article className="panel">{items.length === 0 ? <p className="empty-state">연결된 업체가 없어요.</p> : <div className="table-wrap"><table><thead><tr><th>업체명</th><th>사업자등록번호</th><th>계약 유형</th><th>담당자 이메일</th><th>연락처</th><th>관리</th></tr></thead><tbody>{items.map((item) => {
       const company = item.company ?? {};
       const subsidy = item.contract?.subsidy_enabled;
-      return <tr key={item.id}><td><strong>{company.name ?? '-'}</strong></td><td>{company.biz_reg_no ?? '-'}</td><td><span className={`payment-type-badge ${subsidy ? 'subsidized' : 'ledger'}`}>{subsidy ? '보조금' : '후불'}</span></td><td>{company.contact_email ?? item.invite?.email ?? '-'}</td><td>{company.contact_phone ?? '-'}</td><td><button type="button" className="ghost" onClick={() => onDetail(item)}>상세</button></td></tr>;
+      return <tr key={item.id}><td><strong>{company.name ?? '-'}</strong></td><td>{bizNoWithBranch(company)}</td><td><span className={`payment-type-badge ${subsidy ? 'subsidized' : 'ledger'}`}>{subsidy ? '보조금' : '후불'}</span></td><td>{company.contact_email ?? item.invite?.email ?? '-'}</td><td>{company.contact_phone ?? '-'}</td><td><button type="button" className="ghost" onClick={() => onDetail(item)}>상세</button></td></tr>;
     })}</tbody></table></div>}</article>
   </AdminPage>;
 }
@@ -2825,7 +2825,7 @@ function CompanyTaxInvoiceScreen({ token }) {
 }
 
 function CompanyInfoScreen({ company, busy, onSave, onSettings }) {
-  const emptyForm = { name: '', biz_reg_no: '', representative_name: '', business_type: '', business_item: '', address: '', contact_name: '', contact_phone: '', tax_invoice_email: '' };
+  const emptyForm = { name: '', biz_reg_no: '', sub_biz_no: '', representative_name: '', business_type: '', business_item: '', address: '', contact_name: '', contact_phone: '', tax_invoice_email: '' };
   const valuesFrom = (item) => Object.fromEntries(Object.keys(emptyForm).map((key) => [key, item?.[key] ?? (key === 'tax_invoice_email' ? item?.contact_email ?? '' : '')]));
   const [form, setForm] = useState(() => valuesFrom(company));
   const [editing, setEditing] = useState(false);
@@ -2847,6 +2847,7 @@ function CompanyInfoScreen({ company, busy, onSave, onSettings }) {
       </div>
       <div className="supplier-info-fields">
         <label>사업자등록번호<input value={form.biz_reg_no} onChange={field('biz_reg_no')} disabled={!editing} required /></label>
+        <label>종사업장번호<input value={form.sub_biz_no} onChange={field('sub_biz_no')} disabled={!editing} inputMode="numeric" maxLength={4} pattern="[0-9]{4}" title="숫자 4자리 (예: 0001). 종사업장이 아니면 비워 두세요." placeholder="없으면 비워 두세요" /></label>
         <label>상호<input value={form.name} onChange={field('name')} disabled={!editing} required /></label>
         <label>대표자<input value={form.representative_name} onChange={field('representative_name')} disabled={!editing} /></label>
         <label>업태<input value={form.business_type} onChange={field('business_type')} disabled={!editing} /></label>
@@ -3523,7 +3524,7 @@ function Dashboard({ session, onLogout }) {
     setBusy(true); setError(''); setMessage('');
     try {
       const data = await apiFetch(`/admin/merchant/companies/${companyId}/invite/resend`, token, { method: 'POST' });
-      setMessage(data.invite.email_send_status === 'sent' ? '초대 이메일을 다시 보냈어요.' : `재전송에 실패했어요: ${data.invite.email_error || '-'}`);
+      setMessage(data.invite.email_send_status === 'sent' ? (data.created ? '초대 이메일을 보냈어요.' : '초대 이메일을 다시 보냈어요.') : `${data.created ? '초대 전송' : '재전송'}에 실패했어요: ${data.invite.email_error || '-'}`);
       await load();
     } catch (resendError) { setError(resendError.message); } finally { setBusy(false); }
   }
@@ -3820,7 +3821,7 @@ function Dashboard({ session, onLogout }) {
           <h3>회사 정보</h3>
           <div className="profile-grid contract-summary">
             <span>상호</span><strong>{contractModal.company?.name ?? '-'}</strong>
-            <span>사업자등록번호</span><strong>{contractModal.company?.biz_reg_no ?? '-'}</strong>
+            <span>사업자등록번호</span><strong>{bizNoWithBranch(contractModal.company)}</strong>
             <span>대표자</span><strong>{contractModal.company?.representative_name ?? '-'}</strong>
             <span>업태</span><strong>{contractModal.company?.business_type ?? '-'}</strong>
             <span>종목</span><strong>{contractModal.company?.business_item ?? '-'}</strong>
@@ -3952,7 +3953,7 @@ function Dashboard({ session, onLogout }) {
         : <div className="table-wrap"><table><thead><tr><th>회사명</th><th>담당자 이메일</th><th>회사상태</th><th>연결상태</th><th>초대 상태</th><th>이메일 전송</th></tr></thead><tbody>{merchantCompanies.items.map((item) => {
           const link = inviteLink(item.invite);
           const companyName = item.company?.name ?? item.company_id;
-          return <tr key={item.id}><td>{companyName}</td><td>{item.company?.contact_email ?? item.invite?.email ?? '-'}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><span className="badge">{item.invite?.status === 'pending' ? '대기중' : item.invite?.status === 'accepted' || item.invite?.status === 'claimed' ? '수락완료' : item.invite?.status || '-'}</span>{link && item.invite?.status === 'pending' && <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>링크</button>}</td><td>{item.invite?.email_send_status === 'sent' ? '전송완료' : item.invite?.email_send_status === 'failed' ? '전송실패' : '-'} {item.invite?.status === 'pending' && <button className="ghost" disabled={busy} onClick={() => resendCompanyInvite(item.company_id)}>재전송</button>}</td></tr>;
+          return <tr key={item.id}><td>{companyName}{item.company?.sub_biz_no ? <small className="muted"> 종사업장 {item.company.sub_biz_no}</small> : null}</td><td>{item.company?.contact_email ?? item.invite?.email ?? '-'}</td><td>{item.company?.status ?? '-'}</td><td>{item.status}</td><td><span className="badge">{item.invite?.status === 'pending' ? '대기중' : item.invite?.status === 'accepted' || item.invite?.status === 'claimed' ? '수락완료' : item.invite?.status || '-'}</span>{link && item.invite?.status === 'pending' && <button className="ghost" onClick={() => setInviteModal({ link, companyName })}>링크</button>}</td><td>{item.invite?.email_send_status === 'sent' ? '전송완료' : item.invite?.email_send_status === 'failed' ? '전송실패' : '-'} {item.invite?.status === 'pending' && <button className="ghost" disabled={busy} onClick={() => resendCompanyInvite(item.company_id)}>재전송</button>}{!item.invite && item.company?.contact_email && <button className="ghost" disabled={busy} onClick={() => { if (window.confirm(`${companyName} 담당자(${item.company.contact_email})에게 초대 이메일을 보낼까요?`)) resendCompanyInvite(item.company_id); }}>초대 보내기</button>}</td></tr>;
         })}</tbody></table></div>}
     </section>}
 

@@ -97,8 +97,16 @@ def _company_rows(repo: JoinRepository, ids: list[str]) -> list[dict]:
     if not ids:
         return []
     optional_fields = ("representative_name", "business_type", "business_item", "address", "contact_name", "tax_invoice_email")
+    full = "id,name,biz_reg_no,status,representative_name,business_type,business_item,address,contact_name,contact_email,contact_phone,tax_invoice_email,created_at"
     try:
-        return repo.client.rest_get("companies", {"select": "id,name,biz_reg_no,status,representative_name,business_type,business_item,address,contact_name,contact_email,contact_phone,tax_invoice_email,created_at", "id": f"in.({','.join(ids)})"})
+        try:
+            return repo.client.rest_get("companies", {"select": full + ",sub_biz_no", "id": f"in.({','.join(ids)})"})
+        except SupabaseHttpError as exc:
+            if "sub_biz_no" not in (exc.body or ""):
+                raise
+            # Migration 0084 (종사업장번호) not applied yet.
+            return [{**row, "sub_biz_no": None} for row in repo.client.rest_get(
+                "companies", {"select": full, "id": f"in.({','.join(ids)})"})]
     except SupabaseHttpError as exc:
         if not any(field in exc.body for field in optional_fields) and "PGRST204" not in exc.body:
             raise
@@ -741,7 +749,22 @@ def resend_company_invite(company_id: str, token: str = Depends(bearer_token)):
         rows = repo.client.rest_get("invites", {"select": "*", "company_id": f"eq.{company_id}",
             "role": "eq.company_admin", "order": "created_at.desc", "limit": "1"})
         if not rows:
-            raise _error(404, "INVITE_NOT_FOUND", "재전송할 초대를 찾을 수 없어요")
+            # A company registered without an invitation (e.g. loaded before opening):
+            # this is its first invitation, sent to the contact e-mail on file.
+            company = (_company_rows(repo, [company_id]) or [None])[0]
+            email = ((company or {}).get("contact_email") or "").strip().lower()
+            if not company or not email:
+                raise _error(409, "INVITE_EMAIL_MISSING", "담당자 이메일이 없어 초대를 보낼 수 없어요")
+            created = repo.client.rest_post("invites", {
+                "token": _token(), "role": "company_admin", "company_id": company_id,
+                "phone": company.get("contact_phone"), "email": email, "invited_by": actor.id,
+                "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+            })[0]
+            delivered = _deliver_company_invite(
+                repo, created, company["name"],
+                sender_name=_merchant_name(repo, merchant_id), reply_to=actor.email or None,
+            )
+            return {"ok": True, "data": {"invite": delivered, "created": True}, "error": None}
         invite = rows[0]
         if invite.get("status") != "pending":
             raise _error(409, "INVITE_ALREADY_ACCEPTED", "이미 수락된 초대는 재전송할 수 없어요")
